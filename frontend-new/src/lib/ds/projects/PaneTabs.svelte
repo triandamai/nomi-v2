@@ -14,8 +14,11 @@
 		/** The views on offer, in order (all three by default). */
 		views?: PaneView[];
 		device?: 'desktop' | 'phone';
-		/** What the preview shows: the live app ("live" set) or the project's own files. */
-		address?: { url: string; shown: string; live?: string; deploy?: string };
+		/**
+		 * What the preview shows: the live app ("live" set), the project's own files, or the sandbox's
+		 * preview. Without `url` there's no Open: a sandbox's address holds a secret, so it isn't linked.
+		 */
+		address?: { url?: string; shown: string; live?: string; deploy?: string };
 		onreload?: () => void;
 		onclose?: () => void;
 	};
@@ -63,9 +66,11 @@
 			<button type="button" aria-label={labels.reload} onclick={onreload} class="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-xs text-text-2 outline-offset-1 hover:text-text">
 				<Icon icon={RotateCw} size={14} />
 			</button>
-			<a href={address.url} target="_blank" rel="noopener" aria-label={labels.open} class="inline-flex size-5 shrink-0 items-center justify-center rounded-xs text-text-2 outline-offset-1 hover:text-text">
-				<Icon icon={ExternalLink} size={14} />
-			</a>
+			{#if address.url}
+				<a href={address.url} target="_blank" rel="noopener" aria-label={labels.open} class="inline-flex size-5 shrink-0 items-center justify-center rounded-xs text-text-2 outline-offset-1 hover:text-text">
+					<Icon icon={ExternalLink} size={14} />
+				</a>
+			{/if}
 		</div>
 	{:else}
 		<span class="flex-1"></span>

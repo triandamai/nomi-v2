@@ -2539,5 +2539,21 @@
 	"code_meta": "read-only · {count} lines",
 	"code_whole_file": "whole file",
 	"code_about_file": "About `{file}`:",
-	"code_meta_one": "read-only · 1 line"
+	"code_meta_one": "read-only · 1 line",
+	"workspace_preview_sandbox": "changes not yet published",
+	"sandbox_loading_title": "Looking at the sandbox",
+	"sandbox_waking_title": "Waking the sandbox",
+	"sandbox_waking_body": "The sandbox runs the app as Koda builds it. Waking it takes a few seconds.",
+	"sandbox_starting_title": "Starting the app",
+	"sandbox_starting_body": "The sandbox is installing packages and starting the app. Terminal shows each step.",
+	"sandbox_stopped_title": "The sandbox stopped",
+	"sandbox_stopped_body": "It stops when the workspace has been closed for a while. Start it again to see your changes.",
+	"sandbox_failed_title": "The preview didn’t start",
+	"sandbox_failed_body": "Terminal shows what went wrong.",
+	"sandbox_start_again": "Start again",
+	"sandbox_terminal_run": "dev server · sandbox",
+	"sandbox_terminal_empty": "Nothing has run yet.",
+	"sandbox_quote_file": "Terminal",
+	"sandbox_quote_range": "the error",
+	"sandbox_fix_text": "The preview didn’t start. Please look at the terminal and fix it. The error:\n{error}"
 }

@@ -415,6 +415,21 @@ export type DeployOverview = {
 	unpublished_changes: number | null;
 };
 
+/**
+ * `GET /api/projects/:id/sandbox`: where the project runs (`sandbox` or `browser`), whether the
+ * sandbox may be used now, and its phase. The preview address (only while running) holds a secret.
+ */
+export type SandboxStatus = {
+	runtime: string;
+	available: boolean;
+	state: string;
+	phase: 'idle' | 'waking' | 'running' | 'stopping' | 'stopped' | 'error';
+	preview_url: string | null;
+	error: string | null;
+};
+/** `GET /api/projects/:id/sandbox/logs?offset=`: the dev server's output from `offset` on. */
+export type SandboxLogs = { text: string; next_offset: number };
+
 /** `GET /api/projects/:id/domain`: the app's own address, null until its first publish. */
 export type ProjectDomain = { hostname: string | null; subdomain: string | null; url: string | null; can_edit: boolean; base_domain: string | null; pending_hostname: string | null };
 /** What the hosting says about a name (`/domain/check`, or a refused change). */

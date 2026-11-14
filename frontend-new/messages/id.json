@@ -2539,5 +2539,21 @@
 	"code_meta": "hanya baca · {count} baris",
 	"code_whole_file": "seluruh file",
 	"code_about_file": "Tentang `{file}`:",
-	"code_meta_one": "hanya baca · 1 baris"
+	"code_meta_one": "hanya baca · 1 baris",
+	"workspace_preview_sandbox": "perubahan yang belum diterbitkan",
+	"sandbox_loading_title": "Memeriksa sandbox",
+	"sandbox_waking_title": "Membangunkan sandbox",
+	"sandbox_waking_body": "Sandbox menjalankan aplikasinya selagi Koda membangunnya. Membangunkannya butuh beberapa detik.",
+	"sandbox_starting_title": "Menjalankan aplikasinya",
+	"sandbox_starting_body": "Sandbox sedang memasang paket dan menjalankan aplikasinya. Terminal menampilkan tiap langkahnya.",
+	"sandbox_stopped_title": "Sandbox berhenti",
+	"sandbox_stopped_body": "Sandbox berhenti bila ruang kerja sudah lama ditutup. Jalankan lagi untuk melihat perubahanmu.",
+	"sandbox_failed_title": "Pratinjau tidak bisa dijalankan",
+	"sandbox_failed_body": "Terminal menampilkan apa yang salah.",
+	"sandbox_start_again": "Jalankan lagi",
+	"sandbox_terminal_run": "server pengembangan · sandbox",
+	"sandbox_terminal_empty": "Belum ada yang dijalankan.",
+	"sandbox_quote_file": "Terminal",
+	"sandbox_quote_range": "galatnya",
+	"sandbox_fix_text": "Pratinjau tidak bisa dijalankan. Tolong periksa terminal dan perbaiki. Galatnya:\n{error}"
 }

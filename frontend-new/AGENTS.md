@@ -567,17 +567,24 @@ steps; what isn't there yet is left out, not drawn dead:
   variables by name), then a zip or one commit to GitHub (`owner/name`, made when asked, private
   when asked) with the GitHub connected in Connections. The pen's Share wears a download icon
   (pasted from Export): ours wears the share icon.
-- Once a project is live the preview shows the live app; the pen's preview of changes not yet
-  published needs the runtime (below), as a static site's files already do.
+- Once a project is live the preview shows the live app, unless the project runs in the sandbox,
+  whose preview shows the changes not yet published (below).
 - Code (Code, terminal & phone preview `uR6dq`, steps 1–2) is the project's files in `CodeView`,
   read only, opening on the app's own page (the backend doesn't say which file Koda changed last);
   lines picked are quoted above the composer (`CodeQuote`, in `ChatView`) and sent ahead of the
-  message. The tokens are plain: the server-side highlighter isn't there yet. Terminal (steps
-  3–4) shows what the runtime ran, so it comes with the runtime.
-- The preview shows the live app once there is one, or the project's own files when it's a static
-  site; a framework's preview needs its runtime (sandbox or WebContainer), which comes with the
-  Terminal view. Until then the pane says there's nothing to preview yet, and offers Preview and
-  Code only.
+  message. The tokens are plain: the server-side highlighter isn't there yet.
+- Where the project runs in the backend's sandbox (and it may be used now), the workspace starts
+  it on opening and keeps it awake while open; the preview shows the changes not yet published,
+  with the sandbox's phase in words while it wakes and starts (and Start again once it stopped or
+  failed). Its address holds a secret, so the URL bar says "changes not yet published" with no
+  Open (the live app opens from the project bar). Terminal (steps 3–4) is the sandbox's own log as
+  the backend keeps it, not runs with times: the pen's "run #2 · publish deploy #2" and each
+  command's time aren't given, so the header names the dev server. A failed start sums up at its
+  foot, and Ask Koda to fix quotes the error above the composer, to send as it is or with more.
+- Elsewhere the preview shows the live app once there is one, or the project's own files when it's
+  a static site. A framework's preview in the browser itself (WebContainer, the backend's
+  `browser` runtime) isn't there yet: the pane says there's nothing to preview yet, and offers
+  Preview and Code only.
 - The chat pane is the project's chat itself (`ChatView`), as on its own page; its header's history
   and collapse buttons are left out, and it names Koda and Nomi as the crew building.
 - The chat is 520 wide as the flow draws it, dragged between 360 and 720 by the resize handle:

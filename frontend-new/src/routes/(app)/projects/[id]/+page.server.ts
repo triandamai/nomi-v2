@@ -4,23 +4,29 @@ import { loadChatPage } from '$lib/server/chatPage';
 import * as tools from '$lib/server/workspace';
 import { changeDomain, loadDeploy, loadDomain, loadProject, publish, rollBack, takeDown, transfer } from '$lib/server/workspace';
 import { deleteProject } from '$lib/server/projects';
+import { usesSandbox } from '$lib/projects/sandbox';
 import type { Actions, PageServerLoad } from './$types';
 
-/** A project's workspace (Flow / Build): the project, where it's live, and its chat. */
+/**
+ * A project's workspace (Flow / Build): the project, where it's live, and its chat. Whether it runs
+ * in the sandbox is all the page is told here: the sandbox's preview address (a secret) is read by
+ * the page's runtime and never written into the page.
+ */
 export const load: PageServerLoad = async (event) => {
 	event.depends('app:workspace-project');
 	const loaded = await loadProject(event, event.params.id);
 	if (!loaded.project) error(loaded.status === 404 || loaded.status === 403 ? 404 : 503, { message: loaded.status === 404 || loaded.status === 403 ? m.workspace_project_missing() : m.error_title() });
 	const id = event.params.id;
-	const [chat, deploy, address, people, secrets, showcase] = await Promise.all([
+	const [chat, deploy, address, people, secrets, showcase, sandbox] = await Promise.all([
 		loadChatPage(event, loaded.project.session_id),
 		loadDeploy(event, id),
 		loadDomain(event, id),
 		tools.loadPeople(event, id),
 		tools.loadSecrets(event, id),
 		tools.loadShowcase(event, id),
+		tools.loadSandbox(event, id),
 	]);
-	return { ...chat, title: loaded.project.name, project: loaded.project, live: loaded.live, domain: loaded.domain, deploy, address, people, secrets, showcase };
+	return { ...chat, title: loaded.project.name, project: loaded.project, live: loaded.live, domain: loaded.domain, deploy, address, people, secrets, showcase, sandbox: usesSandbox(sandbox) };
 };
 
 const refused = (sent: { status: number; message: string }) => fail(sent.status, { message: sent.message || m.action_failed() });

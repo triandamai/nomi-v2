@@ -142,4 +142,26 @@ describe('a project’s workspace on the server', () => {
 		const gone = eventWith(() => new Response('file not found', { status: 404 }));
 		expect(await workspace.projectFile(gone.event, 'p1', 'x')).toEqual({ error: 'file not found', status: 404 });
 	});
+	it('reads the sandbox and its logs, keeps it awake as the sandbox page, and starts and stops it', async () => {
+		const { backend, event } = eventWith((call) =>
+			call.url.includes('/logs') ? json({ text: 'ready\n', next_offset: 6 }) : call.url.includes('/runtime') ? json({ files_version: 1, runs: [] }) : json({ runtime: 'sandbox', available: true, phase: 'idle', preview_url: null, error: null }),
+		);
+		expect(await workspace.loadSandbox(event, 'p1')).toEqual({ runtime: 'sandbox', available: true, phase: 'idle', preview_url: null, error: null });
+		expect(await workspace.sandboxLogs(event, 'p1', 12)).toEqual({ text: 'ready\n', next_offset: 6 });
+		expect(await workspace.sandboxBeat(event, 'p1')).toBe(true);
+		expect(await workspace.startSandbox(event, 'p1')).toEqual({ ok: true });
+		expect(await workspace.stopSandbox(event, 'p1')).toEqual({ ok: true });
+		expect(backend.calls.map((call) => [call.method, call.url.replace('http://api.test', '')])).toEqual([
+			['GET', '/api/projects/p1/sandbox'],
+			['GET', '/api/projects/p1/sandbox/logs?offset=12'],
+			['GET', '/api/projects/p1/runtime?runtime=sandbox'],
+			['POST', '/api/projects/p1/sandbox/start'],
+			['POST', '/api/projects/p1/sandbox/stop'],
+		]);
+		const missing = eventWith(() => new Response('project not found', { status: 404 }));
+		expect(await workspace.loadSandbox(missing.event, 'p1')).toBeNull();
+		expect(await workspace.sandboxLogs(missing.event, 'p1', 0)).toBeNull();
+		expect(await workspace.sandboxBeat(missing.event, 'p1')).toBe(false);
+		expect(await workspace.startSandbox(missing.event, 'p1')).toEqual({ ok: false, status: 404, message: 'project not found' });
+	});
 });

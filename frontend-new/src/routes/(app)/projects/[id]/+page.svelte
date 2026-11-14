@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
-	import { Activity, ArrowDownUp, Cpu, Database, Download, Globe, History, KeyRound, Link, Lock, MemoryStick, MonitorX, Rocket, Settings, UserMinus, Users } from '@lucide/svelte';
+	import { Activity, ArrowDownUp, Cpu, Database, Download, Globe, History, Hourglass, KeyRound, Link, Lock, MemoryStick, MonitorX, Power, Rocket, Settings, UserMinus, Users } from '@lucide/svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { pageAction } from '$lib/pageAction';
 	import { clock as appClock } from '$lib/clock';
@@ -52,6 +52,9 @@
 	import Checkbox from '$lib/ds/inputs/Checkbox.svelte';
 	import type { ExportSummary } from '$lib/adapters/api';
 	import EmptyState from '$lib/ds/lists/EmptyState.svelte';
+	import Terminal from '$lib/ds/build/Terminal.svelte';
+	import { SandboxRuntime } from '$lib/projects/sandbox.svelte';
+	import { terminalLines } from '$lib/projects/terminal';
 
 	// A project's workspace (Flow / Build — Sign in → live URL o882RC, Building and Live; Workspace
 	// tools U16wU, Changes ready → Publish → Publish failed → Published → Deployments): the project
@@ -78,7 +81,29 @@
 	const liveRow = $derived(deploy?.publishes.find((one) => one.is_live && one.environment === 'production'));
 	const liveUrl = $derived(deploy?.url ?? data.live?.url ?? null);
 	const liveNumber = $derived(liveRow?.version ?? data.live?.deploys ?? null);
-	const frame = $derived(liveUrl ?? staticPreview);
+	// The sandbox (Code, terminal & phone preview uR6dq, steps 3–4): where the project runs with a
+	// dev server, the preview shows the changes not yet published and Terminal what the sandbox ran.
+	// It runs while the workspace is open; its address holds a secret, so it only goes in the frame.
+	const sandboxOn = $derived(data.sandbox);
+	const projectId = $derived(project.id);
+	let runtime = $state<SandboxRuntime | null>(null);
+	$effect(() => {
+		if (!sandboxOn) return;
+		const one = new SandboxRuntime(projectId);
+		runtime = one;
+		void one.start();
+		return () => {
+			one.stop();
+			runtime = null;
+		};
+	});
+	const sandboxPhase = $derived(runtime?.phase ?? 'loading');
+	const frame = $derived(sandboxOn ? (runtime?.previewUrl ?? null) : (liveUrl ?? staticPreview));
+	function askToFix() {
+		const error = runtime?.error || m.sandbox_failed_body();
+		quote = { file: m.sandbox_quote_file(), range: m.sandbox_quote_range(), snippet: error, text: m.sandbox_fix_text({ error }) };
+		workspaceView = 'chat';
+	}
 	// What the Publish button says.
 	const button = $derived(deploy ? publishState(deploy, project.files.length, now) : ({ state: 'off' } as const));
 	const rows = $derived(deploy ? deployRows(deploy.publishes.filter((one) => one.environment === 'production'), now, time.timeZone) : []);
@@ -455,10 +480,10 @@
 				open: m.workspace_open_tab(),
 				close: m.workspace_close_preview(),
 			}}
-			views={['preview', 'code']}
+			views={sandboxOn ? ['preview', 'code', 'terminal'] : ['preview', 'code']}
 			bind:view
 			bind:device
-			address={frame ? { url: frame, shown: shownUrl, live: liveUrl ? m.workspace_live() : undefined, deploy: liveUrl && liveNumber ? m.projects_deploy({ number: liveNumber }) : undefined } : undefined}
+			address={sandboxOn ? (frame ? { shown: m.workspace_preview_sandbox() } : undefined) : frame ? { url: frame, shown: shownUrl, live: liveUrl ? m.workspace_live() : undefined, deploy: liveUrl && liveNumber ? m.projects_deploy({ number: liveNumber }) : undefined } : undefined}
 			onreload={() => (reloads += 1)}
 		/>
 		<div class="min-h-0 flex-1 overflow-auto p-5">
@@ -486,6 +511,13 @@
 				{:else}
 					<EmptyState icon={MonitorX} title={m.workspace_no_files_title()} body={m.workspace_no_files_body()} />
 				{/if}
+			{:else if view === 'terminal' && runtime}
+				{@const lines = terminalLines(runtime.log)}
+				<Terminal
+					run={m.sandbox_terminal_run()}
+					lines={lines.length ? lines : [{ kind: 'out', text: m.sandbox_terminal_empty() }]}
+					failure={sandboxPhase === 'failed' ? { title: m.sandbox_failed_title(), detail: runtime.error || undefined, onfix: askToFix } : undefined}
+				/>
 			{:else if frame}
 				{#key reloads}
 					{#if device === 'phone'}
@@ -494,6 +526,19 @@
 						<iframe src={frame} title={project.name} class="h-full min-h-150 w-full rounded-md bg-surface outline -outline-offset-1 outline-border"></iframe>
 					{/if}
 				{/key}
+			{:else if sandboxOn}
+				<div class="flex flex-col items-start gap-3">
+					{#if sandboxPhase === 'failed'}
+						<EmptyState icon={MonitorX} title={m.sandbox_failed_title()} body={runtime?.error || m.sandbox_failed_body()} />
+					{:else if sandboxPhase === 'stopped'}
+						<EmptyState icon={Power} title={m.sandbox_stopped_title()} body={m.sandbox_stopped_body()} />
+					{:else if sandboxPhase === 'starting'}
+						<EmptyState icon={Hourglass} title={m.sandbox_starting_title()} body={m.sandbox_starting_body()} />
+					{:else}
+						<EmptyState icon={Hourglass} title={sandboxPhase === 'loading' ? m.sandbox_loading_title() : m.sandbox_waking_title()} body={m.sandbox_waking_body()} />
+					{/if}
+					{#if sandboxPhase === 'failed' || sandboxPhase === 'stopped'}<Button variant="secondary" label={m.sandbox_start_again()} onclick={() => void runtime?.retry()} />{/if}
+				</div>
 			{:else}
 				<EmptyState icon={MonitorX} title={m.workspace_nothing_title()} body={project.status === 'building' ? m.workspace_nothing_building() : m.workspace_nothing_body()} />
 			{/if}
