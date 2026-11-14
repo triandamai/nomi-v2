@@ -69,8 +69,8 @@
 
 	const project = $derived(data.project);
 	const time = appClock();
-	const hasIndex = $derived(project.files.some((file) => file.path === 'index.html'));
-	const staticPreview = $derived(project.stack === 'static' && hasIndex ? `/projects/${project.id}/preview/` : null);
+	// A static site's own files, sandboxed; the address carries a grant that lasts an hour at most.
+	const staticPreview = $derived(data.preview);
 
 	// The deploy overview, looked at again while a publish runs.
 	let deploy = $state<DeployOverview | null>(untrack(() => data.deploy));
@@ -484,7 +484,11 @@
 			bind:view
 			bind:device
 			address={sandboxOn ? (frame ? { shown: m.workspace_preview_sandbox() } : undefined) : frame ? { url: frame, shown: shownUrl, live: liveUrl ? m.workspace_live() : undefined, deploy: liveUrl && liveNumber ? m.projects_deploy({ number: liveNumber }) : undefined } : undefined}
-			onreload={() => (reloads += 1)}
+			onreload={async () => {
+				// A fresh grant for the static preview, then the frame again.
+				if (!sandboxOn && !liveUrl) await invalidate('app:workspace-project');
+				reloads += 1;
+			}}
 		/>
 		<div class="min-h-0 flex-1 overflow-auto p-5">
 			{#if view === 'code'}

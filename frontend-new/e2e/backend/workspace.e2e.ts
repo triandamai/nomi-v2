@@ -64,10 +64,10 @@ test('a project opens in its workspace: chat, files and the preview', async ({ p
 	await expect(chat.getByText(/About .?index\.html.? line 1:/)).toBeVisible();
 	await expect(chat.getByText('L1')).toHaveCount(0);
 	await page.getByRole('radio', { name: 'Preview' }).click();
-	const preview = page.frameLocator(`iframe[src="/projects/${id}/preview/"]`);
+	const preview = page.frameLocator(`iframe[src^="/projects/${id}/preview/~"]`);
 	await expect(preview.getByRole('heading', { name: 'Warung Kopi Bu Siti' })).toBeVisible();
 	await page.getByRole('radio', { name: 'Phone' }).click();
-	await expect(page.frameLocator(`iframe[src="/projects/${id}/preview/"]`).getByRole('heading', { name: 'Warung Kopi Bu Siti' })).toBeVisible();
+	await expect(page.frameLocator(`iframe[src^="/projects/${id}/preview/~"]`).getByRole('heading', { name: 'Warung Kopi Bu Siti' })).toBeVisible();
 
 	// The backend's links, and the Projects card, lead here.
 	await page.goto(`/projects/session/${session_id}`);
@@ -234,4 +234,29 @@ test('Export says what it holds and pushes to GitHub; Share waits for a live app
 	await push.getByRole('button', { name: 'Push' }).click();
 	await expect(push.getByText(/GitHub/i).last()).toBeVisible();
 	await expect(push.getByRole('textbox', { name: 'Repository' })).toHaveAttribute('aria-invalid', 'true');
+});
+
+test('a static site’s preview runs its own CSS and scripts, sandboxed away from the workspace', async ({ page, context }) => {
+	const account = await createAccount();
+	await signInAs(context, account);
+	const home = ((await (await api(account, '/api/orgs')).json()) as { orgs: { id: string }[] }).orgs[0].id;
+	const id = ((await (await api(account, '/api/projects', { method: 'POST', body: JSON.stringify({ org_id: home }) })).json()) as { project_id: string }).project_id;
+	const files = [
+		{ path: 'index.html', content: '<link rel="stylesheet" href="style.css"><h1>Warung</h1><script src="app.js"></script>' },
+		{ path: 'style.css', content: 'h1 { color: rgb(200, 30, 30); }' },
+		{ path: 'app.js', content: "let reach = 'isolated'; try { reach = parent.document.title ? 'reached' : 'reached'; } catch { reach = 'isolated'; } const p = document.createElement('p'); p.textContent = 'script ran: ' + reach; document.body.append(p);" },
+	];
+	expect((await api(account, `/api/projects/${id}/import/files`, { method: 'POST', body: JSON.stringify({ files, finish: true }) })).ok).toBe(true);
+	await page.goto(`/projects/${id}`, { waitUntil: 'networkidle' });
+
+	const preview = page.frameLocator(`iframe[src^="/projects/${id}/preview/~"]`);
+	await expect(preview.getByRole('heading', { name: 'Warung' })).toHaveCSS('color', 'rgb(200, 30, 30)');
+	await expect(preview.getByText('script ran: isolated')).toBeVisible();
+	const src = (await page.locator(`iframe[src^="/projects/${id}/preview/~"]`).getAttribute('src')) ?? '';
+	const opened = await page.request.get(src);
+	expect(opened.headers()['content-security-policy']).toBe('sandbox allow-scripts');
+	// Without a grant, or with a made-up one, the files aren’t served.
+	expect((await page.request.get(`/projects/${id}/preview/`)).status()).toBe(403);
+	await context.clearCookies();
+	expect((await page.request.get(src.replace(/~[^/]+/, '~made-up'))).status()).toBe(403);
 });
