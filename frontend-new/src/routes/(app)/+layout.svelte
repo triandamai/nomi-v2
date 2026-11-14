@@ -28,6 +28,7 @@
 	import AccountMenu from '$lib/ds/chrome/AccountMenu.svelte';
 	import WorkspaceSwitcher from '$lib/ds/chrome/WorkspaceSwitcher.svelte';
 	import TopBar from '$lib/ds/chrome/TopBar.svelte';
+	import ProjectTopBar, { type ProjectMember } from '$lib/ds/projects/ProjectTopBar.svelte';
 	import ChatTopBar from '$lib/ds/thread/ChatTopBar.svelte';
 	import SettingsNav from '$lib/ds/chrome/SettingsNav.svelte';
 	import SettingsTopBar from '$lib/ds/chrome/SettingsTopBar.svelte';
@@ -61,11 +62,13 @@
 	const CHAT = '/(app)/chat/[id]';
 	const NEW_CHAT = '/(app)/chat/new';
 	const INBOX = '/(app)/inbox';
+	const PROJECTS = '/(app)/projects';
 	const isHome = $derived(page.route.id === HOME);
 	// A chat that couldn't open shows the error page, laid out as a page.
 	const isChat = $derived(page.route.id === CHAT && !page.error);
 	const inThread = $derived(isChat || page.route.id === NEW_CHAT);
 	const isInbox = $derived(page.route.id === INBOX && !page.error);
+	const isProjects = $derived(page.route.id === PROJECTS && !page.error);
 	const isSettings = $derived(!!page.route.id?.startsWith('/(app)/settings') && !page.error);
 	const path = $derived(page.url.pathname);
 
@@ -77,7 +80,7 @@
 	});
 	setMainLayout({
 		get bleed() {
-			return inThread || isInbox || isSettings;
+			return inThread || isInbox || isSettings || isProjects;
 		},
 	});
 	// What the chat page says about itself as it changes (renamed, pinned, moved, deleted).
@@ -162,7 +165,7 @@
 			toasts.show({ kind: 'error', title: m.workspace_choose_failed() });
 			return;
 		}
-		await invalidate('app:shell');
+		await Promise.all([invalidate('app:shell'), invalidate('app:projects')]);
 		toasts.show({ kind: 'success', title: m.workspace_chosen({ name }) });
 	}
 
@@ -244,6 +247,16 @@
 		]
 			.map((group) => ({ ...group, items: group.items.filter((item) => item.label.toLowerCase().includes(settingsQuery.trim().toLowerCase())) }))
 			.filter((group) => group.items.length > 0),
+	);
+
+	// Who's in the workspace projects come from, as the Projects top bar's faces (up to six).
+	const PROJECT_TONES: ProjectMember['tone'][] = ['teal', 'orange', 'plain'];
+	const projectMembers = $derived(
+		((page.data.members ?? []) as { name: string }[]).slice(0, 6).map((member, index) => ({
+			name: member.name,
+			initials: member.name.split(/\s+/).map((word) => word.charAt(0)).join('').slice(0, 2).toUpperCase(),
+			tone: PROJECT_TONES[index % PROJECT_TONES.length],
+		})),
 	);
 
 	// The page's own item, or its parent's (a workspace's page lights Workspaces).
@@ -391,6 +404,16 @@
 				{#if pageTitle.connect}<Button label={m.models_connect()} variant="inverse" iconEnd={Plus} href={pageTitle.connect} data-sveltekit-noscroll />{/if}
 			{/snippet}
 		</SettingsTopBar>
+	{:else if isProjects}
+		<ProjectTopBar
+			workspaces={data.workspaces}
+			onchoose={chooseWorkspace}
+			oncreate={startCreating}
+			settingsHref={workspaceSettings}
+			members={projectMembers}
+			memberCount={(page.data.members as unknown[] | undefined)?.length}
+			oninvite={workspaceSettings ? () => goto(workspaceSettings) : undefined}
+		/>
 	{:else if isInbox}
 		<TopBar title={pageTitle.title ?? ''} meta={pageTitle.meta}>
 			{#snippet actions()}

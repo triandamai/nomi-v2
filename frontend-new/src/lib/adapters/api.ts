@@ -150,7 +150,26 @@ export type ModelChoice = { key: string; label: string; model_id: string; provid
 export type ModelOptions = { groups: ModelGroup[]; current: ModelChoice | null };
 
 /** `GET /api/projects`: the chosen workspace's projects, which a chat can be filed under. */
-export type ProjectList = { org_id: string | null; projects: { id: string; name: string }[] };
+/** One project in `GET /api/projects` (the chosen workspace's), newest change first. */
+export type ProjectSummary = {
+	id: string;
+	session_id: string;
+	name: string;
+	description: string | null;
+	status: 'planning' | 'building' | 'ready' | string;
+	created_at: string;
+	updated_at: string;
+	/** Who started it (their display name, or the start of their email). */
+	created_by: string;
+	open_issues: number;
+	shipyard_app?: string | null;
+	chats_count?: number;
+	deploys_count?: number;
+	files_count?: number;
+	deploy_url?: string | null;
+};
+/** `org_id` is the workspace shown, null until one is chosen; `base_domain` where apps go live. */
+export type ProjectList = { org_id: string | null; projects: ProjectSummary[]; base_domain?: string | null };
 
 /** `GET /api/home`: what Home's Today strip sums up (each list holds at most four). */
 export type HomeSummary = {
