@@ -2,6 +2,8 @@
 
 export const BACKEND_URL = process.env.E2E_BACKEND_URL ?? 'http://127.0.0.1:8080';
 export const MAILPIT_URL = process.env.MAILPIT_URL ?? 'http://localhost:8025';
+/** The backend's e2e database (the tests reach into it only for what no API does). */
+export const DATABASE_URL = process.env.E2E_DATABASE_URL ?? 'postgres://nomi:nomi@localhost:5432/nomi_e2e_v2';
 /** Where this run's production server listens. Two runs side by side (a backend is shared on
  * 8080) each take their own: `E2E_APP_PORT=4177 npm run test:e2e:backend`. */
 export const APP_PORT = process.env.E2E_APP_PORT ?? '4176';
@@ -10,7 +12,7 @@ export const APP_URL = `http://localhost:${APP_PORT}`;
 /** The backend's environment for e2e: its fake model, codes on, every email to Mailpit. */
 export function backendEnv(): Record<string, string> {
 	return {
-		DATABASE_URL: process.env.E2E_DATABASE_URL ?? 'postgres://nomi:nomi@localhost:5432/nomi_e2e_v2',
+		DATABASE_URL,
 		// Test-only placeholders, never used outside an e2e database.
 		JWT_SECRET: 'e2e-secret-do-not-use-in-prod',
 		SETTINGS_ENCRYPTION_KEY: '0'.repeat(64),
