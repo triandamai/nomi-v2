@@ -43,11 +43,11 @@ export const load: PageServerLoad = async ({ cookies, fetch }) => {
 
 export const actions: Actions = {
 	/** Adds Google sign-in to this account: off to Google. */
-	link: async ({ cookies, fetch }) => {
-		const response = await apiFetch(fetch, cookies, '/api/auth/google/link', { method: 'POST' });
+	link: async ({ cookies, fetch, url }) => {
+		const response = await apiFetch(fetch, cookies, '/api/auth/google/link', { method: 'POST', body: JSON.stringify({ origin: url.origin }) });
 		if (!response.ok) return fail(response.status, { error: m.account_link_failed() });
-		const { url } = (await response.json()) as { url: string };
-		redirect(303, url);
+		const { url: googleUrl } = (await response.json()) as { url: string };
+		redirect(303, googleUrl);
 	},
 	unlink: async ({ cookies, fetch }) => {
 		const response = await apiFetch(fetch, cookies, '/api/auth/google', { method: 'DELETE' });

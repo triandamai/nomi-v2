@@ -17,6 +17,16 @@ describe('readApiError', () => {
 		expect(await readApiError(new Response('email already registered', { status: 409 }))).toEqual({ status: 409, message: 'email already registered' });
 	});
 
+	it('prefers the reason to the code when an error carries both, and keeps the models a connection is used by', async () => {
+		expect(await readApiError(Response.json({ error: 'key_rejected', detail: 'openai returned 401 Unauthorized' }, { status: 400 }))).toEqual({
+			status: 400,
+			code: 'key_rejected',
+			message: 'openai returned 401 Unauthorized',
+		});
+		expect(await readApiError(Response.json({ error: 'not_found', detail: null }, { status: 404 }))).toEqual({ status: 404, code: 'not_found', message: 'not_found' });
+		expect(await readApiError(Response.json({ error: 'in_use', models: ['Claude', 'GPT'] }, { status: 409 }))).toEqual({ status: 409, code: 'in_use', message: 'in_use', models: ['Claude', 'GPT'] });
+	});
+
 	it('says something even when the body is empty', async () => {
 		expect(await readApiError(new Response(null, { status: 502 }))).toEqual({ status: 502, message: '' });
 	});

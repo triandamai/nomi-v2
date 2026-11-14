@@ -127,6 +127,60 @@ impl GoogleConfig {
     }
 }
 
+/// Which of the app's Google callback pages.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Callback {
+    /// /auth/google/callback: signing in, or adding Google to an account.
+    SignIn,
+    /// /connections/google/callback: connecting Workspace.
+    Workspace,
+}
+
+/// A flow was started with an origin that isn't a web address.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InvalidOrigin(pub String);
+
+impl std::fmt::Display for InvalidOrigin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?} isn't a web address Google can come back to.", self.0)
+    }
+}
+
+impl std::error::Error for InvalidOrigin {}
+
+/// The scheme, host and port of a web address (`https://nomi.example.com`), or `None` when it
+/// isn't one.
+fn web_origin(url: &str) -> Option<String> {
+    let parsed = reqwest::Url::parse(url.trim()).ok()?;
+    if !matches!(parsed.scheme(), "http" | "https") || parsed.host_str().is_none() {
+        return None;
+    }
+    Some(parsed.origin().ascii_serialization())
+}
+
+impl GoogleConfig {
+    /// Where Google sends the person back for `callback`: the configured page, or, for a flow
+    /// started on the web app at `origin`, the same page on that site, so each app (the app, the
+    /// new app) gets its own people back. Which sites may receive it is the OAuth client's list
+    /// of authorized redirect URIs: Google refuses any other, so this only checks it's a web address.
+    pub fn callback_for(&self, callback: Callback, origin: Option<&str>) -> Result<String, InvalidOrigin> {
+        let configured = match callback {
+            Callback::SignIn => &self.signin_redirect_uri,
+            Callback::Workspace => &self.redirect_uri,
+        };
+        let Some(origin) = origin.map(str::trim).filter(|o| !o.is_empty()) else {
+            return Ok(configured.clone());
+        };
+        let wanted = web_origin(origin).ok_or_else(|| InvalidOrigin(origin.to_string()))?;
+        if web_origin(configured).as_deref() == Some(wanted.as_str()) {
+            return Ok(configured.clone());
+        }
+        let page = reqwest::Url::parse(configured).map_err(|_| InvalidOrigin(wanted.clone()))?;
+        let query = page.query().map(|q| format!("?{q}")).unwrap_or_default();
+        Ok(format!("{wanted}{}{query}", page.path()))
+    }
+}
+
 /// Only known services, each once, in the app's order.
 pub fn normalize_services(requested: &[String]) -> Vec<String> {
     SERVICES.iter().filter(|s| requested.iter().any(|r| r == *s)).map(|s| s.to_string()).collect()
@@ -156,11 +210,13 @@ pub async fn start_authorization(
         .execute(&mut *conn)
         .await
         .map_err(|e| e.to_string())?;
-    sqlx::query("INSERT INTO workspace_oauth_states (state, user_id, services, resume_session_id) VALUES ($1, $2, $3, $4)")
+    // Kept with the state: the code is traded with the address Google was sent to.
+    sqlx::query("INSERT INTO workspace_oauth_states (state, user_id, services, resume_session_id, redirect_uri) VALUES ($1, $2, $3, $4, $5)")
         .bind(&state)
         .bind(user_id)
         .bind(&services)
         .bind(resume_session_id)
+        .bind(&config.redirect_uri)
         .execute(&mut *conn)
         .await
         .map_err(|e| e.to_string())?;
@@ -217,18 +273,19 @@ pub async fn complete_authorization(
     code: &str,
     state: &str,
 ) -> Result<Connected, String> {
-    let pending: Option<(Vec<String>, Option<Uuid>)> = sqlx::query_as(
+    let pending: Option<(Vec<String>, Option<Uuid>, Option<String>)> = sqlx::query_as(
         "DELETE FROM workspace_oauth_states WHERE state = $1 AND user_id = $2 AND created_at > now() - interval '10 minutes' \
-         RETURNING services, resume_session_id",
+         RETURNING services, resume_session_id, redirect_uri",
     )
     .bind(state)
     .bind(user_id)
     .fetch_optional(&mut *conn)
     .await
     .map_err(|e| e.to_string())?;
-    let Some((_, resume_session_id)) = pending else {
+    let Some((_, resume_session_id, sent_to)) = pending else {
         return Err("This sign-in link has expired. Start connecting again.".to_string());
     };
+    let redirect_uri = sent_to.unwrap_or_else(|| config.redirect_uri.clone());
 
     let response = http
         .post(&config.token_url)
@@ -236,7 +293,7 @@ pub async fn complete_authorization(
             ("code", code),
             ("client_id", &config.client_id),
             ("client_secret", &config.client_secret),
-            ("redirect_uri", &config.redirect_uri),
+            ("redirect_uri", &redirect_uri),
             ("grant_type", "authorization_code"),
         ])
         .send()
