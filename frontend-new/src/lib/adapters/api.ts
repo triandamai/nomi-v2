@@ -387,3 +387,30 @@ export type ProjectDetail = {
 	open_issues: number;
 	backend: string;
 };
+
+/** One publish of a project (`GET /api/projects/:id/deploy`), newest first. */
+export type PublishRow = {
+	id: string;
+	environment: string;
+	status: 'running' | 'succeeded' | 'failed' | string;
+	url: string | null;
+	error: string | null;
+	version: number;
+	rollback_of: string | null;
+	rollback_of_version: number | null;
+	can_roll_back: boolean;
+	created_by: string | null;
+	started_by_agent: string | null;
+	created_at: string;
+	finished_at: string | null;
+	is_live: boolean;
+};
+/** `GET /api/projects/:id/deploy`: whether this Nomi can publish, the publishes, what's waiting to go live. */
+export type DeployOverview = {
+	available: boolean;
+	role: string;
+	url: string | null;
+	publishes: PublishRow[];
+	backend_setup: { message?: string } | null;
+	unpublished_changes: number | null;
+};

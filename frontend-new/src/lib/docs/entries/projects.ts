@@ -283,4 +283,12 @@ export default [
 		use: ['The top of a workspace’s agent chat.'],
 		related: ['projects/ProjectBar.svelte'],
 	},
+	{
+		file: 'projects/DeployRow.svelte',
+		summary: 'One publish of a project: its number, what it was and when, and whether it’s live, failed or can be rolled back to.',
+		use: ['The Deployments sheet in a project’s workspace.'],
+		dos: ['Say a failed publish’s reason in its row; the live one stays up.', 'Offer Roll back only where the source was kept.'],
+		accessibility: ['A list item; Roll back names the deploy it goes back to.'],
+		related: ['build/PublishButton.svelte', 'build/WorkspaceSheet.svelte'],
+	},
 ] satisfies ComponentDoc[];

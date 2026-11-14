@@ -527,9 +527,18 @@ building while Koda builds, else a draft.
 A project's workspace (Flow / Build — Sign in → live URL `o882RC`, Building and Live) is built in
 steps; what isn't there yet is left out, not drawn dead:
 
-- The project bar's tools (Deployments, Domain, Monitor, Database, Settings), Publish and Share come
-  with their sheets; Export downloads the project as a zip. The pen's Share wears a download icon
+- Publish (Workspace tools `U16wU`, steps 2–7) follows the backend's deploy overview: Ready with
+  the count of changed files, Publishing with its time (the workspace looks again every few
+  seconds), Failed with Retry (the live deploy stays up; the toast says why), Up to date. Where
+  this Nomi has no Shipyard, there's no Publish and Deployments says publishing isn't set up.
+  The confirm names the count, not the files (the backend counts them, it doesn't list them); the
+  toast after a publish offers Roll back to the deploy before. The pen's "main@4be1c07" isn't
+  shown: a publish has no commit, so a row says when and who.
+- The other tools (Domain, Monitor, Database, Settings) and Share come with their sheets; Export
+  downloads the project as a zip. The pen's Share wears a download icon
   (pasted from Export): ours wears the share icon.
+- Once a project is live the preview shows the live app; the pen's preview of changes not yet
+  published needs the runtime (below), as a static site's files already do.
 - The preview shows the live app once there is one, or the project's own files when it's a static
   site; a framework's preview needs its runtime (sandbox or WebContainer), which comes with the
   Terminal view. Until then the pane says there's nothing to preview yet, and offers Preview and

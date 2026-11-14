@@ -11,7 +11,7 @@
 		inline?: boolean;
 		title: string;
 		description?: string;
-		width?: 420 | 440 | 460 | 520;
+		width?: 420 | 440 | 460 | 480 | 520;
 		children?: Snippet;
 		actions?: Snippet;
 		onclose?: () => void;
