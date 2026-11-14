@@ -45,6 +45,22 @@ describe('memory page', () => {
 		expect(controls(/./).length).toBeGreaterThan(0);
 	});
 
+	it('shows who learned a memory, the profile and the memory settings', async () => {
+		const settings = { learn_from_chats: true, keep_profile: false, search_past_chats: true, memory_budget: 8000, profile_budget: 1000, memory_used: 2000, profile_used: 8 };
+		const root = page(
+			{ memories: [memory({ learned_by: 'health' })], loadFailed: false, settings, profile: { text: 'Designer in Jakarta', tokens: 5, updated_at: '2026-11-01T00:00:00Z' } },
+			{ profileError: 'Too long', text: 'Designer in Jakarta, draft' },
+		);
+		const shown = text(root);
+		expect(shown).toContain('Learned by Raga');
+		expect(shown).toContain('Memory settings');
+		expect(shown).toContain('2000 of 8000 tokens used');
+		expect(shown).toContain('Too long');
+		expect((root.querySelector('textarea') as HTMLTextAreaElement).value).toBe('Designer in Jakarta, draft');
+		expect(clickEverything(root)).toBeGreaterThan(0);
+		await settle();
+	});
+
 	it('says so when nothing is remembered or the list failed', () => {
 		expect(page({ memories: [], loadFailed: false }).textContent).toBeTruthy();
 		expect(page({ memories: [], loadFailed: true }, { error: 'Nope' }).textContent).toBeTruthy();

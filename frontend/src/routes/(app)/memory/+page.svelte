@@ -4,6 +4,8 @@
 	import { invalidateAll } from '$app/navigation';
 	import Chip from '$lib/components/m3/Chip.svelte';
 	import MemoryEditForm from '$lib/components/MemoryEditForm.svelte';
+	import MemorySettingsPanel from '$lib/components/MemorySettingsPanel.svelte';
+	import { crewName } from '$lib/crewNames';
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
 	import ButtonGroup from '$lib/components/m3/ButtonGroup.svelte';
@@ -310,6 +312,9 @@
 								<span class="card__meta">
 									<span class="kind">{kindLabel(memory.kind)}</span>
 									<span class="nomi-meta">{m.mem_learned({ when: timeAgo(memory.created_at) })}</span>
+									{#if memory.learned_by}
+										<span class="nomi-meta">{m.mem_learned_by({ agent: crewName(memory.learned_by) })}</span>
+									{/if}
 								</span>
 								<span class="card__buttons">
 									<IconButton aria-label={m.mem_fix_this()} title={m.mem_fix()} onclick={() => startEdit(memory)}>
@@ -342,6 +347,18 @@
 				</ul>
 				<Pagination page={clampPage(page, pages)} {pages} onselect={goToPage} label={m.mem_pages()} />
 			{/if}
+		{/if}
+
+		{#if data.settings}
+			<MemorySettingsPanel
+				settings={data.settings}
+				profile={data.profile}
+				settingsError={form && 'settingsError' in form ? form.settingsError : null}
+				settingsSaved={!!form && 'settingsSaved' in form}
+				profileError={form && 'profileError' in form ? form.profileError : null}
+				profileSaved={!!form && 'profileSaved' in form}
+				draftText={form && 'text' in form ? (form.text ?? null) : null}
+			/>
 		{/if}
 
 		<section class="how" aria-labelledby="how-heading">
@@ -403,7 +420,8 @@
 		{#if detail}
 			{@const pips = strengthPips(detail.weight)}
 			<article class="detail" aria-labelledby="memory-detail-title">
-				<span class="nomi-meta">{m.mem_learned({ when: timeAgo(detail.created_at) })}</span>
+				<span class="nomi-meta">{m.mem_learned({ when: timeAgo(detail.created_at) })}{#if detail.learned_by}
+						· {m.mem_learned_by({ agent: crewName(detail.learned_by) })}{/if}</span>
 				<h2 id="memory-detail-title" class="sr-only">{m.mem_title()}</h2>
 				<p class="detail__content">{detail.content}</p>
 				<dl class="detail__facts">

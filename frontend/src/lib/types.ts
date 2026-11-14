@@ -287,6 +287,28 @@ export interface MemoryItem {
 	/** How many of Nomi's replies drew on this memory. */
 	uses: number;
 	embedding: number[];
+	/** The crew member (agent_type) whose reply it was learned from; null for older memories. */
+	learned_by?: string | null;
+}
+
+/** What the person lets Nomi do with memory (GET|PUT /api/memory/settings). Budgets are tokens. */
+export interface MemorySettings {
+	learn_from_chats: boolean;
+	keep_profile: boolean;
+	search_past_chats: boolean;
+	memory_budget: number;
+	profile_budget: number;
+	/** Tokens the live memories take. */
+	memory_used: number;
+	/** Tokens the profile takes. */
+	profile_used: number;
+}
+
+/** The profile Nomi keeps of the person (GET|PUT /api/memory/profile). */
+export interface MemoryProfile {
+	text: string;
+	tokens: number;
+	updated_at: string | null;
 }
 
 export interface MemoryListResponse {
@@ -1089,18 +1111,80 @@ export interface AdminUsage {
 	sandbox_minutes: { user_id: string; email: string | null; minutes: number }[];
 }
 
+/** `expired` once the app refused the sign-in or key on use: the person reconnects. */
+export type ConnectionHealth = 'ok' | 'expired';
+
 /** A connected health or fitness app (Connections → Hevy). */
 export interface HealthConnection {
 	provider: string;
 	account_name: string | null;
 	connected_at: string;
 	last_used_at: string | null;
+	status?: ConnectionHealth;
+	expired_at?: string | null;
+	used_by?: string[];
+}
+
+/** What the crew can do with an app or service: `ask` means some of it waits for an OK in chat. */
+export type ConnectionAccess = 'read' | 'write' | 'ask';
+
+export interface ServiceAccess {
+	service: string;
+	access: ConnectionAccess[];
 }
 
 /** Every connector's state for the Connections list. */
 export interface ConnectionsOverview {
-	google: { configured: boolean; email: string | null; services: string[] };
+	google: {
+		configured: boolean;
+		email: string | null;
+		services: string[];
+		status?: ConnectionHealth | null;
+		expired_at?: string | null;
+		last_used_at?: string | null;
+		used_by?: string[];
+		service_access?: ServiceAccess[];
+	};
 	hevy: HealthConnection | null;
+}
+
+/** The person's GitHub (GET /api/connections/github). */
+export interface GithubStatus {
+	oauth: boolean;
+	connection: {
+		login: string;
+		kind: 'oauth' | 'token';
+		created_at: string;
+		last_used_at: string | null;
+		expired_at?: string | null;
+		status?: ConnectionHealth;
+		used_by?: string[];
+	} | null;
+}
+
+/** One app in GET /api/connections/catalog. */
+export interface CatalogApp {
+	id: string;
+	name: string;
+	category: 'work' | 'building' | 'health' | 'money' | 'home_media';
+	for_agent: string;
+	access: ConnectionAccess[];
+	/** Whether it can be connected on this server today. */
+	available: boolean;
+}
+
+/** One of the person's MCP servers (remote only). */
+export interface McpServer {
+	id: string;
+	name: string;
+	url: string;
+	created_at: string;
+}
+
+export interface McpServers {
+	servers: McpServer[];
+	/** Whether the crew can call MCP tools yet. */
+	callable: boolean;
 }
 
 /** One publish of a project to a Shipyard environment. */

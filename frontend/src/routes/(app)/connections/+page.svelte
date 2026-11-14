@@ -2,30 +2,30 @@
 	import { m } from '$lib/paraglide/messages';
 	import { untrack } from 'svelte';
 	// Every app the crew can work in, grouped by kind and searchable; each opens its own setup page.
-	import { CATEGORY_ORDER, CONNECTORS, categoryLabel, searchConnectors, type Connector } from '$lib/connectors';
-	import { timeAgo } from '$lib/i18n';
+	import { CATEGORY_ORDER, CONNECTORS, categoryLabel, connectorState, searchConnectors, withCatalog, type Connector, type ConnectorState } from '$lib/connectors';
 	import { crewName } from '$lib/crewNames';
-	import type { PageData } from './$types';
+	import { enhance } from '$app/forms';
+	import Button from '$lib/components/m3/Button.svelte';
+	import TextField from '$lib/components/m3/TextField.svelte';
+	import type { ActionData, PageData } from './$types';
 
-	let { data }: { data: PageData } = $props();
+	let { data, form }: { data: PageData; form: ActionData } = $props();
 
-	// Seeded once from ?q=; typing takes over after that.
+	// Seeded once from ?q=; typing takes over after that. The server's catalog adds the apps
+	// coming next (and GitHub, connected from a project's Export).
 	let query = $state(untrack(() => data.query));
-	const found = $derived(searchConnectors(CONNECTORS, query));
+	const all = $derived(withCatalog(CONNECTORS, data.catalog));
+	const found = $derived(searchConnectors(all, query));
 	const groups = $derived(
 		CATEGORY_ORDER.map((category) => ({ category, connectors: found.filter((c) => c.category === category) })).filter((g) => g.connectors.length > 0),
 	);
 
 	/** What the row says about this person's connection. */
-	function status(connector: Connector): { connected: boolean; text: string } {
-		const overview = data.overview;
-		if (connector.soon) return { connected: false, text: m.connectors_soon() };
-		if (connector.id === 'google' && overview?.google.email) return { connected: true, text: overview.google.email };
-		if (connector.id === 'hevy' && overview?.hevy) {
-			return { connected: true, text: overview.hevy.account_name ?? m.connectors_connected_since({ when: timeAgo(overview.hevy.connected_at) }) };
-		}
-		return { connected: false, text: m.conn_not_connected() };
-	}
+	const status = (connector: Connector): ConnectorState => connectorState(connector, data.overview, data.github);
+
+	let mcpName = $state(untrack(() => (form && 'name' in form ? String(form.name ?? '') : '')));
+	let mcpUrl = $state(untrack(() => (form && 'url' in form ? String(form.url ?? '') : '')));
+	let addingMcp = $state(false);
 </script>
 
 <div class="connections">
@@ -56,8 +56,8 @@
 					{#each group.connectors as connector (connector.id)}
 						{@const state = status(connector)}
 						<li>
-							{#if connector.soon}
-								<div class="row row--soon" aria-disabled="true">
+							{#if connector.soon || connector.elsewhere}
+								<div class="row" class:row--soon={connector.soon} aria-disabled={connector.soon ? 'true' : undefined}>
 									{@render body(connector, state)}
 								</div>
 							{:else}
@@ -71,10 +71,61 @@
 				</ul>
 			</section>
 		{/each}
+
+		<section class="group mcp" aria-labelledby="mcp-title">
+			<h2 class="group__title" id="mcp-title">{m.mcp_title()}</h2>
+			<p class="mcp__lede">{m.mcp_lede()}</p>
+			{#if !data.mcp.callable}
+				<p class="mcp__lede">{m.mcp_not_callable()}</p>
+			{/if}
+			{#if data.mcp.servers.length === 0}
+				<p class="empty">{m.mcp_empty()}</p>
+			{:else}
+				<ul class="rows">
+					{#each data.mcp.servers as server (server.id)}
+						<li class="row">
+							<span class="row__text">
+								<span class="row__name">{server.name}</span>
+								<span class="row__meta">{server.url}</span>
+							</span>
+							<form method="POST" action="?/removeMcp" use:enhance>
+								<input type="hidden" name="id" value={server.id} />
+								<Button variant="text" size="xs" type="submit" aria-label={m.mcp_remove({ name: server.name })}>{m.mcp_remove_short()}</Button>
+							</form>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+			<form
+				class="mcp__form"
+				method="POST"
+				action="?/addMcp"
+				use:enhance={() => {
+					addingMcp = true;
+					return async ({ result, update }) => {
+						await update({ reset: false });
+						addingMcp = false;
+						if (result.type === 'success') {
+							mcpName = '';
+							mcpUrl = '';
+						}
+					};
+				}}
+			>
+				<TextField label={m.mcp_name()} name="name" bind:value={mcpName} required maxlength={80} />
+				<TextField label={m.mcp_url()} name="url" type="url" bind:value={mcpUrl} required placeholder="https://" />
+				{#if form && 'mcpError' in form && form.mcpError}
+					<p class="notice" role="alert">{form.mcpError}</p>
+				{:else if form && 'mcpAdded' in form}
+					<p class="mcp__lede" role="status">{m.mcp_added()}</p>
+				{/if}
+				<Button variant="tonal" type="submit" disabled={addingMcp}>{m.mcp_add()}</Button>
+			</form>
+		</section>
 	</div>
 </div>
 
-{#snippet body(connector: Connector, state: { connected: boolean; text: string })}
+{#snippet body(connector: Connector, state: ConnectorState)}
 	<span class="row__icon" class:row__icon--on={state.connected}>
 		<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d={connector.icon} /></svg>
 	</span>
@@ -82,9 +133,17 @@
 		<span class="row__name">{connector.name}</span>
 		<span class="row__desc">{connector.description()}</span>
 		<span class="row__meta">
-			<span class:row__state--on={state.connected}>{state.text}</span>
-			· {m.connectors_used_by({ agent: crewName(connector.agent) })}
+			<span class:row__state--on={state.connected} class:row__state--needs={state.needsYou}>{state.text}</span>
+			· {state.usedBy.length
+				? m.connectors_used_by({ agent: state.usedBy.map(crewName).join(', ') })
+				: m.connectors_used_by_you()}
 		</span>
+		{#if state.access.length}
+			<span class="row__meta">{state.access.join(' · ')}</span>
+		{/if}
+		{#if state.needsYou}
+			<span class="row__reconnect">{m.connectors_reconnect()}</span>
+		{/if}
 	</span>
 {/snippet}
 
@@ -228,6 +287,33 @@
 	.row__state--on {
 		color: var(--md-sys-color-primary);
 		font-weight: 600;
+	}
+	.row__state--needs {
+		color: var(--md-sys-color-error);
+		font-weight: 600;
+	}
+	.row__reconnect {
+		align-self: flex-start;
+		margin-top: 4px;
+		padding: 2px 10px;
+		border-radius: var(--md-sys-shape-corner-full);
+		background: var(--md-sys-color-error-container);
+		color: var(--md-sys-color-on-error-container);
+		font-size: 0.8125rem;
+		font-weight: 600;
+	}
+	.mcp__lede {
+		margin: 0 4px;
+		font-size: 0.875rem;
+		color: var(--md-sys-color-on-surface-variant);
+	}
+	.mcp__form {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+		padding: 14px;
+		border-radius: var(--md-sys-shape-corner-extra-large);
+		background: var(--md-sys-color-surface-container-lowest);
 	}
 	.row__chevron {
 		flex: none;
