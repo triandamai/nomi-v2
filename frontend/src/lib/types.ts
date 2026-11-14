@@ -870,6 +870,21 @@ export interface Plan {
 	is_default: boolean;
 	is_active: boolean;
 	sort_order: number;
+	/** Limits per plan; null is unlimited. */
+	max_projects: number | null;
+	max_orgs: number | null;
+	max_org_members: number | null;
+	max_custom_crew: number | null;
+	/** Storage for project files, in MB. */
+	max_storage_mb: number | null;
+	/** May pick a custom address for published projects. */
+	custom_domain: boolean;
+	/** null is the platform default. */
+	sandbox_size: 'small' | 'default' | 'large' | null;
+	/** All of Nomi's models; when false only `model_ids`. */
+	all_models: boolean;
+	/** Ids of the admin-listed models this plan may use. */
+	model_ids: string[];
 }
 
 export interface PlansForUser {

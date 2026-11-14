@@ -1,15 +1,21 @@
 import { fail } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
-import type { Plan } from '$lib/types';
+import type { AdminLlmModel, Plan } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
 import { m } from '$lib/paraglide/messages';
+import { readPlanLimits } from './planLimits';
 
 export type AdminPlan = Plan & { subscribers: number };
 
 export const load: PageServerLoad = async ({ cookies, fetch }) => {
-	const response = await apiFetch(fetch, cookies, '/api/admin/plans');
+	const [response, modelsResponse] = await Promise.all([
+		apiFetch(fetch, cookies, '/api/admin/plans'),
+		apiFetch(fetch, cookies, '/api/admin/settings/llm/models'),
+	]);
 	const plans: AdminPlan[] = response.ok ? ((await response.json()) as AdminPlan[]) : [];
-	return { plans };
+	// The models a plan can be limited to; the picker is empty if the list can't load.
+	const models: AdminLlmModel[] = modelsResponse.ok ? ((await modelsResponse.json()) as AdminLlmModel[]) : [];
+	return { plans, models };
 };
 
 function readPlan(data: FormData) {
@@ -32,6 +38,7 @@ function readPlan(data: FormData) {
 		promo_ends_at: ends ? new Date(`${ends}T23:59:59`).toISOString() : null,
 		is_active: data.get('is_active') === 'true',
 		sort_order: Number(text('sort_order')) || 0,
+		...readPlanLimits(data),
 	};
 }
 

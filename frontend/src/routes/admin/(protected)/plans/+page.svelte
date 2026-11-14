@@ -11,7 +11,10 @@
 	import PlanCard from '$lib/components/PlanCard.svelte';
 	import IconPlus from '$lib/components/icons/IconPlus.svelte';
 	import { GRADIENT_STOPS, GRADIENT_TONES } from '$lib/components/m3/shapes';
+	import Checkbox from '$lib/components/m3/Checkbox.svelte';
+	import Select from '$lib/components/m3/Select.svelte';
 	import type { Plan } from '$lib/types';
+	import { MB_PER_GB, formatStorage } from './planLimits';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -23,6 +26,15 @@
 	let promoEnds = $state('');
 	let tokensText = $state('1000000');
 	let orderText = $state('0');
+	// Limits are typed as text so an empty box can mean unlimited.
+	let projectsText = $state('');
+	let orgsText = $state('');
+	let membersText = $state('');
+	let crewText = $state('');
+	let storageText = $state('');
+	// '' is the platform default.
+	let sandboxValue = $state('');
+	let modelIds = $state<string[]>([]);
 
 	function blank(): Plan {
 		return {
@@ -40,6 +52,15 @@
 			is_default: false,
 			is_active: true,
 			sort_order: data.plans.length,
+			max_projects: null,
+			max_orgs: null,
+			max_org_members: null,
+			max_custom_crew: null,
+			max_storage_mb: null,
+			custom_domain: false,
+			sandbox_size: null,
+			all_models: true,
+			model_ids: [],
 		};
 	}
 
@@ -50,6 +71,7 @@
 		promoEnds = '';
 		tokensText = String(draft.monthly_tokens);
 		orderText = String(draft.sort_order);
+		loadLimits(draft);
 		slugTouched = false;
 		sheetOpen = true;
 	}
@@ -61,7 +83,49 @@
 		promoEnds = plan.promo_ends_at ? plan.promo_ends_at.slice(0, 10) : '';
 		tokensText = String(plan.monthly_tokens);
 		orderText = String(plan.sort_order);
+		loadLimits(plan);
 		sheetOpen = true;
+	}
+
+	function loadLimits(plan: Plan) {
+		const text = (value: number | null) => (value === null ? '' : String(value));
+		projectsText = text(plan.max_projects);
+		orgsText = text(plan.max_orgs);
+		membersText = text(plan.max_org_members);
+		crewText = text(plan.max_custom_crew);
+		storageText = text(plan.max_storage_mb);
+		sandboxValue = plan.sandbox_size ?? '';
+		modelIds = [...plan.model_ids];
+	}
+
+	function toggleModel(id: string, on: boolean) {
+		modelIds = on ? [...modelIds, id] : modelIds.filter((x) => x !== id);
+	}
+
+	const sandboxOptions = $derived([
+		{ value: '', label: m.plans_admin_sandbox_platform() },
+		{ value: 'small', label: m.plans_admin_sandbox_small() },
+		{ value: 'default', label: m.plans_admin_sandbox_standard() },
+		{ value: 'large', label: m.plans_admin_sandbox_large() },
+	]);
+	const sandboxLabel = (size: Plan['sandbox_size']) => sandboxOptions.find((o) => o.value === (size ?? ''))?.label ?? '';
+
+	const storageMb = $derived(Number(storageText));
+	const storageInGb = $derived(storageText.trim() !== '' && storageMb >= MB_PER_GB ? formatStorage(storageMb) : undefined);
+
+	// One short line of what a plan allows, for the list.
+	function limitsSummary(plan: Plan): string {
+		const parts = [
+			plan.max_projects === null ? m.plans_admin_sum_projects_unlimited() : m.plans_admin_sum_projects({ count: plan.max_projects }),
+			plan.max_orgs === null ? m.plans_admin_sum_orgs_unlimited() : m.plans_admin_sum_orgs({ count: plan.max_orgs }),
+			plan.max_org_members === null ? m.plans_admin_sum_members_unlimited() : m.plans_admin_sum_members({ count: plan.max_org_members }),
+			plan.max_custom_crew === null ? m.plans_admin_sum_crew_unlimited() : m.plans_admin_sum_crew({ count: plan.max_custom_crew }),
+			plan.max_storage_mb === null ? m.plans_admin_sum_storage_unlimited() : formatStorage(plan.max_storage_mb),
+		];
+		if (plan.custom_domain) parts.push(m.plans_admin_sum_custom_domain());
+		if (plan.sandbox_size) parts.push(m.plans_admin_sum_sandbox({ size: sandboxLabel(plan.sandbox_size) }));
+		parts.push(plan.all_models ? m.plans_admin_sum_models_all() : m.plans_admin_sum_models({ count: plan.model_ids.length }));
+		return parts.join(' · ');
 	}
 
 	// The card as it will look, while the form is filled in.
@@ -110,6 +174,7 @@
 					{/if}
 				{/snippet}
 			</PlanCard>
+			<p class="slot__limits">{limitsSummary(plan)}</p>
 			<p class="slot__meta">
 				{m.plans_admin_people({ count: plan.subscribers })}
 				{#if plan.is_default} · {m.plans_admin_default()}{/if}
@@ -172,6 +237,57 @@
 				</div>
 				<DatePicker id="plan-promo-ends" name="promo_ends_at" label={m.plans_admin_promo_ends()} bind:value={promoEnds} min={todayISO()} />
 			</fieldset>
+			<fieldset class="limits">
+				<legend class="field__label">{m.plans_admin_limits()}</legend>
+				<p class="hint">{m.plans_admin_limits_hint()}</p>
+				<div class="row">
+					<TextField id="plan-max-projects" name="max_projects" type="number" min="0" label={m.plans_admin_max_projects()} placeholder={m.plans_admin_unlimited()} bind:value={projectsText} />
+					<TextField id="plan-max-orgs" name="max_orgs" type="number" min="0" label={m.plans_admin_max_orgs()} placeholder={m.plans_admin_unlimited()} bind:value={orgsText} />
+				</div>
+				<div class="row">
+					<TextField id="plan-max-members" name="max_org_members" type="number" min="0" label={m.plans_admin_max_org_members()} placeholder={m.plans_admin_unlimited()} bind:value={membersText} />
+					<TextField id="plan-max-crew" name="max_custom_crew" type="number" min="0" label={m.plans_admin_max_custom_crew()} placeholder={m.plans_admin_unlimited()} bind:value={crewText} />
+				</div>
+				<div class="row">
+					<TextField
+						id="plan-max-storage"
+						name="max_storage_mb"
+						type="number"
+						min="0"
+						label={m.plans_admin_max_storage()}
+						placeholder={m.plans_admin_unlimited()}
+						supportingText={storageInGb ? m.plans_admin_storage_gb({ size: storageInGb }) : undefined}
+						bind:value={storageText}
+					/>
+					<Select label={m.plans_admin_sandbox()} name="sandbox_size" options={sandboxOptions} bind:value={sandboxValue} />
+				</div>
+				<label class="switch-row">
+					<Switch name="custom_domain" bind:checked={draft.custom_domain} aria-label={m.plans_admin_custom_domain()} />
+					{m.plans_admin_custom_domain()}
+				</label>
+				<label class="switch-row">
+					<Switch name="all_models" bind:checked={draft.all_models} aria-label={m.plans_admin_all_models()} />
+					{m.plans_admin_all_models()}
+				</label>
+				{#if !draft.all_models}
+					<div class="models" role="group" aria-label={m.plans_admin_models_pick()}>
+						{#each data.models as model (model.id)}
+							<Checkbox
+								class="models__item"
+								checked={modelIds.includes(model.id)}
+								onchange={(e) => toggleModel(model.id, (e.currentTarget as HTMLInputElement).checked)}
+								label={`${model.label} · ${model.provider}`}
+							/>
+						{:else}
+							<p class="hint">{m.plans_admin_models_none()}</p>
+						{/each}
+					</div>
+				{/if}
+				{#each modelIds as id (id)}
+					<input type="hidden" name="model_ids" value={id} />
+				{/each}
+				<p class="hint">{m.plans_admin_models_own_key()}</p>
+			</fieldset>
 			<div class="row row--end">
 				<TextField id="plan-order" name="sort_order" type="number" label={m.plans_admin_order()} bind:value={orderText} />
 				<label class="switch-row">
@@ -213,6 +329,12 @@
 		margin: 0 4px;
 		font-size: 0.8125rem;
 		color: var(--md-sys-color-on-surface-variant);
+	}
+	.slot__limits {
+		margin: 0 4px;
+		font-size: 0.8125rem;
+		color: var(--md-sys-color-on-surface);
+		overflow-wrap: anywhere;
 	}
 	.sheet-title {
 		margin: 0 0 12px;
@@ -270,7 +392,8 @@
 		resize: vertical;
 	}
 	.tones,
-	.promo {
+	.promo,
+	.limits {
 		display: flex;
 		flex-direction: column;
 		gap: 8px;
@@ -282,6 +405,21 @@
 		display: flex;
 		flex-wrap: wrap;
 		gap: 8px;
+	}
+	.hint {
+		margin: 0;
+		font-size: 0.8125rem;
+		color: var(--md-sys-color-on-surface-variant);
+	}
+	.models {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		max-height: 200px;
+		overflow-y: auto;
+		padding: 8px 12px;
+		border: 1px solid var(--md-sys-color-outline-variant);
+		border-radius: var(--md-sys-shape-corner-small);
 	}
 	.tone {
 		width: 44px;
