@@ -52,8 +52,9 @@ pub async fn bootstrap_identity_and_session(
                 .await?;
 
             let org_id: Uuid = sqlx::query_scalar(
-                "INSERT INTO organizations (name, is_personal) VALUES ('Personal', true) RETURNING id",
+                "INSERT INTO organizations (name, is_personal, created_by) VALUES ('Personal', true, $1) RETURNING id",
             )
+            .bind(user_id)
             .fetch_one(&mut *tx)
             .await?;
 

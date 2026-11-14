@@ -536,7 +536,7 @@ pub async fn list_orgs(
 ) -> Result<Json<Vec<OrgOption>>, (StatusCode, &'static str)> {
     require_user_permission(&claims, "view")?;
 
-    let orgs = sqlx::query_as("SELECT id, name FROM organizations WHERE is_personal = false ORDER BY name ASC")
+    let orgs = sqlx::query_as("SELECT id, name FROM organizations WHERE is_personal = false AND deleted_at IS NULL ORDER BY name ASC")
         .fetch_all(&state.pool)
         .await
         .map_err(|e| {

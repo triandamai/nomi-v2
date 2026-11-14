@@ -152,32 +152,18 @@ Found while building the app shell (App / Home, the account menu and the workspa
 - **Proposed contract:** `GET /api/search?q=&kinds=chat,memory,file&limit=20` → `{ results: [{ kind: "chat"|"memory"|"file", id, title, snippet, session_id?, project_id?, updated_at }] }`: the person's own things (and their projects' files) only, best match first.
 - **Until then:** the top bar has no search box. ⌘K opens a new chat, as the sidebar shows.
 
-### A person's pending workspace invites
-- **Needed by:** the workspace switcher (`t24cE`): an invited workspace ("Kopi Kita · invited by Andi · 2 projects") with **Join**.
-- **Why:** someone invited to a workspace only finds out from the email or the inbox item; the switcher can't offer it.
-- **What exists today:**
-  - `GET /api/invites/:code` and `POST /api/invites/:code/accept` work by code only.
-  - `GET /api/orgs/:id` lists a workspace's open invites to its owners and admins, not to the person invited.
-- **Proposed contract:** `GET /api/invites` → `{ invites: [{ code, org_id, org_name, inviter, role, projects, expires_at, project: { id, name } | null }] }`: the open invites to the signed-in person's address.
-- **Until then:** the switcher lists only the workspaces the person is in. An invite opens from its email or inbox link (`/invite/:code`).
+### A person's pending workspace invites — done
+- **Built:** `GET /api/invites` → `{ invites: [{ code, org_id, org_name, inviter, role, projects, expires_at, project: { id, name } | null }] }`: open invites to any of the person's addresses, for workspaces they aren't in yet, newest first.
+  - `frontend/`: Organizations lists them under Invitations with Join and Decline.
 
-### Say which workspace is personal
-- **Needed by:** the workspace switcher (`t24cE`): the "PERSONAL" tag after a workspace's name.
-- **Why:** the switcher can't tell someone's own space from a shared one.
-- **What exists today:**
-  - `organizations.is_personal` exists: channel sign-ups get a personal "Personal", web sign-ups a named, non-personal one.
-  - `GET /api/orgs` doesn't return it (`OrgSummary` is `id, name, role, members, projects`).
-- **Proposed contract:** add `is_personal: bool` to each workspace in `GET /api/orgs` and `POST /api/orgs`.
-- **Until then:** no tag; the meta line says "only you" for a workspace of one.
+### Say which workspace is personal — done
+- **Built:** `is_personal` on each workspace in `GET /api/orgs` and `POST /api/orgs` (and on `GET /api/orgs/:id`).
+  - `frontend/`: Organizations shows a "Personal" tag.
 
 Found while building sign in and create account (Phase 1, 2026-11-10).
 
-### Sign up from a project invite puts the person on the project too
-- **Needed by:** *Build / Together → Invite* and `/invite/:code`: someone without an account opens a project invite, signs up from its email (`/register?redirect_to=/invite/:code&email=`) and lands on the invite.
-- **Why:** signing up with the invite (`org: {mode: "join", invite_code}`) joins the workspace and uses the invite up, but `place_in_org` (`backend/crates/nomi-auth/src/registration.rs`) never reads the invite's `project_id`/`project_role`. The invite page then says "member", and `POST /api/invites/:code/accept` returns early for members, so the project role is never given. On a project limited to the people added to it, they can't open it.
-- **What exists today:** `POST /api/invites/:code/accept` adds the `project_members` row, but only while the invite is `open`. Google sign-up with an invite code has the same gap (`create_account` → `place_in_org`).
-- **Proposed contract:** `place_in_org` (Join) also inserts `project_members (project_id, user_id, role, added_by)` when the invite has a project, as `accept_invite` does, and announces the join.
-- **Until then:** sign-up from an invite joins the workspace (every project open to the workspace works); the invite page shows "You’re already in …" with "Open {project}" for a project invite.
+### Sign up from a project invite puts the person on the project too — done
+- **Built:** `place_in_org` (Join) now adds the `project_members` row with the invite's project role, records `used_by` and `invited_by`, and the project chat announces the join. It covers password sign-up, Google sign-up and new email-code accounts (all go through `place_in_org`).
 
 ### Who shared a link, when, and whether the viewer is its owner
 - **Needed by:** *Flow / Chat — Shared link* (b8Flw8), steps 1–2: the meta line "Shared by M. · 22 Oct 2026" and the owner's banner ("This is how others see your link. 3 views so far.", Copy link, Stop sharing).
@@ -273,21 +259,21 @@ Found while building Settings › Connections (2026-11-13).
 
 Found while building Settings › Crew (2026-11-13).
 
-### Workspaces: declining an invitation, activity, templates, where Nomi opens
-- **Needed by:** *App / Settings / Workspaces* (l222Mz): Invitations ("Andi invited you to Kopi Kita" with Decline and Join), each card's members' faces and last activity ("Koda deployed 07:02", "active 3w ago"), the templates count, the PERSONAL tag, and Defaults › "Open Nomi in" (Last used or a workspace).
-- **Why:** people only find an invitation through its email link, and can't tell at a glance which workspaces are alive.
-- **What exists today:** `GET /api/orgs` (name, role, members, projects, project_org_id), `POST /api/orgs`, `PUT /api/preferences/project-org`, `GET /api/invites/:code` and `/accept` for a link.
-- **Proposed contract:** Invitations need `GET /api/invites` (see “A person's pending workspace invites” above) and `POST /api/invites/:code/decline`; on each org `member_avatars` (up to 3), `last_activity: { text, at }`, `templates`, `personal`; `PUT /api/preferences/open-org` (`last_used` or an org id).
-- **Until then:** each card shows its role, people and projects, and where projects come from.
+### Workspaces: declining an invitation, activity, templates, where Nomi opens — done
+- **Built:** `POST /api/invites/:code/decline` → 204 (403 another address, 409 already a member, 410 used or expired, 400 for a link). A declined invite leaves both lists; `GET /api/invites/:code` says `state: "declined"`; resending brings it back.
+  - Each org in `GET /api/orgs`: `member_avatars` (up to 3, `{name, avatar_url}`, owners first), `last_activity: { kind: "published" | "worked_on", project, by, at } | null` (the newest publish or project-chat message; the client writes the line, rather than the proposed `text`), and `is_personal` (in place of `personal`).
+  - `PUT /api/preferences/open-org {org_id | null}` (null is last used) → 204, 404 when not a member. `GET /api/orgs` returns `open_org_id`. Each fresh sign-in (password, code, Google) opens there while the person is still in it, by setting `users.active_org_id`; refreshes and switches keep the active one.
+  - Migration `0113_workspace_pages.sql`. `frontend/`: Organizations shows faces, the last activity line and an "Open Nomi in" setting.
+- **Still open:** `templates`: Nomi has no shared crew templates to count.
 
 Found while building Settings › Workspaces (2026-11-13).
 
-### A workspace's own page: who made it, each member's work, resending, deleting
-- **Needed by:** *App / Settings / Workspace* (wZm9B): "created by Trian · 14 Jul 2026" under the name, the shared templates stat, each member's "4 projects · active now", Resend on an open invite, "Copy invite link" without an address, and deleting the workspace (the Ownership row says only an owner can).
-- **Why:** owners can't tell who's active or resend a lost invite, and a workspace can't be closed.
-- **What exists today:** `GET /api/orgs/:id` (name, my_role, members with name, email, avatar, role, joined_at; open invites for owners and admins), rename, invite, revoke, set role, remove/leave.
-- **Proposed contract:** on the org `created_by`, `created_at`; on each member `projects`, `last_active_at`; `POST /api/orgs/:id/invites/:code/resend`; `POST /api/orgs/:id/invite-links` (a link anyone can join with, for a role); `DELETE /api/orgs/:id` (owners, with its projects' fate stated).
-- **Until then:** the page shows the role, people with when they joined, invites with Copy link and Revoke, and leaving.
+### A workspace's own page: who made it, each member's work, resending, deleting — done
+- **Built:** `GET /api/orgs/:id` adds `is_personal`, `created_by: {id, name} | null` (`organizations.created_by`, earlier ones take their first owner) and `created_at`; each member adds `projects` (started or added to, in this workspace) and `last_active_at` (latest sign-in refresh, open project or device check-in).
+  - `POST /api/orgs/:id/invites/:code/resend` → the invite, emailed (and in the inbox) again with another 7 days (owners and admins; 404 for links).
+  - `POST /api/orgs/:id/invite-links {role?}` → 201 `{code, email: null, role, link: true, …}`: a link anyone signed in (or signing up) can join with, many times, for 30 days; a new one replaces the open link for that role, and it's revoked like any invite. Open invites carry `link`.
+  - `DELETE /api/orgs/:id` → 204, owners only (403). 409 while it still has projects (move or delete them first), for a personal workspace, or when it's the only workspace one of its members has. Each member's own chats in it move to their next workspace; open invites and links stop working; everyone leaves it (kept as `deleted_at`).
+  - `frontend/`: the workspace page shows who made it and when, each member's projects and activity, Resend, "Copy invite link" (for the chosen role) and, for owners, Delete.
 
 Found while building Settings › Workspace (2026-11-13).
 

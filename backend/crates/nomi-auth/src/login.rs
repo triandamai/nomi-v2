@@ -35,7 +35,7 @@ pub async fn login(
     jwt_secret: &str,
 ) -> Result<(String, Uuid), LoginError> {
     let user_id = check_password(pool, email, password).await?;
-    let token = issue_access_token(pool, user_id, jwt_secret).await?;
+    let token = issue_sign_in_token(pool, user_id, jwt_secret).await?;
     Ok((token, user_id))
 }
 
@@ -74,6 +74,28 @@ pub async fn issue_access_token(pool: &PgPool, user_id: Uuid, jwt_secret: &str) 
 
     let claims = Claims::new(user_id, active_org_id, permissions, ACCESS_TOKEN_TTL_SECONDS);
     Ok(claims.encode(jwt_secret)?)
+}
+
+/// An access token for a fresh sign-in: it opens in the workspace the person chose for that
+/// (`user_preferences.open_org_id`, while they're still an active member of it), else in the one
+/// they last used. Refreshes and switches use [`issue_access_token`] and keep the active one.
+pub async fn issue_sign_in_token(pool: &PgPool, user_id: Uuid, jwt_secret: &str) -> Result<String, LoginError> {
+    open_chosen_org(pool, user_id).await?;
+    issue_access_token(pool, user_id, jwt_secret).await
+}
+
+/// Makes the workspace the person chose to open Nomi in their active one, when they chose one
+/// and are still in it. Nothing changes for "last used" (no choice).
+pub async fn open_chosen_org(pool: &PgPool, user_id: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE users u SET active_org_id = p.open_org_id FROM user_preferences p \
+         WHERE u.id = $1 AND p.user_id = u.id AND p.open_org_id IS NOT NULL \
+           AND EXISTS (SELECT 1 FROM memberships m WHERE m.user_id = u.id AND m.org_id = p.open_org_id AND m.status = 'active')",
+    )
+    .bind(user_id)
+    .execute(pool)
+    .await?;
+    Ok(())
 }
 
 /// The workspace a token carries: the one the person last switched to, while they're still an

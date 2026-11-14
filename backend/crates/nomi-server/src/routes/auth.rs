@@ -12,7 +12,7 @@ use nomi_auth::{
     email_code::{self, Challenge, CodeError, Purpose},
     extractor::AuthClaims,
     password_reset::{self, ChangeError, ResetError},
-    login::{check_password, issue_access_token, login, switch_active_org},
+    login::{check_password, issue_access_token, issue_sign_in_token, login, switch_active_org},
     refresh_token::{issue_refresh_token, refresh_access_token, revoke_refresh_token, tag_device},
     registration::{register_user, OrgMode},
 };
@@ -112,7 +112,7 @@ fn code_error(e: CodeError) -> JsonError {
 }
 
 async fn tokens_for(state: &AppState, headers: &HeaderMap, user_id: Uuid) -> Result<TokenPairResponse, JsonError> {
-    let access_token = issue_access_token(&state.pool, user_id, &state.jwt_secret)
+    let access_token = issue_sign_in_token(&state.pool, user_id, &state.jwt_secret)
         .await
         .map_err(|_| json_error(StatusCode::INTERNAL_SERVER_ERROR, "failed to issue tokens"))?;
     let refresh_token = issue_refresh_token(&state.pool, user_id)
@@ -188,6 +188,7 @@ pub async fn register(
             }
             _ => (StatusCode::INTERNAL_SERVER_ERROR, "registration failed"),
         })?;
+    super::orgs::announce_signup_joins(&state.pool, user_id).await;
 
     // A new account confirms its email with a code before it's signed in. If sending fails, the
     // account still exists: signing in sends a new code.
@@ -301,6 +302,9 @@ pub struct VerifyRequest {
 /// Finishes a sign-in (or a new account) with the emailed code.
 pub async fn verify_handler(State(state): State<AppState>, headers: HeaderMap, Json(req): Json<VerifyRequest>) -> Result<Json<VerifyResponse>, JsonError> {
     let verified = email_code::verify(&state.pool, req.challenge_id, &req.code).await.map_err(code_error)?;
+    if verified.is_new {
+        super::orgs::announce_signup_joins(&state.pool, verified.user_id).await;
+    }
     Ok(Json(VerifyResponse { tokens: tokens_for(&state, &headers, verified.user_id).await?, is_new: verified.is_new }))
 }
 

@@ -599,7 +599,7 @@ pub async fn search_transfer_orgs(
             "SELECT o.id, o.name, o.is_personal, m.role \
              FROM organizations o \
              LEFT JOIN memberships m ON m.org_id = o.id AND m.user_id = $2 AND m.status = 'active' \
-             WHERE o.name ILIKE $1 AND o.id != $3 AND o.is_personal = false \
+             WHERE o.name ILIKE $1 AND o.id != $3 AND o.is_personal = false AND o.deleted_at IS NULL \
              ORDER BY (m.role IS NOT NULL) DESC, o.name ASC \
              LIMIT 20",
         )
@@ -701,7 +701,7 @@ pub async fn transfer_project(
         return Err((StatusCode::BAD_REQUEST, "type the project's name to confirm the transfer".to_string()));
     }
 
-    let target_org_exists: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM organizations WHERE id = $1)")
+    let target_org_exists: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM organizations WHERE id = $1 AND deleted_at IS NULL)")
         .bind(req.target_org_id)
         .fetch_one(&state.pool)
         .await

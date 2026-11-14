@@ -82,16 +82,24 @@ pub fn build_router(state: AppState) -> Router {
             get(|AuthClaims(claims): AuthClaims| async move { axum::Json(claims) }),
         )
         .route("/api/orgs", get(crate::routes::orgs::list_orgs).post(crate::routes::orgs::create_org))
-        .route("/api/orgs/:org_id", get(crate::routes::orgs::get_org).patch(crate::routes::orgs::rename_org))
+        .route(
+            "/api/orgs/:org_id",
+            get(crate::routes::orgs::get_org).patch(crate::routes::orgs::rename_org).delete(crate::routes::orgs::delete_org),
+        )
         .route("/api/orgs/:org_id/invites", post(crate::routes::orgs::create_invite))
+        .route("/api/orgs/:org_id/invite-links", post(crate::routes::orgs::create_invite_link))
         .route("/api/orgs/:org_id/invites/:code", delete(crate::routes::orgs::revoke_invite))
+        .route("/api/orgs/:org_id/invites/:code/resend", post(crate::routes::orgs::resend_invite))
         .route(
             "/api/orgs/:org_id/members/:user_id",
             delete(crate::routes::orgs::remove_member).patch(crate::routes::orgs::set_member_role),
         )
+        .route("/api/invites", get(crate::routes::orgs::list_my_invites))
         .route("/api/invites/:code", get(crate::routes::orgs::get_invite))
         .route("/api/invites/:code/accept", post(crate::routes::orgs::accept_invite))
+        .route("/api/invites/:code/decline", post(crate::routes::orgs::decline_invite))
         .route("/api/preferences/project-org", put(crate::routes::orgs::set_project_org))
+        .route("/api/preferences/open-org", put(crate::routes::orgs::set_open_org))
         .route(
             "/api/sessions",
             post(sessions_routes::create_session).get(sessions_routes::list_sessions),
