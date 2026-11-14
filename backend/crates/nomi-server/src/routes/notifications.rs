@@ -3,7 +3,7 @@
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::Json;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -156,41 +156,124 @@ pub async fn mark_all_read(State(state): State<AppState>, AuthClaims(claims): Au
     Ok(StatusCode::NO_CONTENT)
 }
 
-#[derive(Serialize, Deserialize, sqlx::FromRow)]
-pub struct EmailPreferences {
+/// Quiet hours as local times ("HH:MM") in the person's time zone; `start` after `end` runs over
+/// midnight.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct QuietHours {
+    pub start: String,
+    pub end: String,
+}
+
+#[derive(Serialize)]
+pub struct NotificationPreferences {
     /// Plan, quota and other changes to their account.
     pub email_account: bool,
     /// News and offers.
     pub email_promos: bool,
+    /// Reminders pushed to their phones as they go off.
+    pub push_reminders: bool,
+    /// Reminders due inside these hours wait until they end; null when there are none.
+    pub quiet_hours: Option<QuietHours>,
+}
+
+type PreferencesRow = (bool, bool, bool, Option<NaiveTime>, Option<NaiveTime>);
+
+const TIME_FORMAT: &str = "%H:%M";
+
+fn preferences_from(row: Option<PreferencesRow>) -> NotificationPreferences {
+    let (email_account, email_promos, push_reminders, start, end) = row.unwrap_or((true, true, true, None, None));
+    let quiet_hours = match (start, end) {
+        (Some(start), Some(end)) => Some(QuietHours { start: start.format(TIME_FORMAT).to_string(), end: end.format(TIME_FORMAT).to_string() }),
+        _ => None,
+    };
+    NotificationPreferences { email_account, email_promos, push_reminders, quiet_hours }
+}
+
+async fn load_preferences(state: &AppState, user_id: Uuid) -> Result<NotificationPreferences, ApiError> {
+    let row: Option<PreferencesRow> = sqlx::query_as(
+        "SELECT email_account, email_promos, push_reminders, quiet_hours_start, quiet_hours_end FROM user_preferences WHERE user_id = $1",
+    )
+    .bind(user_id)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to load preferences"))?;
+    Ok(preferences_from(row))
 }
 
 /// `GET /api/notifications/preferences`.
-pub async fn get_preferences(State(state): State<AppState>, AuthClaims(claims): AuthClaims) -> Result<Json<EmailPreferences>, ApiError> {
-    let prefs: Option<EmailPreferences> = sqlx::query_as("SELECT email_account, email_promos FROM user_preferences WHERE user_id = $1")
-        .bind(claims.sub)
-        .fetch_optional(&state.pool)
-        .await
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to load preferences"))?;
-    Ok(Json(prefs.unwrap_or(EmailPreferences { email_account: true, email_promos: true })))
+pub async fn get_preferences(State(state): State<AppState>, AuthClaims(claims): AuthClaims) -> Result<Json<NotificationPreferences>, ApiError> {
+    Ok(Json(load_preferences(&state, claims.sub).await?))
 }
 
-/// `PUT /api/notifications/preferences`.
+/// Tells a field left out (keep it) from one sent as null (clear it).
+fn present<'de, T: Deserialize<'de>, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<Option<T>>, D::Error> {
+    Option::<T>::deserialize(deserializer).map(Some)
+}
+
+/// Each field is optional: what's left out stays as it is.
+#[derive(Deserialize)]
+pub struct UpdateNotificationPreferences {
+    pub email_account: Option<bool>,
+    pub email_promos: Option<bool>,
+    pub push_reminders: Option<bool>,
+    #[serde(default, deserialize_with = "present")]
+    pub quiet_hours: Option<Option<QuietHours>>,
+}
+
+fn parse_time(text: &str) -> Result<NaiveTime, ApiError> {
+    NaiveTime::parse_from_str(text.trim(), TIME_FORMAT).map_err(|_| (StatusCode::BAD_REQUEST, "quiet hours are times like 22:00"))
+}
+
+/// `PUT /api/notifications/preferences`: changes the fields sent. Changing quiet hours lets
+/// reminders held by the old ones go off by the new ones.
 pub async fn put_preferences(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
-    Json(prefs): Json<EmailPreferences>,
-) -> Result<Json<EmailPreferences>, ApiError> {
+    Json(req): Json<UpdateNotificationPreferences>,
+) -> Result<Json<NotificationPreferences>, ApiError> {
+    let (quiet_set, start, end) = match &req.quiet_hours {
+        None => (false, None, None),
+        Some(None) => (true, None, None),
+        Some(Some(hours)) => {
+            let (start, end) = (parse_time(&hours.start)?, parse_time(&hours.end)?);
+            if start == end {
+                return Err((StatusCode::BAD_REQUEST, "quiet hours must start and end at different times"));
+            }
+            (true, Some(start), Some(end))
+        }
+    };
+    let failed = |_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to save preferences");
+    let mut tx = state.pool.begin().await.map_err(failed)?;
     sqlx::query(
-        "INSERT INTO user_preferences (user_id, email_account, email_promos) VALUES ($1, $2, $3) \
-         ON CONFLICT (user_id) DO UPDATE SET email_account = $2, email_promos = $3, updated_at = now()",
+        "INSERT INTO user_preferences (user_id, email_account, email_promos, push_reminders, quiet_hours_start, quiet_hours_end) \
+         VALUES ($1, COALESCE($2, true), COALESCE($3, true), COALESCE($4, true), $6, $7) \
+         ON CONFLICT (user_id) DO UPDATE SET \
+           email_account = COALESCE($2, user_preferences.email_account), \
+           email_promos = COALESCE($3, user_preferences.email_promos), \
+           push_reminders = COALESCE($4, user_preferences.push_reminders), \
+           quiet_hours_start = CASE WHEN $5 THEN $6 ELSE user_preferences.quiet_hours_start END, \
+           quiet_hours_end = CASE WHEN $5 THEN $7 ELSE user_preferences.quiet_hours_end END, \
+           updated_at = now()",
     )
     .bind(claims.sub)
-    .bind(prefs.email_account)
-    .bind(prefs.email_promos)
-    .execute(&state.pool)
+    .bind(req.email_account)
+    .bind(req.email_promos)
+    .bind(req.push_reminders)
+    .bind(quiet_set)
+    .bind(start)
+    .bind(end)
+    .execute(&mut *tx)
     .await
-    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to save preferences"))?;
-    Ok(Json(prefs))
+    .map_err(failed)?;
+    if quiet_set {
+        sqlx::query("UPDATE reminders SET held_until = NULL WHERE user_id = $1 AND held_until IS NOT NULL")
+            .bind(claims.sub)
+            .execute(&mut *tx)
+            .await
+            .map_err(failed)?;
+    }
+    tx.commit().await.map_err(failed)?;
+    Ok(Json(load_preferences(&state, claims.sub).await?))
 }
 
 fn require_broadcast_permission(claims: &nomi_auth::claims::Claims, level: &str) -> Result<(), ApiError> {

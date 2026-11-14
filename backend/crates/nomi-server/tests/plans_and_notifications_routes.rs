@@ -212,7 +212,7 @@ async fn a_promo_reaches_everyone_and_email_preferences_stick(pool: PgPool) {
     let (status, _) = json_request(router.clone(), "PUT", "/api/notifications/preferences", json!({ "email_account": true, "email_promos": false }), Some(&cy)).await;
     assert_eq!(status, StatusCode::OK);
     let (_, prefs) = json_request(router, "GET", "/api/notifications/preferences", Value::Null, Some(&cy)).await;
-    assert_eq!(prefs, json!({ "email_account": true, "email_promos": false }));
+    assert_eq!(prefs, json!({ "email_account": true, "email_promos": false, "push_reminders": true, "quiet_hours": null }));
 }
 
 #[sqlx::test(migrations = "../../migrations")]

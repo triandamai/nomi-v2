@@ -19,6 +19,10 @@ pub const MAX_CHALLENGES_PER_HOUR: i64 = 10;
 pub enum Purpose {
     Register,
     Login,
+    /// Confirms a new address for a signed-in account: the code goes to the new address.
+    ChangeEmail,
+    /// Confirms closing a signed-in account.
+    DeleteAccount,
 }
 
 impl Purpose {
@@ -26,15 +30,23 @@ impl Purpose {
         match self {
             Purpose::Register => "register",
             Purpose::Login => "login",
+            Purpose::ChangeEmail => "change_email",
+            Purpose::DeleteAccount => "delete_account",
         }
     }
 
     fn parse(value: &str) -> Self {
-        if value == "register" {
-            Purpose::Register
-        } else {
-            Purpose::Login
+        match value {
+            "register" => Purpose::Register,
+            "change_email" => Purpose::ChangeEmail,
+            "delete_account" => Purpose::DeleteAccount,
+            _ => Purpose::Login,
         }
+    }
+
+    /// Whether a right code signs someone in (the others confirm something a signed-in person asked).
+    pub fn signs_in(self) -> bool {
+        matches!(self, Purpose::Register | Purpose::Login)
     }
 }
 
@@ -169,13 +181,91 @@ pub async fn start_for_email(pool: &PgPool, email: &str, invite_code: Option<&st
     Ok((challenge, code))
 }
 
+/// Starts a code that confirms something a signed-in person asked (`ChangeEmail`, sent to
+/// `email`, the new address; `DeleteAccount`, sent to the account's own). An earlier open code
+/// for the same purpose stops working; sign-in codes are left alone.
+pub async fn start_for_account(pool: &PgPool, user_id: Uuid, purpose: Purpose, email: Option<&str>) -> Result<(Challenge, String), CodeError> {
+    let recent: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM sign_in_challenges WHERE user_id = $1 AND created_at > now() - interval '1 hour'")
+            .bind(user_id)
+            .fetch_one(pool)
+            .await?;
+    if recent >= MAX_CHALLENGES_PER_HOUR {
+        return Err(CodeError::TooManySends);
+    }
+
+    let mut tx = pool.begin().await?;
+    sqlx::query("UPDATE sign_in_challenges SET expires_at = now() WHERE user_id = $1 AND purpose = $2 AND used_at IS NULL AND expires_at > now()")
+        .bind(user_id)
+        .bind(purpose.as_str())
+        .execute(&mut *tx)
+        .await?;
+    let id = Uuid::new_v4();
+    let code = new_code();
+    sqlx::query(
+        "INSERT INTO sign_in_challenges (id, user_id, email, purpose, code_hash, expires_at) \
+         VALUES ($1, $2, $3, $4, $5, now() + make_interval(secs => $6))",
+    )
+    .bind(id)
+    .bind(user_id)
+    .bind(email)
+    .bind(purpose.as_str())
+    .bind(hash_code(id, &code))
+    .bind(CODE_TTL_SECONDS as f64)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+
+    let challenge = find(pool, id).await?.ok_or(CodeError::Expired)?;
+    Ok((challenge, code))
+}
+
+/// Checks `code` for one of `user_id`'s `purpose` codes (see `start_for_account`) and uses it up.
+/// Returns the address it went to. Anyone else's code, or one for another purpose, is `Expired`.
+pub async fn verify_for_account(pool: &PgPool, id: Uuid, user_id: Uuid, purpose: Purpose, code: &str) -> Result<String, CodeError> {
+    let mut tx = pool.begin().await?;
+    type Row = (Option<Uuid>, Option<String>, String, String, bool, i32);
+    let row: Option<Row> = sqlx::query_as(
+        "SELECT c.user_id, COALESCE(c.email, w.email), c.purpose, c.code_hash, (c.used_at IS NULL AND c.expires_at > now()), c.attempts \
+         FROM sign_in_challenges c LEFT JOIN web_credentials w ON w.user_id = c.user_id WHERE c.id = $1 FOR UPDATE OF c",
+    )
+    .bind(id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let Some((owner, email, stored_purpose, code_hash, open, attempts)) = row else { return Err(CodeError::Expired) };
+    if owner != Some(user_id) || stored_purpose != purpose.as_str() || !open {
+        return Err(CodeError::Expired);
+    }
+    if let Err(e) = check_code(&mut tx, id, code, &code_hash, attempts).await {
+        tx.commit().await?;
+        return Err(e);
+    }
+    sqlx::query("UPDATE sign_in_challenges SET used_at = now() WHERE id = $1").bind(id).execute(&mut *tx).await?;
+    tx.commit().await?;
+    email.ok_or(CodeError::Expired)
+}
+
+/// Whether `code` is right; a wrong one counts a try (the caller commits it).
+async fn check_code(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>, id: Uuid, code: &str, code_hash: &str, attempts: i32) -> Result<(), CodeError> {
+    if attempts >= MAX_ATTEMPTS {
+        return Err(CodeError::TooManyAttempts);
+    }
+    let digits: String = code.chars().filter(|c| c.is_ascii_digit()).collect();
+    if same(&hash_code(id, &digits), code_hash) {
+        return Ok(());
+    }
+    sqlx::query("UPDATE sign_in_challenges SET attempts = attempts + 1 WHERE id = $1").bind(id).execute(&mut **tx).await?;
+    let attempts_left = MAX_ATTEMPTS - attempts - 1;
+    Err(if attempts_left <= 0 { CodeError::TooManyAttempts } else { CodeError::Wrong { attempts_left } })
+}
+
 /// user_id, purpose, email, expires_at, resend_at, sends_left, language.
 type ChallengeRow = (Option<Uuid>, String, String, DateTime<Utc>, DateTime<Utc>, i32, Option<String>);
 
 /// An open challenge (not used, not expired, not locked by wrong tries), or `None`.
 pub async fn find(pool: &PgPool, id: Uuid) -> Result<Option<Challenge>, sqlx::Error> {
     let row: Option<ChallengeRow> = sqlx::query_as(
-        "SELECT c.user_id, c.purpose, COALESCE(w.email, c.email), c.expires_at, \
+        "SELECT c.user_id, c.purpose, COALESCE(c.email, w.email), c.expires_at, \
                 c.last_sent_at + make_interval(secs => $2), $3 - c.sends, c.language \
          FROM sign_in_challenges c LEFT JOIN web_credentials w ON w.user_id = c.user_id \
          WHERE c.id = $1 AND c.used_at IS NULL AND c.expires_at > now() AND c.attempts < $4",
@@ -212,18 +302,13 @@ pub async fn verify(pool: &PgPool, id: Uuid, code: &str) -> Result<Verified, Cod
     .fetch_optional(&mut *tx)
     .await?;
     let Some((user_id, email, invite_code, purpose, code_hash, open, attempts)) = row else { return Err(CodeError::Expired) };
-    if !open {
+    // A code that confirms an account change never signs anyone in.
+    if !open || !Purpose::parse(&purpose).signs_in() {
         return Err(CodeError::Expired);
     }
-    if attempts >= MAX_ATTEMPTS {
-        return Err(CodeError::TooManyAttempts);
-    }
-    let digits: String = code.chars().filter(|c| c.is_ascii_digit()).collect();
-    if !same(&hash_code(id, &digits), &code_hash) {
-        sqlx::query("UPDATE sign_in_challenges SET attempts = attempts + 1 WHERE id = $1").bind(id).execute(&mut *tx).await?;
+    if let Err(e) = check_code(&mut tx, id, code, &code_hash, attempts).await {
         tx.commit().await?;
-        let attempts_left = MAX_ATTEMPTS - attempts - 1;
-        return Err(if attempts_left <= 0 { CodeError::TooManyAttempts } else { CodeError::Wrong { attempts_left } });
+        return Err(e);
     }
     sqlx::query("UPDATE sign_in_challenges SET used_at = now() WHERE id = $1").bind(id).execute(&mut *tx).await?;
     let (user_id, is_new) = match user_id {

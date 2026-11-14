@@ -173,30 +173,31 @@ Found while building sign in and create account (Phase 1, 2026-11-10).
   - Admins (support, view) list them with `GET /api/admin/shared-reports` → `{ reports: [{ id, share_id, token, session_id, title, shared_by, reason, note, revoked, created_at }] }`, newest first.
   - `frontend/`: "Report this page" in the shared page's footer, with the reasons and a note.
 
-### Push for reminders, and quiet hours
-- **Needed by:** *App / Inbox* (BFoiZ) → How it reaches you: "Push for reminders — On your phone and desktop, at the exact time." and "Quiet hours 22:00–06:00 — Learned from your routines. Reminders wait until morning.", each with a switch.
-- **Why:** a person can't turn reminder pushes off without turning off notifications for the whole app on the phone, and there's no way to hold reminders back overnight.
-- **What exists today:** `GET|PUT /api/notifications/preferences` holds only `email_account` and `email_promos`; phones get pushes for every inbox item and reply (`crate::push`), with no preference.
-- **Proposed contract:** add `push_reminders: bool` and `quiet_hours: { start: "22:00", end: "06:00" } | null` (in the person's zone) to the preferences; the reminders worker holds a reminder due inside quiet hours until they end.
-- **Until then:** the Inbox shows the two email settings only.
+### Push for reminders, and quiet hours — done
+- **Built:** migration `0124_reminder_push_and_quiet_hours.sql`; `GET|PUT /api/notifications/preferences` adds `push_reminders: bool` and `quiet_hours: { start: "22:00", end: "06:00" } | null` (local times in the person's zone; a start after the end runs over midnight). PUT now changes only the fields sent (`quiet_hours: null` turns them off).
+  - The reminders worker pushes each reminder as it goes off (`kind: "reminder"`, opens its chat) unless `push_reminders` is off.
+  - A reminder due inside quiet hours is held (`reminders.held_until`) until they end, then goes off; its schedule (`due_at`) doesn't move. Changing quiet hours lets held reminders go by the new ones.
+  - `frontend/`: the Inbox's settings have "Push for reminders" and "Quiet hours" with From and Until.
 
 Found while building the Inbox (2026-11-12).
 
-### Profile insights and when the person is active
-- **Needed by:** *App / Settings / Profile* (U9Gnrg): the Insights panel ("Save ~18% on Nomi — gemini-flash answered 9 of your last 10 quick questions just as well", "You work late — 68% of your tokens land after 21:00") and the heatmap's note "Most active Tue · 21:00–23:00".
-- **Why:** nothing works out a cheaper model that would have done, or the hours someone uses Nomi; the profile can only say which weekday is busiest.
-- **What exists today:** `GET /api/profile` gives tokens per day (`activity`), the top models of the last 30 days, and the crew's chat counts.
-- **Proposed contract:** add `active_hours: { from: "21:00", to: "23:00" } | null` (in the person's zone) and `insights: [{ kind: "cheaper_model" | "late_hours", title, body, action?: { label, href } }]`.
-- **Until then:** no Insights panel; the note names the weekday only.
+### Profile insights and when the person is active — done
+- **Built:** `GET /api/profile` (own profile only, never the public one) adds `active_hours: { from, to } | null` and `insights: [{ kind, title, body, action? }]`, in `routes/profile_insights.rs`, worked out from `llm_usage` over 30 days with no model call. Titles and bodies come in the person's language.
+  - `active_hours`: the two hours with the most tokens in the person's time zone (null under 1,000 tokens).
+  - `late_hours`: when at least half the tokens land between 21:00 and 04:00 ("68% of your tokens land after 21:00").
+  - `cheaper_model`: when Nomi's cheapest priced chat model would have answered at least 5 of the last 10 quick questions (replies of 300 tokens or fewer) for less, and that saves at least 5% of the month's spend; the action opens `/models`. It says "for less", not "just as well": nothing judges the answers.
+  - Also fixed: the profile's top models read a column that doesn't exist, so they were always empty.
+  - `frontend/`: Profile shows an Insights panel, and the heatmap's note says "Most active Tue · 21:00–23:00".
 
 Found while building Settings › Profile (2026-11-12).
 
-### Account settings General can't keep yet
-- **Needed by:** *App / Settings / General* (m7lvY1): Email "Change", Formats (region), the Chat group ("New chats start with", "Enter sends", "Show tokens under replies") and Sessions' "Delete account".
-- **Why:** a person can't move their account to a new address, pick number and date formats apart from the language, keep how chats start and send, or close their account.
-- **What exists today:** `GET|PUT /api/preferences` keeps theme, time zone, language and drawer/home settings; the email can only be set at sign-up; nothing deletes an account.
-- **Proposed contract:** `POST /api/account/email` (sends a code to the new address, then `POST /api/account/email/verify`); `formats`, `default_agent`, `enter_sends` and `show_reply_tokens` in the preferences; `DELETE /api/account` with the password or a fresh code, after which every device is signed out.
-- **Until then:** General leaves those rows out.
+### Account settings General can't keep yet — done
+- **Built:** migration `0125_account_settings_and_deletion.sql`, in `routes/account.rs` and `routes/profile.rs`.
+  - `POST /api/account/email` with `{ email }` sends a code to the new address (`409 email_taken`, `400 same_email`) and answers like sign-in (`challenge_id`, masked `email`, `expires_in`…); `POST /api/account/email/verify` with `{ challenge_id, code }` moves the account to it → `{ email }`. These codes never sign anyone in.
+  - `GET|PUT /api/preferences` adds `formats` (a region like "en-GB"; null follows the language), `default_agent` (an `agent_type`; null is Nomi), `enter_sends` (default on) and `show_reply_tokens` (default off). An empty string clears the first two.
+  - `DELETE /api/account` with `{ password }` or `{ challenge_id, code }` (from `POST /api/account/delete/code`) → `204`. The account is kept as a row (chats, projects and usage others share point at it), with `users.deleted_at` set and its sign-in, refresh tokens, devices (each hears `DeviceSignedOut`), memberships, profile, memories, reminders, connections and own keys removed; the address is free again. A workspace only they're in closes with it; one they're the only owner of with other people in it answers `409 { error: "sole_owner", orgs: [{ id, name }] }` until it's handed over or closed.
+  - `frontend/`: Account has Change email (with the code step), Formats and the chat rows (the composer follows Enter sends), and Delete account with a confirmation and the password or an emailed code.
+  - **Still open:** the old frontend shows no tokens under replies, so `show_reply_tokens` is kept but nothing reads it there; a closed account's live apps aren't taken down.
 
 Found while building Settings › General (2026-11-12).
 

@@ -52,6 +52,8 @@ pub mod project_secrets;
 pub mod realtime;
 pub mod projects;
 pub mod profile;
+pub mod profile_insights;
+pub mod account;
 pub mod reminders;
 pub mod sessions;
 pub mod shares;

@@ -83,13 +83,13 @@ pub enum SignInResponse {
     Verification { verification: VerificationInfo },
 }
 
-type JsonError = (StatusCode, Json<serde_json::Value>);
+pub(crate) type JsonError = (StatusCode, Json<serde_json::Value>);
 
-fn json_error(status: StatusCode, error: &str) -> JsonError {
+pub(crate) fn json_error(status: StatusCode, error: &str) -> JsonError {
     (status, Json(serde_json::json!({ "error": error })))
 }
 
-fn code_error(e: CodeError) -> JsonError {
+pub(crate) fn code_error(e: CodeError) -> JsonError {
     match e {
         CodeError::Wrong { attempts_left } => {
             (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": "wrong_code", "attempts_left": attempts_left })))
@@ -131,7 +131,7 @@ pub(crate) async fn note_device(state: &AppState, headers: &HeaderMap, refresh_t
     }
 }
 
-async fn email_the_code(mailer: &dyn nomi_mail::Mailer, challenge: &Challenge, code: &str, locale: nomi_i18n::Locale) -> Result<(), JsonError> {
+pub(crate) async fn email_the_code(mailer: &dyn nomi_mail::Mailer, challenge: &Challenge, code: &str, locale: nomi_i18n::Locale) -> Result<(), JsonError> {
     mailer.send(code_email(challenge, code, locale)).await.map_err(|e| {
         tracing::error!(error = %e, "couldn't send a sign-in code");
         json_error(StatusCode::BAD_GATEWAY, "email_failed")
@@ -140,7 +140,7 @@ async fn email_the_code(mailer: &dyn nomi_mail::Mailer, challenge: &Challenge, c
 
 /// Where emailed codes go out: the sign-in mailer, or the configured one when password sign-in
 /// doesn't ask for codes (`AUTH_EMAIL_CODES=off`) but someone signs in with their email alone.
-fn code_mailer(state: &AppState) -> std::sync::Arc<dyn nomi_mail::Mailer> {
+pub(crate) fn code_mailer(state: &AppState) -> std::sync::Arc<dyn nomi_mail::Mailer> {
     match &state.email_codes {
         EmailCodes::Required(mailer) => mailer.clone(),
         EmailCodes::Off => nomi_mail::configured(),

@@ -104,7 +104,7 @@ async fn a_one_off_reminder_fires_once_with_its_notes_and_can_be_snoozed_open_ag
 
     let posted = fire_due(&p.pool, 10).await.unwrap();
     assert_eq!(posted.len(), 1);
-    let content: String = sqlx::query_scalar("SELECT content FROM messages WHERE id = $1").bind(posted[0].1).fetch_one(&p.pool).await.unwrap();
+    let content: String = sqlx::query_scalar("SELECT content FROM messages WHERE id = $1").bind(posted[0].message_id).fetch_one(&p.pool).await.unwrap();
     assert_eq!(content, "⏰ Take pills: the blue ones");
     let status: String = sqlx::query_scalar("SELECT status FROM reminders WHERE id = $1").bind(id).fetch_one(&p.pool).await.unwrap();
     assert_eq!(status, "fired");
