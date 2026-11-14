@@ -108,7 +108,8 @@ The old `frontend/` will use the same endpoints.
 ### The person's share links, to revoke — done
 - **Needed by:** *Chat / Share*: SharePanel's footer says links can be revoked "any time in Settings › Data".
 - **Built:** `GET /api/shares` returns `{ shares: [{ id, session_id, title, scope, message_id, mask, anyone, expires_at, created_at }] }`: the person's links that still work, newest first. Revoke one with `DELETE /api/sessions/:session_id/shares/:id`.
-- **Still open:** the Settings › Data page itself, in both apps.
+  - `frontend/`: Account › Data (`/account#data`) lists them with Revoke.
+- **Still open:** the Settings › Data page in v2.
 
 Found while planning the working v2 (sign in, chat and build against the real API, 2026-11-10).
 
@@ -165,19 +166,19 @@ Found while building sign in and create account (Phase 1, 2026-11-10).
 ### Sign up from a project invite puts the person on the project too — done
 - **Built:** `place_in_org` (Join) now adds the `project_members` row with the invite's project role, records `used_by` and `invited_by`, and the project chat announces the join. It covers password sign-up, Google sign-up and new email-code accounts (all go through `place_in_org`).
 
-### Who shared a link, when, and whether the viewer is its owner
-- **Needed by:** *Flow / Chat — Shared link* (b8Flw8), steps 1–2: the meta line "Shared by M. · 22 Oct 2026" and the owner's banner ("This is how others see your link. 3 views so far.", Copy link, Stop sharing).
-- **Why:** a viewer can't see who shared it or when; the owner can't tell their own preview apart, see how many opened it, or stop sharing from the page.
-- **What exists today:** `GET /api/shared/:token` answers `{ title, scope, masked, messages, expires_at }`.
-- **Proposed contract:** add `shared_by` (initials when masked), `shared_at`, and, when the bearer is the owner, `own: true`, `share_id` and `views`.
-- **Until then:** the meta line shows the chat's title and expiry; no owner banner.
+### Who shared a link, when, and whether the viewer is its owner — done
+- **Built:** migration `0117_shared_page_views_and_reports.sql` (`chat_shares.views`), in `routes/shares.rs`.
+  - `GET /api/shared/:token` adds `shared_by` (the sharer's name, or its initials "M. P." when masked) and `shared_at`.
+  - When the bearer made the link it also answers `own: true`, `share_id`, `session_id` (to stop sharing with `DELETE /api/sessions/:session_id/shares/:share_id`) and `views`.
+  - Every open by someone other than the owner counts as a view.
+  - `frontend/`: the shared page shows the meta line and the owner's banner (views, Copy link, Stop sharing).
 
-### Reporting a shared page
-- **Needed by:** *Flow / Chat — Shared link* (b8Flw8): "Report this page" in the footer.
-- **Why:** a viewer has no way to flag a shared page.
-- **What exists today:** nothing.
-- **Proposed contract:** `POST /api/shared/:token/report` with `{ reason, note? }`, open without a sign-in, rate-limited.
-- **Until then:** the footer has no report link.
+### Reporting a shared page — done
+- **Built:** `POST /api/shared/:token/report` with `{ reason: "spam"|"abuse"|"personal_info"|"illegal"|"other", note? }` → `201`, in `routes/shares.rs`; table `shared_page_reports` (migration 0117).
+  - Open without a sign-in (a link only for signed-in people still needs one); a revoked, expired or unknown link is a 404.
+  - Rate-limited in the database: 5 reports an hour per signed-in person, or per hashed `X-Forwarded-For` address, then `429`. Notes keep their first 1000 characters.
+  - Admins (support, view) list them with `GET /api/admin/shared-reports` → `{ reports: [{ id, share_id, token, session_id, title, shared_by, reason, note, revoked, created_at }] }`, newest first.
+  - `frontend/`: "Report this page" in the shared page's footer, with the reasons and a note.
 
 ### Push for reminders, and quiet hours
 - **Needed by:** *App / Inbox* (BFoiZ) → How it reaches you: "Push for reminders — On your phone and desktop, at the exact time." and "Quiet hours 22:00–06:00 — Learned from your routines. Reminders wait until morning.", each with a switch.
@@ -313,11 +314,8 @@ Found while building the workspace's Database (2026-11-14).
 
 Found while building the Landing page flow (2026-11-14).
 
-### A message read on its own names its author
-- **Needed by:** *Flow / Build — Invite & build together* (TnwQT) step 6: a teammate's message in the project chat, in their colour and name.
-- **Why:** the list (`GET /api/sessions/:id/messages`) names someone else's message (`author_name`), but the single read a live update uses (`GET /api/sessions/:id/messages/:message_id`) doesn't, so a teammate's new message would look like the person's own.
-- **What exists today:** `attach_authors` runs for the list only.
-- **Proposed contract:** run `attach_authors` in `get_message` too.
-- **Until then:** v2's server reads the newest page of the list for a person's message read on its own and takes the author from there.
+### A message read on its own names its author — done
+- **Built:** `GET /api/sessions/:id/messages/:message_id` runs `attach_authors`, so a teammate's message carries `author_name` there too.
+  - `frontend/`: live message updates already read it; a teammate's message no longer chains onto the person's own.
 
 Found while building Invite & build together (2026-11-14).

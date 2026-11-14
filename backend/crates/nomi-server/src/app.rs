@@ -237,6 +237,8 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/sessions/:id/shares", post(crate::routes::shares::create))
         .route("/api/sessions/:id/shares/:share_id", put(crate::routes::shares::update).delete(crate::routes::shares::revoke))
         .route("/api/shared/:token", get(crate::routes::shares::read))
+        .route("/api/shared/:token/report", post(crate::routes::shares::report))
+        .route("/api/admin/shared-reports", get(crate::routes::shares::admin_list))
         .route("/api/shares", get(crate::routes::shares::list))
         .route("/api/admin/maintenance", get(crate::routes::maintenance::admin_get).put(crate::routes::maintenance::put))
         .route("/api/support/v1/ask", post(crate::routes::support::ask))
