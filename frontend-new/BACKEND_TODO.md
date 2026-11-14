@@ -322,3 +322,12 @@ Found while building the workspace's Domain (2026-11-14).
 - **Until then:** Database reads tables and rows; changes go through Koda.
 
 Found while building the workspace's Database (2026-11-14).
+
+### A site's visits: where they came from, form sends, uptime
+- **Needed by:** *Flow / Build — Landing page* (WUiji) step 5, Monitor for a site: "Where visits come from" (Instagram, Google search, WhatsApp links, Direct), Form sends with their share of visits, and Uptime.
+- **Why:** a studio's site is judged by who finds it and who gets in touch, not by requests and errors.
+- **What exists today:** `GET /api/projects/:id/deploy/metrics?range=`: visitors, requests, 4xx/5xx, p50/p95 per bucket. No referrers, form submissions or uptime.
+- **Proposed contract:** add to the metrics answer `sources: [{ name, share }]` (from the referrer, grouped), `form_sends: number | null` (POSTs answered 2xx to the site's own forms) and `uptime: { share, since } | null`.
+- **Until then:** a site's Monitor leads with visits and page load, its bars count visits, and the rest is left out.
+
+Found while building the Landing page flow (2026-11-14).

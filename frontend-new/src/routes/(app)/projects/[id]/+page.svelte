@@ -235,9 +235,13 @@
 		return () => clearInterval(timer);
 	});
 	const stats = $derived(monitoring?.metrics ? monitorStats(monitoring.metrics) : null);
-	const traffic = $derived(monitoring?.metrics ? trafficBars(monitoring.metrics.buckets, time.timeZone) : null);
+	// A site (Landing page WUiji, step 5) is watched by its visits: they lead, with the page load, and
+	// the bars count them. An app leads with its requests and errors.
+	const site = $derived(project.stack === 'static');
+	const traffic = $derived(monitoring?.metrics ? trafficBars(monitoring.metrics.buckets, time.timeZone, site ? 'visitors' : 'requests') : null);
 	const resources = $derived(monitoring?.usage ? resourceRows(monitoring.usage) : null);
 	const RANGE_NOTE: Record<MetricsRange, () => string> = { '1h': m.monitor_last_hour, '24h': m.monitor_today, '7d': m.monitor_week };
+	const trafficLabel = $derived(site ? m.monitor_visits_traffic({ range: RANGE_NOTE[range]() }) : m.monitor_traffic({ range: RANGE_NOTE[range]() }));
 
 	// Database (step 11): the project's tables and the first rows of one, read only; production's
 	// once the app is published, else the development database Koda builds against.
@@ -439,7 +443,7 @@
 			{status}
 			space={project.org_name}
 			url={liveUrl ?? undefined}
-			nav={[...(deploy ? [{ id: 'deployments', label: m.workspace_deployments(), icon: History }] : []), ...(data.address ? [{ id: 'domain', label: m.workspace_domain(), icon: Link }] : []), ...(deploy ? [{ id: 'monitor', label: m.workspace_monitor(), icon: Activity }] : []), { id: 'database', label: m.workspace_database(), icon: Database }, { id: 'settings', label: m.project_settings(), icon: Settings }]}
+			nav={[...(deploy ? [{ id: 'deployments', label: m.workspace_deployments(), icon: History }] : []), ...(data.address ? [{ id: 'domain', label: m.workspace_domain(), icon: Link }] : []), ...(deploy ? [{ id: 'monitor', label: m.workspace_monitor(), icon: Activity }] : []), ...(data.database ? [{ id: 'database', label: m.workspace_database(), icon: Database }] : []), { id: 'settings', label: m.project_settings(), icon: Settings }]}
 			navLabel={m.workspace_tools()}
 			active={sheet ?? undefined}
 			onnav={(id) => (sheet = sheet === id ? null : (id as typeof sheet))}
@@ -755,18 +759,25 @@
 								/>
 							</div>
 							<div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
-								<MonitorStat label={m.monitor_requests()} value={stats?.requests} note={RANGE_NOTE[range]()} notMeasured={m.monitor_not_measured()} />
-								<MonitorStat label={m.monitor_errors()} value={stats?.errors} note={stats?.errorShare ? m.monitor_error_share({ share: stats.errorShare }) : undefined} notMeasured={m.monitor_not_measured()} />
-								<MonitorStat label="P95" value={stats?.p95} note={m.monitor_p95_note()} notMeasured={m.monitor_not_measured()} />
-								<MonitorStat label={m.monitor_visitors()} value={stats?.visitors} note={RANGE_NOTE[range]()} notMeasured={m.monitor_not_measured()} />
+								{#if site}
+									<MonitorStat label={m.monitor_visits()} value={stats?.visitors} note={RANGE_NOTE[range]()} notMeasured={m.monitor_not_measured()} />
+									<MonitorStat label="P95" value={stats?.p95} note={m.monitor_page_load()} notMeasured={m.monitor_not_measured()} />
+									<MonitorStat label={m.monitor_requests()} value={stats?.requests} note={RANGE_NOTE[range]()} notMeasured={m.monitor_not_measured()} />
+									<MonitorStat label={m.monitor_errors()} value={stats?.errors} note={stats?.errorShare ? m.monitor_error_share({ share: stats.errorShare }) : undefined} notMeasured={m.monitor_not_measured()} />
+								{:else}
+									<MonitorStat label={m.monitor_requests()} value={stats?.requests} note={RANGE_NOTE[range]()} notMeasured={m.monitor_not_measured()} />
+									<MonitorStat label={m.monitor_errors()} value={stats?.errors} note={stats?.errorShare ? m.monitor_error_share({ share: stats.errorShare }) : undefined} notMeasured={m.monitor_not_measured()} />
+									<MonitorStat label="P95" value={stats?.p95} note={m.monitor_p95_note()} notMeasured={m.monitor_not_measured()} />
+									<MonitorStat label={m.monitor_visitors()} value={stats?.visitors} note={RANGE_NOTE[range]()} notMeasured={m.monitor_not_measured()} />
+								{/if}
 							</div>
 							{#if traffic?.bars.length}
 								<section class="flex flex-col gap-2">
 									<h3 class="flex justify-between font-mono text-label text-text-3">
-										<span class="tracking-label uppercase">{m.monitor_traffic({ range: RANGE_NOTE[range]() })}</span>
-										{#if traffic.peak}<span>{m.monitor_peak({ at: traffic.peak.at, count: traffic.peak.requests })}</span>{/if}
+										<span class="tracking-label uppercase">{trafficLabel}</span>
+										{#if traffic.peak}<span>{m.monitor_peak({ at: traffic.peak.at, count: traffic.peak.count })}</span>{/if}
 									</h3>
-									<TrafficBars label={m.monitor_traffic({ range: RANGE_NOTE[range]() })} bars={traffic.bars} axis={[traffic.bars[0].at, traffic.bars[traffic.bars.length - 1].at]} />
+									<TrafficBars label={trafficLabel} bars={traffic.bars} axis={[traffic.bars[0].at, traffic.bars[traffic.bars.length - 1].at]} />
 								</section>
 							{/if}
 							<section class="flex flex-col gap-2">

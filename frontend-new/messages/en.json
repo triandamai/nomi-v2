@@ -2555,5 +2555,8 @@
 	"sandbox_terminal_empty": "Nothing has run yet.",
 	"sandbox_quote_file": "Terminal",
 	"sandbox_quote_range": "the error",
-	"sandbox_fix_text": "The preview didn’t start. Please look at the terminal and fix it. The error:\n{error}"
+	"sandbox_fix_text": "The preview didn’t start. Please look at the terminal and fix it. The error:\n{error}",
+	"monitor_visits": "Visits",
+	"monitor_visits_traffic": "Visits · {range}",
+	"monitor_page_load": "page load"
 }

@@ -249,6 +249,11 @@ test('a static site’s preview runs its own CSS and scripts, sandboxed away fro
 	expect((await api(account, `/api/projects/${id}/import/files`, { method: 'POST', body: JSON.stringify({ files, finish: true }) })).ok).toBe(true);
 	await page.goto(`/projects/${id}`, { waitUntil: 'networkidle' });
 
+	// A site without tables has no Database tool (Landing page WUiji, step 3).
+	const tools = page.getByRole('navigation', { name: 'Project tools' });
+	await expect(tools.getByRole('button', { name: 'Settings' })).toBeVisible();
+	await expect(tools.getByRole('button', { name: 'Database' })).toHaveCount(0);
+
 	const preview = page.frameLocator(`iframe[src^="/projects/${id}/preview/~"]`);
 	await expect(preview.getByRole('heading', { name: 'Warung' })).toHaveCSS('color', 'rgb(200, 30, 30)');
 	await expect(preview.getByText('script ran: isolated')).toBeVisible();

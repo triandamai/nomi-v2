@@ -236,3 +236,9 @@ export async function sandboxBeat(event: ApiEvent, id: string): Promise<boolean>
 
 export const startSandbox = (event: ApiEvent, id: string) => post(event, `${at(id)}/sandbox/start`);
 export const stopSandbox = (event: ApiEvent, id: string) => post(event, `${at(id)}/sandbox/stop`);
+
+/** Whether the project keeps any tables (its development database); false where that can't be read. */
+export async function hasTables(event: ApiEvent, id: string): Promise<boolean> {
+	const response = await call(event, `${at(id)}/database/tables?source=development`);
+	return response.ok && ((await response.json()) as DatabaseTable[]).length > 0;
+}

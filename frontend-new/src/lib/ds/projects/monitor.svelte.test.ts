@@ -35,7 +35,7 @@ describe('MonitorStat', () => {
 describe('TrafficBars', () => {
 	it('draws each bucket in 96, the busiest full, quiet ones as a line, gaps as nothing', async () => {
 		await page.viewport(1512, 862);
-		await render(TrafficBars, { label: 'Requests per hour', bars: [{ at: '08:00', share: 1, requests: 120 }, { at: '09:00', share: 0, requests: 0 }, { at: '10:00', share: null, requests: null }], axis: ['00', '12', '24'] });
+		await render(TrafficBars, { label: 'Requests per hour', bars: [{ at: '08:00', share: 1, count: 120 }, { at: '09:00', share: 0, count: 0 }, { at: '10:00', share: null, count: null }], axis: ['00', '12', '24'] });
 		const chart = page.getByRole('img', { name: 'Requests per hour' }).element();
 		const bars = [...chart.querySelectorAll('[data-part="bar"]')];
 		expect(box(chart.querySelector('[data-part="bars"]')!).height).toBe(96);
