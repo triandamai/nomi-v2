@@ -17,8 +17,8 @@ describe('Connections on the server', () => {
 
 	it('starts Google with the services asked for and the chat to come back to', async () => {
 		const { backend, event } = eventWith(() => json({ url: 'https://accounts.google.com/o' }));
-		expect(await connections.startGoogle(event, ['gmail', 'calendar'], 's1')).toEqual({ ok: true, data: { url: 'https://accounts.google.com/o' } });
-		expect(backend.calls[0]).toMatchObject({ method: 'POST', url: 'http://api.test/api/connections/google/start', body: { services: ['gmail', 'calendar'], resume_session_id: 's1' } });
+		expect(await connections.startGoogle(event, ['gmail', 'calendar'], 's1', 'https://new.nomi.test')).toEqual({ ok: true, data: { url: 'https://accounts.google.com/o' } });
+		expect(backend.calls[0]).toMatchObject({ method: 'POST', url: 'http://api.test/api/connections/google/start', body: { services: ['gmail', 'calendar'], resume_session_id: 's1', origin: 'https://new.nomi.test' } });
 	});
 
 	it('passes on a refused Hevy key with its reason', async () => {

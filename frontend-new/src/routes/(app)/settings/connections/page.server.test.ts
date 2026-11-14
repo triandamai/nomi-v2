@@ -35,7 +35,8 @@ describe('Settings › Connections', () => {
 		body.append('resume', CHAT);
 		const event = { ...fakeEvent({ url: 'http://localhost/settings/connections', fetch: api.fetch, locals: { accessToken: 'token' } }), request: new Request('http://localhost/settings/connections', { method: 'POST', body }) };
 		expect(await thrown(() => actions.google(event as never))).toMatchObject({ status: 303, location: 'https://accounts.google.com/o' });
-		expect(api.calls[0].body).toEqual({ services: ['gmail', 'calendar'], resume_session_id: CHAT });
+		// Google comes back to this app.
+		expect(api.calls[0].body).toEqual({ services: ['gmail', 'calendar'], resume_session_id: CHAT, origin: 'http://localhost' });
 	});
 
 	it('asks for at least one Google service', async () => {
