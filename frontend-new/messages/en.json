@@ -1428,5 +1428,6 @@
 	"projects_building_empty_title": "Nothing is building",
 	"projects_building_empty_body": "When Koda builds a project, it shows up here with the step it’s on.",
 	"projects_attention_empty_title": "Nothing needs attention",
-	"projects_attention_empty_body": "When a deploy fails or Koda is waiting on you, the project shows up here."
+	"projects_attention_empty_body": "When a deploy fails or Koda is waiting on you, the project shows up here.",
+	"workspace_chat_placeholder": "Ask about this project…"
 }

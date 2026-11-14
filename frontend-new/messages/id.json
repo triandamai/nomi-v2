@@ -1428,5 +1428,6 @@
 	"projects_building_empty_title": "Tidak ada yang sedang dibangun",
 	"projects_building_empty_body": "Saat Koda membangun proyek, ia muncul di sini dengan langkahnya.",
 	"projects_attention_empty_title": "Tidak ada yang perlu perhatian",
-	"projects_attention_empty_body": "Saat deploy gagal atau Koda menunggumu, proyeknya muncul di sini."
+	"projects_attention_empty_body": "Saat deploy gagal atau Koda menunggumu, proyeknya muncul di sini.",
+	"workspace_chat_placeholder": "Tanya tentang proyek ini…"
 }
