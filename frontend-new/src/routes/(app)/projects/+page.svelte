@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Building2, CalendarCheck, FileText, FolderSearch, SearchX, Store } from '@lucide/svelte';
+	import { onMount } from 'svelte';
 	import { goto, invalidate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { m } from '$lib/paraglide/messages';
@@ -42,6 +43,15 @@
 		building: { title: m.projects_building_empty_title, body: m.projects_building_empty_body },
 		attention: { title: m.projects_attention_empty_title, body: m.projects_attention_empty_body },
 	};
+
+	// Back from a project deleted or moved away in its workspace: say so, then tidy the address.
+	onMount(() => {
+		const deleted = page.url.searchParams.get('deleted');
+		const moved = page.url.searchParams.get('moved');
+		if (!deleted && !moved) return;
+		toasts.show({ kind: 'success', title: deleted ? m.projects_deleted({ name: deleted }) : m.projects_moved({ name: moved ?? '' }) });
+		void goto(PATH, { replaceState: true, noScroll: true, keepFocus: true });
+	});
 
 	let description = $state('');
 	let starting = $state(false);

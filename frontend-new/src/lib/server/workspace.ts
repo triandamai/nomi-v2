@@ -135,3 +135,28 @@ export async function readDatabase(event: ApiEvent, id: string, source: 'develop
 	if (!response.ok) return { error: (await response.text()).trim().slice(0, 300), status: response.status };
 	return { tables, table, rows: (await response.json()) as QueryResult };
 }
+
+/** A workspace a project can move to (`/transfer/orgs?q=`); never the one it's in, nor a personal one. */
+export type TransferTarget = { id: string; name: string; is_personal: boolean; owner_name: string | null; my_role: string | null };
+
+export async function transferTargets(event: ApiEvent, id: string, query: string): Promise<TransferTarget[] | null> {
+	const response = await call(event, `/api/projects/${encodeURIComponent(id)}/transfer/orgs${query ? `?q=${encodeURIComponent(query)}` : ''}`);
+	return response.ok ? ((await response.json()) as TransferTarget[]) : null;
+}
+
+async function send(event: ApiEvent, path: string, method: string, body?: unknown): Promise<Sent> {
+	let response: Response;
+	try {
+		response = await apiFetch(event, path, { method, ...(body !== undefined && { body: JSON.stringify(body) }) });
+	} catch (error) {
+		if (isRedirect(error)) throw error;
+		return { ok: false, status: 503, message: '' };
+	}
+	return response.ok ? { ok: true } : { ok: false, status: response.status, message: (await response.text()).trim().slice(0, 300) };
+}
+
+/** Gives the project to another workspace; the person types its name to confirm. */
+export const transfer = (event: ApiEvent, id: string, targetOrgId: string, confirmName: string) =>
+	send(event, `/api/projects/${encodeURIComponent(id)}/transfer`, 'POST', { target_org_id: targetOrgId, confirm_name: confirmName });
+/** Stops serving the live app (production); code, data and deploys stay, and publishing brings it back. */
+export const takeDown = (event: ApiEvent, id: string) => send(event, `/api/projects/${encodeURIComponent(id)}/deploy/environments/production`, 'DELETE');

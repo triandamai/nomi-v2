@@ -104,3 +104,45 @@ test('Deployments, Domain, Monitor and Database say what can’t be done yet, an
 	await expect(page.getByRole('region', { name: 'Database' }).getByText('Publishing isn’t set up here')).toBeVisible();
 });
 
+
+test('Settings: transfer to another workspace, and delete after typing the name', async ({ page, context }) => {
+	const account = await createAccount();
+	await signInAs(context, account);
+	const orgs = async () => ((await (await api(account, '/api/orgs')).json()) as { orgs: { id: string; name: string }[] }).orgs;
+	const home = (await orgs())[0].id;
+	expect((await api(account, '/api/orgs', { method: 'POST', body: JSON.stringify({ name: 'Kopi Kita' }) })).ok).toBe(true);
+	const kopi = (await orgs()).find((org) => org.name === 'Kopi Kita')!.id;
+	const make = async () => ((await (await api(account, '/api/projects', { method: 'POST', body: JSON.stringify({ org_id: home }) })).json()) as { project_id: string }).project_id;
+
+	// Transfer: pick the workspace, type the name, and it's gone from here.
+	const moving = await make();
+	await page.goto(`/projects/${moving}`, { waitUntil: 'networkidle' });
+	const tools = page.getByRole('navigation', { name: 'Project tools' });
+	await tools.getByRole('button', { name: 'Settings' }).click();
+	await expect(page.getByText('Nothing is live to take down.')).toBeVisible();
+	await page.getByRole('button', { name: 'Transfer…' }).click();
+	const transfer = page.getByRole('dialog', { name: 'Transfer New project?' });
+	await transfer.getByText('Kopi Kita').click();
+	await expect(transfer.getByRole('button', { name: 'Transfer' })).toBeDisabled();
+	await transfer.getByRole('textbox', { name: 'Type New project to confirm' }).fill('New project');
+	await transfer.getByRole('button', { name: 'Transfer' }).click();
+	await expect(page).toHaveURL(/\/projects$/);
+	await expect(page.getByText('New project moved to its new workspace')).toBeVisible();
+	const there = (await (await api(account, `/api/projects?org_id=${kopi}`)).json()) as { projects: { id: string }[] };
+	expect(there.projects.map((one) => one.id)).toContain(moving);
+
+	// Delete: only once the name is typed exactly.
+	const going = await make();
+	await page.goto(`/projects/${going}`, { waitUntil: 'networkidle' });
+	await tools.getByRole('button', { name: 'Settings' }).click();
+	await page.getByRole('button', { name: 'Delete…' }).click();
+	const remove = page.getByRole('dialog', { name: 'Delete New project?' });
+	await expect(remove.getByRole('link', { name: 'Export repo' })).toHaveAttribute('href', `/projects/${going}/export`);
+	await remove.getByRole('textbox', { name: 'Type New project to confirm' }).fill('New projec');
+	await expect(remove.getByRole('button', { name: 'Delete forever' })).toBeDisabled();
+	await remove.getByRole('textbox', { name: 'Type New project to confirm' }).fill('New project');
+	await remove.getByRole('button', { name: 'Delete forever' }).click();
+	await expect(page).toHaveURL(/\/projects$/);
+	await expect(page.getByText('New project deleted')).toBeVisible();
+	expect((await api(account, `/api/projects/${going}`)).status).toBe(404);
+});

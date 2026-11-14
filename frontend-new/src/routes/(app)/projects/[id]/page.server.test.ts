@@ -6,6 +6,7 @@ vi.mock('$env/dynamic/private', () => ({ env: { API_URL: 'http://api.test' } }))
 const { load, actions } = await import('./+page.server');
 const deploy = await import('./deploy/+server');
 const domainCheck = await import('./domain/check/+server');
+const transferSearch = await import('./transfer/+server');
 const preview = await import('./preview/[...path]/+server');
 const app = await import('./app/+page.server');
 const bySession = await import('../session/[sessionId]/+page.server');
@@ -69,5 +70,39 @@ describe('a project’s workspace', () => {
 		const response = await domainCheck.GET({ ...event, url: new URL('http://localhost/projects/p1/domain/check?name=kopi') } as never);
 		expect(await response.json()).toEqual({ available: true });
 		expect(api.calls[0].url).toBe('http://api.test/api/projects/p1/domain/check?subdomain=kopi');
+	});
+
+	const posted = (body: Record<string, string>, answer: Parameters<typeof fakeBackend>[0]) => {
+		const { api, event } = at(answer, { id: 'p1' });
+		return { api, event: { ...event, request: new Request('http://localhost/projects/p1', { method: 'POST', body: new URLSearchParams(body) }) } };
+	};
+
+	it('transfers to a workspace, then leaves for Projects', async () => {
+		const done = posted({ to: 'w2', name: 'warung' }, () => new Response(null, { status: 204 }));
+		expect(await thrown(() => actions.transfer(done.event as never))).toMatchObject({ status: 303, location: '/projects?moved=warung' });
+		expect(done.api.calls[0].body).toEqual({ target_org_id: 'w2', confirm_name: 'warung' });
+		expect(await actions.transfer(posted({ name: 'warung' }, () => new Response(null, { status: 204 })).event as never)).toMatchObject({ status: 400 });
+	});
+
+	it('takes the app down', async () => {
+		const down = posted({}, () => new Response(null, { status: 204 }));
+		expect(await actions.takedown(down.event as never)).toEqual({ takenDown: true });
+		expect(down.api.calls[0]).toMatchObject({ method: 'DELETE', url: 'http://api.test/api/projects/p1/deploy/environments/production' });
+	});
+
+	it('deletes only once the project’s name is typed', async () => {
+		const project = (call: { method: string; url: string }) =>
+			call.method === 'DELETE' ? new Response(null, { status: 204 }) : call.url.endsWith('/api/projects') ? json({ org_id: 'w', projects: [] }) : json({ id: 'p1', name: 'warung', session_id: 's1' });
+		expect(await actions.delete(posted({ name: 'warun' }, project).event as never)).toMatchObject({ status: 400, data: { field: 'name' } });
+		const gone = posted({ name: 'warung' }, project);
+		expect(await thrown(() => actions.delete(gone.event as never))).toMatchObject({ status: 303, location: '/projects?deleted=warung' });
+		expect(gone.api.calls.at(-1)).toMatchObject({ method: 'DELETE', url: 'http://api.test/api/projects/p1' });
+	});
+
+	it('finds workspaces to move to', async () => {
+		const { api, event } = at(() => json([{ id: 'w2', name: 'Kopi Kita' }]), { id: 'p1' });
+		const response = await transferSearch.GET({ ...event, url: new URL('http://localhost/projects/p1/transfer?q=kopi') } as never);
+		expect(await response.json()).toEqual([{ id: 'w2', name: 'Kopi Kita' }]);
+		expect(api.calls[0].url).toBe('http://api.test/api/projects/p1/transfer/orgs?q=kopi');
 	});
 });
