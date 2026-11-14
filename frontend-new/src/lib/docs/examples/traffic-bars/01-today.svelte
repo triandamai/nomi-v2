@@ -3,7 +3,7 @@
 	import TrafficBars from '$lib/ds/projects/TrafficBars.svelte';
 
 	const counts = [0, 0, 0, 0, 0, 0, 0, 0, 6, 120, 126, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-	const bars = counts.map((requests, hour) => ({ at: `${String(hour).padStart(2, '0')}:00`, share: requests / 126, requests }));
+	const bars = counts.map((count, hour) => ({ at: `${String(hour).padStart(2, '0')}:00`, share: count / 126, count }));
 </script>
 
 <div class="w-full max-w-170">

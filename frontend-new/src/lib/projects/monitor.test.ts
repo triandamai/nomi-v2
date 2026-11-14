@@ -21,14 +21,19 @@ describe('the traffic bars', () => {
 		const buckets = [counters({ at: '2026-11-14T08:00:00Z', requests: 6 }), counters({ at: '2026-11-14T09:00:00Z', requests: 126 }), counters({ at: '2026-11-14T10:00:00Z', requests: null }), counters({ at: '2026-11-14T11:00:00Z', requests: 0 })] as MetricsBucket[];
 		expect(trafficBars(buckets, 'UTC')).toEqual({
 			bars: [
-				{ at: '08:00', share: 6 / 126, requests: 6 },
-				{ at: '09:00', share: 1, requests: 126 },
-				{ at: '10:00', share: null, requests: null },
-				{ at: '11:00', share: 0, requests: 0 },
+				{ at: '08:00', share: 6 / 126, count: 6 },
+				{ at: '09:00', share: 1, count: 126 },
+				{ at: '10:00', share: null, count: null },
+				{ at: '11:00', share: 0, count: 0 },
 			],
-			peak: { at: '09:00', requests: 126 },
+			peak: { at: '09:00', count: 126 },
 		});
 		expect(trafficBars([], 'UTC')).toEqual({ bars: [], peak: null });
+	});
+
+	it('counts visits instead, for a site', () => {
+		const buckets = [counters({ at: '2026-11-14T08:00:00Z', requests: 90, visitors: 12 }), counters({ at: '2026-11-14T09:00:00Z', requests: 40, visitors: 48 })] as MetricsBucket[];
+		expect(trafficBars(buckets, 'UTC', 'visitors')).toEqual({ bars: [{ at: '08:00', share: 12 / 48, count: 12 }, { at: '09:00', share: 1, count: 48 }], peak: { at: '09:00', count: 48 } });
 	});
 });
 

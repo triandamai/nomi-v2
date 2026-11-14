@@ -164,4 +164,11 @@ describe('a project’s workspace on the server', () => {
 		expect(await workspace.sandboxBeat(missing.event, 'p1')).toBe(false);
 		expect(await workspace.startSandbox(missing.event, 'p1')).toEqual({ ok: false, status: 404, message: 'project not found' });
 	});
+	it('says whether the project keeps any tables, from its development database', async () => {
+		const some = eventWith(() => json([{ schema: 'public', name: 'bookings', rows_estimate: 3 }]));
+		expect(await workspace.hasTables(some.event, 'p1')).toBe(true);
+		expect(some.backend.calls[0].url).toBe('http://api.test/api/projects/p1/database/tables?source=development');
+		expect(await workspace.hasTables(eventWith(() => json([])).event, 'p1')).toBe(false);
+		expect(await workspace.hasTables(eventWith(() => new Response('publishing isn’t set up', { status: 503 })).event, 'p1')).toBe(false);
+	});
 });

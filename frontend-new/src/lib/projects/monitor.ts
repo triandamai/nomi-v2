@@ -17,15 +17,18 @@ export function monitorStats(metrics: ProjectMetrics) {
 	};
 }
 
-export type TrafficBar = { at: string; share: number | null; requests: number | null };
+export type TrafficBar = { at: string; share: number | null; count: number | null };
 
-/** Each bucket's requests against the busiest one; an unmeasured bucket stays null (a gap). */
-export function trafficBars(buckets: MetricsBucket[], timeZone?: string): { bars: TrafficBar[]; peak: { at: string; requests: number } | null } {
+/**
+ * Each bucket's requests (or, for a site, its visits) against the busiest one; an unmeasured bucket
+ * stays null (a gap).
+ */
+export function trafficBars(buckets: MetricsBucket[], timeZone?: string, measure: 'requests' | 'visitors' = 'requests'): { bars: TrafficBar[]; peak: { at: string; count: number } | null } {
 	const hour = (iso: string) => new Intl.DateTimeFormat('en-GB', { timeZone, hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(iso));
-	const most = Math.max(0, ...buckets.map((bucket) => bucket.requests ?? 0));
-	const bars = buckets.map((bucket) => ({ at: hour(bucket.at), share: bucket.requests === null ? null : most ? bucket.requests / most : 0, requests: bucket.requests }));
-	const top = bars.find((bar) => bar.requests !== null && bar.requests === most && most > 0);
-	return { bars, peak: top ? { at: top.at, requests: most } : null };
+	const most = Math.max(0, ...buckets.map((bucket) => bucket[measure] ?? 0));
+	const bars = buckets.map((bucket) => ({ at: hour(bucket.at), share: bucket[measure] === null ? null : most ? bucket[measure] / most : 0, count: bucket[measure] }));
+	const top = bars.find((bar) => bar.count !== null && bar.count === most && most > 0);
+	return { bars, peak: top ? { at: top.at, count: most } : null };
 }
 
 const megabytes = (bytes: number) => Math.round(bytes / (1024 * 1024));

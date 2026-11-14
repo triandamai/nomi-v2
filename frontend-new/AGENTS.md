@@ -585,6 +585,12 @@ steps; what isn't there yet is left out, not drawn dead:
   a static site. A framework's preview in the browser itself (WebContainer, the backend's
   `browser` runtime) isn't there yet: the pane says there's nothing to preview yet, and offers
   Preview and Code only.
+- A site (Flow / Build — Landing page `WUiji`) uses the same workspace. Database shows only when the
+  site keeps tables (step 3: "the tabs only show what this site has"). Share already leads with the
+  card and its send-to apps, with no QR (step 4). Monitor (step 5) leads with visits and the page
+  load, and its bars count visits; the pen's "Where visits come from", Form sends and Uptime aren't
+  measured (BACKEND_TODO.md), so requests and errors take their places. The plan in the chat (step 2)
+  is Koda's own.
 - The chat pane is the project's chat itself (`ChatView`), as on its own page; its header's history
   and collapse buttons are left out, and it names Koda and Nomi as the crew building.
 - The chat is 520 wide as the flow draws it, dragged between 360 and 720 by the resize handle:
