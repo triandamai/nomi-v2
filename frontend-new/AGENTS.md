@@ -569,6 +569,11 @@ steps; what isn't there yet is left out, not drawn dead:
   (pasted from Export): ours wears the share icon.
 - Once a project is live the preview shows the live app; the pen's preview of changes not yet
   published needs the runtime (below), as a static site's files already do.
+- Code (Code, terminal & phone preview `uR6dq`, steps 1–2) is the project's files in `CodeView`,
+  read only, opening on the app's own page (the backend doesn't say which file Koda changed last);
+  lines picked are quoted above the composer (`CodeQuote`, in `ChatView`) and sent ahead of the
+  message. The tokens are plain: the server-side highlighter isn't there yet. Terminal (steps
+  3–4) shows what the runtime ran, so it comes with the runtime.
 - The preview shows the live app once there is one, or the project's own files when it's a static
   site; a framework's preview needs its runtime (sandbox or WebContainer), which comes with the
   Terminal view. Until then the pane says there's nothing to preview yet, and offers Preview and

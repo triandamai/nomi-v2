@@ -43,6 +43,7 @@
 	import ChatComposer from '$lib/ds/thread/ChatComposer.svelte';
 	import { replyBlocks } from '$lib/adapters/blocks';
 	import ReplyBlocks from '$lib/chat/ReplyBlocks.svelte';
+	import CodeQuote from '$lib/ds/build/CodeQuote.svelte';
 	import type { ChatPageData } from '$lib/server/chatPage';
 	import type { Shell } from '$lib/server/shell';
 
@@ -58,8 +59,11 @@
 		data: ChatPageData & Pick<Shell, 'crew' | 'usage'>;
 		/** In a project's workspace: the 520 chat pane, 20 in, with the project's own placeholder. */
 		pane?: boolean;
+		/** Lines picked in the code view, quoted above the composer and sent ahead of the message. */
+		quote?: { file: string; range: string; snippet: string; text: string } | null;
+		onunquote?: () => void;
 	};
-	let { data, pane = false }: Props = $props();
+	let { data, pane = false, quote = null, onunquote }: Props = $props();
 
 	const header = chatHeader();
 	const time = appClock();
@@ -827,7 +831,8 @@
 		{#if !atLatest && entries.length > 0}
 			<div class="absolute -top-12 left-1/2 -translate-x-1/2"><JumpToLatest count={unseen} onclick={() => jumpToLatest(true)} /></div>
 		{/if}
-		<div class="mx-auto w-full max-w-180">
+		<div class="mx-auto flex w-full max-w-180 flex-col gap-2">
+			{#if quote}<CodeQuote file={quote.file} range={quote.range} snippet={quote.snippet} onremove={() => onunquote?.()} />{/if}
 			<ChatComposer
 				bind:value={draft}
 				bind:field
@@ -838,7 +843,11 @@
 				model={modelLabel}
 				{models}
 				thinking={thinkingChoice}
-				onsend={(text) => send(text)}
+				onsend={(text) => {
+					const quoted = quote;
+					if (quoted) onunquote?.();
+					void send(quoted ? `${quoted.text}\n\n${text}` : text);
+				}}
 				onstop={stop}
 				onmodel={(key) => void useModel(key)}
 				onthinking={(level) => void useThinking(level)}

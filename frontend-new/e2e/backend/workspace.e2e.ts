@@ -47,7 +47,22 @@ test('a project opens in its workspace: chat, files and the preview', async ({ p
 	expect(imported.ok).toBe(true);
 	await page.reload({ waitUntil: 'networkidle' });
 	await page.getByRole('radio', { name: 'Code' }).click();
-	await expect(page.getByText('index.html')).toBeVisible();
+	await expect(page.getByRole('treeitem', { name: /index\.html/ })).toBeVisible();
+	await expect(page.getByText('<h1>Warung Kopi Bu Siti</h1>')).toBeVisible();
+	await expect(page.getByText('read-only · 1 line')).toBeVisible();
+
+	// Lines asked about: quoted above the composer, then sent ahead of the message.
+	await page.getByRole('button', { name: 'Line 1' }).click();
+	await page.getByRole('button', { name: 'Ask Koda about lines 1' }).click();
+	await expect(chat.getByText('L1')).toBeVisible();
+	await expect(async () => {
+		await composer.fill('Make this bigger');
+		await expect(chat.getByRole('button', { name: 'Send' })).toBeEnabled({ timeout: 1_000 });
+	}).toPass();
+	await chat.getByRole('button', { name: 'Send' }).click();
+	await expect(chat.getByText('Make this bigger')).toBeVisible();
+	await expect(chat.getByText(/About .?index\.html.? line 1:/)).toBeVisible();
+	await expect(chat.getByText('L1')).toHaveCount(0);
 	await page.getByRole('radio', { name: 'Preview' }).click();
 	const preview = page.frameLocator(`iframe[src="/projects/${id}/preview/"]`);
 	await expect(preview.getByRole('heading', { name: 'Warung Kopi Bu Siti' })).toBeVisible();
