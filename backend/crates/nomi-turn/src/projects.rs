@@ -56,6 +56,22 @@ pub async fn move_to_new_project(
     agent_display_name: &str,
 ) -> Result<(String, Option<Uuid>), TurnError> {
     let name = draft_name(text);
+    // Over their plan's project limit: no project is started, and Rena's reply says why.
+    if let Err(hit) = nomi_usage::entitlements::check_new_project_in(&mut **conn, user_id).await? {
+        let reply = hit.message();
+        let message_id: Uuid = sqlx::query_scalar(
+            "INSERT INTO messages (session_id, sender_channel_identity_id, content, agent_display_name) VALUES ($1, NULL, $2, $3) RETURNING id",
+        )
+        .bind(session_id)
+        .bind(&reply)
+        .bind(agent_display_name)
+        .fetch_one(&mut **conn)
+        .await?;
+        if let Some((publisher, _)) = mqtt {
+            let _ = publisher.publish(session_id, &StreamEnvelope::MessageCreated { message_id }).await;
+        }
+        return Ok((reply, Some(message_id)));
+    }
     let mut tx = sqlx::Connection::begin(&mut **conn).await?;
     let (project_session_id, org_id): (Uuid, Uuid) = sqlx::query_as(
         "INSERT INTO sessions (org_id, user_id, channel, chat_type, chat_id, title) \

@@ -163,6 +163,13 @@ pub async fn check_new_project(pool: &PgPool, user_id: Uuid) -> Check {
     Ok(verdict(within(Some(limit), project_count(pool, user_id).await?), LimitHit::Projects { limit }))
 }
 
+/// [`check_new_project`] on a connection already in hand (inside a transaction, say).
+pub async fn check_new_project_in(conn: &mut PgConnection, user_id: Uuid) -> Check {
+    let Some(limit) = plans::subscription_in(&mut *conn, user_id).await?.plan.max_projects else { return Ok(Ok(())) };
+    let used: i64 = sqlx::query_scalar("SELECT count(*) FROM projects WHERE user_id = $1").bind(user_id).fetch_one(&mut *conn).await?;
+    Ok(verdict(within(Some(limit), used), LimitHit::Projects { limit }))
+}
+
 pub async fn check_new_org(pool: &PgPool, user_id: Uuid) -> Check {
     let Some(limit) = for_user(pool, user_id).await?.max_orgs else { return Ok(Ok(())) };
     Ok(verdict(within(Some(limit), org_count(pool, user_id).await?), LimitHit::Orgs { limit }))

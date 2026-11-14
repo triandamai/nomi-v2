@@ -235,18 +235,24 @@ pub async fn create_project(
             .map_err(|e| e.to_string())?;
             id
         }
-        None => sqlx::query_scalar(
-            "INSERT INTO projects (user_id, session_id, name, description, stack, runtime) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
-        )
-        .bind(user_id)
-        .bind(session_id)
-        .bind(name)
-        .bind(description)
-        .bind(stack)
-        .bind(runtime)
-        .fetch_one(&mut **conn)
-        .await
-        .map_err(|e| e.to_string())?,
+        None => {
+            // The agent relays this to the person as the reason no project was made.
+            if let Err(hit) = nomi_usage::entitlements::check_new_project_in(&mut **conn, user_id).await.map_err(|e| e.to_string())? {
+                return Err(hit.message());
+            }
+            sqlx::query_scalar(
+                "INSERT INTO projects (user_id, session_id, name, description, stack, runtime) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
+            )
+            .bind(user_id)
+            .bind(session_id)
+            .bind(name)
+            .bind(description)
+            .bind(stack)
+            .bind(runtime)
+            .fetch_one(&mut **conn)
+            .await
+            .map_err(|e| e.to_string())?
+        }
     };
 
     let backend_note = match backend {
