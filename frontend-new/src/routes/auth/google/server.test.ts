@@ -11,7 +11,7 @@ describe('continuing with Google', () => {
 		const api = fakeBackend(() => json({ url: 'https://accounts.google.com/o/oauth2/auth?state=s1' }));
 		const event = fakeEvent({ url: 'http://localhost/auth/google', form: { redirect_to: '/chat/7' }, fetch: api.fetch });
 		expect(await thrown(() => start.POST(event as never))).toMatchObject({ status: 303, location: 'https://accounts.google.com/o/oauth2/auth?state=s1' });
-		expect(api.calls[0]).toMatchObject({ url: 'http://api.test/api/auth/google/start', method: 'POST', body: { invite_code: null } });
+		expect(api.calls[0]).toMatchObject({ url: 'http://api.test/api/auth/google/start', method: 'POST', body: { invite_code: null, origin: 'http://localhost' } });
 		expect(event.jar.get('google_return_to')).toBe('/chat/7');
 		expect(event.cookieOptions.get('google_return_to')).toMatchObject({ httpOnly: true, maxAge: 600 });
 	});
@@ -19,7 +19,13 @@ describe('continuing with Google', () => {
 	it('brings the invite along, so a new account joins its workspace', async () => {
 		const api = fakeBackend(() => json({ url: 'https://accounts.google.com/x' }));
 		await thrown(() => start.POST(fakeEvent({ url: 'http://localhost/auth/google', form: { redirect_to: '/invite/Xk29' }, fetch: api.fetch }) as never));
-		expect(api.calls[0].body).toEqual({ invite_code: 'Xk29' });
+		expect(api.calls[0].body).toEqual({ invite_code: 'Xk29', origin: 'http://localhost' });
+	});
+
+	it('asks Google to come back to this app, wherever the server’s redirect address points', async () => {
+		const api = fakeBackend(() => json({ url: 'https://accounts.google.com/x' }));
+		await thrown(() => start.POST(fakeEvent({ url: 'https://new.nomi.test/auth/google', form: {}, fetch: api.fetch }) as never));
+		expect(api.calls[0].body).toMatchObject({ origin: 'https://new.nomi.test' });
 	});
 
 	it('comes back to sign in saying Google is unavailable when the server has no Google', async () => {

@@ -37,6 +37,22 @@ export async function createAccount(options: { email?: string; password?: string
 	return { email, password, workspace, tokens: (await verified.json()) as Account['tokens'] };
 }
 
+/**
+ * Signs in again as a person would (the password, then the emailed code), so the new tokens carry
+ * what changed since: admin access is read into the token when it is made.
+ */
+export async function signInAgain(account: Account): Promise<Account> {
+	const started = Date.now();
+	const login = await post('/api/auth/login', { email: account.email, password: account.password });
+	if (!login.ok) throw new Error(`login ${account.email}: ${login.status} ${await login.text()}`);
+	const body = (await login.json()) as { verification?: { challenge_id: string }; access_token?: string; refresh_token?: string };
+	if (!body.verification) return { ...account, tokens: body as Account['tokens'] };
+	const code = await codeFor(account.email, /sign-in code/i, { after: started - 1000 });
+	const verified = await post('/api/auth/verify', { challenge_id: body.verification.challenge_id, code });
+	if (!verified.ok) throw new Error(`verify ${account.email}: ${verified.status} ${await verified.text()}`);
+	return { ...account, tokens: (await verified.json()) as Account['tokens'] };
+}
+
 /** Signs the browser in as `account`, the way the app keeps a sign-in (httpOnly cookies). */
 export async function signInAs(context: BrowserContext, account: Account, baseURL = APP_URL): Promise<void> {
 	await context.addCookies([

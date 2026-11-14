@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { page } from 'vitest/browser';
 import AgentsSection from './AgentsSection.svelte';
+import { CREW_LOOKS, shapePath } from '$lib/ds/agents/shapes';
+import type { CrewId } from '$lib/ds/agents/crew';
 
 const box = (element: Element) => element.getBoundingClientRect();
 const style = (element: Element) => getComputedStyle(element);
@@ -30,9 +32,9 @@ describe('Agents & app chrome section', () => {
 			const mascots = [...row.querySelectorAll('svg')];
 			expect(mascots, `${px}`).toHaveLength(10);
 			for (const mascot of mascots) expect(box(mascot).width).toBe(px);
-			// Same order in every row: each mascot's body is drawn in that member's colour.
-			expect(mascots.map((mascot) => mascot.querySelector('[data-part="body"]')!.getAttribute('style'))).toEqual(
-				ORDER.map((name) => `fill: var(--crew-${name.toLowerCase()});`),
+			// Same order in every row: each mascot is that member's own agent shape.
+			expect(mascots.map((mascot) => mascot.querySelector('[data-part="body"]')!.getAttribute('d'))).toEqual(
+				ORDER.map((name) => shapePath(CREW_LOOKS[name.toLowerCase() as CrewId].shape)),
 			);
 		}
 		for (const [row, label] of [[mid, '32px'], [small, '20px']] as const) {

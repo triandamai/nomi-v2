@@ -19,7 +19,11 @@ export default defineConfig({
 	// longer than Playwright's 5 s to move a page on.
 	expect: { timeout: 15_000 },
 	use: { baseURL: APP_URL, trace: 'retain-on-failure' },
-	projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'], launchOptions: { args: ['--font-render-hinting=none'] } } }],
+	projects: [
+		{ name: 'chromium', testIgnore: 'maintenance.e2e.ts', use: { ...devices['Desktop Chrome'], launchOptions: { args: ['--font-render-hinting=none'] } } },
+		// Maintenance holds everyone on its page: it runs alone, once the rest are done.
+		{ name: 'maintenance', testMatch: 'maintenance.e2e.ts', dependencies: ['chromium'], use: { ...devices['Desktop Chrome'], launchOptions: { args: ['--font-render-hinting=none'] } } },
+	],
 	webServer: [
 		{
 			// Built once by CI (or `cargo build --bin nomi-orchestrator`); cargo only runs it.

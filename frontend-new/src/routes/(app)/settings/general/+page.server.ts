@@ -21,7 +21,7 @@ export const load: PageServerLoad = async (event) => {
 export const actions: Actions = {
 	/** Off to Google; it comes back to this page through /auth/google/callback. */
 	linkGoogle: async (event) => {
-		const started = await startGoogleLink(event);
+		const started = await startGoogleLink(event, event.url.origin);
 		if (!started.ok) return fail(started.status, { message: started.message });
 		redirect(303, started.data.url);
 	},
