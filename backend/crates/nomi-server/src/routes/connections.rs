@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::app::AppState;
-use nomi_agent_workspace::connection::{self, Activity, ConnectionStatus, GoogleConfig};
+use nomi_agent_workspace::connection::{self, Activity, Callback, ConnectionStatus, GoogleConfig};
 use nomi_auth::extractor::AuthClaims;
 
 #[derive(Serialize)]
@@ -49,6 +49,9 @@ pub struct StartRequest {
     pub services: Vec<String>,
     /// The chat whose request needed Google: it carries on once connected.
     pub resume_session_id: Option<Uuid>,
+    /// The web app this started on (`https://new.nomi.example.com`): Google comes back there.
+    #[serde(default)]
+    pub origin: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -62,6 +65,8 @@ pub async fn start_google(
     Json(req): Json<StartRequest>,
 ) -> Result<Json<StartResponse>, (StatusCode, String)> {
     let config = GoogleConfig::current().await.ok_or_else(not_configured)?;
+    let redirect_uri = config.callback_for(Callback::Workspace, req.origin.as_deref()).map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+    let config = GoogleConfig { redirect_uri, ..config };
     let mut conn = state.pool.acquire().await.map_err(internal)?;
     // Only a chat this user wrote in can be resumed.
     let resume = match req.resume_session_id {

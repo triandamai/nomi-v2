@@ -141,13 +141,10 @@ jobs:
       - name: Free disk space
         run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
 
-      # Pinned: sqlx-postgres 0.7.4 (the backend's) doesn't compile on Rust 1.99 (never-type
-      # fallback: "the trait bound `!: Decode` is not satisfied"). A warm cache hid it until a cold
-      # build. Move this up once the backend's sqlx does.
+      # Pinned: sqlx-postgres 0.7.4 doesn't compile on Rust 1.100 (the never-type inference
+      # change, rust-lang/rust#148922). Back to stable once sqlx is on 0.8.
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: 1.97.1
+        uses: dtolnay/rust-toolchain@1.99.1
 
       - name: Cache cargo registry and build output
         uses: Swatinem/rust-cache@v2

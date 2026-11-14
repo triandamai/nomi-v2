@@ -12,21 +12,21 @@ export const load: PageServerLoad = async ({ cookies, fetch }) => {
 
 export const actions: Actions = {
 	/** Starts connecting: the page sends the browser on to Google's sign-in. */
-	start: async ({ request, cookies, fetch }) => {
+	start: async ({ request, cookies, fetch, url }) => {
 		const data = await request.formData();
 		const services = data.getAll('service').map(String);
 		const resume = String(data.get('resume') ?? '') || null;
 		if (services.length === 0) return fail(400, { error: m.conn_pick_one() });
 		const response = await apiFetch(fetch, cookies, '/api/connections/google/start', {
 			method: 'POST',
-			body: JSON.stringify({ services, resume_session_id: resume }),
+			body: JSON.stringify({ services, resume_session_id: resume, origin: url.origin }),
 		});
 		if (!response.ok) {
 			const text = await response.text();
 			return fail(response.status, { error: text && text.length < 160 ? text : m.conn_start_failed() });
 		}
-		const { url } = (await response.json()) as { url: string };
-		return { url };
+		const { url: googleUrl } = (await response.json()) as { url: string };
+		return { url: googleUrl };
 	},
 	disconnect: async ({ cookies, fetch }) => {
 		const response = await apiFetch(fetch, cookies, '/api/connections/google', { method: 'DELETE' });

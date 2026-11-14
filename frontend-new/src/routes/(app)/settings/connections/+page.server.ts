@@ -32,7 +32,7 @@ export const actions: Actions = {
 		const services = form.getAll('service').map(String).filter((service) => (GOOGLE_SERVICES as readonly string[]).includes(service));
 		if (!services.length) return fail(400, { app: 'google', message: m.connections_pick_service() });
 		const resume = field(form, 'resume');
-		const started = await connections.startGoogle(event, services, isChat(resume) ? resume : null);
+		const started = await connections.startGoogle(event, services, isChat(resume) ? resume : null, event.url.origin);
 		if (!started.ok) return refused(started, 'google');
 		redirect(303, started.data.url);
 	},

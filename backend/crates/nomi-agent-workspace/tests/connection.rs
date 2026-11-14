@@ -27,6 +27,20 @@ fn config_comes_from_all_three_fields_and_derives_the_sign_in_callback() {
 }
 
 #[test]
+fn callbacks_go_to_the_app_the_flow_started_on() {
+    use nomi_agent_workspace::connection::{Callback, InvalidOrigin};
+    let config = GoogleConfig::new("id".into(), "s".into(), "https://nomi.app/connections/google/callback".into());
+    assert_eq!(config.callback_for(Callback::SignIn, None).unwrap(), "https://nomi.app/auth/google/callback");
+    assert_eq!(config.callback_for(Callback::Workspace, Some(" ")).unwrap(), "https://nomi.app/connections/google/callback");
+    assert_eq!(config.callback_for(Callback::SignIn, Some("https://nomi.app")).unwrap(), "https://nomi.app/auth/google/callback");
+    assert_eq!(config.callback_for(Callback::SignIn, Some("https://new.nomi.app/any/path")).unwrap(), "https://new.nomi.app/auth/google/callback");
+    assert_eq!(config.callback_for(Callback::Workspace, Some("http://localhost:5175")).unwrap(), "http://localhost:5175/connections/google/callback");
+    // Google's own list of redirect URIs decides which sites may receive it; only junk is refused here.
+    assert_eq!(config.callback_for(Callback::SignIn, Some("nomi.app")), Err(InvalidOrigin("nomi.app".into())));
+    assert!(config.callback_for(Callback::SignIn, Some("javascript:alert(1)")).is_err());
+}
+
+#[test]
 fn only_known_services_have_scopes() {
     for service in connection::SERVICES {
         assert!(connection::service_scope(service).unwrap().starts_with("https://www.googleapis.com/auth/"));
