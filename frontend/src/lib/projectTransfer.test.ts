@@ -151,6 +151,22 @@ describe('projectTransfer helpers', () => {
 			expect(ALLOWED_PROJECT_API_PATHS.test('domain/other')).toBe(false);
 		});
 
+		it("allows the project's own domains, and never a path that folds away", () => {
+			for (const path of ['domains', 'domains/shop.example.com', 'domains/shop.example.com/check', 'domains/example.co.id/primary']) {
+				expect(ALLOWED_PROJECT_API_PATHS.test(path)).toBe(true);
+			}
+			for (const path of ['domains/..', 'domains/../members', 'domains/example/check', 'domains/a.com/other']) {
+				expect(ALLOWED_PROJECT_API_PATHS.test(path)).toBe(false);
+			}
+		});
+
+		it('allows the database dump and row edits by schema and table', () => {
+			expect(ALLOWED_PROJECT_API_PATHS.test('database/dump')).toBe(true);
+			expect(ALLOWED_PROJECT_API_PATHS.test('database/tables/public/task/rows')).toBe(true);
+			expect(ALLOWED_PROJECT_API_PATHS.test('database/tables/../task/rows')).toBe(false);
+			expect(ALLOWED_PROJECT_API_PATHS.test('database/tables/public/../rows')).toBe(false);
+		});
+
 		it('allows the sandbox runtime routes and nothing else under sandbox', () => {
 			for (const path of ['sandbox', 'sandbox/start', 'sandbox/stop', 'sandbox/logs']) {
 				expect(ALLOWED_PROJECT_API_PATHS.test(path)).toBe(true);

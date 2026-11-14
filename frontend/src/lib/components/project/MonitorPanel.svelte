@@ -6,7 +6,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { getLocale } from '$lib/paraglide/runtime';
 	import StatusSquare from '$lib/components/project/StatusSquare.svelte';
-	import { change, chartPaths, countMax, eventTone, filterLogs, gappedChartPaths, liveSince, logLevel, orderContainers, peak, serviceHistory, type ChartRun, type LogFilter } from '$lib/monitorView';
+	import { change, chartPaths, countMax, eventTone, filterLogs, formShare, gappedChartPaths, liveSince, logLevel, orderContainers, peak, serviceHistory, topSources, type ChartRun, type LogFilter } from '$lib/monitorView';
 	import { ago, bytes, projectApi } from '$lib/projectApi';
 	import type { ProjectDeploy } from '$lib/projectDeploy.svelte';
 	import type { ContainerUsage, MetricsCounters, MetricsRange, ProjectMetrics, ShipyardEvent } from '$lib/types';
@@ -170,6 +170,16 @@
 		{ key: 'p95_ms', label: m.pj_mon_p95, format: (ms) => m.pj_mon_ms({ ms: count(Math.round(ms)) }), up: 'bad' },
 	];
 
+	/** Sources listed before the rest are summed as Other. */
+	const SOURCES_SHOWN = 5;
+
+	function share(value: number): string {
+		return new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: value < 0.1 && value > 0 ? 1 : 0 }).format(value);
+	}
+
+	const sources = $derived(metrics?.sources ? topSources(metrics.sources, SOURCES_SHOWN, m.pj_mon_source_other()) : null);
+	const formsShare = $derived(formShare(metrics?.form_sends, metrics?.totals.visitors));
+
 	function signedPercent(value: number): string {
 		return new Intl.NumberFormat(locale, { style: 'percent', signDisplay: 'exceptZero', maximumFractionDigits: 0 }).format(value / 100);
 	}
@@ -250,6 +260,48 @@
 		</div>
 		<span class="caption">{shownRange.over()}</span>
 	</section>
+
+	{#if metrics}
+		<section class="visits" aria-label={m.pj_mon_visits()}>
+			<article class="card chart">
+				<span class="chart__title">{m.pj_mon_sources()}</span>
+				{#if sources === null || sources === undefined}
+					<span class="tile__value tile__value--none">{m.pj_mon_not_measured()}</span>
+					<span class="caption">{m.pj_mon_sources_hint()}</span>
+				{:else if sources.length === 0}
+					<span class="caption">{m.pj_mon_no_visits()}</span>
+				{:else}
+					<ul class="sources">
+						{#each sources as source (source.name)}
+							<li class="source">
+								<span class="source__name">{source.name === 'Direct' ? m.pj_mon_source_direct() : source.name}</span>
+								<span class="source__bar" aria-hidden="true"><span style="width: {Math.round(source.share * 100)}%"></span></span>
+								<span class="meta">{share(source.share)}</span>
+							</li>
+						{/each}
+					</ul>
+				{/if}
+			</article>
+			<article class="card tile">
+				<span class="meta">{m.pj_mon_form_sends()}</span>
+				{#if metrics.form_sends === null || metrics.form_sends === undefined}
+					<span class="tile__value tile__value--none">{m.pj_mon_not_measured()}</span>
+				{:else}
+					<span class="tile__value">{count(metrics.form_sends)}</span>
+					{#if formsShare !== null}<span class="caption">{m.pj_mon_form_share({ share: share(formsShare) })}</span>{/if}
+				{/if}
+			</article>
+			<article class="card tile">
+				<span class="meta">{m.pj_mon_uptime()}</span>
+				{#if !metrics.uptime}
+					<span class="tile__value tile__value--none">{m.pj_mon_not_measured()}</span>
+				{:else}
+					<span class="tile__value">{share(metrics.uptime.share)}</span>
+					<span class="caption">{m.pj_mon_uptime_since({ when: ago(metrics.uptime.since, locale) })}</span>
+				{/if}
+			</article>
+		</section>
+	{/if}
 
 	{#if usageError}<p class="error" role="alert">{usageError}</p>{/if}
 	{#if shownContainers.length === 0 && !usageError}
@@ -589,5 +641,41 @@
 	}
 	.log__line--warn {
 		color: var(--md-sys-color-tertiary);
+	}
+	.visits {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+		gap: 12px;
+	}
+	.sources {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+	.source {
+		display: grid;
+		grid-template-columns: minmax(0, 8rem) 1fr auto;
+		align-items: center;
+		gap: 8px;
+		font-size: 0.8125rem;
+	}
+	.source__name {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.source__bar {
+		height: 6px;
+		overflow: hidden;
+		border-radius: 3px;
+		background: var(--md-sys-color-surface-container-high);
+	}
+	.source__bar span {
+		display: block;
+		height: 100%;
+		background: var(--nomi-chart);
 	}
 </style>

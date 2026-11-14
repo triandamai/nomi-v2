@@ -1334,6 +1334,44 @@ export interface ProjectMetrics {
 	buckets: MetricsBucket[];
 	totals: MetricsCounters;
 	previous_totals: MetricsCounters;
+	/** Where visits came from (the site reports each arrival's referrer), largest share first;
+	 * null until the published site has reported anything. */
+	sources?: MetricsSource[] | null;
+	/** Forms sent on the site over the range; null until it has reported anything. */
+	form_sends?: number | null;
+	/** Nomi's own look at the address every few minutes; null before the first. */
+	uptime?: MetricsUptime | null;
+}
+
+export interface MetricsSource {
+	name: string;
+	/** 0–1 of the range's visits. */
+	share: number;
+}
+
+export interface MetricsUptime {
+	/** 0–1 of the looks over the range that found it answering. */
+	share: number;
+	since: string;
+}
+
+export interface DnsRecord {
+	type: 'A' | 'CNAME' | 'TXT';
+	name: string;
+	value: string;
+	status: 'found' | 'waiting';
+}
+
+/** A domain the project's admins own, beside the app's address under Nomi's apps domain. */
+export interface CustomDomain {
+	hostname: string;
+	records: DnsRecord[];
+	checked_at: string | null;
+	/** When every record was found; null while any is waiting. */
+	verified_at: string | null;
+	primary: boolean;
+	https: 'pending' | 'issued';
+	created_at: string;
 }
 
 export interface ShipyardEvent {
@@ -1369,6 +1407,8 @@ export interface DatabaseTable {
 	schema: string;
 	name: string;
 	rows_estimate: number;
+	/** The primary key's columns (a row is edited by them); empty when it has none. */
+	primary_key: string[];
 }
 
 export interface QueryResult {

@@ -10,6 +10,10 @@
 	import IconOpenInNew from '$lib/components/icons/IconOpenInNew.svelte';
 	import { ProjectApiError, projectApi } from '$lib/projectApi';
 	import type { ProjectDeploy } from '$lib/projectDeploy.svelte';
+	import { ago } from '$lib/projectApi';
+	import { getLocale } from '$lib/paraglide/runtime';
+	import { canMakePrimary, foundCount, recordHost, typedHostname } from '$lib/customDomains';
+	import type { CustomDomain } from '$lib/types';
 
 	let { deploy }: { deploy: ProjectDeploy } = $props();
 
@@ -41,7 +45,58 @@
 	$effect(() => {
 		void deploy.changes;
 		void load();
+		void loadDomains();
 	});
+
+	// ─── Domains of the person's own ─────────────────────────────
+	const locale = getLocale();
+	let domains = $state<CustomDomain[] | null>(null);
+	let domainsError = $state<string | null>(null);
+	let newHostname = $state('');
+	let adding = $state(false);
+	/** The hostname an action is running on, so its buttons wait. */
+	let busy = $state<string | null>(null);
+
+	async function loadDomains() {
+		try {
+			domains = await projectApi<CustomDomain[]>(deploy.projectId, 'domains');
+			domainsError = null;
+		} catch (e) {
+			domainsError = (e as Error).message;
+		}
+	}
+
+	async function addDomain() {
+		const hostname = typedHostname(newHostname);
+		if (!hostname) return;
+		adding = true;
+		domainsError = null;
+		try {
+			await projectApi<CustomDomain>(deploy.projectId, 'domains', { method: 'POST', body: { hostname } });
+			newHostname = '';
+			await loadDomains();
+		} catch (e) {
+			domainsError = (e as Error).message;
+		} finally {
+			adding = false;
+		}
+	}
+
+	async function onDomain(hostname: string, action: 'check' | 'primary' | 'remove') {
+		busy = hostname;
+		domainsError = null;
+		const path = `domains/${encodeURIComponent(hostname)}`;
+		try {
+			if (action === 'check') await projectApi(deploy.projectId, `${path}/check`, { method: 'POST' });
+			else if (action === 'primary') await projectApi(deploy.projectId, `${path}/primary`, { method: 'PUT' });
+			else await projectApi(deploy.projectId, path, { method: 'DELETE' });
+			await loadDomains();
+		} catch (e) {
+			domainsError = (e as Error).message;
+		} finally {
+			busy = null;
+		}
+	}
 
 	/** `.apps.example.dev`: what follows the name. Nomi's base domain when set (the current address
 	 * may still be on an older one until it moves), else whatever the current address ends with. */
@@ -161,7 +216,68 @@
 <section class="block">
 	<h3 class="block__title">{m.domain_dns()}</h3>
 	<p class="block__hint">{m.domain_dns_hint()}</p>
-	<p class="block__hint">{m.domain_custom_soon()}</p>
+</section>
+
+<section class="block" aria-label={m.domain_own_title()}>
+	<h3 class="block__title">{m.domain_own_title()}</h3>
+	<p class="block__hint">{m.domain_own_hint()}</p>
+	{#if domains && domains.length > 0}
+		<ul class="domains">
+			{#each domains as d (d.hostname)}
+				{@const count = foundCount(d)}
+				<li class="domain">
+					<div class="domain__head">
+						<span class="address__host domain__host">{d.hostname}</span>
+						{#if d.primary}<span class="tag">{m.domain_own_primary()}</span>{/if}
+						<span class="block__hint">{d.verified_at ? m.domain_own_connected() : m.domain_own_found({ found: count.found, total: count.total })}</span>
+					</div>
+					<table class="records">
+						<thead>
+							<tr><th>{m.domain_own_type()}</th><th>{m.domain_own_name()}</th><th>{m.domain_own_value()}</th><th>{m.domain_own_status()}</th></tr>
+						</thead>
+						<tbody>
+							{#each d.records as r (r.type + r.name + r.value)}
+								<tr>
+									<td>{r.type}</td>
+									<td class="mono">{recordHost(r.name, d.hostname)}</td>
+									<td class="mono value">{r.value}</td>
+									<td class={r.status === 'found' ? 'ok' : 'waiting'}>{r.status === 'found' ? m.domain_own_record_found() : m.domain_own_record_waiting()}</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+					<p class="block__hint">
+						{d.checked_at ? m.domain_own_checked({ when: ago(d.checked_at, locale) }) : m.domain_own_never_checked()}
+						· {d.https === 'issued' ? m.domain_own_https_issued() : m.domain_own_https_pending()}
+					</p>
+					<div class="domain__actions">
+						<Button variant="tonal" size="s" disabled={busy === d.hostname} onclick={() => onDomain(d.hostname, 'check')}>{m.domain_own_check()}</Button>
+						{#if domain?.can_edit}
+							{#if canMakePrimary(d)}
+								<Button variant="text" size="s" disabled={busy === d.hostname} onclick={() => onDomain(d.hostname, 'primary')}>{m.domain_own_make_primary()}</Button>
+							{/if}
+							<Button variant="text" size="s" disabled={busy === d.hostname} onclick={() => onDomain(d.hostname, 'remove')}>{m.domain_own_remove()}</Button>
+						{/if}
+					</div>
+				</li>
+			{/each}
+		</ul>
+	{/if}
+	{#if domain?.can_edit && domain.hostname}
+		<form
+			class="add"
+			onsubmit={(e) => {
+				e.preventDefault();
+				void addDomain();
+			}}
+		>
+			<TextField name="hostname" label={m.domain_own_add_label()} bind:value={newHostname} autocomplete="off" autocapitalize="none" spellcheck={false} />
+			<Button variant="filled" size="s" type="submit" disabled={adding || !typedHostname(newHostname)}>{m.domain_own_add()}</Button>
+		</form>
+	{:else if domain && !domain.hostname}
+		<p class="block__hint">{m.domain_unpublished()}</p>
+	{/if}
+	{#if domainsError}<p class="error" role="alert">{domainsError}</p>{/if}
 </section>
 
 <BottomSheet bind:open label={m.domain_change_title()}>
@@ -325,6 +441,77 @@
 		justify-content: flex-end;
 		gap: 8px;
 		margin-top: 8px;
+	}
+	.domains {
+		display: flex;
+		flex-direction: column;
+		gap: 16px;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+	.domain {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+	.domain__head {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 4px 10px;
+	}
+	.domain__host {
+		font-family: var(--md-ref-typeface-mono);
+		font-weight: 600;
+	}
+	.tag {
+		padding: 2px 8px;
+		border-radius: 999px;
+		background: var(--md-sys-color-surface-container-high);
+		font-size: 0.75rem;
+		font-weight: 600;
+	}
+	.records {
+		display: block;
+		overflow-x: auto;
+		border-collapse: collapse;
+		font-size: 0.8125rem;
+	}
+	.records th,
+	.records td {
+		padding: 6px 10px 6px 0;
+		border-bottom: 1px solid var(--md-sys-color-outline-variant);
+		text-align: left;
+		white-space: nowrap;
+	}
+	.records th {
+		color: var(--md-sys-color-on-surface-variant);
+		font-weight: 600;
+	}
+	.mono {
+		font-family: var(--md-ref-typeface-mono);
+	}
+	.value {
+		overflow-wrap: anywhere;
+		white-space: normal;
+	}
+	.waiting {
+		color: var(--md-sys-color-on-surface-variant);
+	}
+	.domain__actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+	}
+	.add {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: flex-end;
+		gap: 8px;
+	}
+	.add :global(.m3-field) {
+		flex: 1 1 220px;
 	}
 	.ok {
 		margin: 0;

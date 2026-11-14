@@ -4,7 +4,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import Button from '$lib/components/m3/Button.svelte';
 	import IconCopy from '$lib/components/icons/IconCopy.svelte';
-	import QueryResultView from '$lib/components/project/QueryResultView.svelte';
+	import QueryResultView, { type RowEditing } from '$lib/components/project/QueryResultView.svelte';
 	import { projectApi } from '$lib/projectApi';
 	import type { DatabaseSource, DatabaseTable, QueryResult } from '$lib/types';
 
@@ -63,10 +63,26 @@
 		}
 	}
 
+	/** The table being browsed and the statement that reads it: its rows can be edited in place
+	 * while that statement's result is shown. */
+	let browsing = $state<{ table: DatabaseTable; sql: string } | null>(null);
+
 	function browse(table: DatabaseTable) {
 		sql = `SELECT * FROM "${table.schema}"."${table.name}" LIMIT 100`;
+		browsing = { table, sql };
 		void run();
 	}
+
+	const editing = $derived.by((): RowEditing | null => {
+		const open = browsing;
+		if (!open || open.sql !== sql || !result || result.rows_affected !== null || open.table.primary_key.length === 0) return null;
+		const path = `database/tables/${encodeURIComponent(open.table.schema)}/${encodeURIComponent(open.table.name)}/rows`;
+		return {
+			primaryKey: open.table.primary_key,
+			save: async (key, changes) =>
+				(await projectApi<{ row: Record<string, unknown> }>(projectId, path, { method: 'PATCH', body: { key, changes, source } })).row,
+		};
+	});
 
 	async function showLogin() {
 		loginError = null;
@@ -126,6 +142,10 @@
 					</ul>
 				{/if}
 
+				<h3 class="section-title">{m.pj_db_dump()}</h3>
+				<p class="muted">{m.pj_db_dump_hint()}</p>
+				<a class="dump" href={`/projects/${projectId}/api/database/dump?source=${source}`} download>{m.pj_db_download_dump()}</a>
+
 				<h3 class="section-title">{m.pj_db_login()}</h3>
 				{#if login}
 					<code class="login">{login}</code>
@@ -145,7 +165,10 @@
 					<Button variant="filled" size="s" disabled={running || !sql.trim()} onclick={run}>{running ? m.pj_db_running() : m.pj_db_run()}</Button>
 				</div>
 				{#if queryError}<p class="error" role="alert">{queryError}</p>{/if}
-				{#if result}<QueryResultView {result} />{/if}
+				{#if result}<QueryResultView {result} {editing} />{/if}
+				{#if browsing && browsing.sql === sql && browsing.table.primary_key.length === 0 && result}
+					<p class="muted small">{m.pj_db_no_key()}</p>
+				{/if}
 			</section>
 		</div>
 	{/if}
@@ -193,6 +216,23 @@
 		cursor: default;
 		opacity: 0.5;
 	}
+	.dump {
+		display: inline-flex;
+		align-items: center;
+		align-self: flex-start;
+		min-height: 36px;
+		padding: 0 14px;
+		border: 1px solid var(--md-sys-color-outline);
+		border-radius: var(--md-sys-shape-corner-full);
+		color: var(--md-sys-color-primary);
+		font-size: 0.875rem;
+		font-weight: 600;
+		text-decoration: none;
+	}
+	.dump:hover {
+		background: var(--md-sys-color-surface-container-high);
+	}
+	.dump:focus-visible,
 	.source:focus-visible,
 	.table:focus-visible {
 		outline: 2px solid var(--md-sys-color-primary);

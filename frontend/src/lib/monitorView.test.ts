@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { change, chartPaths, countMax, eventTone, filterLogs, gappedChartPaths, liveSince, logLevel, orderContainers, peak, serviceHistory } from './monitorView';
+import { change, chartPaths, countMax, eventTone, filterLogs, formShare, gappedChartPaths, liveSince, logLevel, orderContainers, peak, serviceHistory, topSources } from './monitorView';
 import type { ContainerUsage, MetricsBucket, ShipyardService } from './types';
 
 describe('logLevel', () => {
@@ -95,5 +95,28 @@ describe('metrics history', () => {
 		]);
 		expect(history.web).toEqual({ cpu: [20, null], memory: [40, null] });
 		expect(history.db).toEqual({ cpu: [5, 6], memory: [20, 21] });
+	});
+});
+
+describe('visits', () => {
+	it('gives form sends as a share of visits, only when both were measured', () => {
+		expect(formShare(3, 12)).toBe(0.25);
+		expect(formShare(null, 12)).toBeNull();
+		expect(formShare(3, 0)).toBeNull();
+		expect(formShare(3, null)).toBeNull();
+		expect(formShare(20, 10)).toBe(1);
+	});
+
+	it('keeps the top sources and sums the rest as Other', () => {
+		const sources = [
+			{ name: 'Instagram', share: 0.5 },
+			{ name: 'Direct', share: 0.3 },
+			{ name: 'WhatsApp', share: 0.15 },
+			{ name: 'kompas.com', share: 0.05 },
+		];
+		expect(topSources(sources, 4, 'Other')).toEqual(sources);
+		const top = topSources(sources, 3, 'Other');
+		expect(top.map((s) => s.name)).toEqual(['Instagram', 'Direct', 'Other']);
+		expect(top[2].share).toBeCloseTo(0.2);
 	});
 });
