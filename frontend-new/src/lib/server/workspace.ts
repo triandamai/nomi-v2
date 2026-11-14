@@ -199,3 +199,17 @@ export async function loadShowcase(event: ApiEvent, id: string): Promise<Project
 	return response.ok ? ((await response.json()) as ProjectShowcase) : null;
 }
 export const setShowcase = (event: ApiEvent, id: string, showcase: boolean, blurb: string | null) => send(event, `${at(id)}/showcase`, 'PUT', { showcase, blurb });
+
+export type ProjectFile = { path: string; content: string; binary: false } | { path: string; binary: true } | { error: string; status: number };
+
+/** One of the project's files as text; an image, a font or anything not UTF-8 is said to be binary. */
+export async function projectFile(event: ApiEvent, id: string, path: string): Promise<ProjectFile> {
+	const response = await call(event, `${at(id)}/files/${path.split('/').map(encodeURIComponent).join('/')}`);
+	if (!response.ok) return { error: (await response.text()).trim().slice(0, 200), status: response.status };
+	const bytes = new Uint8Array(await response.arrayBuffer());
+	try {
+		return { path, content: new TextDecoder('utf-8', { fatal: true }).decode(bytes), binary: false };
+	} catch {
+		return { path, binary: true };
+	}
+}

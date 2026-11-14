@@ -132,4 +132,14 @@ describe('a project’s workspace on the server', () => {
 			['PUT', '/api/projects/p1/showcase', { showcase: true, blurb: null }],
 		]);
 	});
+
+	it('reads a file as text, says when it’s binary, and passes on a missing one', async () => {
+		const { backend, event } = eventWith(() => new Response('<h1>Warung</h1>'));
+		expect(await workspace.projectFile(event, 'p1', 'src/routes/+page.svelte')).toEqual({ path: 'src/routes/+page.svelte', content: '<h1>Warung</h1>', binary: false });
+		expect(backend.calls[0].url).toBe('http://api.test/api/projects/p1/files/src/routes/%2Bpage.svelte');
+		const image = eventWith(() => new Response(new Uint8Array([0xff, 0xd8, 0xff, 0xe0])));
+		expect(await workspace.projectFile(image.event, 'p1', 'logo.jpg')).toEqual({ path: 'logo.jpg', binary: true });
+		const gone = eventWith(() => new Response('file not found', { status: 404 }));
+		expect(await workspace.projectFile(gone.event, 'p1', 'x')).toEqual({ error: 'file not found', status: 404 });
+	});
 });

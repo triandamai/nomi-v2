@@ -1629,5 +1629,11 @@
 	"github_note": "It uses the GitHub you’ve connected in",
 	"github_connections": "Connections",
 	"github_push": "Push",
-	"export_holds_one": "1 file · {size}"
+	"export_holds_one": "1 file · {size}",
+	"code_binary": "not text · it can’t be shown here",
+	"code_reading": "reading…",
+	"code_meta": "read-only · {count} lines",
+	"code_whole_file": "whole file",
+	"code_about_file": "About `{file}`:",
+	"code_meta_one": "read-only · 1 line"
 }

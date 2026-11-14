@@ -41,7 +41,9 @@
 	import type { MetricsRange } from '$lib/adapters/api';
 	import SubdomainField, { type SubdomainCheck } from '$lib/ds/projects/SubdomainField.svelte';
 	import { invalidate } from '$app/navigation';
-	import FileList from '$lib/ds/build/FileList.svelte';
+	import CodeView from '$lib/ds/build/CodeView.svelte';
+	import { plainLines } from '$lib/ds/chat/code';
+	import { fileTree, firstFile, quoteLines } from '$lib/projects/code';
 	import PhoneFrame from '$lib/ds/build/PhoneFrame.svelte';
 	import PublishButton from '$lib/ds/build/PublishButton.svelte';
 	import WorkspaceSheet from '$lib/ds/build/WorkspaceSheet.svelte';
@@ -356,6 +358,30 @@
 		toasts.show({ kind: 'success', title: m.github_pushed({ repo: repo.trim() }) });
 	}
 
+	// Code (Code, terminal & phone preview uR6dq, steps 1–2): the files and one of them, read only;
+	// lines picked are quoted into the chat to ask Koda about.
+	let workspaceView = $state<'chat' | 'pane'>('chat');
+	let codePath = $state<string | null>(untrack(() => firstFile(data.project.files)));
+	let codeText = $state<string | null>(null);
+	let codeBinary = $state(false);
+	let quote = $state<ReturnType<typeof quoteLines> | null>(null);
+	const tree = $derived(fileTree(project.files, codePath));
+	async function readFile(path: string) {
+		const response = await fetch(`/projects/${project.id}/file?path=${encodeURIComponent(path)}`).catch(() => null);
+		const file = response?.ok ? ((await response.json()) as { content?: string; binary: boolean }) : null;
+		if (path !== codePath) return;
+		codeBinary = file?.binary ?? false;
+		codeText = file && !file.binary ? (file.content ?? '') : null;
+	}
+	$effect(() => {
+		if (view === 'code' && codePath) void readFile(codePath);
+	});
+	function askAbout(from: number, to: number) {
+		if (!codePath || codeText === null) return;
+		quote = quoteLines(codePath, codeText.split('\n'), from, to);
+		workspaceView = 'chat';
+	}
+
 	let view = $state<PaneView>('preview');
 	let device = $state<'desktop' | 'phone'>('desktop');
 	let reloads = $state(0);
@@ -378,7 +404,7 @@
 
 <svelte:head><title>{project.name} · {m.app_name()}</title></svelte:head>
 
-<ProjectWorkspace>
+<ProjectWorkspace bind:view={workspaceView}>
 	{#snippet projectbar()}
 		<ProjectBar
 			backHref="/projects"
@@ -413,7 +439,7 @@
 	{/snippet}
 	{#snippet chat()}
 		<ChatPaneHeader title={m.workspace_chat()} crew={['koda', 'nomi']} />
-		<div class="min-h-0 flex-1"><ChatView {data} pane /></div>
+		<div class="min-h-0 flex-1"><ChatView {data} pane {quote} onunquote={() => (quote = null)} /></div>
 	{/snippet}
 	<div class="relative flex min-h-0 flex-1 flex-col">
 		<PaneTabs
@@ -437,8 +463,26 @@
 		/>
 		<div class="min-h-0 flex-1 overflow-auto p-5">
 			{#if view === 'code'}
-				{#if project.files.length}
-					<FileList files={project.files.map((file) => ({ path: file.path, state: 'done' as const }))} total={project.files.length} />
+				{#if project.files.length && codePath}
+					<CodeView
+						{tree}
+						path={codePath}
+						meta={codeBinary ? m.code_binary() : codeText === null ? m.code_reading() : codeText.split('\n').length === 1 ? m.code_meta_one() : m.code_meta({ count: codeText.split('\n').length })}
+						lines={codeText === null ? [] : plainLines(codeText)}
+						onopen={(index) => {
+							const entry = tree[index];
+							if (entry && entry.kind !== 'folder') {
+								codeText = null;
+								codePath = entry.path;
+							}
+						}}
+						onask={() => {
+							if (!codePath) return;
+							quote = { file: codePath, range: m.code_whole_file(), snippet: '', text: m.code_about_file({ file: codePath }) };
+							workspaceView = 'chat';
+						}}
+						onasklines={askAbout}
+					/>
 				{:else}
 					<EmptyState icon={MonitorX} title={m.workspace_no_files_title()} body={m.workspace_no_files_body()} />
 				{/if}

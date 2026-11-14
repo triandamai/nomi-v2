@@ -1629,5 +1629,11 @@
 	"github_note": "Memakai GitHub yang kamu hubungkan di",
 	"github_connections": "Koneksi",
 	"github_push": "Kirim",
-	"export_holds_one": "1 file · {size}"
+	"export_holds_one": "1 file · {size}",
+	"code_binary": "bukan teks · tidak bisa ditampilkan di sini",
+	"code_reading": "membaca…",
+	"code_meta": "hanya baca · {count} baris",
+	"code_whole_file": "seluruh file",
+	"code_about_file": "Tentang `{file}`:",
+	"code_meta_one": "hanya baca · 1 baris"
 }
