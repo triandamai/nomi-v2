@@ -22,10 +22,24 @@ pub struct PlanRow {
     pub is_default: bool,
     pub is_active: bool,
     pub sort_order: i32,
+    /// Limits: `None` is unlimited.
+    pub max_projects: Option<i32>,
+    pub max_orgs: Option<i32>,
+    pub max_org_members: Option<i32>,
+    pub max_custom_crew: Option<i32>,
+    pub max_storage_mb: Option<i64>,
+    pub custom_domain: bool,
+    /// `small`, `default` or `large`; `None` is the platform default.
+    pub sandbox_size: Option<String>,
+    /// When false, only the models in `model_ids` are included.
+    pub all_models: bool,
+    pub model_ids: Vec<Uuid>,
 }
 
 const PLAN_COLUMNS: &str = "id, slug, name, description, monthly_tokens, price_label, features, card_tone, promo_label, \
-     promo_price_label, promo_ends_at, is_default, is_active, sort_order";
+     promo_price_label, promo_ends_at, is_default, is_active, sort_order, max_projects, max_orgs, max_org_members, \
+     max_custom_crew, max_storage_mb, custom_domain, sandbox_size, all_models, \
+     ARRAY(SELECT model_id FROM plan_models WHERE plan_id = plans.id ORDER BY model_id) AS model_ids";
 
 /// What an admin fills in for a plan.
 #[derive(Debug, Clone, Deserialize)]
@@ -48,6 +62,24 @@ pub struct PlanInput {
     pub is_active: bool,
     #[serde(default)]
     pub sort_order: i32,
+    #[serde(default)]
+    pub max_projects: Option<i32>,
+    #[serde(default)]
+    pub max_orgs: Option<i32>,
+    #[serde(default)]
+    pub max_org_members: Option<i32>,
+    #[serde(default)]
+    pub max_custom_crew: Option<i32>,
+    #[serde(default)]
+    pub max_storage_mb: Option<i64>,
+    #[serde(default = "yes")]
+    pub custom_domain: bool,
+    #[serde(default)]
+    pub sandbox_size: Option<String>,
+    #[serde(default = "yes")]
+    pub all_models: bool,
+    #[serde(default)]
+    pub model_ids: Vec<Uuid>,
 }
 
 fn default_tone() -> String {
@@ -82,6 +114,18 @@ impl PlanInput {
         if !CARD_TONES.contains(&self.card_tone.as_str()) {
             return Err("unknown card tone");
         }
+        let negative = |v: Option<i64>| v.is_some_and(|n| n < 0);
+        if [self.max_projects, self.max_orgs, self.max_org_members, self.max_custom_crew].into_iter().any(|v| negative(v.map(i64::from)))
+            || negative(self.max_storage_mb)
+        {
+            return Err("limits can't be negative");
+        }
+        self.sandbox_size = self.sandbox_size.map(|s| s.trim().to_ascii_lowercase()).filter(|s| !s.is_empty());
+        if self.sandbox_size.as_deref().is_some_and(|s| nomi_sandbox::Size::parse(s).is_none()) {
+            return Err("unknown sandbox size");
+        }
+        self.model_ids.sort();
+        self.model_ids.dedup();
         Ok(self)
     }
 }
@@ -104,11 +148,13 @@ pub async fn default_plan(pool: &PgPool) -> Result<PlanRow, sqlx::Error> {
 }
 
 pub async fn create_plan(pool: &PgPool, input: &PlanInput) -> Result<PlanRow, sqlx::Error> {
-    sqlx::query_as(&format!(
+    let mut tx = pool.begin().await?;
+    let id: Uuid = sqlx::query_scalar(
         "INSERT INTO plans (slug, name, description, monthly_tokens, price_label, features, card_tone, promo_label, \
-                            promo_price_label, promo_ends_at, is_active, sort_order) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING {PLAN_COLUMNS}"
-    ))
+                            promo_price_label, promo_ends_at, is_active, sort_order, max_projects, max_orgs, max_org_members, \
+                            max_custom_crew, max_storage_mb, custom_domain, sandbox_size, all_models) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20) RETURNING id",
+    )
     .bind(&input.slug)
     .bind(&input.name)
     .bind(&input.description)
@@ -121,17 +167,31 @@ pub async fn create_plan(pool: &PgPool, input: &PlanInput) -> Result<PlanRow, sq
     .bind(input.promo_ends_at)
     .bind(input.is_active)
     .bind(input.sort_order)
-    .fetch_one(pool)
-    .await
+    .bind(input.max_projects)
+    .bind(input.max_orgs)
+    .bind(input.max_org_members)
+    .bind(input.max_custom_crew)
+    .bind(input.max_storage_mb)
+    .bind(input.custom_domain)
+    .bind(&input.sandbox_size)
+    .bind(input.all_models)
+    .fetch_one(&mut *tx)
+    .await?;
+    save_models(&mut tx, id, &input.model_ids).await?;
+    tx.commit().await?;
+    get_plan(pool, id).await?.ok_or(sqlx::Error::RowNotFound)
 }
 
 pub async fn update_plan(pool: &PgPool, id: Uuid, input: &PlanInput) -> Result<Option<PlanRow>, sqlx::Error> {
-    sqlx::query_as(&format!(
+    let mut tx = pool.begin().await?;
+    let updated = sqlx::query(
         "UPDATE plans SET slug = $2, name = $3, description = $4, monthly_tokens = $5, price_label = $6, features = $7, \
              card_tone = $8, promo_label = $9, promo_price_label = $10, promo_ends_at = $11, \
-             is_active = $12 OR is_default, sort_order = $13, updated_at = now() \
-         WHERE id = $1 RETURNING {PLAN_COLUMNS}"
-    ))
+             is_active = $12 OR is_default, sort_order = $13, max_projects = $14, max_orgs = $15, max_org_members = $16, \
+             max_custom_crew = $17, max_storage_mb = $18, custom_domain = $19, sandbox_size = $20, all_models = $21, \
+             updated_at = now() \
+         WHERE id = $1",
+    )
     .bind(id)
     .bind(&input.slug)
     .bind(&input.name)
@@ -145,8 +205,34 @@ pub async fn update_plan(pool: &PgPool, id: Uuid, input: &PlanInput) -> Result<O
     .bind(input.promo_ends_at)
     .bind(input.is_active)
     .bind(input.sort_order)
-    .fetch_optional(pool)
-    .await
+    .bind(input.max_projects)
+    .bind(input.max_orgs)
+    .bind(input.max_org_members)
+    .bind(input.max_custom_crew)
+    .bind(input.max_storage_mb)
+    .bind(input.custom_domain)
+    .bind(&input.sandbox_size)
+    .bind(input.all_models)
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    if updated == 0 {
+        return Ok(None);
+    }
+    save_models(&mut tx, id, &input.model_ids).await?;
+    tx.commit().await?;
+    get_plan(pool, id).await
+}
+
+/// Replaces the models a plan includes.
+async fn save_models(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>, plan_id: Uuid, model_ids: &[Uuid]) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM plan_models WHERE plan_id = $1").bind(plan_id).execute(&mut **tx).await?;
+    sqlx::query("INSERT INTO plan_models (plan_id, model_id) SELECT $1, UNNEST($2::uuid[])")
+        .bind(plan_id)
+        .bind(model_ids)
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
 }
 
 /// Makes `id` the plan new people start on. `false` when it doesn't exist.
@@ -307,6 +393,15 @@ mod tests {
             promo_ends_at: None,
             is_active: true,
             sort_order: 0,
+            max_projects: None,
+            max_orgs: None,
+            max_org_members: None,
+            max_custom_crew: None,
+            max_storage_mb: None,
+            custom_domain: true,
+            sandbox_size: None,
+            all_models: true,
+            model_ids: vec![],
         }
     }
 
@@ -319,5 +414,10 @@ mod tests {
         assert!(PlanInput { monthly_tokens: 0, ..input() }.validate().is_err());
         assert!(PlanInput { slug: "pro plan".into(), ..input() }.validate().is_err());
         assert!(PlanInput { card_tone: "neon".into(), ..input() }.validate().is_err());
+        assert!(PlanInput { max_projects: Some(-1), ..input() }.validate().is_err());
+        assert!(PlanInput { max_storage_mb: Some(-1), ..input() }.validate().is_err());
+        assert!(PlanInput { sandbox_size: Some("huge".into()), ..input() }.validate().is_err());
+        assert_eq!(PlanInput { sandbox_size: Some(" Small ".into()), ..input() }.validate().unwrap().sandbox_size.as_deref(), Some("small"));
+        assert_eq!(PlanInput { sandbox_size: Some(" ".into()), ..input() }.validate().unwrap().sandbox_size, None);
     }
 }

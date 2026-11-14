@@ -7,6 +7,7 @@
 
 pub mod admin;
 pub mod embedding;
+pub mod entitlements;
 pub mod plans;
 
 pub use embedding::MeteredEmbeddingProvider;

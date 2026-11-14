@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 nomi-llm = { path = "../nomi-llm" }
 nomi-embedding = { path = "../nomi-embedding" }
+nomi-sandbox = { path = "../nomi-sandbox" }
 async-trait = "0.1"
 async-stream = "0.3.6"
 futures-util = "0.3.33"
@@ -16,5 +17,6 @@ chrono = { version = "0.4", features = ["serde"] }
 tracing = "0.1"
 
 [dev-dependencies]
+serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 nomi-test-support = { path = "../nomi-test-support" }
