@@ -675,6 +675,9 @@
 		// money-agent reply immediately followed by a chitchat reply are both "assistant" but
 		// must never chain into one unlabeled group.
 		if (previous.agent_display_name !== current.agent_display_name) return false;
+		// A teammate's message (named by its author, also when it arrives live) never chains onto
+		// the person's own or another teammate's.
+		if (previous.author_name !== current.author_name) return false;
 		return sameMinute(previous.created_at, current.created_at);
 	}
 

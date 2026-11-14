@@ -25,3 +25,21 @@ describe('account password', () => {
 		expect(await save({ new_password: '' })).toMatchObject({ status: 400 });
 	});
 });
+
+describe('account share links', () => {
+	it('revokes a link', async () => {
+		const fetchFn = vi.fn(async () => new Response(null, { status: 204 }));
+		vi.stubGlobal('fetch', fetchFn);
+		const result = await actions.revokeShare(event({ cookies: cookieJar({ access_token: 't' }), form: { id: 's', session_id: 'c' } }));
+		expect(result).toEqual({ shareRevoked: true });
+		const [url, init] = fetchFn.mock.calls[0] as unknown as [string, RequestInit];
+		expect(url).toMatch(/\/api\/sessions\/c\/shares\/s$/);
+		expect(init.method).toBe('DELETE');
+	});
+
+	it('says when it could not', async () => {
+		vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 404 })));
+		expect(await actions.revokeShare(event({ cookies: cookieJar({ access_token: 't' }), form: { id: 's', session_id: 'c' } }))).toMatchObject({ status: 404 });
+		expect(await actions.revokeShare(event({ cookies: cookieJar({ access_token: 't' }), form: {} }))).toMatchObject({ status: 400 });
+	});
+});

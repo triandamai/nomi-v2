@@ -5,6 +5,7 @@
 	import { enhance } from '$app/forms';
 	import LanguagePicker from '$lib/components/LanguagePicker.svelte';
 	import DeviceList from './DeviceList.svelte';
+	import ShareList from './ShareList.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import type { ActionData, PageData } from './$types';
 
@@ -98,6 +99,21 @@
 			{/if}
 			<p class="hint">{m.account_devices_hint()}</p>
 		</section>
+
+		<section id="data" class="section" aria-labelledby="data-title">
+			<h2 id="data-title" class="section__label">{m.account_data()}</h2>
+			<h3 class="section__sub">{m.account_shares()}</h3>
+			{#if form && 'shareRevoked' in form && form.shareRevoked}
+				<p class="note note--ok" role="status">{m.account_share_revoked()}</p>
+			{/if}
+			{#if form && 'shareError' in form && form.shareError}
+				<p class="note note--error" role="alert">{form.shareError}</p>
+			{/if}
+			{#if data.shares}
+				<ShareList shares={data.shares} />
+			{/if}
+			<p class="hint">{m.account_shares_hint()}</p>
+		</section>
 	</div>
 </div>
 
@@ -135,6 +151,12 @@
 		font-weight: 400;
 		letter-spacing: 0.08em;
 		text-transform: uppercase;
+	}
+	.section__sub {
+		margin: 0 8px;
+		color: var(--md-sys-color-on-surface);
+		font-size: 0.9375rem;
+		font-weight: 600;
 	}
 	.rows {
 		display: flex;

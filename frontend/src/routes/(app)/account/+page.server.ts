@@ -29,16 +29,31 @@ export interface Device {
 	current: boolean;
 }
 
+/** One of the person's live share links (backend: routes/shares.rs `ShareListItem`). */
+export interface ShareLink {
+	id: string;
+	session_id: string;
+	title: string | null;
+	scope: 'reply' | 'chat';
+	message_id: string | null;
+	mask: boolean;
+	anyone: boolean;
+	expires_at: string | null;
+	created_at: string;
+}
+
 export const load: PageServerLoad = async ({ cookies, fetch }) => {
-	const [profileResponse, methodsResponse, devicesResponse] = await Promise.all([
+	const [profileResponse, methodsResponse, devicesResponse, sharesResponse] = await Promise.all([
 		apiFetch(fetch, cookies, '/api/profile'),
 		apiFetch(fetch, cookies, '/api/auth/google'),
 		apiFetch(fetch, cookies, '/api/devices'),
+		apiFetch(fetch, cookies, '/api/shares'),
 	]);
 	const profile: Profile | null = profileResponse.ok ? ((await profileResponse.json()) as Profile) : null;
 	const methods: SignInMethods | null = methodsResponse.ok ? ((await methodsResponse.json()) as SignInMethods) : null;
 	const devices: Device[] | null = devicesResponse.ok ? ((await devicesResponse.json()) as Device[]) : null;
-	return { profile, methods, devices };
+	const shares: ShareLink[] | null = sharesResponse.ok ? ((await sharesResponse.json()) as { shares: ShareLink[] }).shares : null;
+	return { profile, methods, devices, shares };
 };
 
 export const actions: Actions = {
@@ -79,6 +94,16 @@ export const actions: Actions = {
 		const response = await apiFetch(fetch, cookies, `/api/devices/${encodeURIComponent(id)}`, { method: 'DELETE' });
 		if (!response.ok) return fail(response.status, { deviceError: m.account_device_sign_out_failed() });
 		return { signedOut: name };
+	},
+	/** Settings › Data: one of the person's share links stops working. */
+	revokeShare: async ({ request, cookies, fetch }) => {
+		const form = await request.formData();
+		const id = String(form.get('id') ?? '');
+		const sessionId = String(form.get('session_id') ?? '');
+		if (!id || !sessionId) return fail(400, { shareError: m.account_share_revoke_failed() });
+		const response = await apiFetch(fetch, cookies, `/api/sessions/${encodeURIComponent(sessionId)}/shares/${encodeURIComponent(id)}`, { method: 'DELETE' });
+		if (!response.ok) return fail(response.status, { shareError: m.account_share_revoke_failed() });
+		return { shareRevoked: true };
 	},
 	/** The app's language and the crew's (Account → Language, and the admin console's sheet). */
 	updateLanguage: async ({ request, cookies, fetch }) => {
