@@ -12,18 +12,21 @@ const at = (answer: Parameters<typeof fakeBackend>[0], form?: Record<string, str
 };
 
 describe('Projects', () => {
-	it('lists the workspace’s projects and says how many', async () => {
-		const { event } = at((call) => (call.url.endsWith('/api/projects') ? json({ org_id: null, projects: [{ id: 'a' }, { id: 'b' }] }) : json({})));
-		expect(await load(event as never)).toMatchObject({ title: 'Projects', meta: '2 projects', members: [] });
+	it('lists the workspace’s projects and says how many, once the shell has chosen a workspace', async () => {
+		const order: string[] = [];
+		const { event } = at((call) => (order.push(call.url), call.url.endsWith('/api/projects') ? json({ org_id: null, projects: [{ id: 'a' }, { id: 'b' }] }) : json({})));
+		const parent = vi.fn(async () => void order.push('parent'));
+		expect(await load({ ...event, parent } as never)).toMatchObject({ title: 'Projects', meta: '2 projects', members: [] });
+		expect(order[0]).toBe('parent');
 	});
 
 	it('shows the error page when the list can’t be read', async () => {
-		expect(await thrown(() => load(at(() => new Response('', { status: 500 })).event as never))).toMatchObject({ status: 503 });
+		expect(await thrown(() => load({ ...at(() => new Response('', { status: 500 })).event, parent: async () => ({}) } as never))).toMatchObject({ status: 503 });
 	});
 
-	it('starts a project and opens its chat', async () => {
+	it('starts a project and opens its workspace', async () => {
 		const { api, event } = at((call) => (call.url.endsWith('/api/projects') ? json({ session_id: 's1', project_id: 'p1' }) : json({})), { description: 'Menu page', org: 'w1' });
-		expect(await thrown(() => actions.start(event as never))).toMatchObject({ status: 303, location: '/chat/s1' });
+		expect(await thrown(() => actions.start(event as never))).toMatchObject({ status: 303, location: '/projects/p1' });
 		expect(api.calls[0].body).toEqual({ org_id: 'w1' });
 	});
 

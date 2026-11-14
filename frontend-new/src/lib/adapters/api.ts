@@ -368,3 +368,22 @@ export type OrgMember = { user_id: string; name: string; email: string | null; a
 /** An invite still open; only owners and admins see these. */
 export type OrgInvite = { code: string; email: string | null; role: OrgRole; created_at: string; expires_at: string };
 export type OrgDetail = { id: string; name: string; my_role: OrgRole; me: string; members: OrgMember[]; invites: OrgInvite[] };
+
+/** `GET /api/projects/:id`: one project, its files and its chat. */
+export type ProjectDetail = {
+	id: string;
+	name: string;
+	description: string | null;
+	plan: string | null;
+	status: 'planning' | 'building' | 'ready' | string;
+	/** sveltekit, react, vue, astro or static. */
+	stack: string;
+	/** Goes up on every file change. */
+	files_version: number;
+	files: { path: string; content_type: string; size_bytes: number }[];
+	session_id: string;
+	org_id: string;
+	org_name: string;
+	open_issues: number;
+	backend: string;
+};

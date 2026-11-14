@@ -35,7 +35,7 @@ describe('the project cards', () => {
 			['invoice', 'draft'],
 			['done', 'draft'],
 		]);
-		expect(cards[0]).toMatchObject({ url: 'https://warung.trian.space', footer: '2 chats · deploy #3 · 2d ago', description: 'Menu and pre-order', href: '/chat/s-warung' });
+		expect(cards[0]).toMatchObject({ url: 'https://warung.trian.space', footer: '2 chats · deploy #3 · 2d ago', description: 'Menu and pre-order', href: '/projects/warung' });
 		expect(cards[2]).toMatchObject({ footer: '1 chat · 2d ago', description: 'Started by Mario' });
 		expect(projectCards([project('fresh', { updated_at: '2026-11-13T09:59:30Z' })], now)[0].footer).toBe('1 chat · just now');
 	});

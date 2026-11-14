@@ -63,12 +63,15 @@
 	const NEW_CHAT = '/(app)/chat/new';
 	const INBOX = '/(app)/inbox';
 	const PROJECTS = '/(app)/projects';
+	const WORKSPACE = '/(app)/projects/[id]';
 	const isHome = $derived(page.route.id === HOME);
 	// A chat that couldn't open shows the error page, laid out as a page.
 	const isChat = $derived(page.route.id === CHAT && !page.error);
 	const inThread = $derived(isChat || page.route.id === NEW_CHAT);
 	const isInbox = $derived(page.route.id === INBOX && !page.error);
 	const isProjects = $derived(page.route.id === PROJECTS && !page.error);
+	// A project's workspace has its own bar and no sidebar (Flow / Build draws it edge to edge).
+	const isWorkspace = $derived(page.route.id === WORKSPACE && !page.error);
 	const isSettings = $derived(!!page.route.id?.startsWith('/(app)/settings') && !page.error);
 	const path = $derived(page.url.pathname);
 
@@ -435,9 +438,13 @@
 	<CrewPanel summary={data.crew.summary} members={isChat ? chatCrewRows(data.crew.rows, header.crew) : data.crew.rows} />
 {/snippet}
 
-<AppShell {sidebar} {topbar} panel={isHome || inThread ? crew : undefined}>
+{#if isWorkspace}
 	{@render children()}
-</AppShell>
+{:else}
+	<AppShell {sidebar} {topbar} panel={isHome || inThread ? crew : undefined}>
+		{@render children()}
+	</AppShell>
+{/if}
 
 <form bind:this={logout} method="POST" action="/sign-out" hidden></form>
 

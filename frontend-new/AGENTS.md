@@ -519,6 +519,22 @@ building while Koda builds, else a draft.
   belong to it) and Open goes to the project's chat, where Koda works on it.
 - The composer leaves the domain chip out where this Nomi has no base domain.
 
+A project's workspace (Flow / Build — Sign in → live URL `o882RC`, Building and Live) is built in
+steps; what isn't there yet is left out, not drawn dead:
+
+- The project bar's tools (Deployments, Domain, Monitor, Database, Settings), Publish and Share come
+  with their sheets; Export downloads the project as a zip. The pen's Share wears a download icon
+  (pasted from Export): ours wears the share icon.
+- The preview shows the live app once there is one, or the project's own files when it's a static
+  site; a framework's preview needs its runtime (sandbox or WebContainer), which comes with the
+  Terminal view. Until then the pane says there's nothing to preview yet, and offers Preview and
+  Code only.
+- The chat pane is the project's chat itself (`ChatView`), as on its own page; its header's history
+  and collapse buttons are left out, and it names Koda and Nomi as the crew building.
+- The chat is 520 wide as the flow draws it, dragged between 360 and 720 by the resize handle:
+  `ProjectWorkspace` lays it out. The shells' `WorkspaceShell` (440, fixed) is a twin of the old
+  app's and stays as it is.
+
 ## 10. Running
 
 - `npm run dev`: http://localhost:5175 (the gallery at `/design-system`; the old frontend keeps

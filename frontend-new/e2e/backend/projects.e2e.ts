@@ -2,10 +2,10 @@ import { expect, test } from '@playwright/test';
 import { api, createAccount, signInAs } from './support/accounts';
 
 // Projects against the real backend (App / Projects JyWON): the first project from a starter, its
-// chat opening with Koda on it, the card back on Projects with its files to export, finding and
+// workspace opening with Koda on it, the card back on Projects with its files to export, finding and
 // filtering, and deleting it (asked first).
 
-const CHAT_URL = /\/chat\/[0-9a-f-]{36}$/;
+const WORKSPACE_URL = /\/projects\/[0-9a-f-]{36}$/;
 type Projects = { projects: { id: string; name: string }[] };
 
 test('a first project from a starter, found, exported and deleted', async ({ page, context }) => {
@@ -21,8 +21,8 @@ test('a first project from a starter, found, exported and deleted', async ({ pag
 	const composer = page.getByRole('textbox', { name: 'Describe an app to build' });
 	await expect(composer).toHaveValue('Menu and pre-order page for a warung');
 	await page.getByRole('button', { name: 'Start building' }).click();
-	await expect(page).toHaveURL(CHAT_URL);
-	await expect(page.getByRole('main').getByText('Menu and pre-order page for a warung')).toBeVisible();
+	await expect(page).toHaveURL(WORKSPACE_URL);
+	await expect(page.getByRole('region', { name: 'Chat' }).getByText('Menu and pre-order page for a warung')).toBeVisible();
 
 	// Back on Projects: its card, found by search, not under Live.
 	await page.goto('/projects', { waitUntil: 'networkidle' });

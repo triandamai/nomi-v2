@@ -6,6 +6,8 @@ import type { Actions, PageServerLoad } from './$types';
 /** Projects (App / Projects JyWON): the projects of the workspace they come from. */
 export const load: PageServerLoad = async (event) => {
 	event.depends('app:projects');
+	// The shell picks a workspace for projects when none is chosen yet: list after it has.
+	await event.parent();
 	const { list, members } = await loadProjects(event);
 	if (!list) error(503, { message: m.projects_load_failed() });
 	const count = list.projects.length;
@@ -13,7 +15,7 @@ export const load: PageServerLoad = async (event) => {
 };
 
 export const actions: Actions = {
-	/** A new project from the composer; it opens on its chat, where Koda starts on it. */
+	/** A new project from the composer; it opens in its workspace, Koda already on it. */
 	start: async (event) => {
 		const form = await event.request.formData();
 		const description = String(form.get('description') ?? '').trim();
@@ -21,7 +23,7 @@ export const actions: Actions = {
 		const org = String(form.get('org') ?? '') || null;
 		const started = await startProject(event, org, description);
 		if (!started.ok) return fail(started.status, { needsWorkspace: started.needsWorkspace ?? false, message: started.needsWorkspace ? m.projects_needs_workspace() : started.message || m.projects_start_failed() });
-		redirect(303, `/chat/${started.sessionId}`);
+		redirect(303, `/projects/${started.projectId}`);
 	},
 	delete: async (event) => {
 		const id = String((await event.request.formData()).get('id') ?? '');
