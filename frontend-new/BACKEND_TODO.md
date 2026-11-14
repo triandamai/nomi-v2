@@ -144,6 +144,8 @@ Found while planning the working v2 (sign in, chat and build against the real AP
   - `frontend/`: a search dialog in the app shell (⌘K / Ctrl+K, Search in the drawer and the phone's app bar).
 - **Still open:** file contents aren't searched (paths only).
 
+Found while building the app shell (App / Home, the account menu and the workspace switcher, 2026-11-10).
+
 ### A person's pending workspace invites — done
 - **Built:** `GET /api/invites` → `{ invites: [{ code, org_id, org_name, inviter, role, projects, expires_at, project: { id, name } | null }] }`: open invites to any of the person's addresses, for workspaces they aren't in yet, newest first.
   - `frontend/`: Organizations lists them under Invitations with Join and Decline.
