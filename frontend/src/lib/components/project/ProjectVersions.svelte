@@ -24,7 +24,7 @@
 	async function refresh() {
 		try {
 			const page = await projectApi<ProjectVersions>(projectId, `versions?limit=${PAGE_SIZE}`);
-			versions = page.versions;
+			versions = page.versions ?? [];
 			hasMore = page.has_more;
 			error = null;
 		} catch (e) {
@@ -39,7 +39,7 @@
 		if (before === undefined) return;
 		try {
 			const page = await projectApi<ProjectVersions>(projectId, `versions?limit=${PAGE_SIZE}&before=${before}`);
-			versions = [...versions, ...page.versions];
+			versions = [...versions, ...(page.versions ?? [])];
 			hasMore = page.has_more;
 		} catch (e) {
 			error = (e as Error).message;

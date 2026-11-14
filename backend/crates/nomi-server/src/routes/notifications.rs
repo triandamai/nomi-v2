@@ -164,16 +164,42 @@ pub struct QuietHours {
     pub end: String,
 }
 
-#[derive(Serialize)]
-pub struct NotificationPreferences {
+struct NotificationPreferences {
     /// Plan, quota and other changes to their account.
-    pub email_account: bool,
+    email_account: bool,
     /// News and offers.
-    pub email_promos: bool,
+    email_promos: bool,
     /// Reminders pushed to their phones as they go off.
-    pub push_reminders: bool,
+    push_reminders: bool,
     /// Reminders due inside these hours wait until they end; null when there are none.
+    quiet_hours: Option<QuietHours>,
+}
+
+/// The body of `GET|PUT /api/notifications/preferences`: which emails the person gets. Kept to
+/// these two fields, as the clients built on it compare it whole.
+#[derive(Serialize)]
+pub struct EmailPreferences {
+    pub email_account: bool,
+    pub email_promos: bool,
+}
+
+/// The body of `GET|PUT /api/notifications/reminder-preferences`.
+#[derive(Serialize)]
+pub struct ReminderPreferences {
+    pub push_reminders: bool,
     pub quiet_hours: Option<QuietHours>,
+}
+
+impl From<NotificationPreferences> for EmailPreferences {
+    fn from(prefs: NotificationPreferences) -> Self {
+        Self { email_account: prefs.email_account, email_promos: prefs.email_promos }
+    }
+}
+
+impl From<NotificationPreferences> for ReminderPreferences {
+    fn from(prefs: NotificationPreferences) -> Self {
+        Self { push_reminders: prefs.push_reminders, quiet_hours: prefs.quiet_hours }
+    }
 }
 
 type PreferencesRow = (bool, bool, bool, Option<NaiveTime>, Option<NaiveTime>);
@@ -201,8 +227,13 @@ async fn load_preferences(state: &AppState, user_id: Uuid) -> Result<Notificatio
 }
 
 /// `GET /api/notifications/preferences`.
-pub async fn get_preferences(State(state): State<AppState>, AuthClaims(claims): AuthClaims) -> Result<Json<NotificationPreferences>, ApiError> {
-    Ok(Json(load_preferences(&state, claims.sub).await?))
+pub async fn get_preferences(State(state): State<AppState>, AuthClaims(claims): AuthClaims) -> Result<Json<EmailPreferences>, ApiError> {
+    Ok(Json(load_preferences(&state, claims.sub).await?.into()))
+}
+
+/// `GET /api/notifications/reminder-preferences`.
+pub async fn get_reminder_preferences(State(state): State<AppState>, AuthClaims(claims): AuthClaims) -> Result<Json<ReminderPreferences>, ApiError> {
+    Ok(Json(load_preferences(&state, claims.sub).await?.into()))
 }
 
 /// Tells a field left out (keep it) from one sent as null (clear it).
@@ -224,13 +255,29 @@ fn parse_time(text: &str) -> Result<NaiveTime, ApiError> {
     NaiveTime::parse_from_str(text.trim(), TIME_FORMAT).map_err(|_| (StatusCode::BAD_REQUEST, "quiet hours are times like 22:00"))
 }
 
-/// `PUT /api/notifications/preferences`: changes the fields sent. Changing quiet hours lets
-/// reminders held by the old ones go off by the new ones.
+/// `PUT /api/notifications/preferences`: changes the fields sent (any of the email and reminder
+/// ones) and answers with the email ones.
 pub async fn put_preferences(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
     Json(req): Json<UpdateNotificationPreferences>,
-) -> Result<Json<NotificationPreferences>, ApiError> {
+) -> Result<Json<EmailPreferences>, ApiError> {
+    Ok(Json(save_preferences(&state, claims.sub, req).await?.into()))
+}
+
+/// `PUT /api/notifications/reminder-preferences`: changes the fields sent and answers with the
+/// reminder ones.
+pub async fn put_reminder_preferences(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Json(req): Json<UpdateNotificationPreferences>,
+) -> Result<Json<ReminderPreferences>, ApiError> {
+    Ok(Json(save_preferences(&state, claims.sub, req).await?.into()))
+}
+
+/// Saves the fields sent. Changing quiet hours lets reminders held by the old ones go off by the
+/// new ones.
+async fn save_preferences(state: &AppState, user_id: Uuid, req: UpdateNotificationPreferences) -> Result<NotificationPreferences, ApiError> {
     let (quiet_set, start, end) = match &req.quiet_hours {
         None => (false, None, None),
         Some(None) => (true, None, None),
@@ -255,7 +302,7 @@ pub async fn put_preferences(
            quiet_hours_end = CASE WHEN $5 THEN $7 ELSE user_preferences.quiet_hours_end END, \
            updated_at = now()",
     )
-    .bind(claims.sub)
+    .bind(user_id)
     .bind(req.email_account)
     .bind(req.email_promos)
     .bind(req.push_reminders)
@@ -267,13 +314,13 @@ pub async fn put_preferences(
     .map_err(failed)?;
     if quiet_set {
         sqlx::query("UPDATE reminders SET held_until = NULL WHERE user_id = $1 AND held_until IS NOT NULL")
-            .bind(claims.sub)
+            .bind(user_id)
             .execute(&mut *tx)
             .await
             .map_err(failed)?;
     }
     tx.commit().await.map_err(failed)?;
-    Ok(Json(load_preferences(&state, claims.sub).await?))
+    load_preferences(state, user_id).await
 }
 
 fn require_broadcast_permission(claims: &nomi_auth::claims::Claims, level: &str) -> Result<(), ApiError> {

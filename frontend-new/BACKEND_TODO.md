@@ -174,7 +174,7 @@ Found while building sign in and create account (Phase 1, 2026-11-10).
   - `frontend/`: "Report this page" in the shared page's footer, with the reasons and a note.
 
 ### Push for reminders, and quiet hours — done
-- **Built:** migration `0124_reminder_push_and_quiet_hours.sql`; `GET|PUT /api/notifications/preferences` adds `push_reminders: bool` and `quiet_hours: { start: "22:00", end: "06:00" } | null` (local times in the person's zone; a start after the end runs over midnight). PUT now changes only the fields sent (`quiet_hours: null` turns them off).
+- **Built:** migration `0124_reminder_push_and_quiet_hours.sql`; `GET|PUT /api/notifications/reminder-preferences` returns `{ push_reminders: bool, quiet_hours: { start: "22:00", end: "06:00" } | null }` (local times in the person's zone; a start after the end runs over midnight). `GET|PUT /api/notifications/preferences` keeps answering with just the two email fields, as before; both PUTs change only the fields sent and accept any of the four (`quiet_hours: null` turns them off).
   - The reminders worker pushes each reminder as it goes off (`kind: "reminder"`, opens its chat) unless `push_reminders` is off.
   - A reminder due inside quiet hours is held (`reminders.held_until`) until they end, then goes off; its schedule (`due_at`) doesn't move. Changing quiet hours lets held reminders go by the new ones.
   - `frontend/`: the Inbox's settings have "Push for reminders" and "Quiet hours" with From and Until.

@@ -33,17 +33,26 @@ async fn reminder_pushes_and_quiet_hours_are_kept_with_the_email_settings(pool: 
     let app = App::new(pool.clone());
     let ana = app.person("ana@acme.test").await;
 
+    // The email settings keep their two-field shape; the reminder ones have their own route.
     let (status, prefs) = app.get("/api/notifications/preferences", &ana).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
         prefs,
-        json!({ "email_account": true, "email_promos": true, "push_reminders": true, "quiet_hours": null })
+        json!({ "email_account": true, "email_promos": true })
+    );
+    let (status, prefs) = app
+        .get("/api/notifications/reminder-preferences", &ana)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        prefs,
+        json!({ "push_reminders": true, "quiet_hours": null })
     );
 
     let (status, prefs) = app
         .send(
             "PUT",
-            "/api/notifications/preferences",
+            "/api/notifications/reminder-preferences",
             &ana,
             json!({ "push_reminders": false, "quiet_hours": { "start": "22:00", "end": "06:00" } }),
         )
@@ -55,7 +64,8 @@ async fn reminder_pushes_and_quiet_hours_are_kept_with_the_email_settings(pool: 
         json!({ "start": "22:00", "end": "06:00" })
     );
 
-    // The email settings alone, as the older screens send them, leave the rest as it is.
+    // The email settings alone, as the older screens send them, leave the rest as it is; one
+    // form may send them all to the email route.
     let (_, prefs) = app
         .send(
             "PUT",
@@ -65,13 +75,30 @@ async fn reminder_pushes_and_quiet_hours_are_kept_with_the_email_settings(pool: 
         )
         .await;
     assert_eq!(
-        (
-            prefs["email_promos"].clone(),
-            prefs["push_reminders"].clone()
-        ),
-        (json!(false), json!(false))
+        prefs,
+        json!({ "email_account": true, "email_promos": false })
     );
+    let (_, prefs) = app
+        .get("/api/notifications/reminder-preferences", &ana)
+        .await;
+    assert_eq!(prefs["push_reminders"], false);
     assert_eq!(prefs["quiet_hours"]["start"], "22:00");
+    let (_, prefs) = app
+        .send(
+            "PUT",
+            "/api/notifications/preferences",
+            &ana,
+            json!({ "push_reminders": true }),
+        )
+        .await;
+    assert_eq!(
+        prefs,
+        json!({ "email_account": true, "email_promos": false })
+    );
+    let (_, prefs) = app
+        .get("/api/notifications/reminder-preferences", &ana)
+        .await;
+    assert_eq!(prefs["push_reminders"], true);
 
     // A held reminder goes back to its time when the hours change; null turns them off.
     let session: Uuid = sqlx::query_scalar("INSERT INTO sessions (org_id, channel, chat_id) SELECT org_id, 'web', 'c' FROM memberships WHERE user_id = $1 RETURNING id")
@@ -88,7 +115,7 @@ async fn reminder_pushes_and_quiet_hours_are_kept_with_the_email_settings(pool: 
     let (_, prefs) = app
         .send(
             "PUT",
-            "/api/notifications/preferences",
+            "/api/notifications/reminder-preferences",
             &ana,
             json!({ "quiet_hours": null }),
         )
@@ -108,7 +135,7 @@ async fn reminder_pushes_and_quiet_hours_are_kept_with_the_email_settings(pool: 
         let (status, _) = app
             .send(
                 "PUT",
-                "/api/notifications/preferences",
+                "/api/notifications/reminder-preferences",
                 &ana,
                 json!({ "quiet_hours": bad }),
             )

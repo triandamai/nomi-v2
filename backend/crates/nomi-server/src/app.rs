@@ -395,6 +395,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/notifications/unread", get(notifications_routes::unread))
         .route("/api/notifications/read-all", post(notifications_routes::mark_all_read))
         .route("/api/notifications/preferences", get(notifications_routes::get_preferences).put(notifications_routes::put_preferences))
+        .route(
+            "/api/notifications/reminder-preferences",
+            get(notifications_routes::get_reminder_preferences).put(notifications_routes::put_reminder_preferences),
+        )
         .route("/api/notifications/:id/read", post(notifications_routes::mark_read))
         .route("/api/admin/notifications/broadcast", post(notifications_routes::broadcast))
         .route("/api/admin/notifications/broadcasts", get(notifications_routes::list_broadcasts))

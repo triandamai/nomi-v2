@@ -519,7 +519,7 @@ export interface QuietHours {
 	end: string;
 }
 
-/** `GET /api/notifications/preferences`. */
+/** `GET /api/notifications/preferences` together with `GET /api/notifications/reminder-preferences`. */
 export interface NotificationPreferences {
 	email_account: boolean;
 	email_promos: boolean;

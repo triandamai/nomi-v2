@@ -16,6 +16,8 @@ interface InboxPage {
 	counts: Record<InboxFilter, number>;
 }
 
+const DEFAULT_PREFERENCES: NotificationPreferences = { email_account: true, email_promos: true, push_reminders: true, quiet_hours: null };
+
 const EMPTY: InboxPage = { items: [], unread: 0, page: 1, pages: 1, total: 0, counts: { all: 0, unread: 0, read: 0, promo: 0 } };
 
 export const load: PageServerLoad = async ({ cookies, fetch, url }) => {
@@ -23,14 +25,17 @@ export const load: PageServerLoad = async ({ cookies, fetch, url }) => {
 	const filter: InboxFilter = FILTERS.includes(asked as InboxFilter) ? (asked as InboxFilter) : 'all';
 	const page = Math.max(1, Number.parseInt(url.searchParams.get('page') ?? '1', 10) || 1);
 	const query = `?filter=${filter}&page=${page}`;
-	const [inboxResponse, prefsResponse] = await Promise.all([
+	const [inboxResponse, emailResponse, reminderResponse] = await Promise.all([
 		apiFetch(fetch, cookies, `/api/notifications${query}`),
 		apiFetch(fetch, cookies, '/api/notifications/preferences'),
+		apiFetch(fetch, cookies, '/api/notifications/reminder-preferences'),
 	]);
 	const inbox: InboxPage = inboxResponse.ok ? ((await inboxResponse.json()) as InboxPage) : EMPTY;
-	const preferences: NotificationPreferences = prefsResponse.ok
-		? ((await prefsResponse.json()) as NotificationPreferences)
-		: { email_account: true, email_promos: true, push_reminders: true, quiet_hours: null };
+	const preferences: NotificationPreferences = {
+		...DEFAULT_PREFERENCES,
+		...(emailResponse.ok ? ((await emailResponse.json()) as Partial<NotificationPreferences>) : {}),
+		...(reminderResponse.ok ? ((await reminderResponse.json()) as Partial<NotificationPreferences>) : {}),
+	};
 	return { inbox, preferences, filter };
 };
 
