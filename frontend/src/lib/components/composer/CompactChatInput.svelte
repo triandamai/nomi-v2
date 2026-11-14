@@ -19,6 +19,8 @@
 	import { filterMentions, insertMention, mentionAt } from '$lib/mentions';
 	import { nextOption, type MentionOption } from '$lib/components/ds/chat/mention';
 	import { touchScreen } from '$lib/touch';
+	import { page } from '$app/state';
+	import { sendsOnEnter } from '$lib/accountSettings';
 	import SendButton from '$lib/components/m3/SendButton.svelte';
 	import MicButton from '$lib/components/MicButton.svelte';
 	import AttachMenu from '$lib/components/ds/chat/AttachMenu.svelte';
@@ -223,7 +225,8 @@
 			return;
 		}
 		// A phone's keyboard has no Shift+Enter: there Enter makes a new line and Send sends.
-		if (event.key === 'Enter' && !event.shiftKey && !touchScreen()) {
+		// Otherwise Enter sends unless the person turned "Enter sends" off (then ⌘/Ctrl+Enter does).
+		if (!touchScreen() && sendsOnEnter(event, page.data.preferences?.enter_sends ?? true)) {
 			event.preventDefault();
 			submit();
 		}

@@ -1,6 +1,7 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
-import type { NotificationItem } from '$lib/types';
+import { notificationPreferencesBody } from '$lib/accountSettings';
+import type { NotificationItem, NotificationPreferences } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
 
 export type InboxFilter = 'all' | 'unread' | 'read' | 'promo';
@@ -27,9 +28,9 @@ export const load: PageServerLoad = async ({ cookies, fetch, url }) => {
 		apiFetch(fetch, cookies, '/api/notifications/preferences'),
 	]);
 	const inbox: InboxPage = inboxResponse.ok ? ((await inboxResponse.json()) as InboxPage) : EMPTY;
-	const preferences = prefsResponse.ok
-		? ((await prefsResponse.json()) as { email_account: boolean; email_promos: boolean })
-		: { email_account: true, email_promos: true };
+	const preferences: NotificationPreferences = prefsResponse.ok
+		? ((await prefsResponse.json()) as NotificationPreferences)
+		: { email_account: true, email_promos: true, push_reminders: true, quiet_hours: null };
 	return { inbox, preferences, filter };
 };
 
@@ -59,7 +60,7 @@ export const actions: Actions = {
 		const data = await request.formData();
 		const response = await apiFetch(fetch, cookies, '/api/notifications/preferences', {
 			method: 'PUT',
-			body: JSON.stringify({ email_account: data.get('email_account') === 'true', email_promos: data.get('email_promos') === 'true' }),
+			body: JSON.stringify(notificationPreferencesBody(data)),
 		});
 		return response.ok ? { saved: true } : fail(response.status);
 	},

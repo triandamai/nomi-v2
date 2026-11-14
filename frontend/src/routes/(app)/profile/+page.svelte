@@ -265,6 +265,7 @@
 	const topModels = $derived(data.profile?.top_models ?? []);
 
 	const crewUsage = $derived(data.profile?.crew_usage ?? []);
+	const insights = $derived(data.profile?.insights ?? []);
 
 	// Maximum crew count for bar scaling
 	const maxCrewCount = $derived(Math.max(1, ...crewUsage.map((c) => c.count)));
@@ -401,6 +402,7 @@
 					activity={data.profile?.activity ?? []}
 					joinedDate={joinedFormatted}
 					totalTokens={lifetimeTokens}
+					activeHours={data.profile?.active_hours ?? null}
 				/>
 
 				<!-- Bottom 3 Cards (Models, Crew, Insights) -->
@@ -463,6 +465,26 @@
 					</div>
 
 				</div>
+
+				<!-- Insights: worked out from the person's own usage -->
+				{#if insights.length > 0}
+					<section class="rounded-xl border border-border bg-surface p-4 sm:p-5 flex flex-col gap-3" aria-labelledby="insights-title">
+						<h3 id="insights-title" class="text-ui font-semibold text-text tracking-tight">{m.profile_insights_title()}</h3>
+						<ul class="flex flex-col gap-3">
+							{#each insights as insight (insight.kind)}
+								<li class="flex items-start justify-between gap-3">
+									<div class="flex flex-col min-w-0">
+										<span class="text-ui font-medium text-text">{insight.title}</span>
+										<span class="text-caption text-text-2">{insight.body}</span>
+									</div>
+									{#if insight.action}
+										<Button variant="secondary" label={insight.action.label} href={insight.action.href} />
+									{/if}
+								</li>
+							{/each}
+						</ul>
+					</section>
+				{/if}
 			</div>
 
 			<!-- RIGHT COLUMN: Settings Form & Showcase -->

@@ -472,6 +472,39 @@ export interface Profile {
 	activity?: ProfileDayActivity[];
 	top_models?: ProfileModelUsage[];
 	crew_usage?: ProfileCrewUsage[];
+	/** The two hours the person is most active, in their time zone; null with too little usage. */
+	active_hours?: ActiveHours | null;
+	/** Worked out from their own usage (backend: routes/profile_insights.rs); never public. */
+	insights?: ProfileInsight[];
+}
+
+export interface ActiveHours {
+	/** "21:00" */
+	from: string;
+	to: string;
+}
+
+export interface ProfileInsight {
+	kind: 'cheaper_model' | 'late_hours';
+	title: string;
+	body: string;
+	action?: { label: string; href: string };
+}
+
+/** Quiet hours as local "HH:MM" times; `start` after `end` runs over midnight. */
+export interface QuietHours {
+	start: string;
+	end: string;
+}
+
+/** `GET /api/notifications/preferences`. */
+export interface NotificationPreferences {
+	email_account: boolean;
+	email_promos: boolean;
+	/** Reminders pushed to the phones as they go off. */
+	push_reminders: boolean;
+	/** Reminders due inside these hours wait until they end; null when off. */
+	quiet_hours: QuietHours | null;
 }
 
 export interface PublicProfile {
@@ -522,6 +555,14 @@ export interface Preferences {
 	/** Recent chats listed in the drawer (on unless turned off), and how many (see $lib/drawerRecents). */
 	drawer_recents?: boolean;
 	drawer_recents_limit?: number;
+	/** The region numbers and dates follow (e.g. "en-GB"); null follows the language. */
+	formats?: string | null;
+	/** The crew member new chats start with (an agent_type); null is Nomi. */
+	default_agent?: string | null;
+	/** Enter sends (Shift+Enter for a new line); off, Enter makes a new line. */
+	enter_sends?: boolean;
+	/** Show the tokens a reply used under it. */
+	show_reply_tokens?: boolean;
 }
 
 export interface ProjectSummary {
