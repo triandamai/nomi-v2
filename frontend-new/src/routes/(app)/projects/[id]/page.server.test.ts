@@ -12,6 +12,7 @@ const preview = await import('./preview/[...path]/+server');
 const { sealPreview } = await import('$lib/server/previewGrant');
 const app = await import('./app/+page.server');
 const sandbox = await import('./sandbox/[action]/+server');
+const presence = await import('./presence/+server');
 const bySession = await import('../session/[sessionId]/+page.server');
 
 const at = (answer: Parameters<typeof fakeBackend>[0], params: Record<string, string>) => {
@@ -180,5 +181,10 @@ describe('a project’s workspace', () => {
 		expect(other.api.calls).toEqual([]);
 		const gone = at(() => new Response('', { status: 404 }), { id: 'p1', action: 'status' });
 		expect((await sandbox.GET(gone.event as never)).status).toBe(503);
+	});
+	it('passes on who else is here, for the page to show', async () => {
+		const here = at(() => json({ me: 'u-me', people: [] }), { id: 'p1' });
+		expect(await (await presence.GET(here.event as never)).json()).toEqual({ me: 'u-me', people: [] });
+		expect((await presence.GET(at(() => new Response('', { status: 404 }), { id: 'p1' }).event as never)).status).toBe(503);
 	});
 });

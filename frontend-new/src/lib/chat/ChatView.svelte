@@ -21,6 +21,8 @@
 	import { applyChatEvent, idleTurn, isWorking, retryInfo, turnSent, turnStopped } from '$lib/chat/turn';
 	import { toasts } from '$lib/ds/overlays/toasts.svelte';
 	import MessageUser from '$lib/ds/conversation/MessageUser.svelte';
+	import TeammateMessage from '$lib/ds/build/TeammateMessage.svelte';
+	import { initials, peerFor } from '$lib/projects/peers';
 	import LiveStep from '$lib/ds/conversation/LiveStep.svelte';
 	import Reasoning from '$lib/ds/chat/Reasoning.svelte';
 	import ReplyText from '$lib/ds/chat/ReplyText.svelte';
@@ -722,6 +724,18 @@
 					<DateDivider label={entry.label} />
 				{:else if entry.type === 'new'}
 					<NewDivider count={entry.count} />
+				{:else if entry.type === 'user' && entry.message.author_name}
+					<!-- A teammate's message in a shared project chat (Invite & build together TnwQT, step 6): hers, in her colour, with whom she asked. -->
+					{@const author = entry.message.author_name}
+					{@const next = entries.slice(index + 1).find((one) => one.type !== 'day' && one.type !== 'new')}
+					<div data-message-id={entry.message.id}>
+						<TeammateMessage
+							who={{ name: author, initials: initials(author), peer: peerFor(author) }}
+							time={clock(entry.message.created_at, time.timeZone)}
+							to={next && next.type !== 'user' ? (next.message.agent_display_name ?? undefined) : undefined}
+							text={entry.message.content}
+						/>
+					</div>
 				{:else if entry.type === 'user'}
 					<div class="flex flex-col gap-1.5" data-message-id={entry.message.id}>{@render userMessage(entry.message, entry.latest)}</div>
 				{:else}

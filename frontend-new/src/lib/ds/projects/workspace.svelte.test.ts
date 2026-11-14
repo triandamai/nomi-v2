@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createRawSnippet } from 'svelte';
 import { render } from 'vitest-browser-svelte';
 import { page } from 'vitest/browser';
 import { Activity, Database, History, Link, Settings } from '@lucide/svelte';
@@ -66,6 +67,13 @@ describe('ProjectBar', () => {
 		await page.getByRole('button', { name: 'Share' }).click();
 		await page.getByRole('button', { name: 'Export repo' }).click();
 		expect([onshare.mock.calls.length, onexport.mock.calls.length]).toEqual([1, 1]);
+	});
+
+	it('shows who’s here in place of the person’s own face, when others are', async () => {
+		const presence = createRawSnippet(() => ({ render: () => '<button type="button">2 people here</button>' }));
+		await render(ProjectBar, { ...bar, presence });
+		await expect.element(page.getByRole('button', { name: '2 people here' })).toBeVisible();
+		expect(page.getByText('MP', { exact: true }).elements()).toHaveLength(0);
 	});
 });
 

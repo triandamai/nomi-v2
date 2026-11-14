@@ -30,11 +30,16 @@
 		exportLabel: string;
 		initials: string;
 		publish?: Snippet;
+		/**
+		 * Who's here (Invite & build together TnwQT: Presence), in place of the person's own face
+		 * while someone else has the project open.
+		 */
+		presence?: Snippet;
 		onnav?: (id: string) => void;
 		onshare?: () => void;
 		onexport?: () => void;
 	};
-	let { backHref, backLabel, agent, name, status, space, url, nav, navLabel, active, shareLabel, exportLabel, initials, publish, onnav, onshare, onexport }: Props = $props();
+	let { backHref, backLabel, agent, name, status, space, url, nav, navLabel, active, shareLabel, exportLabel, initials, publish, presence, onnav, onshare, onexport }: Props = $props();
 
 	const shown = $derived(url?.replace(/^https?:\/\//, '').replace(/\/$/, ''));
 </script>
@@ -95,5 +100,9 @@
 		<Icon icon={Download} size={14} />
 	</button>
 	{@render publish?.()}
-	<span aria-hidden="true" class="inline-flex size-7 shrink-0 items-center justify-center rounded-sm bg-surface-2 font-mono text-label text-text-2 outline -outline-offset-1 outline-border-strong max-sm:hidden">{initials}</span>
+	{#if presence}
+		{@render presence()}
+	{:else}
+		<span aria-hidden="true" class="inline-flex size-7 shrink-0 items-center justify-center rounded-sm bg-surface-2 font-mono text-label text-text-2 outline -outline-offset-1 outline-border-strong max-sm:hidden">{initials}</span>
+	{/if}
 </header>

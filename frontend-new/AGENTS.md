@@ -591,6 +591,16 @@ steps; what isn't there yet is left out, not drawn dead:
   load, and its bars count visits; the pen's "Where visits come from", Form sends and Uptime aren't
   measured (BACKEND_TODO.md), so requests and errors take their places. The plan in the chat (step 2)
   is Koda's own.
+- Building together (Flow / Build — Invite & build together `TnwQT`): inviting (steps 1–3) is
+  Share's Invite, which opens People. While someone else has the project open, the bar shows your
+  face and theirs (step 5) in place of your own. Pressing the faces lists who's here and where each
+  is (step 7), with Follow (step 8): your view goes where they go, file by file, until Stop
+  following, until you move on your own, or until they leave. Others' pointers show over the pane.
+  Yours is only sent from the pane itself: a pointer over the preview frame belongs to the app
+  inside it, which runs sandboxed. So a teammate sees your pointer over Code and Terminal, not over
+  the running app. When two people's initials match, one face takes the name's first two letters
+  (the faces are told apart by them). A teammate's message in the chat (step 6) wears their name and
+  colour (by name: messages don't carry an id), with when and which crew member they asked.
 - The chat pane is the project's chat itself (`ChatView`), as on its own page; its header's history
   and collapse buttons are left out, and it names Koda and Nomi as the crew building.
 - The chat is 520 wide as the flow draws it, dragged between 360 and 720 by the resize handle:
