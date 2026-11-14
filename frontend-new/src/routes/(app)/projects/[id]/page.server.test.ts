@@ -105,4 +105,26 @@ describe('a project’s workspace', () => {
 		expect(await response.json()).toEqual([{ id: 'w2', name: 'Kopi Kita' }]);
 		expect(api.calls[0].url).toBe('http://api.test/api/projects/p1/transfer/orgs?q=kopi');
 	});
+
+	it('invites, changes roles, removes and limits access, refusing what’s malformed', async () => {
+		const ok = () => new Response(null, { status: 204 });
+		const invited = posted({ email: ' Sari@Kopi.id ', role: 'view' }, ok);
+		expect(await actions.invite(invited.event as never)).toEqual({ invited: 'sari@kopi.id' });
+		expect(invited.api.calls[0].body).toEqual({ email: 'sari@kopi.id', role: 'view' });
+		expect(await actions.invite(posted({ email: 'nope', role: 'view' }, ok).event as never)).toMatchObject({ status: 400, data: { field: 'email' } });
+		expect(await actions.role(posted({ user: 'u2', role: 'viewer' }, ok).event as never)).toEqual({ changed: 'u2' });
+		expect(await actions.role(posted({ user: 'u2', role: 'boss' }, ok).event as never)).toMatchObject({ status: 400 });
+		expect(await actions.remove(posted({ user: 'u2' }, () => new Response("the project's starter can't be removed", { status: 409 })).event as never)).toMatchObject({ status: 409, data: { message: "the project's starter can't be removed" } });
+		expect(await actions.access(posted({ access: 'members' }, ok).event as never)).toEqual({ access: 'members' });
+	});
+
+	it('sets a variable with a proper name, and says the backend’s reason under the value', async () => {
+		const ok = () => new Response(null, { status: 204 });
+		const set = posted({ name: 'admin_pin', value: '1234' }, ok);
+		expect(await actions.secret(set.event as never)).toEqual({ saved: 'ADMIN_PIN' });
+		expect(set.api.calls[0]).toMatchObject({ method: 'PUT', url: 'http://api.test/api/projects/p1/secrets/ADMIN_PIN', body: { value: '1234' } });
+		expect(await actions.secret(posted({ name: '1bad', value: 'x' }, ok).event as never)).toMatchObject({ status: 400, data: { field: 'name' } });
+		expect(await actions.secret(posted({ name: 'X', value: 'v' }, () => new Response("publishing isn't set up on this Nomi", { status: 503 })).event as never)).toMatchObject({ status: 503, data: { field: 'value', message: "publishing isn't set up on this Nomi" } });
+		expect(await actions.unsecret(posted({ name: 'X' }, ok).event as never)).toEqual({ removed: 'X' });
+	});
 });

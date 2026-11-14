@@ -98,4 +98,24 @@ describe('a project’s workspace on the server', () => {
 		const wrong = eventWith(() => new Response("type the project's name to confirm the transfer", { status: 400 }));
 		expect(await workspace.transfer(wrong.event, 'p1', 'w2', 'x')).toEqual({ ok: false, status: 400, message: "type the project's name to confirm the transfer" });
 	});
+
+	it('reads the people and the environment, and changes each on its own path', async () => {
+		const { backend, event } = eventWith((call) => (call.url.endsWith('/members') ? json({ access: 'org', people: [] }) : call.url.endsWith('/secrets') ? json({ secrets: [], can_edit: true }) : new Response(null, { status: 204 })));
+		expect(await workspace.loadPeople(event, 'p1')).toEqual({ access: 'org', people: [] });
+		expect(await workspace.loadSecrets(event, 'p1')).toEqual({ secrets: [], can_edit: true });
+		await workspace.invitePerson(event, 'p1', 'sari@kopi.id', 'build');
+		await workspace.setPersonRole(event, 'p1', 'u 2', 'viewer');
+		await workspace.removePerson(event, 'p1', 'u2');
+		await workspace.setAccess(event, 'p1', 'members');
+		await workspace.setSecret(event, 'p1', 'ADMIN_PIN', '1234');
+		await workspace.removeSecret(event, 'p1', 'ADMIN_PIN');
+		expect(backend.calls.slice(2).map((call) => [call.method, call.url.replace('http://api.test', ''), call.body ?? null])).toEqual([
+			['POST', '/api/projects/p1/invites', { email: 'sari@kopi.id', role: 'build' }],
+			['PUT', '/api/projects/p1/members/u%202', { role: 'viewer' }],
+			['DELETE', '/api/projects/p1/members/u2', null],
+			['PUT', '/api/projects/p1/access', { access: 'members' }],
+			['PUT', '/api/projects/p1/secrets/ADMIN_PIN', { value: '1234' }],
+			['DELETE', '/api/projects/p1/secrets/ADMIN_PIN', null],
+		]);
+	});
 });

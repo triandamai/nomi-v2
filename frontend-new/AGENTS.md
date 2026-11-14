@@ -548,7 +548,13 @@ steps; what isn't there yet is left out, not drawn dead:
   person by email as the pen draws it), the project's name typed to confirm; Take down stops the
   live address (publishing brings it back); Delete wants the name typed, as the pen draws it,
   offers the export first, and Projects says it's gone. The pen's project-name field is left out
-  (no rename: BACKEND_TODO.md); People and Environment come next.
+  (no rename: BACKEND_TODO.md).
+- People (step 13) and Environment (step 14) open from Settings and close back to it. People is the
+  project's workspace with each person's place on it: invite an address (can build & publish, can
+  ask the crew, can view), change a role, take someone off, and who can open it (everyone in the
+  workspace, or only the people added). Environment lists the variables' names (never their
+  values), adds one (it applies on the next publish) and removes one. The pen's "INVITED" row for
+  an invite still open isn't drawn: the project's members don't list open invites.
 - Share comes with its sheet; Export downloads the project as a zip. The pen's Share wears a download icon
   (pasted from Export): ours wears the share icon.
 - Once a project is live the preview shows the live app; the pen's preview of changes not yet

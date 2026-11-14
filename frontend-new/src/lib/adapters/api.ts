@@ -436,3 +436,10 @@ export type ContainerUsage = {
 export type DatabaseTable = { schema: string; name: string; rows_estimate: number };
 /** What reading the database answered (`/database/query`). */
 export type QueryResult = { columns: string[]; rows: unknown[][]; truncated: boolean; rows_affected: number | null; took_ms: number };
+
+/** Someone in the project's workspace and their place on the project (`GET /api/projects/:id/members`). */
+export type ProjectPerson = { user_id: string; name: string; email: string | null; avatar_url: string | null; org_role: OrgRole; project_role: 'admin' | 'member' | 'viewer' | null; is_owner: boolean; added_at: string | null };
+/** `org`: everyone in the workspace opens it; `members`: only the people added. */
+export type ProjectMembers = { access: 'org' | 'members'; my_role: string; me: string; people: ProjectPerson[] };
+/** An environment variable's name, never its value (`GET /api/projects/:id/secrets`). */
+export type ProjectSecrets = { secrets: { name: string; updated_at: string; updated_by_name: string | null }[]; can_edit: boolean };

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
-	import { Activity, ArrowDownUp, Cpu, Database, Download, Globe, History, Link, Lock, MemoryStick, MonitorX, Rocket, Settings } from '@lucide/svelte';
+	import { Activity, ArrowDownUp, Cpu, Database, Download, Globe, History, KeyRound, Link, Lock, MemoryStick, MonitorX, Rocket, Settings, UserMinus, Users } from '@lucide/svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { pageAction } from '$lib/pageAction';
 	import { clock as appClock } from '$lib/clock';
@@ -23,6 +23,12 @@
 	import TableChip from '$lib/ds/projects/TableChip.svelte';
 	import RowsGrid from '$lib/ds/projects/RowsGrid.svelte';
 	import SettingRow from '$lib/ds/settings/SettingRow.svelte';
+	import PersonRow from '$lib/ds/settings/PersonRow.svelte';
+	import SecretRow from '$lib/ds/projects/SecretRow.svelte';
+	import IconButton from '$lib/ds/actions/IconButton.svelte';
+	import Select from '$lib/ds/inputs/Select.svelte';
+	import { ago } from '$lib/adapters/time';
+	import { maskAddress } from '$lib/settings/connections';
 	import TextField from '$lib/ds/inputs/TextField.svelte';
 	import Search from '$lib/ds/inputs/Search.svelte';
 	import type { TransferTarget } from '$lib/server/workspace';
@@ -256,10 +262,59 @@
 		}
 	}
 
+	// People (step 13) and Environment (step 14), opened from Settings.
+	const people = $derived(data.people);
+	const secrets = $derived(data.secrets);
+	const projectAdmin = $derived(people?.my_role === 'admin');
+	const ROLES = $derived([
+		{ value: 'admin', label: m.people_role_admin() },
+		{ value: 'member', label: m.people_role_member() },
+		{ value: 'viewer', label: m.people_role_viewer() },
+	]);
+	let inviteEmail = $state('');
+	let inviteRole = $state<'build' | 'prompt' | 'view'>('build');
+	let peopleError = $state<string>();
+	let busyPeople = $state(false);
+	async function peopleAct(name: 'invite' | 'role' | 'remove' | 'access', fields: Record<string, string>, done: string) {
+		busyPeople = true;
+		peopleError = undefined;
+		const result = await pageAction(`/projects/${project.id}`, name, fields);
+		busyPeople = false;
+		if (!result.ok) {
+			if (name === 'invite') peopleError = result.message || m.action_failed();
+			else if (result.message) toasts.show({ kind: 'error', title: m.action_failed(), detail: result.message });
+			return;
+		}
+		if (name === 'invite') inviteEmail = '';
+		toasts.show({ kind: 'success', title: done });
+		await invalidate('app:workspace-project');
+	}
+	let envName = $state('');
+	let envValue = $state('');
+	let envError = $state<{ field?: string; message: string }>();
+	let savingEnv = $state(false);
+	async function saveSecret() {
+		savingEnv = true;
+		envError = undefined;
+		const result = await pageAction(`/projects/${project.id}`, 'secret', { name: envName, value: envValue });
+		savingEnv = false;
+		if (!result.ok) return void (envError = { field: result.field, message: result.message || m.action_failed() });
+		toasts.show({ kind: 'success', title: m.env_saved({ name: envName.trim().toUpperCase() }) });
+		envName = '';
+		envValue = '';
+		await invalidate('app:workspace-project');
+	}
+	async function removeSecret(name: string) {
+		const result = await pageAction(`/projects/${project.id}`, 'unsecret', { name });
+		if (!result.ok) return void (result.message && toasts.show({ kind: 'error', title: m.action_failed(), detail: result.message }));
+		toasts.show({ kind: 'success', title: m.env_removed({ name }) });
+		await invalidate('app:workspace-project');
+	}
+
 	let view = $state<PaneView>('preview');
 	let device = $state<'desktop' | 'phone'>('desktop');
 	let reloads = $state(0);
-	let sheet = $state<'deployments' | 'domain' | 'monitor' | 'database' | 'settings' | null>(null);
+	let sheet = $state<'deployments' | 'domain' | 'monitor' | 'database' | 'settings' | 'people' | 'environment' | null>(null);
 	// An opened sheet takes the focus, so Escape (and a screen reader) is in it at once.
 	let sheetBox = $state<HTMLElement>();
 	$effect(() => {
@@ -357,6 +412,18 @@
 		{#if sheet === 'settings'}
 			<div bind:this={sheetBox} class="absolute inset-y-0 right-0 flex w-180 max-w-full">
 				<WorkspaceSheet icon={Settings} title={m.project_settings()} meta={project.name} onclose={() => (sheet = null)}>
+					<div class="flex flex-col border-t border-border">
+						{#if people}
+							<SettingRow title={m.people_title()} description={m.people_summary({ count: people.people.filter((one) => one.project_role || one.is_owner).length })}>
+								{#snippet control()}<Button variant="secondary" iconStart={Users} label={m.settings_manage()} onclick={() => (sheet = 'people')} />{/snippet}
+							</SettingRow>
+						{/if}
+						{#if secrets}
+							<SettingRow title={m.env_title()} description={secrets.secrets.length === 1 ? m.env_summary_one() : m.env_summary({ count: secrets.secrets.length })}>
+								{#snippet control()}<Button variant="secondary" iconStart={KeyRound} label={m.settings_manage()} onclick={() => (sheet = 'environment')} />{/snippet}
+							</SettingRow>
+						{/if}
+					</div>
 					<section class="flex flex-col gap-2">
 						<h3 class="font-mono text-label tracking-label text-text-3 uppercase">{m.settings_ownership()}</h3>
 						<div class="flex flex-col border-t border-border">
@@ -371,6 +438,110 @@
 							</SettingRow>
 						</div>
 					</section>
+				</WorkspaceSheet>
+			</div>
+		{/if}
+		{#if sheet === 'people' && people}
+			<div bind:this={sheetBox} class="absolute inset-y-0 right-0 flex w-180 max-w-full">
+				<WorkspaceSheet icon={Users} title={m.people_title()} meta={project.name} onclose={() => (sheet = 'settings')}>
+					{#if projectAdmin}
+						<form
+							class="flex flex-wrap items-start gap-2"
+							onsubmit={(event) => {
+								event.preventDefault();
+								void peopleAct('invite', { email: inviteEmail, role: inviteRole }, m.people_invited({ email: inviteEmail.trim() }));
+							}}
+						>
+							<div class="min-w-60 flex-1"><TextField label={m.people_email()} type="email" bind:value={inviteEmail} error={peopleError} /></div>
+							<div class="w-44 pt-6">
+								<Select
+									label={m.people_invite_as()}
+									options={[
+										{ value: 'build', label: m.people_role_admin() },
+										{ value: 'prompt', label: m.people_role_member() },
+										{ value: 'view', label: m.people_role_viewer() },
+									]}
+									bind:value={inviteRole}
+								/>
+							</div>
+							<div class="pt-6"><Button type="submit" variant="inverse" label={m.people_invite()} loading={busyPeople} disabled={!inviteEmail.trim()} /></div>
+						</form>
+						<div class="flex flex-wrap items-center gap-3">
+							<span class="text-ui text-text-2">{m.people_access()}</span>
+							<Segmented
+								label={m.people_access()}
+								options={[
+									{ value: 'org', label: m.people_access_org({ workspace: project.org_name }) },
+									{ value: 'members', label: m.people_access_members() },
+								]}
+								value={people.access}
+								onchange={(value) => void peopleAct('access', { access: value }, value === 'members' ? m.people_access_limited() : m.people_access_opened())}
+							/>
+						</div>
+					{/if}
+					<ul class="flex flex-col border-t border-border">
+						{#each people.people as person (person.user_id)}
+							<PersonRow
+								name={person.name}
+								initial={[...person.name][0]?.toUpperCase() ?? '?'}
+								avatar={person.avatar_url}
+								you={person.user_id === people.me ? m.workspace_you() : undefined}
+								meta={[person.email ? maskAddress(person.email) : null, person.is_owner ? m.people_started_it() : null].filter(Boolean).join(' · ')}
+							>
+								{#snippet controls()}
+									{#if projectAdmin && !person.is_owner}
+										<div class="w-40">
+											<Select
+												label={m.people_role_of({ name: person.name })}
+												options={person.project_role ? ROLES : [{ value: '', label: people.access === 'org' ? m.people_via_workspace() : m.people_not_added() }, ...ROLES]}
+												value={person.project_role ?? ''}
+												onchange={(role) => role && void peopleAct('role', { user: person.user_id, role }, m.people_role_changed({ name: person.name }))}
+											/>
+										</div>
+										{#if person.project_role}<IconButton icon={UserMinus} variant="ghost" label={m.people_remove({ name: person.name })} onclick={() => void peopleAct('remove', { user: person.user_id }, m.people_removed({ name: person.name }))} />{/if}
+									{:else}
+										<span class="text-caption text-text-2">{person.is_owner ? m.people_owner() : person.project_role ? ROLES.find((one) => one.value === person.project_role)?.label : people.access === 'org' ? m.people_via_workspace() : m.people_not_added()}</span>
+									{/if}
+								{/snippet}
+							</PersonRow>
+						{/each}
+					</ul>
+					<p class="text-ui text-text-3">{m.people_note()}</p>
+				</WorkspaceSheet>
+			</div>
+		{/if}
+		{#if sheet === 'environment' && secrets}
+			<div bind:this={sheetBox} class="absolute inset-y-0 right-0 flex w-180 max-w-full">
+				<WorkspaceSheet icon={KeyRound} title={m.env_title()} meta={project.name} onclose={() => (sheet = 'settings')}>
+					{#if secrets.secrets.length}
+						<ul class="flex flex-col border-t border-border">
+							{#each secrets.secrets as secret (secret.name)}
+								<SecretRow
+									name={secret.name}
+									meta={[m.env_updated({ when: ago(secret.updated_at, new Date()) }), secret.updated_by_name].filter(Boolean).join(' · ')}
+									masked="••••••"
+									remove={m.env_remove({ name: secret.name })}
+									onremove={secrets.can_edit ? () => removeSecret(secret.name) : undefined}
+								/>
+							{/each}
+						</ul>
+					{:else}
+						<p class="text-ui text-text-3">{m.env_none()}</p>
+					{/if}
+					{#if secrets.can_edit}
+						<form
+							class="flex flex-wrap items-start gap-2"
+							onsubmit={(event) => {
+								event.preventDefault();
+								void saveSecret();
+							}}
+						>
+							<div class="min-w-48 flex-1"><TextField label={m.env_name()} bind:value={envName} mono autocomplete="off" placeholder="ADMIN_PIN" error={envError?.field === 'name' ? envError.message : undefined} /></div>
+							<div class="min-w-48 flex-1"><TextField label={m.env_value()} type="password" bind:value={envValue} mono autocomplete="off" error={envError && envError.field !== 'name' ? envError.message : undefined} /></div>
+							<div class="pt-6"><Button type="submit" variant="secondary" label={m.env_add()} loading={savingEnv} disabled={!envName.trim() || !envValue} /></div>
+						</form>
+					{/if}
+					<p class="text-ui text-text-3">{m.env_note()}</p>
 				</WorkspaceSheet>
 			</div>
 		{/if}
