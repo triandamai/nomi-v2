@@ -52,6 +52,7 @@ pub async fn list_for_user(State(state): State<AppState>, AuthClaims(claims): Au
         if plan.promo_ends_at.is_some_and(|end| end <= Utc::now()) {
             plan.promo_label = None;
             plan.promo_price_label = None;
+            plan.promo_price_amount = None;
         }
     }
     Ok(Json(PlansForUser {
@@ -317,11 +318,24 @@ mod tests {
             sandbox_size: None,
             all_models: true,
             model_ids: vec![],
+            price_amount: 0,
+            currency: "IDR".into(),
+            promo_price_amount: None,
         }
     }
 
     fn subscription(plan: PlanRow, monthly_tokens: i64) -> plans::Subscription {
-        plans::Subscription { plan, quota_override: None, override_until: None, note: None, monthly_tokens }
+        plans::Subscription {
+            plan,
+            quota_override: None,
+            override_until: None,
+            note: None,
+            monthly_tokens,
+            paid_until: None,
+            term_months: None,
+            auto_renew: true,
+            lapsed: false,
+        }
     }
 
     #[test]

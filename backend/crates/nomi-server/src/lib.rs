@@ -2,6 +2,8 @@ pub mod configuration;
 pub mod app;
 pub mod attachment_worker;
 pub mod background_worker;
+pub mod billing;
+pub mod billing_worker;
 pub mod bootstrap;
 pub mod chat_events;
 pub mod delegation_worker;

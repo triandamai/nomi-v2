@@ -22,6 +22,8 @@ use crate::routes::google_auth as google_auth_routes;
 use crate::routes::reminders as reminders_routes;
 use crate::routes::memory as memory_routes;
 use crate::routes::personality as personality_routes;
+use crate::routes::admin_billing as admin_billing_routes;
+use crate::routes::billing as billing_routes;
 use crate::routes::plans as plans_routes;
 use crate::routes::projects as projects_routes;
 use crate::routes::profile as profile_routes;
@@ -352,6 +354,22 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/admin/plans", get(plans_routes::admin_list).post(plans_routes::admin_create))
         .route("/api/admin/plans/:id", put(plans_routes::admin_update).delete(plans_routes::admin_delete))
         .route("/api/admin/plans/:id/default", put(plans_routes::admin_set_default))
+        .route("/api/billing/terms", get(billing_routes::terms))
+        .route("/api/billing/quote", post(billing_routes::quote))
+        .route("/api/billing/checkout", post(billing_routes::checkout))
+        .route("/api/billing/payments", get(billing_routes::list_payments))
+        .route("/api/billing/payments/:id", get(billing_routes::get_payment))
+        .route("/api/billing/payments/:id/cancel", post(billing_routes::cancel_payment))
+        .route("/api/billing/subscription", get(billing_routes::subscription))
+        .route("/api/billing/auto-renew", put(billing_routes::set_auto_renew))
+        .route("/api/billing/referral", get(billing_routes::referral))
+        // Xendit calls this without a sign-in; it is trusted by its callback token.
+        .route("/api/payments/xendit/webhook", post(billing_routes::xendit_webhook))
+        .route("/api/admin/billing/terms", get(admin_billing_routes::list_terms).post(admin_billing_routes::create_term))
+        .route("/api/admin/billing/terms/:id", put(admin_billing_routes::update_term).delete(admin_billing_routes::delete_term))
+        .route("/api/admin/coupons", get(admin_billing_routes::list_coupons).post(admin_billing_routes::create_coupon))
+        .route("/api/admin/coupons/:id", put(admin_billing_routes::update_coupon).delete(admin_billing_routes::delete_coupon))
+        .route("/api/admin/payments", get(admin_billing_routes::list_payments))
         .route("/api/admin/users/:id/subscription", get(plans_routes::admin_get_subscription).put(plans_routes::admin_put_subscription))
         .route("/api/notifications", get(notifications_routes::list))
         .route("/api/notifications/unread", get(notifications_routes::unread))

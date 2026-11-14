@@ -693,6 +693,16 @@ pub async fn get_payment(pool: &PgPool, id: Uuid) -> Result<Option<Payment>, sql
     sqlx::query_as(&format!("SELECT {PAYMENT_COLUMNS} FROM payments p WHERE p.id = $1")).bind(id).fetch_optional(pool).await
 }
 
+/// One payment as the lists show it.
+pub async fn payment_item(pool: &PgPool, id: Uuid) -> Result<Option<PaymentListItem>, sqlx::Error> {
+    sqlx::query_as(&format!(
+        "SELECT {PAYMENT_COLUMNS}, pl.name AS plan_name, COALESCE(w.email, g.email) AS user_email {LIST_FROM} WHERE p.id = $1"
+    ))
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+}
+
 /// The payment `external_id` (a payment id as text) names, if there is one.
 pub async fn payment_by_external_id(pool: &PgPool, external_id: &str) -> Result<Option<Payment>, sqlx::Error> {
     match Uuid::parse_str(external_id) {

@@ -28,6 +28,10 @@ pub async fn xendit_config() -> Option<nomi_payment::xendit::XenditConfig> {
     })
 }
 
+/// Paid plans' settings as saved in Admin → Configuration → Billing, with the defaults filled in.
+pub async fn billing_config() -> nomi_usage::billing::BillingConfig {
+    nomi_usage::billing::config().await
+}
 
 /// boat.dev's API when `api_base` isn't set.
 const DEFAULT_API_BASE: &str = "https://boat.dev/api/v1";
