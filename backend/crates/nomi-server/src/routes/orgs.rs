@@ -26,6 +26,11 @@ type ApiError = (StatusCode, &'static str);
 const INVITE_DAYS: i64 = 7;
 const MAX_NAME_CHARS: usize = 80;
 
+/// A plan limit as a 402 answer.
+fn limit_error(hit: nomi_usage::entitlements::LimitHit) -> ApiError {
+    (StatusCode::PAYMENT_REQUIRED, hit.static_message())
+}
+
 fn internal(context: &'static str) -> impl Fn(sqlx::Error) -> ApiError {
     move |e| {
         tracing::error!(error = %e, "{context}");
@@ -142,6 +147,10 @@ pub async fn create_org(
     Json(req): Json<NameRequest>,
 ) -> Result<(StatusCode, Json<OrgSummary>), ApiError> {
     let name = clean_name(&req.name)?;
+    nomi_usage::entitlements::check_new_org(&state.pool, claims.sub)
+        .await
+        .map_err(internal("failed to create organization"))?
+        .map_err(limit_error)?;
     let mut tx = state.pool.begin().await.map_err(internal("failed to create organization"))?;
     let id: Uuid = sqlx::query_scalar("INSERT INTO organizations (name, is_personal) VALUES ($1, false) RETURNING id")
         .bind(&name)
@@ -346,6 +355,7 @@ pub(crate) async fn send_invite(
     project: Option<(Uuid, &str)>,
 ) -> Result<PendingInvite, ApiError> {
     let claims_sub = inviter_id;
+    nomi_usage::entitlements::check_new_org_member(&state.pool, org_id).await.map_err(internal("failed to invite"))?.map_err(limit_error)?;
     // Whose address it is, if anyone's.
     let invitee: Option<Uuid> = sqlx::query_scalar(
         "SELECT user_id FROM web_credentials WHERE lower(email) = $1 \
@@ -658,6 +668,10 @@ pub async fn accept_invite(
         _ => return Err((StatusCode::FORBIDDEN, "this invite was sent to another address")),
     }
     let (org_id, org_name, invited_by, role, _, _, _) = row;
+    nomi_usage::entitlements::check_accept_invite(&state.pool, org_id, &code)
+        .await
+        .map_err(internal("failed to accept invite"))?
+        .map_err(limit_error)?;
 
     let mut tx = state.pool.begin().await.map_err(internal("failed to accept invite"))?;
     // Claimed once: a second accept of the same code finds it used.

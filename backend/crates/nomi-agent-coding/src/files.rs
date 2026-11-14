@@ -193,6 +193,12 @@ pub async fn save_bytes(
             MAX_BINARY_FILE_BYTES / (1024 * 1024)
         ));
     }
+    // The owner's plan caps their stored bytes; a write that shrinks or keeps a file's size always goes through.
+    match nomi_usage::entitlements::check_file_write(&mut *conn, project_id, path, content.len() as i64).await {
+        Ok(Ok(())) => {}
+        Ok(Err(hit)) => return Err(hit.message()),
+        Err(e) => return Err(e.to_string()),
+    }
     let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM project_files WHERE project_id = $1 AND path = $2)")
         .bind(project_id)
         .bind(path)

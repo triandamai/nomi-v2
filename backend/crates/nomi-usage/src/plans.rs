@@ -3,7 +3,7 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, sqlx::FromRow)]
@@ -147,6 +147,14 @@ pub async fn default_plan(pool: &PgPool) -> Result<PlanRow, sqlx::Error> {
     sqlx::query_as(&format!("SELECT {PLAN_COLUMNS} FROM plans ORDER BY is_default DESC, sort_order LIMIT 1")).fetch_one(pool).await
 }
 
+async fn get_plan_in(conn: &mut PgConnection, id: Uuid) -> Result<Option<PlanRow>, sqlx::Error> {
+    sqlx::query_as(&format!("SELECT {PLAN_COLUMNS} FROM plans WHERE id = $1")).bind(id).fetch_optional(conn).await
+}
+
+async fn default_plan_in(conn: &mut PgConnection) -> Result<PlanRow, sqlx::Error> {
+    sqlx::query_as(&format!("SELECT {PLAN_COLUMNS} FROM plans ORDER BY is_default DESC, sort_order LIMIT 1")).fetch_one(conn).await
+}
+
 pub async fn create_plan(pool: &PgPool, input: &PlanInput) -> Result<PlanRow, sqlx::Error> {
     let mut tx = pool.begin().await?;
     let id: Uuid = sqlx::query_scalar(
@@ -288,20 +296,25 @@ pub struct Subscription {
 }
 
 pub async fn subscription_for(pool: &PgPool, user_id: Uuid) -> Result<Subscription, sqlx::Error> {
+    subscription_in(&mut *pool.acquire().await?, user_id).await
+}
+
+/// [`subscription_for`] on a connection already in hand.
+pub async fn subscription_in(conn: &mut PgConnection, user_id: Uuid) -> Result<Subscription, sqlx::Error> {
     let row: Option<(Uuid, Option<i64>, Option<DateTime<Utc>>, Option<String>)> =
         sqlx::query_as("SELECT plan_id, quota_override, override_until, note FROM user_subscriptions WHERE user_id = $1")
             .bind(user_id)
-            .fetch_optional(pool)
+            .fetch_optional(&mut *conn)
             .await?;
     let (plan, quota_override, override_until, note) = match row {
         Some((plan_id, quota_override, override_until, note)) => {
-            let plan = match get_plan(pool, plan_id).await? {
+            let plan = match get_plan_in(&mut *conn, plan_id).await? {
                 Some(plan) => plan,
-                None => default_plan(pool).await?,
+                None => default_plan_in(&mut *conn).await?,
             };
             (plan, quota_override, override_until, note)
         }
-        None => (default_plan(pool).await?, None, None, None),
+        None => (default_plan_in(&mut *conn).await?, None, None, None),
     };
     // An override past its date no longer counts.
     let active_override = quota_override.filter(|_| override_until.is_none_or(|until| until > Utc::now()));

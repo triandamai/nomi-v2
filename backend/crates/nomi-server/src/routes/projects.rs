@@ -168,6 +168,11 @@ pub async fn create_project_session(
             .ok_or((StatusCode::CONFLICT, "choose an organization for projects first"))?,
     };
 
+    nomi_usage::entitlements::check_new_project(&state.pool, claims.sub)
+        .await
+        .map_err(internal("failed to create project"))?
+        .map_err(|hit| (StatusCode::PAYMENT_REQUIRED, hit.static_message()))?;
+
     ensure_web_channel_identity(&state.pool, claims.sub).await.map_err(|e| {
         tracing::error!(error = %e, "failed to resolve web identity");
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to create project")
@@ -457,13 +462,28 @@ pub async fn put_project_file(
     crate::routes::deploy::require_builder(&state.pool, project_id, claims.sub).await.map_err(|(code, why)| (code, why))?;
 
     let mut conn = state.pool.acquire().await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let storage_refusal = |hit: nomi_usage::entitlements::LimitHit| (StatusCode::PAYMENT_REQUIRED, hit.message());
+    let storage_error = |e: sqlx::Error| {
+        tracing::error!(error = %e, "failed to check storage");
+        (StatusCode::INTERNAL_SERVER_ERROR, "failed to save file".to_string())
+    };
     match req.encoding.as_deref() {
-        None => nomi_agent_coding::files::save_file(&mut conn, &state.project_storage, project_id, &path, &req.content).await,
+        None => {
+            nomi_usage::entitlements::check_file_write(&mut conn, project_id, &path, req.content.len() as i64)
+                .await
+                .map_err(storage_error)?
+                .map_err(storage_refusal)?;
+            nomi_agent_coding::files::save_file(&mut conn, &state.project_storage, project_id, &path, &req.content).await
+        }
         Some(BASE64_ENCODING) => {
             use base64::Engine as _;
             let bytes = base64::engine::general_purpose::STANDARD
                 .decode(req.content.as_bytes())
                 .map_err(|_| (StatusCode::BAD_REQUEST, "content isn't valid base64".to_string()))?;
+            nomi_usage::entitlements::check_file_write(&mut conn, project_id, &path, bytes.len() as i64)
+                .await
+                .map_err(storage_error)?
+                .map_err(storage_refusal)?;
             nomi_agent_coding::files::save_bytes(&mut conn, &state.project_storage, project_id, &path, &bytes).await
         }
         Some(other) => return Err((StatusCode::BAD_REQUEST, format!("unknown encoding {other}"))),

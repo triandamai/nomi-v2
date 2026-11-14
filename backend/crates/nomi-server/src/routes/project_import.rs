@@ -115,12 +115,21 @@ pub fn detect_stack(files: &[(String, String)]) -> &'static str {
     }
 }
 
+/// 402 when writing `len` bytes at `path` would take the project owner over their plan's storage.
+async fn refuse_over_storage(conn: &mut sqlx::PgConnection, project_id: Uuid, path: &str, len: usize) -> Result<(), ApiError> {
+    nomi_usage::entitlements::check_file_write(conn, project_id, path, len as i64)
+        .await
+        .map_err(internal("failed to import the code"))?
+        .map_err(|hit| (StatusCode::PAYMENT_REQUIRED, hit.message()))
+}
+
 async fn import_files(state: &AppState, project_id: Uuid, files: Vec<(String, Vec<u8>)>, skipped: usize) -> Result<ImportResult, ApiError> {
     let stack = detect_stack_of(&files);
     let mut conn = state.pool.acquire().await.map_err(internal("failed to import the code"))?;
     let mut imported = 0;
     let mut skipped = skipped;
     for (path, content) in &files {
+        refuse_over_storage(&mut conn, project_id, path, content.len()).await?;
         match nomi_agent_coding::files::save_bytes(&mut conn, &state.project_storage, project_id, path, content).await {
             Ok(_) => imported += 1,
             Err(e) => {
@@ -203,11 +212,17 @@ pub async fn import_batch(
                 skipped += 1;
                 continue;
             }
-            None => nomi_agent_coding::files::save_file(&mut conn, &state.project_storage, project_id, path, &file.content).await,
+            None => {
+                refuse_over_storage(&mut conn, project_id, path, file.content.len()).await?;
+                nomi_agent_coding::files::save_file(&mut conn, &state.project_storage, project_id, path, &file.content).await
+            }
             Some(BASE64_ENCODING) => {
                 use base64::Engine as _;
                 match base64::engine::general_purpose::STANDARD.decode(file.content.as_bytes()) {
-                    Ok(bytes) => nomi_agent_coding::files::save_bytes(&mut conn, &state.project_storage, project_id, path, &bytes).await,
+                    Ok(bytes) => {
+                        refuse_over_storage(&mut conn, project_id, path, bytes.len()).await?;
+                        nomi_agent_coding::files::save_bytes(&mut conn, &state.project_storage, project_id, path, &bytes).await
+                    }
                     Err(_) => Err("content isn't valid base64".to_string()),
                 }
             }

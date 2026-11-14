@@ -8,6 +8,7 @@ nomi-settings = { path = "../nomi-settings" }
 nomi-i18n = { path = "../nomi-i18n" }
 nomi-agent-core = { path = "../nomi-agent-core" }
 nomi-llm = { path = "../nomi-llm" }
+nomi-usage = { path = "../nomi-usage" }
 nomi-embedding = { path = "../nomi-embedding" }
 nomi-realtime = { path = "../nomi-realtime" }
 nomi-storage = { path = "../nomi-storage" }

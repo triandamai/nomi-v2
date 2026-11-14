@@ -3,8 +3,11 @@
 //! they may pick their own address, which sandbox size and which of Nomi's models they get.
 //! A limit left empty on the plan is unlimited, so nothing is refused until an admin sets one.
 
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
+
 use serde::Serialize;
-use sqlx::PgPool;
+use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
 
 use crate::plans;
@@ -98,6 +101,17 @@ impl LimitHit {
     }
 }
 
+impl LimitHit {
+    /// The same sentence as `&'static str`, for error types that carry one. Each distinct sentence
+    /// is kept once; admins choose the limits, so there are only ever a handful.
+    pub fn static_message(&self) -> &'static str {
+        static KNOWN: OnceLock<Mutex<HashMap<String, &'static str>>> = OnceLock::new();
+        let message = self.message();
+        let mut known = KNOWN.get_or_init(Default::default).lock().unwrap_or_else(|e| e.into_inner());
+        known.entry(message).or_insert_with_key(|m| Box::leak(m.clone().into_boxed_str()))
+    }
+}
+
 /// Whether one more fits when `used` are already there: always without a limit.
 pub fn within(limit: Option<i32>, used: i64) -> bool {
     limit.is_none_or(|limit| used < i64::from(limit))
@@ -156,6 +170,16 @@ pub async fn check_new_org(pool: &PgPool, user_id: Uuid) -> Check {
 
 /// One more member (or invite) in `org_id`, on the plan of the organization's owner.
 pub async fn check_new_org_member(pool: &PgPool, org_id: Uuid) -> Check {
+    org_member_check(pool, org_id, None).await
+}
+
+/// Same as [`check_new_org_member`] for someone accepting the invite `code`, which already holds
+/// a seat and so doesn't count against them.
+pub async fn check_accept_invite(pool: &PgPool, org_id: Uuid, code: &str) -> Check {
+    org_member_check(pool, org_id, Some(code)).await
+}
+
+async fn org_member_check(pool: &PgPool, org_id: Uuid, except_invite: Option<&str>) -> Check {
     let owner: Option<Uuid> = sqlx::query_scalar(
         "SELECT user_id FROM memberships WHERE org_id = $1 AND role = 'owner' AND status = 'active' ORDER BY created_at LIMIT 1",
     )
@@ -166,9 +190,10 @@ pub async fn check_new_org_member(pool: &PgPool, org_id: Uuid) -> Check {
     let Some(limit) = for_user(pool, owner).await?.max_org_members else { return Ok(Ok(())) };
     let used: i64 = sqlx::query_scalar(
         "SELECT (SELECT count(*) FROM memberships WHERE org_id = $1 AND status IN ('active', 'invited')) \
-              + (SELECT count(*) FROM org_invites WHERE org_id = $1 AND used_at IS NULL AND expires_at > now())",
+              + (SELECT count(*) FROM org_invites WHERE org_id = $1 AND used_at IS NULL AND expires_at > now() AND code IS DISTINCT FROM $2)",
     )
     .bind(org_id)
+    .bind(except_invite)
     .fetch_one(pool)
     .await?;
     Ok(verdict(within(Some(limit), used), LimitHit::OrgMembers { limit }))
@@ -186,14 +211,32 @@ pub async fn check_storage(pool: &PgPool, user_id: Uuid, adding_bytes: i64) -> C
 
 /// Storage check for a write into `project_id`, charged to the project's owner.
 pub async fn check_project_storage(pool: &PgPool, project_id: Uuid, adding_bytes: i64) -> Check {
+    check_project_storage_in(&mut *pool.acquire().await?, project_id, adding_bytes).await
+}
+
+/// [`check_project_storage`] on a connection already in hand.
+pub async fn check_project_storage_in(conn: &mut PgConnection, project_id: Uuid, adding_bytes: i64) -> Check {
     if adding_bytes <= 0 {
         return Ok(Ok(()));
     }
-    let owner: Option<Uuid> = sqlx::query_scalar("SELECT user_id FROM projects WHERE id = $1").bind(project_id).fetch_optional(pool).await?;
-    match owner {
-        Some(owner) => check_storage(pool, owner, adding_bytes).await,
-        None => Ok(Ok(())),
-    }
+    let owner: Option<Uuid> = sqlx::query_scalar("SELECT user_id FROM projects WHERE id = $1").bind(project_id).fetch_optional(&mut *conn).await?;
+    let Some(owner) = owner else { return Ok(Ok(())) };
+    let Some(limit_mb) = plans::subscription_in(&mut *conn, owner).await?.plan.max_storage_mb else { return Ok(Ok(())) };
+    let used: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(sum(f.size_bytes), 0)::bigint FROM project_files f JOIN projects p ON p.id = f.project_id WHERE p.user_id = $1",
+    )
+    .bind(owner)
+    .fetch_one(&mut *conn)
+    .await?;
+    Ok(verdict(storage_fits(Some(limit_mb), used, adding_bytes), LimitHit::Storage { limit_mb }))
+}
+
+/// Storage check for writing a file of `new_len` bytes at `path` in `project_id`: only what it
+/// adds over the file it replaces counts, so a write that shrinks or keeps the size always fits.
+pub async fn check_file_write(conn: &mut PgConnection, project_id: Uuid, path: &str, new_len: i64) -> Check {
+    let existing: Option<i32> =
+        sqlx::query_scalar("SELECT size_bytes FROM project_files WHERE project_id = $1 AND path = $2").bind(project_id).bind(path).fetch_optional(&mut *conn).await?;
+    check_project_storage_in(conn, project_id, new_len - i64::from(existing.unwrap_or(0))).await
 }
 
 pub async fn check_custom_domain(pool: &PgPool, user_id: Uuid) -> Check {
@@ -236,6 +279,7 @@ mod tests {
     fn messages_name_the_limit_and_the_upgrade() {
         let m = LimitHit::Projects { limit: LIMIT }.message();
         assert_eq!(m, "Your plan allows 3 projects. Upgrade your plan to create more.");
+        assert_eq!(LimitHit::Projects { limit: LIMIT }.static_message(), m);
         assert!(LimitHit::Projects { limit: 1 }.message().contains("1 project."));
         for hit in [
             LimitHit::Orgs { limit: LIMIT },
