@@ -1,4 +1,4 @@
-<!-- The crew: one colour and one silhouette each. Beside a name, the mascot is decorative. -->
+<!-- The crew: one shape and one gradient each. Beside a name, the mascot is decorative. -->
 <script lang="ts">
 	import Mascot from '$lib/ds/agents/Mascot.svelte';
 	import { CREW } from '$lib/ds/agents/crew';

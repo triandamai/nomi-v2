@@ -42,12 +42,13 @@ describe('Settings › General on the server', () => {
 
 	it('starts adding Google, and removes it', async () => {
 		const { backend, event } = eventWith((call) => (call.method === 'POST' ? json({ url: 'https://accounts.google.com/o?x=1' }) : new Response(null, { status: 204 })));
-		expect(await general.startGoogleLink(event)).toEqual({ ok: true, data: { url: 'https://accounts.google.com/o?x=1' } });
+		expect(await general.startGoogleLink(event, 'https://new.nomi.test')).toEqual({ ok: true, data: { url: 'https://accounts.google.com/o?x=1' } });
 		expect(await general.unlinkGoogle(event)).toEqual({ ok: true, data: undefined });
 		expect(backend.calls.map((call) => [call.method, call.url])).toEqual([
 			['POST', 'http://api.test/api/auth/google/link'],
 			['DELETE', 'http://api.test/api/auth/google'],
 		]);
+		expect(backend.calls[0].body).toEqual({ origin: 'https://new.nomi.test' });
 	});
 
 	it('passes on why Google can’t be removed', async () => {

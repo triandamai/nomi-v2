@@ -60,8 +60,8 @@ playful chat toy.
 - **Honest states.** Show the real tool and target, elapsed time and the current step when the
   duration is unknown. No fake progress, no spinners that pretend. Cost always visible. Empty,
   loading, error and populated states ship together.
-- **Mascots are identity, not decoration.** One per crew member, flat colour, only where that
-  member speaks or works.
+- **Mascots are identity, not decoration.** One per crew member, in their own agent shape and
+  gradient, only where that member speaks or works.
 
 ### Colour (tokens, themed for dark and light)
 
@@ -125,7 +125,8 @@ pen sets an explicit line height use the leading token, rounded the same way: `l
 - Lucide only, stroke 1.5, through `foundations/Icon.svelte`: 16px in nav and buttons, 14px inline
   with text, 12px in chips; 13, 15, 18 and the phone's 20–26 only where the pen draws them.
   Decorative unless it carries meaning alone (then it gets a label).
-- Mascots (`agents/Mascot.svelte`) at 96 / 32 / 20 / 16, flat, from the pen's paths.
+- Mascots (`agents/Mascot.svelte`) at 96 / 32 / 20 / 16: frontend's agent shapes (`agents/shapes.ts`), not
+  the pen's flat paths (see §9).
 
 ### Layout and screens
 
@@ -338,6 +339,10 @@ hard. Add to this list instead of deviating silently.
   available", the pen's layout), since the backend answers both alike so links can't be probed. The
   screens' "What is Nomi?" is left out (there's no page to open), and so are the owner's banner,
   "Shared by…" and "Report this page" (BACKEND_TODO.md).
+- Mascots wear frontend's agent shapes (its `shapePath` outlines, each member's gradient and the
+  two-dot face, as frontend's twin draws them), not the pen's flat "Mascot / <name>" frames, by
+  choice so both apps show the crew alike. The pen's version is kept in
+  `src/lib/rollback/PenMascot.svelte` (with `agents/mascots.ts`) to roll back to.
 - Inline prose uses the font's own spaces; the pen draws inline examples as frames 4px apart.
 - A wrapped user bubble can be up to 2px wider than the pen's (CSS sizes a wrapped block to its
   max width, not its longest line).
