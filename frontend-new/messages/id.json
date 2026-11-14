@@ -2558,5 +2558,7 @@
 	"sandbox_fix_text": "Pratinjau tidak bisa dijalankan. Tolong periksa terminal dan perbaiki. Galatnya:\n{error}",
 	"monitor_visits": "Kunjungan",
 	"monitor_visits_traffic": "Kunjungan · {range}",
-	"monitor_page_load": "muat halaman"
+	"monitor_page_load": "muat halaman",
+	"presence_you": "{name} (kamu)",
+	"presence_open": "Yang ada di sini: {names}"
 }

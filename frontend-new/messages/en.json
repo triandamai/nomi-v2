@@ -2558,5 +2558,7 @@
 	"sandbox_fix_text": "The preview didn’t start. Please look at the terminal and fix it. The error:\n{error}",
 	"monitor_visits": "Visits",
 	"monitor_visits_traffic": "Visits · {range}",
-	"monitor_page_load": "page load"
+	"monitor_page_load": "page load",
+	"presence_you": "{name} (you)",
+	"presence_open": "People here: {names}"
 }

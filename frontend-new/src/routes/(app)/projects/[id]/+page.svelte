@@ -55,6 +55,12 @@
 	import Terminal from '$lib/ds/build/Terminal.svelte';
 	import { SandboxRuntime } from '$lib/projects/sandbox.svelte';
 	import { terminalLines } from '$lib/projects/terminal';
+	import Presence from '$lib/ds/build/Presence.svelte';
+	import PresenceMenu from '$lib/ds/build/PresenceMenu.svelte';
+	import FollowBar from '$lib/ds/build/FollowBar.svelte';
+	import PeerCursor from '$lib/ds/build/PeerCursor.svelte';
+	import { ProjectLive } from '$lib/projects/live.svelte';
+	import { distinctInitials, peerFor, pointersIn, whereLabel } from '$lib/projects/peers';
 
 	// A project's workspace (Flow / Build — Sign in → live URL o882RC, Building and Live; Workspace
 	// tools U16wU, Changes ready → Publish → Publish failed → Published → Deployments): the project
@@ -420,6 +426,70 @@
 	$effect(() => {
 		if (sheet) sheetBox?.querySelector<HTMLElement>('section')?.focus();
 	});
+	// Building together (Invite & build together TnwQT, steps 5, 7, 8): who else is here and where,
+	// following someone to see what they see, and their pointer over the same view. The project's
+	// live link keeps the person counted as here while the workspace is open.
+	let live = $state<ProjectLive | null>(null);
+	$effect(() => {
+		const one = new ProjectLive(projectId);
+		live = one;
+		one.start();
+		return () => {
+			one.stop();
+			live = null;
+		};
+	});
+	const WHERE = $derived({ preview: m.workspace_preview(), code: m.workspace_code(), terminal: m.workspace_terminal() });
+	const myName = $derived(data.person?.name ?? '');
+	// Faces are told apart by their initials: yours and everyone else's, made distinct together.
+	const faces = $derived(distinctInitials([myName, ...(live?.people ?? []).map((person) => person.name)]));
+	const peers = $derived((live?.people ?? []).map((person, index) => ({ ...person, initials: faces[index + 1], peer: peerFor(person.user_id) })));
+	$effect(() => {
+		live?.moveTo({ view, path: view === 'code' ? codePath : null });
+	});
+	let presenceOpen = $state(false);
+	let hereBox = $state<HTMLElement>();
+	$effect(() => {
+		if (!presenceOpen) return;
+		const close = (event: PointerEvent) => {
+			if (hereBox && !hereBox.contains(event.target as Node)) presenceOpen = false;
+		};
+		document.addEventListener('pointerdown', close, true);
+		return () => document.removeEventListener('pointerdown', close, true);
+	});
+	let following = $state<string | null>(null);
+	const followed = $derived(peers.find((person) => person.user_id === following) ?? null);
+	// Following: go where they go (the terminal only where this workspace has one).
+	const followedView = $derived(followed ? ((followed.view ?? 'preview') as PaneView) : null);
+	const followedPath = $derived(followed?.path ?? null);
+	$effect(() => {
+		const where = followedView;
+		if (!where || (where === 'terminal' && !sandboxOn)) return;
+		untrack(() => {
+			if (view !== where) view = where;
+			if (where === 'code' && followedPath && followedPath !== codePath) {
+				codeText = null;
+				codePath = followedPath;
+			}
+		});
+	});
+	// Moving on your own stops following; so does them leaving.
+	$effect(() => {
+		if (following && (!followed || view !== untrack(() => followedView))) following = null;
+	});
+	// Pointers: the person's goes out a few times a second; others' fade after a few seconds still.
+	let pointerClock = $state(Date.now());
+	$effect(() => {
+		if (!live || !Object.keys(live.pointers).length) return;
+		const timer = setInterval(() => (pointerClock = Date.now()), 1000);
+		return () => clearInterval(timer);
+	});
+	const pointers = $derived(live ? pointersIn(live.pointers, view, pointerClock).map((pointer) => ({ ...pointer, peer: peerFor(pointer.user_id) })) : []);
+	function trackPointer(event: PointerEvent) {
+		const box = (event.currentTarget as HTMLElement).getBoundingClientRect();
+		live?.point(view, (event.clientX - box.left) / box.width, (event.clientY - box.top) / box.height);
+	}
+
 	const shownUrl = $derived(liveUrl ? liveUrl.replace(/^https?:\/\//, '').replace(/\/$/, '') : m.workspace_preview_files());
 	const initials = $derived(
 		(data.person?.name ?? '')
@@ -432,6 +502,36 @@
 </script>
 
 <svelte:head><title>{project.name} · {m.app_name()}</title></svelte:head>
+
+{#snippet here()}
+	<div bind:this={hereBox} class="relative shrink-0 max-sm:hidden">
+		<button
+			type="button"
+			aria-haspopup="dialog"
+			aria-expanded={presenceOpen}
+			aria-label={m.presence_open({ names: peers.map((person) => person.name).join(', ') })}
+			onclick={() => (presenceOpen = !presenceOpen)}
+			class="inline-flex cursor-pointer items-center rounded-sm outline-offset-2"
+		>
+			<Presence people={[{ name: myName, initials: faces[0] }, ...peers.map((person) => ({ name: person.name, initials: person.initials, peer: person.peer }))].map((person, index, all) => ({ ...person, online: index === all.length - 1 }))} />
+		</button>
+		{#if presenceOpen}
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<div class="absolute top-full right-0 z-20 mt-2" onkeydown={(event) => event.key === 'Escape' && (presenceOpen = false)}>
+				<PresenceMenu
+					people={[
+						...peers.map((person) => ({ name: person.name, initials: person.initials, peer: person.peer, where: whereLabel(person.view, person.path, WHERE) })),
+						{ name: m.presence_you({ name: myName }), initials: faces[0], where: whereLabel(view, view === 'code' ? codePath : null, WHERE), you: true },
+					]}
+					onfollow={(index) => {
+						following = peers[index]?.user_id ?? null;
+						presenceOpen = false;
+					}}
+				/>
+			</div>
+		{/if}
+	</div>
+{/snippet}
 
 <ProjectWorkspace bind:view={workspaceView}>
 	{#snippet projectbar()}
@@ -451,6 +551,7 @@
 			exportLabel={m.workspace_export()}
 			{initials}
 			onexport={openExport}
+			presence={peers.length ? here : undefined}
 			onshare={liveUrl ? () => (sharing = true) : undefined}
 		>
 			{#snippet publish()}
@@ -494,7 +595,14 @@
 				reloads += 1;
 			}}
 		/>
-		<div class="min-h-0 flex-1 overflow-auto p-5">
+		{#if followed}
+			<FollowBar name={followed.name} peer={followed.peer} where={whereLabel(followed.view, followed.path, WHERE)} onstop={() => (following = null)} />
+		{/if}
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div class="relative min-h-0 flex-1 overflow-auto p-5" onpointermove={trackPointer}>
+			{#each pointers as pointer (pointer.user_id)}
+				<span class="pointer-events-none absolute z-10" style="left: {pointer.x * 100}%; top: {pointer.y * 100}%"><PeerCursor name={pointer.name} peer={pointer.peer} /></span>
+			{/each}
 			{#if view === 'code'}
 				{#if project.files.length && codePath}
 					<CodeView

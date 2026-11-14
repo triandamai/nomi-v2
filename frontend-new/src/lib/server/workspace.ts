@@ -242,3 +242,11 @@ export async function hasTables(event: ApiEvent, id: string): Promise<boolean> {
 	const response = await call(event, `${at(id)}/database/tables?source=development`);
 	return response.ok && ((await response.json()) as DatabaseTable[]).length > 0;
 }
+
+/** Someone else with the project open: what they look at (preview, code or terminal) and which file. */
+export type PresentPerson = { user_id: string; name: string; avatar_url: string | null; view: string | null; path: string | null };
+/** Who else has the project open, longest-present first, and who's asking; null where it can't be read. */
+export async function loadPresence(event: ApiEvent, id: string): Promise<{ me: string; people: PresentPerson[] } | null> {
+	const response = await call(event, `${at(id)}/presence`);
+	return response.ok ? ((await response.json()) as { me: string; people: PresentPerson[] }) : null;
+}

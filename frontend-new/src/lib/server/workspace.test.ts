@@ -171,4 +171,11 @@ describe('a project’s workspace on the server', () => {
 		expect(await workspace.hasTables(eventWith(() => json([])).event, 'p1')).toBe(false);
 		expect(await workspace.hasTables(eventWith(() => new Response('publishing isn’t set up', { status: 503 })).event, 'p1')).toBe(false);
 	});
+	it('reads who else has the project open, and where they are', async () => {
+		const here = { me: 'u-me', people: [{ user_id: 'u-sari', name: 'Sari Wulandari', avatar_url: null, view: 'code', path: 'index.html' }] };
+		const { backend, event } = eventWith(() => json(here));
+		expect(await workspace.loadPresence(event, 'p1')).toEqual(here);
+		expect(backend.calls[0].url).toBe('http://api.test/api/projects/p1/presence');
+		expect(await workspace.loadPresence(eventWith(() => new Response('', { status: 404 })).event, 'p1')).toBeNull();
+	});
 });
