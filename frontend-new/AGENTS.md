@@ -514,6 +514,16 @@ change owners; nobody changes or removes themselves (they leave); the last owner
 - The invite box keeps what's typed as text when it loses focus: turning it into chips then moved
   the role cards under a click (a person picking Admin got Member).
 
+On Projects (`JyWON`), the cards are the backend's projects: live once they have an address,
+building while Koda builds, else a draft.
+
+- Left out for now: the detail panel and Community (next), importing from GitHub, and the card
+  menu's Rename, Duplicate, Move, Share, Settings and Take down; the backend has no rename or
+  duplicate, nor a "waiting on you" count, so Needs attention stays empty (BACKEND_TODO.md).
+- Until the project's workspace lands, a card has no footer action (the pen's Deploy, Stop, Resume
+  belong to it) and Open goes to the project's chat, where Koda works on it.
+- The composer leaves the domain chip out where this Nomi has no base domain.
+
 ## 10. Running
 
 - `npm run dev`: http://localhost:5175 (the gallery at `/design-system`; the old frontend keeps

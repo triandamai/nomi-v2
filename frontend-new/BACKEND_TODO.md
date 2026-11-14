@@ -295,3 +295,12 @@ Found while building Settings › Workspaces (2026-11-13).
 - **Until then:** the page shows the role, people with when they joined, invites with Copy link and Revoke, and leaving.
 
 Found while building Settings › Workspace (2026-11-13).
+
+### Projects: renaming, "Needs you", community apps
+- **Needed by:** *App / Projects* (JyWON) and its flows: Rename and Duplicate in the card menu, the Needs attention tab and the Needs answer card (Koda waiting on questions), the failed and down states, and Community (apps to remix).
+- **Why:** a project keeps the name "New project" forever, and people can't see which projects are waiting on them without opening each.
+- **What exists today:** `GET /api/projects` (status `planning` / `building` / `ready`, `deploy_url`, counts), `POST /api/projects`, `DELETE /api/projects/:id`, `/showcase` per project (no listing).
+- **Proposed contract:** `PATCH /api/projects/:id` `{ name, description }`; `POST /api/projects/:id/duplicate`; on each summary `waiting_on_you: number` (open questions), `last_deploy: { status: "ok" | "failed", at }` and `live_status: "up" | "down"`; `GET /api/showcase` (public apps to remix).
+- **Until then:** cards are live, building or draft; Needs attention stays empty.
+
+Found while building Projects (2026-11-14).

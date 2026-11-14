@@ -15,7 +15,7 @@
 	// Enter starts building, Shift+Enter a new line; the field grows with what's written.
 	type Props = {
 		value?: string;
-		/** The workspace's domain: chips read "*.trian.space". */
+		/** The workspace's domain: chips read "*.trian.space". Empty where none is set (no chip). */
 		domain: string;
 		/** What Koda says the database is for ("for orders"); unset, it's optional. */
 		database?: string;
@@ -76,10 +76,12 @@
 				<span class="inline-flex text-text-3"><Icon icon={GitBranch} size={12} /></span>
 				<span class="font-mono text-label text-text-2">{m.projects_provision_repo()}</span>
 			</li>
-			<li class="inline-flex h-6 shrink-0 items-center gap-1.5 rounded-sm bg-surface-2 px-2">
-				<span class="inline-flex text-text-3"><Icon icon={Globe} size={12} /></span>
-				<span class="font-mono text-label text-text-2">*.{domain}</span>
-			</li>
+			{#if domain}
+				<li class="inline-flex h-6 shrink-0 items-center gap-1.5 rounded-sm bg-surface-2 px-2">
+					<span class="inline-flex text-text-3"><Icon icon={Globe} size={12} /></span>
+					<span class="font-mono text-label text-text-2">*.{domain}</span>
+				</li>
+			{/if}
 			<li class={['inline-flex h-6 shrink-0 items-center gap-1.5 rounded-sm bg-surface-2 px-2', database && 'outline -outline-offset-1 outline-accent']}>
 				<span class={['inline-flex', database ? 'text-accent' : 'text-text-3']}><Icon icon={Database} size={12} /></span>
 				<span class={['font-mono text-label', database ? 'text-text' : 'text-text-2']}>{m.projects_provision_database({ note: database ?? m.projects_provision_optional() })}</span>

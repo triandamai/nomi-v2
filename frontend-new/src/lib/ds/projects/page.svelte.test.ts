@@ -87,6 +87,14 @@ describe('ProjectPageHeader (lAF6T)', () => {
 	});
 });
 
+describe('ProjectComposer without a domain', () => {
+	it('leaves the domain chip out where none is set', async () => {
+		await render(ProjectComposer, { domain: '', onbuild: () => {} });
+		expect(page.getByText(/^\*\./).elements()).toHaveLength(0);
+		await expect.element(page.getByText('git repo')).toBeVisible();
+	});
+});
+
 describe('ProjectComposer (MDdO8, PV1lT)', () => {
 	it('is 98 tall: a 48 input row and a 50 row of what the project gets', async () => {
 		await render(ProjectComposer, { domain: 'trian.space', onbuild: () => {} });
