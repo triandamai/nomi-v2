@@ -1,6 +1,7 @@
 import { isRedirect } from '@sveltejs/kit';
-import type { ContainerUsage, DeployOverview, DomainAnswer, MetricsRange, ProjectDetail, ProjectDomain, ProjectList, ProjectMetrics } from '$lib/adapters/api';
+import type { ContainerUsage, DatabaseTable, DeployOverview, DomainAnswer, MetricsRange, ProjectDetail, ProjectDomain, ProjectList, ProjectMetrics, QueryResult } from '$lib/adapters/api';
 import { apiFetch, type ApiEvent } from './api';
+import { readTable } from '$lib/projects/database';
 
 // A project's workspace on the server: the project (its files and chat), where it's live (the
 // list carries the address; the project itself doesn't), and finding a project by its chat.
@@ -109,4 +110,28 @@ export async function loadMonitor(event: ApiEvent, id: string, range: MetricsRan
 		logs: logBody?.lines ?? null,
 		note: logBody?.note ?? null,
 	};
+}
+
+export type DatabaseView = { tables: DatabaseTable[]; table: DatabaseTable | null; rows: QueryResult | null } | { error: string; status: number };
+
+/**
+ * A project's tables (development or production) and the first rows of the one asked for (else the
+ * first), read only: the statement is built here from a table the backend listed.
+ */
+export async function readDatabase(event: ApiEvent, id: string, source: 'development' | 'production', wanted: string | null, limit = 50): Promise<DatabaseView> {
+	const at = `/api/projects/${encodeURIComponent(id)}/database`;
+	const listed = await call(event, `${at}/tables?source=${source}`);
+	if (!listed.ok) return { error: (await listed.text()).trim().slice(0, 300), status: listed.status };
+	const tables = (await listed.json()) as DatabaseTable[];
+	const table = tables.find((one) => `${one.schema}.${one.name}` === wanted) ?? tables[0] ?? null;
+	if (!table) return { tables, table: null, rows: null };
+	let response: Response;
+	try {
+		response = await apiFetch(event, `${at}/query`, { method: 'POST', body: JSON.stringify({ sql: readTable(table, limit), source }) });
+	} catch (error) {
+		if (isRedirect(error)) throw error;
+		return { error: '', status: 503 };
+	}
+	if (!response.ok) return { error: (await response.text()).trim().slice(0, 300), status: response.status };
+	return { tables, table, rows: (await response.json()) as QueryResult };
 }

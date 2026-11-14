@@ -334,4 +334,19 @@ export default [
 		accessibility: ['A log region, named.'],
 		related: ['projects/MonitorStat.svelte'],
 	},
+	{
+		file: 'projects/TableChip.svelte',
+		summary: 'One table of a project’s database, with its rows; the one shown is filled.',
+		use: ['Picking a table in the Database sheet.'],
+		accessibility: ['A toggle button: the one shown is pressed.'],
+		related: ['projects/RowsGrid.svelte'],
+	},
+	{
+		file: 'projects/RowsGrid.svelte',
+		summary: 'A table’s first rows, read only, in mono, scrolling across when wide.',
+		use: ['The Database sheet.'],
+		dos: ['Say how many rows are shown of how many.'],
+		accessibility: ['A real table, named by the table it shows, with column headers.'],
+		related: ['projects/TableChip.svelte'],
+	},
 ] satisfies ComponentDoc[];

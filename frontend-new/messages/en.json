@@ -2430,5 +2430,21 @@
 	"monitor_cpu": "CPU",
 	"monitor_bandwidth": "Bandwidth",
 	"monitor_log": "Live log",
-	"monitor_log_empty": "The app hasn’t printed anything yet."
+	"monitor_log_empty": "The app hasn’t printed anything yet.",
+	"workspace_database": "Database",
+	"database_rows_unknown": "rows not counted yet",
+	"database_row_one": "1 row",
+	"database_rows": "{count} rows",
+	"database_source": "Which database",
+	"database_development": "Development",
+	"database_production": "Live",
+	"database_loading": "Reading the tables…",
+	"database_none_title": "No database here",
+	"database_failed_title": "The database couldn’t be read",
+	"database_failed_body": "Try again in a moment.",
+	"database_empty_title": "No tables yet",
+	"database_empty_body": "Koda makes the tables when the app needs to keep something. Ask in the chat.",
+	"database_showing_first": "showing the first {count} rows",
+	"database_read_only": "Read-only here. To change columns or fix rows, ask Koda in the chat.",
+	"database_unavailable_body": "A project’s databases are kept where its app is published, which whoever runs this Nomi hasn’t set up yet."
 }

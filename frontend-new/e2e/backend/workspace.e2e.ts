@@ -72,7 +72,7 @@ test('a project that isn’t theirs says so', async ({ page, context }) => {
 	await expect(page).toHaveURL(/\/projects$/);
 });
 
-test('Deployments, Domain and Monitor say what can’t be done yet, and nothing offers to', async ({ page, context }) => {
+test('Deployments, Domain, Monitor and Database say what can’t be done yet, and nothing offers to', async ({ page, context }) => {
 	const account = await createAccount();
 	await signInAs(context, account);
 	const org = ((await (await api(account, '/api/orgs')).json()) as { orgs: { id: string }[] }).orgs[0].id;
@@ -98,5 +98,9 @@ test('Deployments, Domain and Monitor say what can’t be done yet, and nothing 
 	await expect(page.getByText('Nothing running yet')).toBeVisible();
 	await page.getByRole('button', { name: 'Close' }).click();
 	await expect(page.getByText('Nothing running yet')).toHaveCount(0);
+
+	// Database: databases live where apps are published, which isn't set up here.
+	await tools.getByRole('button', { name: 'Database' }).click();
+	await expect(page.getByRole('region', { name: 'Database' }).getByText('Publishing isn’t set up here')).toBeVisible();
 });
 
