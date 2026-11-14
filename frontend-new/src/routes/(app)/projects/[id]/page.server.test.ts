@@ -10,6 +10,7 @@ const transferSearch = await import('./transfer/+server');
 const summary = await import('./export/summary/+server');
 const preview = await import('./preview/[...path]/+server');
 const app = await import('./app/+page.server');
+const sandbox = await import('./sandbox/[action]/+server');
 const bySession = await import('../session/[sessionId]/+page.server');
 
 const at = (answer: Parameters<typeof fakeBackend>[0], params: Record<string, string>) => {
@@ -144,5 +145,29 @@ describe('a project’s workspace', () => {
 	it('says what an export holds', async () => {
 		const response = await summary.GET(at(() => json({ name: 'warung', files: 9, bytes: 1, database: 'none', env: [] }), { id: 'p1' }).event as never);
 		expect(await response.json()).toMatchObject({ files: 9 });
+	});
+	it('passes the sandbox’s status, logs and heartbeat through, starts and stops it, and nothing else', async () => {
+		const answer = (call: { url: string }) => (call.url.includes('/logs') ? json({ text: 'ready\n', next_offset: 6 }) : json({ runtime: 'sandbox', available: true, phase: 'running', preview_url: 'https://boat.example/p/t', error: null }));
+		const status = at(answer, { id: 'p1', action: 'status' });
+		expect(await (await sandbox.GET(status.event as never)).json()).toMatchObject({ phase: 'running' });
+		const logs = at(answer, { id: 'p1', action: 'logs' });
+		(logs.event as { url: URL }).url = new URL('http://localhost/projects/p1/sandbox/logs?offset=12');
+		expect(await (await sandbox.GET(logs.event as never)).json()).toEqual({ text: 'ready\n', next_offset: 6 });
+		expect(logs.api.calls[0].url).toBe('http://api.test/api/projects/p1/sandbox/logs?offset=12');
+		const beat = at(answer, { id: 'p1', action: 'beat' });
+		expect((await sandbox.GET(beat.event as never)).status).toBe(204);
+		expect(beat.api.calls[0].url).toBe('http://api.test/api/projects/p1/runtime?runtime=sandbox');
+		const start = at(() => json({}), { id: 'p1', action: 'start' });
+		expect((await sandbox.POST(start.event as never)).status).toBe(204);
+		expect(start.api.calls[0]).toMatchObject({ method: 'POST', url: 'http://api.test/api/projects/p1/sandbox/start' });
+		const refused = at(() => new Response('the sandbox isn’t available right now', { status: 409 }), { id: 'p1', action: 'stop' });
+		const answered = await sandbox.POST(refused.event as never);
+		expect([answered.status, await answered.text()]).toEqual([409, 'the sandbox isn’t available right now']);
+		const other = at(answer, { id: 'p1', action: 'files' });
+		expect((await sandbox.GET(other.event as never)).status).toBe(404);
+		expect((await sandbox.POST(at(answer, { id: 'p1', action: 'status' }).event as never)).status).toBe(404);
+		expect(other.api.calls).toEqual([]);
+		const gone = at(() => new Response('', { status: 404 }), { id: 'p1', action: 'status' });
+		expect((await sandbox.GET(gone.event as never)).status).toBe(503);
 	});
 });

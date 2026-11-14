@@ -95,6 +95,15 @@ describe('PaneTabs', () => {
 		expect(page.getByText('live').elements()).toHaveLength(0);
 	});
 
+	it('shows a preview with no address of its own without Open, but still reloads', async () => {
+		const onreload = vi.fn();
+		await render(PaneTabs, { ...tabs, address: { shown: 'changes not yet published' }, onreload });
+		await expect.element(page.getByText('changes not yet published')).toBeVisible();
+		expect(page.getByRole('link', { name: 'Open in a new tab' }).elements()).toHaveLength(0);
+		await page.getByRole('button', { name: 'Reload' }).click();
+		expect(onreload).toHaveBeenCalledOnce();
+	});
+
 	it('offers only the views asked for', async () => {
 		await render(PaneTabs, { ...tabs, views: ['preview', 'code'] });
 		expect(page.getByRole('radio', { name: 'Terminal' }).elements()).toHaveLength(0);

@@ -1,5 +1,5 @@
 import { isRedirect } from '@sveltejs/kit';
-import type { ContainerUsage, DatabaseTable, DeployOverview, ExportSummary, ProjectShowcase, DomainAnswer, MetricsRange, ProjectDetail, ProjectDomain, ProjectList, ProjectMembers, ProjectMetrics, ProjectSecrets, QueryResult } from '$lib/adapters/api';
+import type { ContainerUsage, DatabaseTable, DeployOverview, ExportSummary, ProjectShowcase, DomainAnswer, MetricsRange, ProjectDetail, ProjectDomain, ProjectList, ProjectMembers, ProjectMetrics, ProjectSecrets, QueryResult, SandboxLogs, SandboxStatus } from '$lib/adapters/api';
 import { apiFetch, type ApiEvent } from './api';
 import { readTable } from '$lib/projects/database';
 
@@ -213,3 +213,26 @@ export async function projectFile(event: ApiEvent, id: string, path: string): Pr
 		return { path, binary: true };
 	}
 }
+
+/** The project's sandbox: where it runs, whether the sandbox may be used, its phase; null where it can't be read. */
+export async function loadSandbox(event: ApiEvent, id: string): Promise<SandboxStatus | null> {
+	const response = await call(event, `${at(id)}/sandbox`);
+	return response.ok ? ((await response.json()) as SandboxStatus) : null;
+}
+
+/** The sandbox's dev server output from `offset` on; null where it can't be read. */
+export async function sandboxLogs(event: ApiEvent, id: string, offset: number): Promise<SandboxLogs | null> {
+	const response = await call(event, `${at(id)}/sandbox/logs?offset=${offset}`);
+	return response.ok ? ((await response.json()) as SandboxLogs) : null;
+}
+
+/**
+ * The page's heartbeat, which keeps the sandbox awake while the workspace is open. `runtime=sandbox`
+ * tells the backend this is the sandbox page, so it leaves Koda's commands to the sandbox.
+ */
+export async function sandboxBeat(event: ApiEvent, id: string): Promise<boolean> {
+	return (await call(event, `${at(id)}/runtime?runtime=sandbox`)).ok;
+}
+
+export const startSandbox = (event: ApiEvent, id: string) => post(event, `${at(id)}/sandbox/start`);
+export const stopSandbox = (event: ApiEvent, id: string) => post(event, `${at(id)}/sandbox/stop`);
