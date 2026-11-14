@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import Button from '$lib/components/m3/Button.svelte';
+	import TextField from '$lib/components/m3/TextField.svelte';
+	import { enhance } from '$app/forms';
 	import LanguagePicker from '$lib/components/LanguagePicker.svelte';
 	import DeviceList from './DeviceList.svelte';
 	import { m } from '$lib/paraglide/messages';
@@ -64,6 +66,20 @@
 					{/if}
 				</li>
 			</ul>
+			<form method="POST" action="?/password" use:enhance class="password">
+				<h3 class="password__title">{methods?.password ? m.account_password_change() : m.account_password_set()}</h3>
+				{#if form && 'passwordSaved' in form && form.passwordSaved}
+					<p class="note note--ok" role="status">{m.account_password_saved()}</p>
+				{/if}
+				{#if form && 'passwordError' in form && form.passwordError}
+					<p class="note note--error" role="alert">{form.passwordError}</p>
+				{/if}
+				{#if methods?.password}
+					<TextField id="current_password" name="current_password" type="password" label={m.account_password_current()} autocomplete="current-password" required />
+				{/if}
+				<TextField id="new_password" name="new_password" type="password" label={m.account_password_new()} autocomplete="new-password" minlength={8} required />
+				<div><Button type="submit" variant="tonal" size="s">{m.account_password_save()}</Button></div>
+			</form>
 			<p class="hint">
 				{m.account_google_hint()} <a href="/connections">{m.nav_connections()}</a>.
 			</p>
@@ -179,6 +195,20 @@
 	.note--error {
 		background: var(--md-sys-color-error-container);
 		color: var(--md-sys-color-on-error-container);
+	}
+	.password {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+		padding: 14px;
+		border-radius: var(--md-sys-shape-corner-extra-large);
+		background: var(--md-sys-color-surface-container-lowest);
+	}
+	.password__title {
+		margin: 0;
+		color: var(--md-sys-color-on-surface);
+		font-size: 0.9375rem;
+		font-weight: 600;
 	}
 	.hint {
 		margin: 0 8px;

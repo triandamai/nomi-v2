@@ -54,6 +54,22 @@ export const actions: Actions = {
 		if (!response.ok) return fail(response.status, { error: (await response.text()) || m.account_unlink_failed() });
 		return { unlinked: true };
 	},
+	/** Sets a password (an account made with Google or an emailed code has none), or changes it. */
+	password: async ({ request, cookies, fetch }) => {
+		const form = await request.formData();
+		const current = String(form.get('current_password') ?? '');
+		const next = String(form.get('new_password') ?? '');
+		if (!next) return fail(400, { passwordError: m.account_password_too_short() });
+		const response = await apiFetch(fetch, cookies, '/api/auth/password', {
+			method: 'PUT',
+			body: JSON.stringify({ current_password: current || null, new_password: next }),
+		});
+		if (response.ok) return { passwordSaved: true };
+		const { error } = (await response.json().catch(() => ({}))) as { error?: string };
+		if (error === 'too_short') return fail(400, { passwordError: m.account_password_too_short() });
+		if (error === 'wrong_password') return fail(403, { passwordError: m.account_password_wrong() });
+		return fail(response.status, { passwordError: m.account_password_failed() });
+	},
 	/** Signs one of the person's other devices out: its sign-ins end and it leaves. */
 	signOutDevice: async ({ request, cookies, fetch }) => {
 		const form = await request.formData();

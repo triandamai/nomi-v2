@@ -37,9 +37,12 @@ export const actions: Actions = {
 		const result = await post(fetch, '/api/auth/verify', { challenge_id: pending.challengeId, code });
 		if (result.ok) {
 			clearPendingSignIn(cookies);
-			await completeSignIn(fetch, cookies, result.json as TokenPair, pending.email, pending.isNew);
+			const tokens = result.json as TokenPair & { is_new?: boolean };
+			// A code asked for with the email alone makes the account when the address had none.
+			const isNew = pending.isNew || tokens.is_new === true;
+			await completeSignIn(fetch, cookies, tokens, pending.email, isNew);
 			// A new account names itself first (Build → First run), then goes where it was going.
-			if (pending.isNew) throw redirect(303, `/first-run?next=${encodeURIComponent(pending.redirectTo || '/')}`);
+			if (isNew) throw redirect(303, `/first-run?next=${encodeURIComponent(pending.redirectTo || '/')}`);
 			throw redirect(303, pending.redirectTo || '/');
 		}
 		const error = result.json as ApiError;

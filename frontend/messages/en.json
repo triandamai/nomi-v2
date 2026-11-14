@@ -3062,5 +3062,21 @@
 	"config_sandbox_starts_per_hour": "Starts per hour",
 	"config_sandbox_monthly_minutes_per_user": "Monthly minutes per user",
 	"config_sandbox_reaper_mode": "Orphan sandbox sweep",
-	"config_sandbox_reaper_mode_hint": "Hourly, sandboxes at the provider that no project owns are found. Dry run only logs them; delete removes them."
+	"config_sandbox_reaper_mode_hint": "Hourly, sandboxes at the provider that no project owns are found. Dry run only logs them; delete removes them.",
+	"err_email_required": "Enter your email.",
+	"err_email_invalid": "That doesn't look like an email address.",
+	"login_email_code": "Email me a code instead",
+	"login_email_code_hint": "No password needed. New here? The code creates your account.",
+	"org_switch": "Switch",
+	"org_active": "Active",
+	"org_switch_failed": "Couldn't switch to that workspace.",
+	"account_password_change": "Change password",
+	"account_password_set": "Set a password",
+	"account_password_saved": "Password saved. Your other devices stay signed in.",
+	"account_password_current": "Current password",
+	"account_password_new": "New password",
+	"account_password_save": "Save password",
+	"account_password_too_short": "Use at least 8 characters.",
+	"account_password_wrong": "That isn't your current password.",
+	"account_password_failed": "Couldn't save the password. Try again."
 }

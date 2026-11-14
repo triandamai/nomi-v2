@@ -31,7 +31,7 @@
 
 		<ul class="list">
 			{#each data.orgs as org (org.id)}
-				<li>
+				<li class="item">
 					<a class="row" href="/organizations/{org.id}">
 						<span class="row__mark" aria-hidden="true">{org.name.trim().charAt(0).toUpperCase() || '?'}</span>
 						<span class="row__text">
@@ -43,9 +43,18 @@
 						</span>
 						<IconChevronRight size={20} />
 					</a>
+					{#if org.id === data.activeOrgId}
+						<span class="active">{m.org_active()}</span>
+					{:else}
+						<form method="POST" action="?/switch" use:enhance class="switch">
+							<input type="hidden" name="org_id" value={org.id} />
+							<Button type="submit" variant="text" size="s">{m.org_switch()}</Button>
+						</form>
+					{/if}
 				</li>
 			{/each}
 		</ul>
+		{#if form && 'switchError' in form && form.switchError}<p class="create__error" role="alert">{form.switchError}</p>{/if}
 
 		<section class="create" aria-labelledby="create-title">
 			<h2 id="create-title" class="create__title">{m.org_new_title()}</h2>
@@ -54,7 +63,7 @@
 				<TextField name="name" label={m.org_name()} bind:value={name} maxlength={80} required class="create__field" />
 				<Button type="submit" variant="filled" size="m" disabled={!name.trim()}>{m.org_create()}</Button>
 			</form>
-			{#if form?.error}<p class="create__error" role="alert">{form.error}</p>{/if}
+			{#if form && 'error' in form && form.error}<p class="create__error" role="alert">{form.error}</p>{/if}
 		</section>
 	</div>
 </div>
@@ -89,6 +98,27 @@
 	}
 	.list li {
 		border-bottom: 1px solid var(--md-sys-color-outline-variant);
+	}
+	.item {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+	.item .row {
+		flex: 1;
+		min-width: 0;
+	}
+	.switch {
+		flex: none;
+	}
+	.active {
+		flex: none;
+		padding: 0 12px;
+		color: var(--md-sys-color-primary);
+		font-family: var(--md-ref-typeface-mono);
+		font-size: 0.6875rem;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
 	}
 	.row {
 		display: flex;

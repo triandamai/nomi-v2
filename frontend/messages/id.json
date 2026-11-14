@@ -3062,5 +3062,21 @@
 	"config_sandbox_starts_per_hour": "Mulai per jam",
 	"config_sandbox_monthly_minutes_per_user": "Menit per bulan per pengguna",
 	"config_sandbox_reaper_mode": "Pembersihan sandbox yatim",
-	"config_sandbox_reaper_mode_hint": "Setiap jam, sandbox di penyedia yang tidak dimiliki proyek mana pun dicari. Dry run hanya mencatatnya; delete menghapusnya."
+	"config_sandbox_reaper_mode_hint": "Setiap jam, sandbox di penyedia yang tidak dimiliki proyek mana pun dicari. Dry run hanya mencatatnya; delete menghapusnya.",
+	"err_email_required": "Masukkan email kamu.",
+	"err_email_invalid": "Sepertinya itu bukan alamat email.",
+	"login_email_code": "Kirim kode ke email saja",
+	"login_email_code_hint": "Tanpa kata sandi. Baru di sini? Kode ini membuat akunmu.",
+	"org_switch": "Pindah",
+	"org_active": "Aktif",
+	"org_switch_failed": "Tidak bisa pindah ke workspace itu.",
+	"account_password_change": "Ubah kata sandi",
+	"account_password_set": "Buat kata sandi",
+	"account_password_saved": "Kata sandi tersimpan. Perangkat lainmu tetap masuk.",
+	"account_password_current": "Kata sandi saat ini",
+	"account_password_new": "Kata sandi baru",
+	"account_password_save": "Simpan kata sandi",
+	"account_password_too_short": "Gunakan minimal 8 karakter.",
+	"account_password_wrong": "Itu bukan kata sandi kamu saat ini.",
+	"account_password_failed": "Tidak bisa menyimpan kata sandi. Coba lagi."
 }

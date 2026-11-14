@@ -83,6 +83,9 @@
 			<a href={'/forgot-password' + page.url.search} class="forgot">{m.login_forgot()}</a>
 		</div>
 		<Button type="submit" variant="gradient" size="m" class="mt-2 w-full" loading={sending.on}>{m.login_submit()}</Button>
+		<!-- No password: a code goes to the address, and /verify signs in (or makes the account). -->
+		<Button type="submit" name="mode" value="code" formnovalidate variant="text" size="m" class="w-full">{m.login_email_code()}</Button>
+		<p class="code-hint">{m.login_email_code_hint()}</p>
 	</form>
 </AuthShell>
 <Snackbar bind:open={toastOpen} message={toast} />
@@ -97,6 +100,12 @@
 	}
 	.forgot:hover {
 		text-decoration: underline;
+	}
+	.code-hint {
+		margin: -12px 0 0;
+		color: var(--md-sys-color-on-surface-variant);
+		font-size: 0.8125rem;
+		text-align: center;
 	}
 	.invite-note {
 		margin: 0 0 14px;
