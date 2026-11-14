@@ -4,6 +4,7 @@
 import { m } from '$lib/paraglide/messages';
 import { searchItems } from '$lib/listView';
 import type { MediaInput } from '$lib/types';
+import type { ModelCapability } from '$lib/modelPicker';
 
 export type AuthType = 'api_key' | 'oauth' | 'custom_endpoint';
 export type ProviderCategory = 'popular' | 'other' | 'custom';
@@ -46,6 +47,19 @@ export interface ProviderConnection {
 	created_at: string;
 	/** Admin connections only: the models that still run on it. */
 	models_in_use: string[];
+	/** How the key fared on the last call made with it. */
+	status?: KeyStatus;
+	/** When that call was made; null until one is. */
+	checked_at?: string | null;
+}
+
+export type KeyStatus = 'ok' | 'balance_empty' | 'rejected';
+
+/** What a key's row says when its last call failed for the key's sake ("Balance empty"); null while it works. */
+export function keyStatusLabel(status: KeyStatus | undefined): string | null {
+	if (status === 'balance_empty') return m.provider_status_balance_empty();
+	if (status === 'rejected') return m.provider_status_rejected();
+	return null;
 }
 
 export interface ProviderHeader {
@@ -65,6 +79,11 @@ export interface ConnectInput {
 export interface ConnectionModel {
 	id: string;
 	label: string | null;
+	/** Tokens it reads, from the catalog. */
+	context?: number | null;
+	capabilities?: ModelCapability[];
+	/** One to start with. */
+	recommended?: boolean;
 }
 
 export interface ProviderGroup {

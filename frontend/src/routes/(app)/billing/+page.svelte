@@ -12,9 +12,15 @@
 	import Money from '$lib/components/Money.svelte';
 	import { monthLabel, niceScale, shiftMonth } from '$lib/money';
 	import { formatShare, formatTokens, formatTokensFull, formatUsd, usageShare } from '$lib/usage';
-	import type { PageData } from './$types';
+	import { enhance } from '$app/forms';
+	import { formatIdr, planOffer, usdToIdr } from '$lib/planCheckout';
+	import type { ActionData, PageData } from './$types';
 
-	let { data }: { data: PageData } = $props();
+	let { data, form }: { data: PageData; form: ActionData } = $props();
+
+	function checkoutError(code: string): string {
+		return code === 'payments_not_configured' ? m.billing_checkout_not_configured() : m.billing_checkout_failed();
+	}
 
 	const usage = $derived(data.usage);
 	const share = $derived(usage ? usageShare(usage.tokens_used, usage.plan.monthly_tokens) : 0);
@@ -124,7 +130,12 @@
 				<dl class="tiles">
 					<div class="tile">
 						<dt>{m.billing_spend()}</dt>
-						<dd><Money value={formatUsd(usage.spend_usd)} /></dd>
+						<dd><Money value={m.billing_spend_idr({ idr: formatIdr(usdToIdr(usage.spend_usd, usage.usd_to_idr)), usd: formatUsd(usage.spend_usd) })} /></dd>
+						<span class="tile__note"><Money value={m.billing_paid({ idr: formatIdr(usage.paid_idr) })} /></span>
+					</div>
+					<div class="tile">
+						<dt>{m.billing_payment_method()}</dt>
+						<dd class="tile__text">{usage.payment_method ?? m.billing_no_payment_method()}</dd>
 					</div>
 					<div class="tile">
 						<dt>{m.billing_input()}</dt>
@@ -247,7 +258,30 @@
 				{#if data.plans}
 					<div class="plans__grid">
 						{#each data.plans.plans as plan (plan.id)}
-							<PlanCard {plan} current={plan.id === data.plans.current_plan_id} />
+							{@const offer = planOffer(plan, data.plans)}
+							<PlanCard {plan} current={plan.id === data.plans.current_plan_id}>
+								{#snippet actions()}
+									{#if offer === 'checkout'}
+										<!-- A plain post: the server sends the browser on to the payment page. -->
+										<form method="POST" action="?/checkout">
+											<input type="hidden" name="plan_id" value={plan.id} />
+											<Button variant="filled" size="m" type="submit">{m.billing_plan_checkout()}</Button>
+										</form>
+									{:else if offer === 'waitlist'}
+										<form method="POST" action="?/waitlist" use:enhance>
+											<input type="hidden" name="plan_id" value={plan.id} />
+											<Button variant="tonal" size="m" type="submit">{m.billing_plan_waitlist()}</Button>
+										</form>
+									{:else if offer === 'waitlisted'}
+										<span class="plan-chip">{m.billing_plan_waitlisted()}</span>
+									{/if}
+									{#if form?.planId === plan.id && form?.checkoutError}
+										<p class="billing__error" role="alert">{checkoutError(form.checkoutError)}</p>
+									{:else if form?.planId === plan.id && form?.waitlistError}
+										<p class="billing__error" role="alert">{m.billing_waitlist_failed()}</p>
+									{/if}
+								{/snippet}
+							</PlanCard>
 						{/each}
 					</div>
 					{#if data.plans.custom_quota}
@@ -304,6 +338,15 @@
 	.billing__note {
 		font-size: 0.875rem;
 		max-width: 70ch;
+	}
+	.billing__error {
+		margin: 8px 0 0;
+		font-size: 0.875rem;
+		color: var(--md-sys-color-error);
+	}
+	.tile dd.tile__text {
+		font-size: 1rem;
+		overflow-wrap: anywhere;
 	}
 	.summary {
 		display: grid;

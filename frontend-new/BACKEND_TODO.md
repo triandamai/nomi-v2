@@ -201,28 +201,28 @@ Found while building Settings › Profile (2026-11-12).
 
 Found while building Settings › General (2026-11-12).
 
-### Changing plan, and what was paid
-- **Needed by:** *App / Settings / Plan & usage* (C0og49): "Join Pro waitlist" / "Join the waitlist", Billing's payment method, and spend shown as "Rp 1.800 ≈ $0.11 · you paid Rp 0".
-- **Why:** a person can see the plans but can't move to one or ask to; nothing says how they pay or what they paid; spend is only in dollars.
-- **What exists today:** `GET /api/plans` lists the plans with the person's current one; an admin sets a subscription (`PUT /api/admin/users/:id/subscription`); Xendit is configured in the admin, but nothing starts a payment for the person.
-- **Proposed contract:** `POST /api/plans/:id/checkout` → `{ url }` (Xendit), or `POST /api/plans/:id/waitlist`; `payment_method` and `paid_idr` on `GET /api/usage`; a `usd_to_idr` rate with the usage.
-- **Until then:** Compare plans has no buttons and says plans are changed by Nomi's team; spend is in dollars.
-
-### A provider key's balance
-- **Needed by:** *App / Settings / Plan & usage* (C0og49) → Your own API keys: "Balance empty" and "Use Nomi allowance".
-- **Why:** when a key runs dry, the person learns of it from a failed reply instead of here.
-- **What exists today:** `GET /api/llm/connections` gives each key's provider, label and masked key.
-- **Proposed contract:** `status: "ok" | "balance_empty" | "rejected"` and `checked_at` on each connection, from the last call made with it.
-- **Until then:** the row shows the key only.
+### Changing plan, and what was paid — done
+- **Built:** migration `0128_plan_checkout_and_waitlist.sql` (`plans.price_idr`, `plan_payments`, `plan_waitlist`), in `routes/plan_checkout.rs`.
+  - `POST /api/plans/:id/checkout` → `{ url }`: a Xendit invoice for a month of the plan (`price_idr`, set in Admin → Plans), returning to `/billing`. `409 already_on_plan`, `409 not_for_sale` (no price: join its waitlist), `503 payments_not_configured` while Xendit has no secret key, `502 gateway_error`.
+  - `POST /api/plans/:id/waitlist` → `{ on_waitlist: true }` (asking again changes nothing). `GET /api/plans` adds `waitlist` (plan ids) and `checkout_available`; each plan has `price_idr`.
+  - `POST /api/payments/xendit/webhook`: Xendit's invoice callback, only with the webhook token set (`x-callback-token`) and only for the amount asked. Paid moves the person onto the plan (in the change history), tells them, and takes them off its waitlist; expired or failed is kept; repeats change nothing.
+  - `GET /api/usage` adds `payment_method` (the last one used, "BANK_TRANSFER · BCA" or null), `paid_idr` (paid in that month) and `usd_to_idr` (Admin → Payment's "Rupiah per dollar", `USD_TO_IDR`, else 16,000).
+  - `frontend/`: Billing's plan cards have Upgrade (to Xendit) or Join the waitlist / On the waitlist; spend reads "Rp … ≈ $…" with "You paid Rp …", and a Payment method tile. Admin → Plans sets the price in rupiah.
 
 Found while building Settings › Plan & usage (2026-11-12).
 
-### What each model can do
-- **Needed by:** *App / Settings / Models & providers* (RbTgo): the Context column and the Fast / Reasoning / Vision / Code tags on each model, and "2 recommended selected" in Connect (voUxB).
-- **Why:** people pick models blind: nothing in the picker's list says how much a model reads or what it's good at, or which of a new provider's models to start with.
-- **What exists today:** `GET /api/llm/model-options` gives each model's key, label, id, whether it's free and whether it's shown; `GET /api/llm/providers/:id/models` has catalog metadata (context, inputs, cost) for catalog providers only.
-- **Proposed contract:** `context`, `capabilities: ["fast" | "reasoning" | "vision" | "code"]` and `recommended: bool` on each model in model-options and in `POST /api/llm/connections/:id/models`.
-- **Until then:** no Context column or tags; a new connection's models start switched off.
+### A provider key's balance — done
+- **Built:** migration `0129_provider_key_status.sql`. Every connection in `GET /api/llm/connections` (and the admin list) has `status: "ok" | "balance_empty" | "rejected"` and `checked_at` (null until a call is made with it).
+  - Each model call made through a connection (a person's own, or the instance's behind Nomi's models) records it as it ends: a reply is `ok`; a 402 / `insufficient_quota` / "credit balance is too low" is `balance_empty`; a 401 / 403 / invalid key is `rejected` (`LlmError::key_health` in nomi-llm, the same reading the chat's error messages use). Outages and rate limits leave it as it was. Changing the key, address or headers starts it over at `ok`.
+  - `frontend/`: Providers shows "Balance empty" or "Key rejected" on the row, with a line to pick one of Nomi's models meanwhile.
+
+Found while building Settings › Plan & usage (2026-11-12).
+
+### What each model can do — done
+- **Built:** every model in `GET /api/llm/model-options` and in `POST /api/llm/connections/:id/models` (and the admin one) has `context` (tokens, from the catalog; null when it isn't there), `capabilities` (`fast`, `reasoning`, `vision`, `code`) and `recommended`.
+  - Vision comes from what the catalog (or, for Nomi's models, the admin's media inputs) says the model reads; the rest from the model's name (`nomi_llm::catalog::capabilities`), since models.dev's data in the catalog carries no such flags. `recommended` is a short hand-kept list of current models (`RECOMMENDED_MODELS`), matched wherever they come through ("anthropic/claude-sonnet-5.5" too).
+  - `frontend/`: Manage models shows each model's context and tags and "Recommended"; the chat's model picker shows the context.
+  - **Still open:** the catalog has no reasoning/tool flags, so the tags beyond vision are read from names; regenerating it from models.dev with its `reasoning` field would make them exact.
 
 Found while building Settings › Models & providers (2026-11-13).
 

@@ -8,7 +8,7 @@
 	import IconChevronRight from '$lib/components/icons/IconChevronRight.svelte';
 	import IconPlus from '$lib/components/icons/IconPlus.svelte';
 	import ProviderLogo from './ProviderLogo.svelte';
-	import { authLabel, connectionName, type ProviderConnection, type ProviderDefinition } from '$lib/providers';
+	import { authLabel, connectionName, keyStatusLabel, type ProviderConnection, type ProviderDefinition } from '$lib/providers';
 
 	let {
 		connections,
@@ -55,16 +55,19 @@
 			<ul class="rows">
 				{#each connections as connection (connection.id)}
 					{@const name = connectionName(connection, providers)}
+					{@const problem = keyStatusLabel(connection.status)}
 					<li class="row" data-testid="connection">
 						<span class="row__logo"><ProviderLogo id={connection.provider_id} hasLogo={hasLogo(connection.provider_id)} size={22} /></span>
 						<span class="row__text">
 							<span class="row__head">
 								<span class="row__name">{name}</span>
 								<span class="badge">{authLabel(connection.auth_type)}</span>
+								{#if problem}<span class="badge badge--problem">{problem}</span>{/if}
 							</span>
 							{#if connection.base_url || connection.api_key_masked}
 								<span class="row__meta">{connection.auth_type === 'custom_endpoint' ? (connection.base_url ?? connection.api_key_masked) : (connection.api_key_masked ?? connection.base_url)}</span>
 							{/if}
+							{#if problem}<span class="row__meta">{m.provider_status_note()}</span>{/if}
 						</span>
 						<Button variant="text" size="s" class="row__action" aria-label={m.prov_disconnect_named({ name })} onclick={() => askDisconnect(connection)}>
 							{m.conn_disconnect()}
@@ -210,6 +213,10 @@
 		font-size: 0.75rem;
 		font-weight: 600;
 		white-space: nowrap;
+	}
+	.badge--problem {
+		background: var(--md-sys-color-error-container);
+		color: var(--md-sys-color-on-error-container);
 	}
 	.badge--accent {
 		background: var(--md-sys-color-primary-container);

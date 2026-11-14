@@ -998,6 +998,8 @@ export interface Plan {
 	is_default: boolean;
 	is_active: boolean;
 	sort_order: number;
+	/** A month on it in rupiah, when it can be bought; null: people join its waitlist. */
+	price_idr: number | null;
 }
 
 export interface PlansForUser {
@@ -1006,6 +1008,10 @@ export interface PlansForUser {
 	monthly_tokens: number;
 	custom_quota: boolean;
 	override_until: string | null;
+	/** Plans the person asked to be told about (POST /api/plans/:id/waitlist). */
+	waitlist: string[];
+	/** A plan with a price can be paid for here (POST /api/plans/:id/checkout). */
+	checkout_available: boolean;
 }
 
 export type NotificationKind = 'account' | 'subscription' | 'quota' | 'promo' | 'deploy' | 'project';
@@ -1048,6 +1054,12 @@ export interface UsageMonth {
 	by_day: { date: string; tokens: number; spend_usd: number }[];
 	/** One row per model actually called, kept together by the admin model's id (so a renamed model keeps its history). */
 	by_model: { admin_model_id: string | null; label: string; provider: string; model_id: string; source: 'nomi' | 'own_key'; tokens: number; calls: number; spend_usd: number }[];
+	/** How they paid last ("BANK_TRANSFER · BCA"); null when they never have. */
+	payment_method: string | null;
+	/** What they paid for plans in the month, in rupiah. */
+	paid_idr: number;
+	/** Rupiah to the dollar, to show spend_usd in rupiah. */
+	usd_to_idr: number;
 }
 
 /** Admin → Usage: one month (UTC) of everyone's tokens, per chat model and embedding model. */
