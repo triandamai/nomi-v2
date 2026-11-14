@@ -89,12 +89,13 @@ mod tests {
     fn challenge(purpose: Purpose) -> Challenge {
         Challenge {
             id: Uuid::new_v4(),
-            user_id: Uuid::new_v4(),
+            user_id: Some(Uuid::new_v4()),
             purpose,
             email: "ana@example.com".into(),
             expires_at: Utc::now(),
             resend_at: Utc::now(),
             sends_left: 4,
+            language: None,
         }
     }
 

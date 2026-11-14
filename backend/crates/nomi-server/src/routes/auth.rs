@@ -10,8 +10,9 @@ use crate::app::AppState;
 use crate::sign_in_codes::{code_email, reset_email, EmailCodes};
 use nomi_auth::{
     email_code::{self, Challenge, CodeError, Purpose},
-    password_reset::{self, ResetError},
-    login::{check_password, issue_access_token, login},
+    extractor::AuthClaims,
+    password_reset::{self, ChangeError, ResetError},
+    login::{check_password, issue_access_token, login, switch_active_org},
     refresh_token::{issue_refresh_token, refresh_access_token, revoke_refresh_token, tag_device},
     registration::{register_user, OrgMode},
 };
@@ -99,6 +100,10 @@ fn code_error(e: CodeError) -> JsonError {
             (StatusCode::TOO_MANY_REQUESTS, Json(serde_json::json!({ "error": "wait", "seconds": seconds })))
         }
         CodeError::TooManySends => json_error(StatusCode::TOO_MANY_REQUESTS, "too_many_codes"),
+        CodeError::Account(e) => {
+            tracing::error!(error = %e, "sign-in code: couldn't create the account");
+            json_error(StatusCode::INTERNAL_SERVER_ERROR, "failed")
+        }
         CodeError::Db(e) => {
             tracing::error!(error = %e, "sign-in code: database error");
             json_error(StatusCode::INTERNAL_SERVER_ERROR, "failed")
@@ -131,6 +136,26 @@ async fn email_the_code(mailer: &dyn nomi_mail::Mailer, challenge: &Challenge, c
         tracing::error!(error = %e, "couldn't send a sign-in code");
         json_error(StatusCode::BAD_GATEWAY, "email_failed")
     })
+}
+
+/// Where emailed codes go out: the sign-in mailer, or the configured one when password sign-in
+/// doesn't ask for codes (`AUTH_EMAIL_CODES=off`) but someone signs in with their email alone.
+fn code_mailer(state: &AppState) -> std::sync::Arc<dyn nomi_mail::Mailer> {
+    match &state.email_codes {
+        EmailCodes::Required(mailer) => mailer.clone(),
+        EmailCodes::Off => nomi_mail::configured(),
+    }
+}
+
+/// The language a waiting code's emails are in: the account's, or the one it was asked in.
+async fn challenge_locale(state: &AppState, challenge: &Challenge) -> nomi_i18n::Locale {
+    match challenge.user_id {
+        Some(user_id) => match state.pool.acquire().await {
+            Ok(mut conn) => nomi_agent_core::locale::user_locale(&mut conn, user_id).await,
+            Err(_) => nomi_i18n::Locale::default(),
+        },
+        None => nomi_i18n::Locale::from_code_or_default(challenge.language.as_deref()),
+    }
 }
 
 /// Starts an emailed-code sign-in for `user_id` and sends the code.
@@ -214,15 +239,69 @@ pub async fn login_handler(
 }
 
 #[derive(Deserialize)]
+pub struct StartRequest {
+    pub email: String,
+    /// The language the page was shown in, for the email (and a new account).
+    pub language: Option<String>,
+    /// A workspace invite to join when the address has no account yet.
+    pub invite_code: Option<String>,
+}
+
+/// `POST /api/auth/start`: sign in or create an account with the email alone. A code goes to the
+/// address either way; `POST /api/auth/verify` then signs in, or makes the account.
+pub async fn start_handler(State(state): State<AppState>, Json(req): Json<StartRequest>) -> Result<Json<SignInResponse>, JsonError> {
+    let email = req.email.trim().to_lowercase();
+    if !super::orgs::valid_email(&email) {
+        return Err(json_error(StatusCode::BAD_REQUEST, "invalid_email"));
+    }
+    let mailer = code_mailer(&state);
+    let existing: Option<Uuid> = sqlx::query_scalar("SELECT user_id FROM web_credentials WHERE lower(email) = $1")
+        .bind(&email)
+        .fetch_optional(&state.pool)
+        .await
+        .map_err(|e| code_error(CodeError::Db(e)))?;
+    if let Some(user_id) = existing {
+        let locale = req.language.as_deref().and_then(nomi_i18n::Locale::from_code);
+        return Ok(Json(send_code(&state, mailer.as_ref(), user_id, Purpose::Login, locale).await?));
+    }
+
+    let invite_code = req.invite_code.as_deref().map(str::trim).filter(|c| !c.is_empty());
+    if let Some(code) = invite_code {
+        let open: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM org_invites WHERE code = $1 AND used_at IS NULL AND expires_at > now())")
+            .bind(code)
+            .fetch_one(&state.pool)
+            .await
+            .map_err(|e| code_error(CodeError::Db(e)))?;
+        if !open {
+            return Err(json_error(StatusCode::BAD_REQUEST, "invalid_invite"));
+        }
+    }
+    let language = req.language.as_deref().and_then(nomi_i18n::Locale::from_code).map(|l| l.code().to_string());
+    let (challenge, code) =
+        email_code::start_for_email(&state.pool, &email, invite_code, language.as_deref()).await.map_err(code_error)?;
+    let locale = challenge_locale(&state, &challenge).await;
+    email_the_code(mailer.as_ref(), &challenge, &code, locale).await?;
+    Ok(Json(SignInResponse::Verification { verification: VerificationInfo::from(&challenge) }))
+}
+
+/// The tokens, and whether the code just made the account (so first run can ask for a name).
+#[derive(Serialize)]
+pub struct VerifyResponse {
+    #[serde(flatten)]
+    pub tokens: TokenPairResponse,
+    pub is_new: bool,
+}
+
+#[derive(Deserialize)]
 pub struct VerifyRequest {
     pub challenge_id: Uuid,
     pub code: String,
 }
 
 /// Finishes a sign-in (or a new account) with the emailed code.
-pub async fn verify_handler(State(state): State<AppState>, headers: HeaderMap, Json(req): Json<VerifyRequest>) -> Result<Json<TokenPairResponse>, JsonError> {
-    let (user_id, _) = email_code::verify(&state.pool, req.challenge_id, &req.code).await.map_err(code_error)?;
-    Ok(Json(tokens_for(&state, &headers, user_id).await?))
+pub async fn verify_handler(State(state): State<AppState>, headers: HeaderMap, Json(req): Json<VerifyRequest>) -> Result<Json<VerifyResponse>, JsonError> {
+    let verified = email_code::verify(&state.pool, req.challenge_id, &req.code).await.map_err(code_error)?;
+    Ok(Json(VerifyResponse { tokens: tokens_for(&state, &headers, verified.user_id).await?, is_new: verified.is_new }))
 }
 
 #[derive(Deserialize)]
@@ -232,13 +311,9 @@ pub struct ChallengeRequest {
 
 /// Sends a fresh code for a sign-in that's still waiting.
 pub async fn resend_handler(State(state): State<AppState>, Json(req): Json<ChallengeRequest>) -> Result<Json<VerificationInfo>, JsonError> {
-    let EmailCodes::Required(mailer) = &state.email_codes else { return Err(json_error(StatusCode::NOT_FOUND, "expired")) };
     let (challenge, code) = email_code::resend(&state.pool, req.challenge_id).await.map_err(code_error)?;
-    let locale = match state.pool.acquire().await {
-        Ok(mut conn) => nomi_agent_core::locale::user_locale(&mut conn, challenge.user_id).await,
-        Err(_) => nomi_i18n::Locale::default(),
-    };
-    email_the_code(mailer.as_ref(), &challenge, &code, locale).await?;
+    let locale = challenge_locale(&state, &challenge).await;
+    email_the_code(code_mailer(&state).as_ref(), &challenge, &code, locale).await?;
     Ok(Json(VerificationInfo::from(&challenge)))
 }
 
@@ -357,4 +432,52 @@ pub async fn reset_handler(State(state): State<AppState>, Json(req): Json<ResetR
             Err(json_error(StatusCode::INTERNAL_SERVER_ERROR, "failed"))
         }
     }
+}
+
+#[derive(Deserialize)]
+pub struct ChangePasswordRequest {
+    /// Required when the account has a password already.
+    pub current_password: Option<String>,
+    pub new_password: String,
+}
+
+/// `PUT /api/auth/password`: sets or changes the signed-in person's password. Other devices stay
+/// signed in.
+pub async fn change_password_handler(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Json(req): Json<ChangePasswordRequest>,
+) -> Result<StatusCode, JsonError> {
+    match password_reset::change(&state.pool, claims.sub, req.current_password.as_deref(), &req.new_password).await {
+        Ok(()) => Ok(StatusCode::NO_CONTENT),
+        Err(ChangeError::TooShort) => Err(json_error(StatusCode::BAD_REQUEST, "too_short")),
+        Err(ChangeError::WrongPassword) => Err(json_error(StatusCode::FORBIDDEN, "wrong_password")),
+        Err(ChangeError::NoAccount) => Err(json_error(StatusCode::NOT_FOUND, "no_password_account")),
+        Err(e) => {
+            tracing::error!(error = %e, "change password failed");
+            Err(json_error(StatusCode::INTERNAL_SERVER_ERROR, "failed"))
+        }
+    }
+}
+
+#[derive(Deserialize)]
+pub struct ActiveOrgRequest {
+    pub org_id: Uuid,
+}
+
+/// `PUT /api/auth/active-org`: switches the workspace the person works in. Answers a new access
+/// token carrying it; later sign-ins and refreshes keep it while they're a member.
+pub async fn active_org_handler(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Json(req): Json<ActiveOrgRequest>,
+) -> Result<Json<AccessTokenResponse>, JsonError> {
+    let switched = switch_active_org(&state.pool, claims.sub, req.org_id).await.map_err(|e| code_error(CodeError::Db(e)))?;
+    if !switched {
+        return Err(json_error(StatusCode::NOT_FOUND, "not_a_member"));
+    }
+    let access_token = issue_access_token(&state.pool, claims.sub, &state.jwt_secret)
+        .await
+        .map_err(|_| json_error(StatusCode::INTERNAL_SERVER_ERROR, "failed to issue tokens"))?;
+    Ok(Json(AccessTokenResponse { access_token }))
 }

@@ -304,7 +304,7 @@ fn urlencode(value: &str) -> String {
         .collect()
 }
 
-fn valid_email(email: &str) -> bool {
+pub(crate) fn valid_email(email: &str) -> bool {
     let Some((local, domain)) = email.split_once('@') else { return false };
     !local.is_empty() && domain.contains('.') && !domain.starts_with('.') && !domain.ends_with('.') && !email.contains(char::is_whitespace)
 }

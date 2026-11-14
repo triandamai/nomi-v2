@@ -66,12 +66,7 @@ pub async fn refresh_access_token(
         .await?;
 
     let permissions = compute_permissions(pool, user_id).await?;
-    let active_org_id: Uuid = sqlx::query_scalar(
-        "SELECT org_id FROM memberships WHERE user_id = $1 AND status = 'active' ORDER BY created_at ASC LIMIT 1",
-    )
-    .bind(user_id)
-    .fetch_one(pool)
-    .await?;
+    let active_org_id = super::login::active_org(pool, user_id).await?;
 
     let claims = Claims::new(user_id, active_org_id, permissions, ACCESS_TOKEN_TTL_SECONDS);
     Ok(claims.encode(jwt_secret)?)
