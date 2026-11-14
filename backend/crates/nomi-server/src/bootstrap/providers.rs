@@ -122,9 +122,9 @@ async fn build_llm_provider(
         Ok(Some(_)) if over_quota => None,
         Ok(Some(model)) if Some(model.id) != primary_admin_id => {
             let files_support = media_support_for(&model.provider, &model.model_id, model.media_inputs.as_deref());
-            let (id, label) = (model.id, model.label.clone());
+            let (id, label, connection) = (model.id, model.label.clone(), admin_connection(&model));
             admin_model_config(pool, settings_key, model).await.map(|config| {
-                let tag = tag_for(&config, Some(id), false, label);
+                let tag = tag_for(&config, Some(id), false, label, connection);
                 let provider: Arc<dyn LlmProvider> = Arc::from(build_provider(config, http_client));
                 (Arc::new(MeteredProvider::new(provider, pool.clone(), user_id, tag)) as Arc<dyn LlmProvider>, files_support)
             })
@@ -177,7 +177,8 @@ async fn own_model(
         (None, Some(connection_id)) => connection_model_config(pool, settings_key, settings::provider_connections::Scope::User(user_id), connection_id, model_id).await?,
         (None, None) => return None,
     };
-    let tag = tag_for(&config, None, true, row.custom_label.unwrap_or_else(|| config.model_id.clone()));
+    let connection = if row.custom_api_key_encrypted.is_some() { None } else { row.custom_connection_id };
+    let tag = tag_for(&config, None, true, row.custom_label.unwrap_or_else(|| config.model_id.clone()), connection);
     let support = MediaSupport::infer(&config.provider, &config.model_id);
     Some((config, tag, support))
 }
@@ -195,8 +196,18 @@ fn provider_name(kind: &ProviderKind) -> &'static str {
     kind.as_str()
 }
 
-fn tag_for(config: &ModelConfig, admin_model_id: Option<uuid::Uuid>, own_key: bool, label: String) -> ModelTag {
-    ModelTag { admin_model_id, own_key, label, provider: provider_name(&config.provider).to_string(), model_id: config.model_id.clone() }
+fn tag_for(config: &ModelConfig, admin_model_id: Option<uuid::Uuid>, own_key: bool, label: String, connection_id: Option<uuid::Uuid>) -> ModelTag {
+    ModelTag { admin_model_id, own_key, label, provider: provider_name(&config.provider).to_string(), model_id: config.model_id.clone(), connection_id }
+}
+
+/// The connection an admin model's calls go through: its connection, unless it still has a key
+/// of its own (saved before providers were connected).
+fn admin_connection(model: &settings::llm_models::AdminLlmModel) -> Option<uuid::Uuid> {
+    if model.api_key_encrypted.is_some() {
+        None
+    } else {
+        model.connection_id
+    }
 }
 
 /// A custom endpoint's extra header, as stored (encrypted JSON) on its connection.
@@ -320,9 +331,10 @@ async fn session_model(pool: &PgPool, user_id: uuid::Uuid, session_id: uuid::Uui
         ModelKey::Admin(id) => {
             let model = settings::llm_models::get_admin_llm_model(pool, id).await.ok().flatten().filter(|m| m.enabled)?;
             let label = model.label.clone();
+            let connection = admin_connection(&model);
             let support = media_support_for(&model.provider, &model.model_id, model.media_inputs.as_deref());
             let config = admin_model_config(pool, settings_key, model).await?;
-            let tag = tag_for(&config, Some(id), false, label);
+            let tag = tag_for(&config, Some(id), false, label, connection);
             Some((config, tag, support))
         }
         ModelKey::Connection { connection_id, model_id } => {
@@ -330,7 +342,7 @@ async fn session_model(pool: &PgPool, user_id: uuid::Uuid, session_id: uuid::Uui
                 return None;
             }
             let config = connection_model_config(pool, settings_key, settings::provider_connections::Scope::User(user_id), connection_id, model_id).await?;
-            let tag = tag_for(&config, None, true, picked.label.unwrap_or_else(|| config.model_id.clone()));
+            let tag = tag_for(&config, None, true, picked.label.unwrap_or_else(|| config.model_id.clone()), Some(connection_id));
             let support = MediaSupport::infer(&config.provider, &config.model_id);
             Some((config, tag, support))
         }
@@ -366,10 +378,10 @@ async fn resolve_coding_model(pool: &PgPool, user_id: uuid::Uuid, settings_key: 
         Some(model) => model,
         None => settings::llm_models::get_coding_admin_llm_model(pool).await.ok().flatten()?,
     };
-    let (id, label) = (model.id, model.label.clone());
+    let (id, label, connection) = (model.id, model.label.clone(), admin_connection(&model));
     let support = media_support_for(&model.provider, &model.model_id, model.media_inputs.as_deref());
     let config = admin_model_config(pool, settings_key, model).await?;
-    let tag = tag_for(&config, Some(id), false, label);
+    let tag = tag_for(&config, Some(id), false, label, connection);
     Some((config, tag, support))
 }
 
@@ -387,10 +399,10 @@ async fn resolve_llm_model_with_media(pool: &PgPool, user_id: uuid::Uuid, settin
                 .expect("failed to query admin_llm_models")
                 .filter(|m| m.enabled)
             {
-                let (id, label) = (admin_model.id, admin_model.label.clone());
+                let (id, label, connection) = (admin_model.id, admin_model.label.clone(), admin_connection(&admin_model));
                 let support = media_support_for(&admin_model.provider, &admin_model.model_id, admin_model.media_inputs.as_deref());
                 if let Some(config) = admin_model_config(pool, settings_key, admin_model).await {
-                    let tag = tag_for(&config, Some(id), false, label);
+                    let tag = tag_for(&config, Some(id), false, label, connection);
                     return (config, tag, support);
                 }
                 // Decryption failed (e.g. a rotated/mismatched SETTINGS_ENCRYPTION_KEY) —
@@ -407,10 +419,10 @@ async fn resolve_llm_model_with_media(pool: &PgPool, user_id: uuid::Uuid, settin
         .await
         .expect("failed to query admin_llm_models")
     {
-        let (id, label) = (default_model.id, default_model.label.clone());
+        let (id, label, connection) = (default_model.id, default_model.label.clone(), admin_connection(&default_model));
         let support = media_support_for(&default_model.provider, &default_model.model_id, default_model.media_inputs.as_deref());
         if let Some(config) = admin_model_config(pool, settings_key, default_model).await {
-            let tag = tag_for(&config, Some(id), false, label);
+            let tag = tag_for(&config, Some(id), false, label, connection);
             return (config, tag, support);
         }
         // Decryption failed — fall through to the env-var fallback below.
@@ -427,7 +439,7 @@ async fn resolve_llm_model_with_media(pool: &PgPool, user_id: uuid::Uuid, settin
         ),
     };
     let config = ModelConfig { provider, model_id, api_key, base_url: var("LLM_BASE_URL").ok(), extra_headers: vec![] };
-    let tag = tag_for(&config, None, false, if config.model_id.is_empty() { provider_name(&config.provider).to_string() } else { config.model_id.clone() });
+    let tag = tag_for(&config, None, false, if config.model_id.is_empty() { provider_name(&config.provider).to_string() } else { config.model_id.clone() }, None);
     let support = MediaSupport::infer(&config.provider, &config.model_id);
     (config, tag, support)
 }

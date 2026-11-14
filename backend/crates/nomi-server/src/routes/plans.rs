@@ -40,6 +40,11 @@ pub struct PlansForUser {
     pub monthly_tokens: i64,
     pub custom_quota: bool,
     pub override_until: Option<DateTime<Utc>>,
+    /// The plans they asked to be told about (`POST /api/plans/:id/waitlist`).
+    pub waitlist: Vec<Uuid>,
+    /// Whether a plan with a price can be bought here (`POST /api/plans/:id/checkout`): false
+    /// while no payment gateway is set up.
+    pub checkout_available: bool,
 }
 
 /// `GET /api/plans`: the plans on offer, and which one they're on.
@@ -53,12 +58,19 @@ pub async fn list_for_user(State(state): State<AppState>, AuthClaims(claims): Au
             plan.promo_price_label = None;
         }
     }
+    let waitlist = sqlx::query_scalar("SELECT plan_id FROM plan_waitlist WHERE user_id = $1 ORDER BY created_at")
+        .bind(claims.sub)
+        .fetch_all(&state.pool)
+        .await
+        .map_err(internal)?;
     Ok(Json(PlansForUser {
         plans: list,
         current_plan_id: subscription.plan.id,
         monthly_tokens: subscription.monthly_tokens,
         custom_quota: subscription.quota_override.is_some(),
         override_until: subscription.override_until,
+        waitlist,
+        checkout_available: crate::configuration::xendit_config().await.is_some(),
     }))
 }
 
@@ -247,16 +259,26 @@ pub async fn admin_put_subscription(
     plans::change_subscription(&state.pool, user_id, &change, claims.sub).await.map_err(internal)?;
     let after = plans::subscription_for(&state.pool, user_id).await.map_err(internal)?;
 
-    if before.plan.id != after.plan.id || before.monthly_tokens != after.monthly_tokens || before.override_until != after.override_until {
-        let language: Option<String> = sqlx::query_scalar("SELECT language FROM user_preferences WHERE user_id = $1")
-            .bind(user_id)
-            .fetch_optional(&state.pool)
-            .await
-            .map_err(internal)?;
-        let locale = Locale::from_code_or_default(language.as_deref());
-        notifications::send(&state.pool, user_id, change_notice(locale, &before, &after, req.note.as_deref())).await.map_err(internal)?;
-    }
+    notify_change(&state.pool, user_id, &before, &after, req.note.as_deref()).await.map_err(internal)?;
     Ok(Json(load_user_subscription(&state, user_id).await?))
+}
+
+/// Tells `user_id` (in the app and by email, in their language) what changed between `before`
+/// and `after`, when anything did.
+pub(crate) async fn notify_change(
+    pool: &sqlx::PgPool,
+    user_id: Uuid,
+    before: &plans::Subscription,
+    after: &plans::Subscription,
+    note: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    if before.plan.id == after.plan.id && before.monthly_tokens == after.monthly_tokens && before.override_until == after.override_until {
+        return Ok(());
+    }
+    let language: Option<String> = sqlx::query_scalar("SELECT language FROM user_preferences WHERE user_id = $1").bind(user_id).fetch_optional(pool).await?;
+    let locale = Locale::from_code_or_default(language.as_deref());
+    notifications::send(pool, user_id, change_notice(locale, before, after, note)).await?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -279,6 +301,7 @@ mod tests {
             is_default: false,
             is_active: true,
             sort_order: 0,
+            price_idr: None,
         }
     }
 

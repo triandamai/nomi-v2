@@ -30,6 +30,7 @@ pub mod usage;
 pub mod voice;
 pub mod personality;
 pub mod plans;
+pub mod plan_checkout;
 pub mod message_delete;
 pub mod message_rerun;
 pub mod message_retry;

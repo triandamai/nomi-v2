@@ -22,10 +22,12 @@ pub struct PlanRow {
     pub is_default: bool,
     pub is_active: bool,
     pub sort_order: i32,
+    /// What a month on it costs, in rupiah, when it can be bought; None: people join its waitlist.
+    pub price_idr: Option<i64>,
 }
 
 const PLAN_COLUMNS: &str = "id, slug, name, description, monthly_tokens, price_label, features, card_tone, promo_label, \
-     promo_price_label, promo_ends_at, is_default, is_active, sort_order";
+     promo_price_label, promo_ends_at, is_default, is_active, sort_order, price_idr";
 
 /// What an admin fills in for a plan.
 #[derive(Debug, Clone, Deserialize)]
@@ -48,6 +50,9 @@ pub struct PlanInput {
     pub is_active: bool,
     #[serde(default)]
     pub sort_order: i32,
+    /// None (or left out): not sold yet.
+    #[serde(default)]
+    pub price_idr: Option<i64>,
 }
 
 fn default_tone() -> String {
@@ -82,6 +87,9 @@ impl PlanInput {
         if !CARD_TONES.contains(&self.card_tone.as_str()) {
             return Err("unknown card tone");
         }
+        if self.price_idr.is_some_and(|p| p <= 0) {
+            return Err("the price must be more than zero");
+        }
         Ok(self)
     }
 }
@@ -106,8 +114,8 @@ pub async fn default_plan(pool: &PgPool) -> Result<PlanRow, sqlx::Error> {
 pub async fn create_plan(pool: &PgPool, input: &PlanInput) -> Result<PlanRow, sqlx::Error> {
     sqlx::query_as(&format!(
         "INSERT INTO plans (slug, name, description, monthly_tokens, price_label, features, card_tone, promo_label, \
-                            promo_price_label, promo_ends_at, is_active, sort_order) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING {PLAN_COLUMNS}"
+                            promo_price_label, promo_ends_at, is_active, sort_order, price_idr) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING {PLAN_COLUMNS}"
     ))
     .bind(&input.slug)
     .bind(&input.name)
@@ -121,6 +129,7 @@ pub async fn create_plan(pool: &PgPool, input: &PlanInput) -> Result<PlanRow, sq
     .bind(input.promo_ends_at)
     .bind(input.is_active)
     .bind(input.sort_order)
+    .bind(input.price_idr)
     .fetch_one(pool)
     .await
 }
@@ -129,7 +138,7 @@ pub async fn update_plan(pool: &PgPool, id: Uuid, input: &PlanInput) -> Result<O
     sqlx::query_as(&format!(
         "UPDATE plans SET slug = $2, name = $3, description = $4, monthly_tokens = $5, price_label = $6, features = $7, \
              card_tone = $8, promo_label = $9, promo_price_label = $10, promo_ends_at = $11, \
-             is_active = $12 OR is_default, sort_order = $13, updated_at = now() \
+             is_active = $12 OR is_default, sort_order = $13, price_idr = $14, updated_at = now() \
          WHERE id = $1 RETURNING {PLAN_COLUMNS}"
     ))
     .bind(id)
@@ -145,6 +154,7 @@ pub async fn update_plan(pool: &PgPool, id: Uuid, input: &PlanInput) -> Result<O
     .bind(input.promo_ends_at)
     .bind(input.is_active)
     .bind(input.sort_order)
+    .bind(input.price_idr)
     .fetch_optional(pool)
     .await
 }
@@ -307,6 +317,7 @@ mod tests {
             promo_ends_at: None,
             is_active: true,
             sort_order: 0,
+            price_idr: None,
         }
     }
 
@@ -319,5 +330,6 @@ mod tests {
         assert!(PlanInput { monthly_tokens: 0, ..input() }.validate().is_err());
         assert!(PlanInput { slug: "pro plan".into(), ..input() }.validate().is_err());
         assert!(PlanInput { card_tone: "neon".into(), ..input() }.validate().is_err());
+        assert!(PlanInput { price_idr: Some(0), ..input() }.validate().is_err());
     }
 }
