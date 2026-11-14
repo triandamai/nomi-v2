@@ -71,6 +71,8 @@ home:
   todo: "To-do"
   untitled_chat: "a chat"
 crew:
+  switched_off: "%{name} is switched off in your crew settings, so Nomi is answering instead."
+  paused: "Paused · switched off in your crew settings"
   finished: "Finished · %{task}"
   waiting_approval: "Waiting on you · approval needed"
   working: "Working…"

@@ -18,6 +18,7 @@ pub mod memory_settings;
 pub mod mention;
 pub mod notification;
 pub mod permissions;
+pub mod personal_crew;
 pub mod personality;
 pub mod plans;
 pub mod project_ops;

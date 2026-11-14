@@ -76,6 +76,22 @@ pub async fn check_tool_permission_in_session(
     tool_name: &str,
     input: &Value,
 ) -> PermissionDecision {
+    match session_decision(conn, user_id, session_id, tool_name, input).await {
+        Some(decision) => decision,
+        None => check_tool_permission(conn, user_id, tool_name, input).await,
+    }
+}
+
+/// What the person decided on an approval card in this chat for the very same call within the
+/// last hour, if anything: `Ask` is never returned. A member set to "ask first" (Settings › Crew)
+/// honours only this, not the "always" rules.
+pub async fn session_decision(
+    conn: &mut PoolConnection<Postgres>,
+    user_id: Uuid,
+    session_id: Uuid,
+    tool_name: &str,
+    input: &Value,
+) -> Option<PermissionDecision> {
     let recent: Option<String> = sqlx::query_scalar(
         "SELECT decision FROM session_tool_decisions \
          WHERE session_id = $1 AND user_id = $2 AND tool_name = $3 AND input = $4 \
@@ -93,9 +109,9 @@ pub async fn check_tool_permission_in_session(
     .flatten();
 
     match recent.as_deref() {
-        Some("allow") => PermissionDecision::Allow,
-        Some("deny") => PermissionDecision::Deny,
-        _ => check_tool_permission(conn, user_id, tool_name, input).await,
+        Some("allow") => Some(PermissionDecision::Allow),
+        Some("deny") => Some(PermissionDecision::Deny),
+        _ => None,
     }
 }
 

@@ -33,10 +33,16 @@ pub struct CrewMember {
     pub tone: Option<String>,
     pub motion: Option<String>,
     /// What it's doing for this user right now: "working", "waiting" (on the user's approval),
-    /// "done" (finished something in the last day) or "idle".
+    /// "done" (finished something in the last day), "idle", or "paused" (switched off).
     pub state: String,
     /// One line to go with `state`, e.g. "Finished · Summarize March spending".
     pub status: String,
+    /// False when the person switched it off (Settings › Crew). Nomi is always on.
+    pub enabled: bool,
+    /// A member the person made for themselves.
+    pub is_own: bool,
+    /// Nomi itself, which can't be switched off.
+    pub is_default: bool,
 }
 
 #[derive(Serialize)]
@@ -46,12 +52,12 @@ pub struct CrewResponse {
 
 /// One-line roles for the built-ins, in the person's language. Their intent descriptions are
 /// written for the router, not for people.
-fn built_in_role(agent_type: &str, locale: Locale) -> Option<String> {
+pub(crate) fn built_in_role(agent_type: &str, locale: Locale) -> Option<String> {
     let known = ["chitchat", "money", "coding", "planning", "personality", "supervisor", "reminders", "files", "workspace"];
     known.contains(&agent_type).then(|| locale.t(&format!("crew.role_{agent_type}")))
 }
 
-fn first_sentence(text: &str) -> String {
+pub(crate) fn first_sentence(text: &str) -> String {
     let sentence = text.split(['.', '\n']).next().unwrap_or(text).trim();
     let mut chars = sentence.chars();
     match chars.next() {
@@ -148,6 +154,9 @@ pub async fn list_crew(
                 motion: None,
                 state: "idle".into(),
                 status: String::new(),
+                enabled: true,
+                is_own: false,
+                is_default: agent.is_default(),
             }
         })
         .collect();
@@ -157,16 +166,18 @@ pub async fn list_crew(
         agents.insert(0, nomi);
     }
 
-    let dynamic: Vec<(Uuid, String, String, String, String, String)> = sqlx::query_as(
-        "SELECT id, name, intent_description, shape, tone, motion FROM dynamic_agents WHERE is_active = true ORDER BY created_at",
+    let dynamic: Vec<(Uuid, String, String, String, String, String, bool)> = sqlx::query_as(
+        "SELECT id, name, intent_description, shape, tone, motion, owner_user_id IS NOT NULL FROM dynamic_agents \
+         WHERE is_active = true AND (owner_user_id IS NULL OR owner_user_id = $1) ORDER BY created_at",
     )
+    .bind(claims.sub)
     .fetch_all(&state.pool)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, "failed to list dynamic agents for the crew");
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to list agents")
     })?;
-    agents.extend(dynamic.into_iter().map(|(id, name, description, shape, tone, motion)| CrewMember {
+    agents.extend(dynamic.into_iter().map(|(id, name, description, shape, tone, motion, is_own)| CrewMember {
         agent_type: id.to_string(),
         name,
         role: first_sentence(&description),
@@ -176,6 +187,9 @@ pub async fn list_crew(
         motion: Some(motion),
         state: "idle".into(),
         status: String::new(),
+        enabled: true,
+        is_own,
+        is_default: false,
     }));
 
     let default_type = registry.default_agent().agent_type().into_owned();
@@ -183,7 +197,17 @@ pub async fn list_crew(
         tracing::error!(error = %e, "failed to load the crew's live states");
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to list agents")
     })?;
+    let off = {
+        let mut conn = state.pool.acquire().await.map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to list agents"))?;
+        nomi_agent_core::personal_crew::disabled_agent_types(&mut conn, claims.sub).await
+    };
     for agent in &mut agents {
+        if off.contains(&agent.agent_type) && !agent.is_default {
+            agent.enabled = false;
+            agent.state = "paused".into();
+            agent.status = locale.t("crew.paused");
+            continue;
+        }
         match states.get(&agent.agent_type) {
             Some((live_state, status)) => {
                 agent.state = live_state.clone();

@@ -81,14 +81,25 @@ impl AgentRegistry {
     /// through the identical classifier prompt, without this registry needing to know anything
     /// about the `dynamic_agents` table itself.
     pub fn classification_prompt_with_extra(&self, extra_labels: &[String], extra_options: &[String]) -> String {
-        let default_agent = self.default_agent();
+        self.classification_prompt_excluding(&Default::default(), extra_labels, extra_options)
+    }
 
-        let mut labels: Vec<String> =
-            self.agents.iter().filter(|a| !a.is_default()).map(|a| a.intent_label().into_owned()).collect();
+    /// `classification_prompt_with_extra` without the built-in agents in `excluded` (by
+    /// agent_type): the members a person switched off are never routed to.
+    pub fn classification_prompt_excluding(
+        &self,
+        excluded: &std::collections::HashSet<String>,
+        extra_labels: &[String],
+        extra_options: &[String],
+    ) -> String {
+        let default_agent = self.default_agent();
+        let routable = |a: &&Arc<dyn SubAgent>| !a.is_default() && !excluded.contains(a.agent_type().as_ref());
+
+        let mut labels: Vec<String> = self.agents.iter().filter(routable).map(|a| a.intent_label().into_owned()).collect();
         let mut options: Vec<String> = self
             .agents
             .iter()
-            .filter(|a| !a.is_default())
+            .filter(routable)
             .map(|a| format!("{}: {}", a.intent_label(), a.intent_description()))
             .collect();
         labels.extend(extra_labels.iter().cloned());

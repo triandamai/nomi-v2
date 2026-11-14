@@ -71,6 +71,8 @@ home:
   todo: "Daftar tugas"
   untitled_chat: "sebuah obrolan"
 crew:
+  switched_off: "%{name} sedang dimatikan di pengaturan kru, jadi Nomi yang menjawab."
+  paused: "Dijeda · dimatikan di pengaturan kru"
   finished: "Selesai · %{task}"
   waiting_approval: "Menunggumu · perlu persetujuan"
   working: "Sedang bekerja…"

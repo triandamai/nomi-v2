@@ -25,13 +25,32 @@ pub async fn classify_intent(
     catalog: &Arc<ToolCatalog>,
     text: &str,
 ) -> Arc<dyn SubAgent> {
-    let dynamic_rows = nomi_agent_core::dynamic_agent::fetch_active_dynamic_agents(conn).await.unwrap_or_default();
+    classify_intent_for(conn, provider, registry, catalog, None, text).await
+}
+
+/// `classify_intent` for `user_id`'s own crew: their own members join the admins' ones, and the
+/// members they switched off are left out (a reply naming one anyway goes to the default agent).
+pub async fn classify_intent_for(
+    conn: &mut PoolConnection<Postgres>,
+    provider: &dyn LlmProvider,
+    registry: &AgentRegistry,
+    catalog: &Arc<ToolCatalog>,
+    user_id: Option<Uuid>,
+    text: &str,
+) -> Arc<dyn SubAgent> {
+    let (dynamic_rows, off) = match user_id {
+        Some(user_id) => (
+            nomi_agent_core::dynamic_agent::fetch_crew_dynamic_agents(conn, user_id).await.unwrap_or_default(),
+            nomi_agent_core::personal_crew::disabled_agent_types(conn, user_id).await,
+        ),
+        None => (nomi_agent_core::dynamic_agent::fetch_active_dynamic_agents(conn).await.unwrap_or_default(), Default::default()),
+    };
     let extra_labels: Vec<String> = dynamic_rows.iter().map(|r| r.intent_label.clone()).collect();
     let extra_options: Vec<String> =
         dynamic_rows.iter().map(|r| format!("{}: {}", r.intent_label, r.intent_description)).collect();
 
     let request = LlmRequest {
-        system: Some(registry.classification_prompt_with_extra(&extra_labels, &extra_options)),
+        system: Some(registry.classification_prompt_excluding(&off, &extra_labels, &extra_options)),
         messages: vec![LlmMessage { role: LlmRole::User, content: vec![ContentBlock::Text { text: text.to_string() }] }],
         tools: vec![],
         max_tokens: INTENT_CLASSIFICATION_MAX_TOKENS,
@@ -54,6 +73,10 @@ pub async fn classify_intent(
         .unwrap_or_default();
 
     if let Some(agent) = registry.find_by_intent_label(&label_text) {
+        if off.contains(agent.agent_type().as_ref()) {
+            tracing::info!(agent = %agent.agent_type(), "classified intent to a switched-off agent; the default agent answers");
+            return registry.default_agent();
+        }
         tracing::info!(agent = %agent.agent_type(), display_name = %agent.display_name(), label = %label_text.trim(), "classified intent to built-in agent");
         return agent;
     }
@@ -254,28 +277,63 @@ pub async fn complete_agent_session(
     Ok(())
 }
 
-/// The crew member the person addressed by name ("@Dana"), built-in or dynamic: the first name in
-/// the message that is one of theirs, matched without case. `None` when nobody is addressed.
+/// Who the person addressed by name ("@Dana").
+pub enum Mentioned {
+    /// That member answers.
+    Agent(Arc<dyn SubAgent>),
+    /// A member they switched off, by name: nobody takes it over by mention.
+    SwitchedOff(String),
+}
+
+/// The crew member the person addressed by name ("@Dana"), built-in or dynamic (the admins' and
+/// their own): the first name in the message that is one of theirs, matched without case. `None`
+/// when nobody is addressed.
 pub async fn mentioned_agent(
     conn: &mut PoolConnection<Postgres>,
     registry: &AgentRegistry,
     catalog: &Arc<ToolCatalog>,
+    user_id: Uuid,
     text: &str,
-) -> Option<Arc<dyn SubAgent>> {
+) -> Option<Mentioned> {
     let names = nomi_agent_core::mention::mentioned_names(text);
     if names.is_empty() {
         return None;
     }
-    let dynamic = nomi_agent_core::dynamic_agent::fetch_active_dynamic_agents(conn).await.unwrap_or_default();
+    let off = nomi_agent_core::personal_crew::disabled_agent_types(conn, user_id).await;
+    let dynamic = nomi_agent_core::dynamic_agent::fetch_visible_dynamic_agents(conn, user_id).await.unwrap_or_default();
     for name in names {
         if let Some(agent) = registry.agents().iter().find(|a| a.display_name().eq_ignore_ascii_case(name)) {
+            if off.contains(agent.agent_type().as_ref()) {
+                tracing::info!(%name, agent = %agent.agent_type(), "addressed a switched-off agent by mention");
+                return Some(Mentioned::SwitchedOff(agent.display_name().into_owned()));
+            }
             tracing::info!(%name, agent = %agent.agent_type(), "addressed agent by mention");
-            return Some(agent.clone());
+            return Some(Mentioned::Agent(agent.clone()));
         }
         if let Some(row) = dynamic.iter().find(|row| row.name.eq_ignore_ascii_case(name)) {
+            if off.contains(&row.id.to_string()) {
+                tracing::info!(%name, agent = %row.id, "addressed a switched-off dynamic agent by mention");
+                return Some(Mentioned::SwitchedOff(row.name.clone()));
+            }
             tracing::info!(%name, agent = %row.id, "addressed dynamic agent by mention");
-            return Some(Arc::new(DynamicAgent::from_row(row.clone(), catalog.clone())) as Arc<dyn SubAgent>);
+            return Some(Mentioned::Agent(Arc::new(DynamicAgent::from_row(row.clone(), catalog.clone())) as Arc<dyn SubAgent>));
         }
     }
     None
+}
+
+/// Tells the person, in the chat and from the default agent, that `member` is switched off and
+/// the default agent answers instead.
+pub async fn announce_switched_off(
+    conn: &mut PoolConnection<Postgres>,
+    mqtt: Option<(&MqttPublisher, Uuid)>,
+    registry: &AgentRegistry,
+    session_id: Uuid,
+    user_id: Uuid,
+    member: &str,
+) {
+    let locale = nomi_agent_core::user_locale(conn, user_id).await;
+    let text = locale.tf("crew.switched_off", &[("name", member)]);
+    let default_name = registry.default_agent().display_name().into_owned();
+    nomi_agent_core::engine::post_activity_message(conn, mqtt.map(|(p, _)| p), session_id, &default_name, &text, None).await;
 }

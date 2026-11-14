@@ -197,7 +197,20 @@ pub fn build_router(state: AppState) -> Router {
             put(provider_connections_routes::update_shared).delete(provider_connections_routes::disconnect_shared),
         )
         .route("/api/admin/settings/llm/connections/:id/models", post(provider_connections_routes::shared_models))
-        .route("/api/agents", get(agents_routes::list_crew))
+        .route("/api/agents", get(agents_routes::list_crew).post(crate::routes::crew_settings::create_member))
+        .route("/api/agents/templates", get(crate::routes::crew_settings::templates))
+        .route(
+            "/api/agents/:type",
+            put(crate::routes::crew_settings::set_enabled).delete(crate::routes::crew_settings::delete_member),
+        )
+        .route(
+            "/api/agents/:type/permissions",
+            get(crate::routes::crew_settings::get_permissions).put(crate::routes::crew_settings::set_permissions),
+        )
+        .route("/api/agents/:type/soul", get(crate::routes::crew_settings::get_soul).put(crate::routes::crew_settings::set_soul))
+        .route("/api/agents/:type/soul/versions", get(crate::routes::crew_settings::soul_versions))
+        .route("/api/agents/:type/soul/rollback", post(crate::routes::crew_settings::rollback_soul))
+        .route("/api/agents/:type/activity", get(crate::routes::crew_settings::activity))
         .route("/api/home", get(home_routes::home_summary))
         .route("/api/home/updates", get(home_routes::updates_page))
         .route("/api/home/today", get(home_routes::today_page))

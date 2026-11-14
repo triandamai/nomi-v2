@@ -1,5 +1,6 @@
 pub mod agent_permissions;
 pub mod agents;
+pub mod crew_settings;
 pub mod admin_access;
 pub mod admin_configuration;
 pub mod admin_payment;

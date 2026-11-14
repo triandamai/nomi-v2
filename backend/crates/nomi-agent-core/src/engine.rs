@@ -10,6 +10,7 @@ use crate::error::TurnError;
 use crate::locale::Locale;
 use crate::memory;
 use crate::permissions;
+use crate::personal_crew::Level;
 use crate::registry::AgentRegistry;
 use crate::subagent::SubAgent;
 
@@ -517,7 +518,7 @@ const USER_DENIED_RESULT: &str =
 /// Tools that are never permission-gated: engine-level bookkeeping (complete_task,
 /// delegate_to_agent, show, update_todos) — none of these touch anything a user would
 /// want to approve/deny.
-fn is_gateable(tool_name: &str) -> bool {
+pub fn is_gateable(tool_name: &str) -> bool {
     tool_name != COMPLETE_TASK_TOOL_NAME
         && tool_name != DELEGATE_TOOL_NAME
         && tool_name != crate::views::SHOW_TOOL_NAME
@@ -640,8 +641,11 @@ async fn run_agent_turn_in_reply(
     }
     tools.extend(chat_tools);
     tools.push(complete_task_tool_definition());
+    // The members the person switched off take no work and answer no questions.
+    let off = crate::personal_crew::disabled_agent_types(conn, user_id).await;
     if agent.can_delegate() {
-        let targets = registry.delegatable_agent_types(agent.agent_type().as_ref());
+        let mut targets = registry.delegatable_agent_types(agent.agent_type().as_ref());
+        targets.retain(|t| !off.contains(t));
         if !targets.is_empty() {
             tools.push(delegate_tool_definition(&targets));
         }
@@ -649,7 +653,8 @@ async fn run_agent_turn_in_reply(
     tools.push(crate::views::show_tool_definition());
     tools.push(rename_chat_tool_definition());
     tools.extend(crate::background::background_tool_definitions());
-    let crew = crate::crew_talk::ask_targets(registry, agent.agent_type().as_ref());
+    let mut crew = crate::crew_talk::ask_targets(registry, agent.agent_type().as_ref());
+    crew.retain(|t| !off.contains(t));
     if !crew.is_empty() {
         tools.push(crate::crew_talk::ask_agent_tool_definition(&crew));
     }
@@ -777,6 +782,12 @@ async fn run_agent_turn_in_reply(
         }
     } else {
         system_prompt
+    };
+
+    // The soul.md the person wrote for this member (Settings › Crew).
+    let system_prompt = match crate::personal_crew::current_soul(conn, user_id, agent.agent_type().as_ref()).await {
+        Ok(Some((soul, _))) if !soul.trim().is_empty() => format!("{system_prompt}\n\n{}", crate::personal_crew::soul_prompt(&soul)),
+        _ => system_prompt,
     };
 
     // Every agent sees what the rest of the crew is doing in this chat, so two never work the
@@ -1276,15 +1287,24 @@ async fn resolve_tool_batch_in_reply(
     let locale = crate::locale::user_locale(conn, user_id).await;
     let filled = with_chat_project(conn, agent, session_id, user_id, tool_use_blocks, conversation_so_far).await;
     let tool_use_blocks = filled.as_deref().unwrap_or(tool_use_blocks);
+    // What the person lets this member do (Settings › Crew › Permissions), by tool.
+    let levels = crate::personal_crew::member_levels(conn, user_id, agent.agent_type().as_ref()).await;
     for block in tool_use_blocks {
         if let ContentBlock::ToolUse { id, name, input, .. } = block {
             if already_decided.iter().any(|(decided_id, _)| decided_id == id) {
                 continue;
             }
-            if !is_gateable(name) || !agent.tool_needs_approval(name) {
+            if !is_gateable(name) {
                 continue;
             }
-            let decision = permissions::check_tool_permission_in_session(conn, user_id, session_id, name, input).await;
+            let decision = match levels.get(name.as_str()) {
+                // Refused below, or run without a card.
+                Some(Level::Never) | Some(Level::Allow) => continue,
+                // Always the card, unless this very call was decided in this chat just now.
+                Some(Level::Ask) => permissions::session_decision(conn, user_id, session_id, name, input).await.unwrap_or(permissions::PermissionDecision::Ask),
+                None if !agent.tool_needs_approval(name) => continue,
+                None => permissions::check_tool_permission_in_session(conn, user_id, session_id, name, input).await,
+            };
             if !matches!(decision, permissions::PermissionDecision::Ask) {
                 continue;
             }
@@ -1401,7 +1421,11 @@ async fn resolve_tool_batch_in_reply(
                 let target_agent = input.get("target_agent").and_then(|v| v.as_str()).unwrap_or_default();
                 let task = input.get("task").and_then(|v| v.as_str()).unwrap_or_default();
                 let target = registry.find(target_agent);
-                let rejection = target.as_ref().and_then(|t| t.validate_delegation_task(task).err());
+                let switched_off = match &target {
+                    Some(t) if !crate::personal_crew::is_enabled(conn, user_id, target_agent).await => Some(crate::personal_crew::switched_off_result(&t.display_name())),
+                    _ => None,
+                };
+                let rejection = switched_off.or_else(|| target.as_ref().and_then(|t| t.validate_delegation_task(task).err()));
                 // A specialist that answers right away takes the conversation over in this turn.
                 // Work split across several specialists at once still runs in the background.
                 let hand_offs_in_batch = tool_use_blocks
@@ -1523,6 +1547,8 @@ async fn resolve_tool_batch_in_reply(
                     Some(Err(err)) => (err, true, None),
                     None => (format!("unknown tool: {name}"), true, None),
                 }
+            } else if levels.get(name.as_str()) == Some(&Level::Never) {
+                (crate::prompts::MEMBER_TOOL_NEVER_RESULT.to_string(), true, None)
             } else if let Some((_, approved)) = already_decided.iter().find(|(decided_id, _)| decided_id == id) {
                 if *approved {
                     match agent.execute_tool(conn, session_id, agent_session_id, user_id, name, input.clone()).await {
@@ -1532,10 +1558,12 @@ async fn resolve_tool_batch_in_reply(
                 } else {
                     (USER_DENIED_RESULT.to_string(), true, None)
                 }
-            } else if matches!(
-                permissions::check_tool_permission_in_session(conn, user_id, session_id, name, input).await,
-                permissions::PermissionDecision::Deny
-            ) {
+            } else if levels.get(name.as_str()) != Some(&Level::Allow)
+                && matches!(
+                    permissions::check_tool_permission_in_session(conn, user_id, session_id, name, input).await,
+                    permissions::PermissionDecision::Deny
+                )
+            {
                 (USER_DENIED_RESULT.to_string(), true, None)
             } else {
                 match agent.execute_tool(conn, session_id, agent_session_id, user_id, name, input.clone()).await {
@@ -1738,7 +1766,7 @@ async fn answer_posted_since(
 /// Inserts an activity message (an agent's "thought", or a description of a tool call it just
 /// made) so a user watching a long-running build sees it appear like any other chat message —
 /// see `SubAgent::surfaces_activity`. Best-effort: never fails the turn.
-pub(crate) async fn post_activity_message(
+pub async fn post_activity_message(
     conn: &mut PoolConnection<Postgres>,
     mqtt: Option<&MqttPublisher>,
     session_id: Uuid,
