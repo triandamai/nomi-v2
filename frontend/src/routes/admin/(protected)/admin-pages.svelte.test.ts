@@ -15,7 +15,7 @@ import Xendit from './payment/xendit/+page.svelte';
 import Maintenance from './maintenance/+page.svelte';
 
 const manage = { dashboard: 'manage', user: 'manage', plans: 'manage', notifications: 'manage', models: 'manage', tools: 'manage', agents: 'manage', support: 'manage', configuration: 'manage', integrations: 'manage' };
-const plan = { id: 'pro', slug: 'pro', name: 'Pro', description: 'More', monthly_tokens: 5_000_000, price_label: 'Rp 99k', features: ['Projects'], card_tone: 'violet', promo_label: null, promo_price_label: null, promo_ends_at: null, is_default: false, is_active: true, sort_order: 2, max_projects: 3, max_orgs: null, max_org_members: 5, max_custom_crew: 1, max_storage_mb: 2048, custom_domain: true, sandbox_size: 'large', all_models: false, model_ids: ['m1'] };
+const plan = { id: 'pro', slug: 'pro', name: 'Pro', description: 'More', monthly_tokens: 5_000_000, price_label: 'Rp 99k', features: ['Projects'], card_tone: 'violet', promo_label: null, promo_price_label: null, promo_ends_at: null, price_amount: 99_000, currency: 'IDR', promo_price_amount: null, is_default: false, is_active: true, sort_order: 2, max_projects: 3, max_orgs: null, max_org_members: 5, max_custom_crew: 1, max_storage_mb: 2048, custom_domain: true, sandbox_size: 'large', all_models: false, model_ids: ['m1'] };
 const free = { ...plan, id: 'free', slug: 'free', name: 'Free', is_default: true, is_active: true, sort_order: 1 };
 
 const page = (component: unknown, data: Record<string, unknown>, form: unknown = null) =>
@@ -53,7 +53,7 @@ describe('admin pages', () => {
 
 	it('plans: lists plans and opens the editor', async () => {
 		fakeBackend([['*', /.*/, action({ success: true })]]);
-		const root = page(Plans, { models: [{ id: 'm1', label: 'Sonnet', provider: 'anthropic' }], plans: [free, { ...plan, promo_label: 'Launch', promo_price_label: 'Rp 49k', promo_ends_at: '2026-12-31T00:00:00Z' }, { ...plan, id: 'old', name: 'Legacy', is_active: false }] }, { error: 'Slug taken' });
+		const root = page(Plans, { models: [{ id: 'm1', label: 'Sonnet', provider: 'anthropic' }], plans: [free, { ...plan, promo_label: 'Launch', promo_price_label: 'Rp 49k', promo_price_amount: 49_000, promo_ends_at: '2026-12-31T00:00:00Z' }, { ...plan, id: 'old', name: 'Legacy', is_active: false }] }, { error: 'Slug taken' });
 		expect(text(root)).toContain('Legacy');
 		await tryAll(root);
 	});

@@ -124,5 +124,16 @@ export const SECTIONS: Record<string, { title: () => string; lede: () => string;
 			reaper_mode: { label: m.config_sandbox_reaper_mode, hint: m.config_sandbox_reaper_mode_hint },
 		},
 	},
+	billing: {
+		title: m.config_billing,
+		lede: m.config_billing_lede,
+		fields: {
+			referee_discount_percent: { label: m.config_billing_referee_discount_percent, hint: m.config_billing_referee_discount_percent_hint },
+			referrer_bonus_days: { label: m.config_billing_referrer_bonus_days, hint: m.config_billing_referrer_bonus_days_hint },
+			renewal_days_before: { label: m.config_billing_renewal_days_before, hint: m.config_billing_renewal_days_before_hint },
+			grace_days: { label: m.config_billing_grace_days, hint: m.config_billing_grace_days_hint },
+			invoice_hours: { label: m.config_billing_invoice_hours, hint: m.config_billing_invoice_hours_hint },
+		},
+	},
 };
-export const ORDER = ['attachments', 'storage', 'google', 'smtp', 'agent_loop', 'relay', 'domains', 'sandbox'];
+export const ORDER = ['attachments', 'storage', 'google', 'smtp', 'agent_loop', 'relay', 'domains', 'sandbox', 'billing'];
