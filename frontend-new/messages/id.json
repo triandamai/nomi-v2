@@ -1486,5 +1486,21 @@
 	"deploy_confirm_body": "Perubahannya live di {address} sebagai deploy #{number}. Pelanggan melihatnya saat berkunjung lagi.",
 	"deploy_confirm_first": "Aplikasimu live sebagai deploy #{number}, di alamatnya sendiri.",
 	"deploy_confirm_note": "menggantikan deploy #{number} · kembalikan dari Deployment kapan saja",
-	"deploy_publish_as": "Publikasikan deploy #{number}"
+	"deploy_publish_as": "Publikasikan deploy #{number}",
+	"domain_name_needed": "Beri nama alamatnya.",
+	"workspace_domain": "Domain",
+	"domain_check_failed": "Nama itu tidak bisa diperiksa. Coba lagi sebentar lagi.",
+	"domain_taken": "Nama itu sudah dipakai.",
+	"domain_changed": "Alamatnya berubah",
+	"domain_none_title": "Belum ada alamat",
+	"domain_none_body": "Aplikasi mendapat alamatnya sendiri saat pertama kali dipublikasikan; namanya bisa diubah dari sini setelahnya.",
+	"domain_addresses": "Alamat",
+	"domain_next_publish": "saat publikasi berikutnya",
+	"domain_field": "Alamat",
+	"domain_checking": "Memeriksa…",
+	"domain_available": "Tersedia",
+	"domain_free_instead": "Yang tersedia",
+	"domain_save": "Pakai alamat ini",
+	"domain_change": "Ubah alamat",
+	"domain_rename_note": "Alamat lama berhenti bekerja setelah yang baru live. Tautan yang sudah dibagikan perlu diganti."
 }

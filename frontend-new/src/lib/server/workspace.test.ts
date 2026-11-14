@@ -42,4 +42,22 @@ describe('a project’s workspace on the server', () => {
 		const busy = eventWith(() => new Response('a publish is already running', { status: 409 }));
 		expect(await workspace.publish(busy.event, 'p1')).toEqual({ ok: false, status: 409, message: 'a publish is already running' });
 	});
+
+	it('reads, checks and changes the app’s address, with a refusal’s free names', async () => {
+		const { backend, event } = eventWith((call) =>
+			call.method === 'GET' && call.url.includes('/check') ? json({ available: false, message: 'taken', suggestions: ['kopi-1'] }) : call.method === 'GET' ? json({ hostname: null, can_edit: true }) : json({ url: 'https://kopi.trian.space' }),
+		);
+		expect(await workspace.loadDomain(event, 'p1')).toEqual({ hostname: null, can_edit: true });
+		expect(await workspace.checkDomain(event, 'p1', 'kopi bu')).toEqual({ available: false, message: 'taken', suggestions: ['kopi-1'] });
+		expect(await workspace.changeDomain(event, 'p1', 'kopi')).toEqual({ ok: true, url: 'https://kopi.trian.space' });
+		expect(backend.calls.map((call) => [call.method, call.url.replace('http://api.test', ''), call.body ?? null])).toEqual([
+			['GET', '/api/projects/p1/domain', null],
+			['GET', '/api/projects/p1/domain/check?subdomain=kopi%20bu', null],
+			['PUT', '/api/projects/p1/domain', { subdomain: 'kopi' }],
+		]);
+		const refused = eventWith(() => json({ available: false, message: 'taken a moment ago', suggestions: ['kopi-2'] }, 409));
+		expect(await workspace.changeDomain(refused.event, 'p1', 'kopi')).toEqual({ ok: false, status: 409, answer: { available: false, message: 'taken a moment ago', suggestions: ['kopi-2'] }, message: 'taken a moment ago' });
+		const first = eventWith(() => new Response('publish the app first: it gets an address on its first publish', { status: 409 }));
+		expect(await workspace.changeDomain(first.event, 'p1', 'kopi')).toMatchObject({ ok: false, status: 409, message: 'publish the app first: it gets an address on its first publish' });
+	});
 });

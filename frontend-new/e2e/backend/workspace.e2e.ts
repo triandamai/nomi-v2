@@ -72,7 +72,7 @@ test('a project that isn’t theirs says so', async ({ page, context }) => {
 	await expect(page).toHaveURL(/\/projects$/);
 });
 
-test('Deployments says when this Nomi can’t publish, and nothing offers to', async ({ page, context }) => {
+test('Deployments and Domain say what can’t be done yet, and nothing offers to', async ({ page, context }) => {
 	const account = await createAccount();
 	await signInAs(context, account);
 	const org = ((await (await api(account, '/api/orgs')).json()) as { orgs: { id: string }[] }).orgs[0].id;
@@ -85,5 +85,12 @@ test('Deployments says when this Nomi can’t publish, and nothing offers to', a
 	await expect(page.getByText('Publishing isn’t set up here')).toBeVisible();
 	await page.keyboard.press('Escape');
 	await expect(page.getByText('Publishing isn’t set up here')).toHaveCount(0);
+
+	// Domain: nothing published, so no address yet, and nothing to change.
+	await tools.getByRole('button', { name: 'Domain' }).click();
+	await expect(page.getByText('No address yet')).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Change address' })).toHaveCount(0);
+	await tools.getByRole('button', { name: 'Domain' }).click();
+	await expect(page.getByText('No address yet')).toHaveCount(0);
 });
 

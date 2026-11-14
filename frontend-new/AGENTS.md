@@ -529,7 +529,12 @@ steps; what isn't there yet is left out, not drawn dead:
   The confirm names the count, not the files (the backend counts them, it doesn't list them); the
   toast after a publish offers Roll back to the deploy before. The pen's "main@4be1c07" isn't
   shown: a publish has no commit, so a row says when and who.
-- The other tools (Domain, Monitor, Database, Settings) and Share come with their sheets; Export
+- Domain (steps 8–9) is the app's own address under Nomi's apps domain: its row (live, linked),
+  where it moves on the next publish, and, for the project's admins, Change address (the name
+  checked as it's typed, with the hosting's reason and free names when it's taken). A domain of
+  the person's own (the DNS table, Check now, Make primary, Remove) has no backend yet
+  (BACKEND_TODO.md). Before the first publish it says there's no address yet.
+- The other tools (Monitor, Database, Settings) and Share come with their sheets; Export
   downloads the project as a zip. The pen's Share wears a download icon
   (pasted from Export): ours wears the share icon.
 - Once a project is live the preview shows the live app; the pen's preview of changes not yet

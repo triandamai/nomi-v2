@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
-	import { History, MonitorX, Rocket } from '@lucide/svelte';
+	import { Globe, History, Link, MonitorX, Rocket } from '@lucide/svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { pageAction } from '$lib/pageAction';
 	import { clock as appClock } from '$lib/clock';
@@ -15,6 +15,9 @@
 	import PaneTabs, { type PaneView } from '$lib/ds/projects/PaneTabs.svelte';
 	import ProjectDialog from '$lib/ds/projects/ProjectDialog.svelte';
 	import DeployRow from '$lib/ds/projects/DeployRow.svelte';
+	import AddressRow from '$lib/ds/projects/AddressRow.svelte';
+	import SubdomainField, { type SubdomainCheck } from '$lib/ds/projects/SubdomainField.svelte';
+	import { invalidate } from '$app/navigation';
 	import FileList from '$lib/ds/build/FileList.svelte';
 	import PhoneFrame from '$lib/ds/build/PhoneFrame.svelte';
 	import PublishButton from '$lib/ds/build/PublishButton.svelte';
@@ -121,10 +124,49 @@
 		await refresh();
 	}
 
+	// Domain (Workspace tools steps 8–9): the app's own address under Nomi's apps domain, renamed by
+	// the project's admins, checked as it's typed.
+	const address = $derived(data.address);
+	let renaming = $state(false);
+	let name = $state('');
+	let check = $state<SubdomainCheck>({ state: 'idle' });
+	let saving = $state(false);
+	let checkTimer: ReturnType<typeof setTimeout> | undefined;
+	function startRenaming() {
+		name = address?.subdomain ?? '';
+		check = { state: 'idle' };
+		renaming = true;
+	}
+	function checkSoon(next: string) {
+		clearTimeout(checkTimer);
+		const wanted = next.trim().toLowerCase();
+		if (!wanted || wanted === address?.subdomain) return void (check = { state: 'idle' });
+		check = { state: 'checking' };
+		checkTimer = setTimeout(async () => {
+			const response = await fetch(`/projects/${project.id}/domain/check?name=${encodeURIComponent(wanted)}`).catch(() => null);
+			const answer = response ? ((await response.json().catch(() => null)) as { available?: boolean; message?: string; suggestions?: string[]; error?: string } | null) : null;
+			if (name.trim().toLowerCase() !== wanted) return;
+			if (!answer || answer.error !== undefined) check = { state: 'taken', message: answer?.error || m.domain_check_failed() };
+			else check = answer.available ? { state: 'available' } : { state: 'taken', message: answer.message || m.domain_taken(), suggestions: answer.suggestions };
+		}, 400);
+	}
+	async function saveName() {
+		saving = true;
+		const result = await pageAction(`/projects/${project.id}`, 'domain', { name });
+		saving = false;
+		if (!result.ok) {
+			check = { state: 'taken', message: result.message || m.action_failed() };
+			return;
+		}
+		renaming = false;
+		toasts.show({ kind: 'success', title: m.domain_changed() });
+		await invalidate('app:workspace-project');
+	}
+
 	let view = $state<PaneView>('preview');
 	let device = $state<'desktop' | 'phone'>('desktop');
 	let reloads = $state(0);
-	let sheet = $state<'deployments' | null>(null);
+	let sheet = $state<'deployments' | 'domain' | null>(null);
 	// An opened sheet takes the focus, so Escape (and a screen reader) is in it at once.
 	let sheetBox = $state<HTMLElement>();
 	$effect(() => {
@@ -153,10 +195,10 @@
 			{status}
 			space={project.org_name}
 			url={liveUrl ?? undefined}
-			nav={deploy ? [{ id: 'deployments', label: m.workspace_deployments(), icon: History }] : []}
+			nav={[...(deploy ? [{ id: 'deployments', label: m.workspace_deployments(), icon: History }] : []), ...(data.address ? [{ id: 'domain', label: m.workspace_domain(), icon: Link }] : [])]}
 			navLabel={m.workspace_tools()}
 			active={sheet ?? undefined}
-			onnav={(id) => (sheet = sheet === id ? null : (id as 'deployments'))}
+			onnav={(id) => (sheet = sheet === id ? null : (id as typeof sheet))}
 			shareLabel={m.workspace_share()}
 			exportLabel={m.workspace_export()}
 			{initials}
@@ -219,6 +261,43 @@
 			{/if}
 		</div>
 
+		{#if sheet === 'domain' && address}
+			<div bind:this={sheetBox} class="absolute inset-y-0 right-0 flex w-180 max-w-full">
+				<WorkspaceSheet icon={Link} title={m.workspace_domain()} meta={project.name} onclose={() => (sheet = null)}>
+					{#if !address.hostname}
+						<EmptyState icon={Globe} title={m.domain_none_title()} body={m.domain_none_body()} />
+					{:else}
+						<div class="flex flex-col gap-2">
+							<p class="font-mono text-label tracking-label text-text-3 uppercase">{m.domain_addresses()}</p>
+							<AddressRow address={address.hostname} href={address.url ?? undefined} state={liveUrl ? { label: m.deploy_state_live(), tone: 'live' } : undefined} />
+							{#if address.pending_hostname}<AddressRow address={address.pending_hostname} state={{ label: m.domain_next_publish(), tone: 'waiting' }} strong />{/if}
+						</div>
+						{#if renaming}
+							<div class="flex flex-col gap-3">
+								<SubdomainField
+									bind:value={name}
+									suffix={address.base_domain ?? address.hostname.split('.').slice(1).join('.')}
+									{check}
+									labels={{ field: m.domain_field(), checking: m.domain_checking(), available: m.domain_available(), suggestions: m.domain_free_instead() }}
+									oninput={checkSoon}
+									onpick={(picked) => {
+										name = picked;
+										checkSoon(picked);
+									}}
+								/>
+								<div class="flex gap-2">
+									<Button variant="inverse" label={m.domain_save()} loading={saving} disabled={!name.trim() || check.state === 'taken' || check.state === 'checking'} onclick={saveName} />
+									<Button variant="ghost" label={m.action_cancel()} onclick={() => (renaming = false)} />
+								</div>
+								<p class="text-ui text-text-3">{m.domain_rename_note()}</p>
+							</div>
+						{:else if address.can_edit}
+							<div><Button variant="secondary" label={m.domain_change()} onclick={startRenaming} /></div>
+						{/if}
+					{/if}
+				</WorkspaceSheet>
+			</div>
+		{/if}
 		{#if sheet === 'deployments' && deploy}
 			<div bind:this={sheetBox} class="absolute inset-y-0 right-0 flex w-180 max-w-full">
 				<WorkspaceSheet

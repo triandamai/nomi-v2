@@ -1,5 +1,5 @@
 import { isRedirect } from '@sveltejs/kit';
-import type { DeployOverview, ProjectDetail, ProjectList } from '$lib/adapters/api';
+import type { DeployOverview, DomainAnswer, ProjectDetail, ProjectDomain, ProjectList } from '$lib/adapters/api';
 import { apiFetch, type ApiEvent } from './api';
 
 // A project's workspace on the server: the project (its files and chat), where it's live (the
@@ -58,3 +58,40 @@ export const publish = (event: ApiEvent, id: string) => post(event, `/api/projec
 /** Publishes an earlier deploy's build again, as a new deploy. */
 export const rollBack = (event: ApiEvent, id: string, publishId: string) =>
 	post(event, `/api/projects/${encodeURIComponent(id)}/deploy/publishes/${encodeURIComponent(publishId)}/rollback`);
+
+/** The app's address; null where the backend can't say. */
+export async function loadDomain(event: ApiEvent, id: string): Promise<ProjectDomain | null> {
+	const response = await call(event, `/api/projects/${encodeURIComponent(id)}/domain`);
+	return response.ok ? ((await response.json()) as ProjectDomain) : null;
+}
+
+/** Whether a name is free, as the hosting answers it (its reason and free names when it isn't). */
+export async function checkDomain(event: ApiEvent, id: string, name: string): Promise<DomainAnswer | { error: string }> {
+	const response = await call(event, `/api/projects/${encodeURIComponent(id)}/domain/check?subdomain=${encodeURIComponent(name)}`);
+	if (response.ok) return (await response.json()) as DomainAnswer;
+	return { error: (await response.text()).trim().slice(0, 300) };
+}
+
+export type DomainChange = { ok: true; url: string | null } | { ok: false; status: number; answer?: DomainAnswer; message: string };
+
+/** Moves production to another name; a refusal comes back with why and free names. */
+export async function changeDomain(event: ApiEvent, id: string, name: string): Promise<DomainChange> {
+	let response: Response;
+	try {
+		response = await apiFetch(event, `/api/projects/${encodeURIComponent(id)}/domain`, { method: 'PUT', body: JSON.stringify({ subdomain: name }) });
+	} catch (error) {
+		if (isRedirect(error)) throw error;
+		return { ok: false, status: 503, message: '' };
+	}
+	const text = await response.text();
+	if (response.ok) return { ok: true, url: ((text ? JSON.parse(text) : {}) as { url?: string }).url ?? null };
+	if (response.status === 409) {
+		try {
+			const answer = JSON.parse(text) as DomainAnswer;
+			return { ok: false, status: 409, answer, message: answer.message ?? '' };
+		} catch {
+			return { ok: false, status: 409, message: text.trim().slice(0, 300) };
+		}
+	}
+	return { ok: false, status: response.status, message: text.trim().slice(0, 300) };
+}

@@ -291,4 +291,19 @@ export default [
 		accessibility: ['A list item; Roll back names the deploy it goes back to.'],
 		related: ['build/PublishButton.svelte', 'build/WorkspaceSheet.svelte'],
 	},
+	{
+		file: 'projects/AddressRow.svelte',
+		summary: 'One address of an app: the globe, the address in mono, and whether it’s live or what it waits for.',
+		use: ['The Domain sheet in a project’s workspace.'],
+		accessibility: ['A served address is a link that opens in a new tab.'],
+		related: ['projects/SubdomainField.svelte'],
+	},
+	{
+		file: 'projects/SubdomainField.svelte',
+		summary: 'The name of an app’s address under Nomi’s apps domain, checked as it’s typed, with free names when it’s taken.',
+		use: ['Changing an app’s address in the Domain sheet.'],
+		dos: ['Say the hosting’s own reason when a name can’t be had.'],
+		accessibility: ['The field names itself; what the check says is announced politely and described by the field.'],
+		related: ['projects/AddressRow.svelte'],
+	},
 ] satisfies ComponentDoc[];
