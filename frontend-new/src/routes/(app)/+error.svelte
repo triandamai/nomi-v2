@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Building2, CircleAlert, MessageSquareOff } from '@lucide/svelte';
+	import { Building2, CircleAlert, FolderX, MessageSquareOff } from '@lucide/svelte';
 	import { page } from '$app/state';
 	import { m } from '$lib/paraglide/messages';
 	import EmptyState from '$lib/ds/lists/EmptyState.svelte';
@@ -11,14 +11,18 @@
 	const missingChat = $derived(page.status === 404 && page.route.id === '/(app)/chat/[id]');
 	// A workspace the person isn't in (or that isn't there) says so, and leads back to Workspaces.
 	const missingWorkspace = $derived(page.status === 404 && page.route.id === '/(app)/settings/workspaces/[id]');
+	// A project that isn't there (or not theirs) says so, and leads back to Projects.
+	const missingProject = $derived(page.status === 404 && page.route.id === '/(app)/projects/[id]');
 </script>
 
-<svelte:head><title>{missingChat ? m.chat_missing_title() : missingWorkspace ? m.workspace_missing_title() : m.error_title()} · {m.app_name()}</title></svelte:head>
+<svelte:head><title>{missingChat ? m.chat_missing_title() : missingWorkspace ? m.workspace_missing_title() : missingProject ? m.workspace_project_missing_title() : m.error_title()} · {m.app_name()}</title></svelte:head>
 
 <div class="flex min-h-full flex-col items-center justify-center">
 	<div class="w-full max-w-120">
 		{#if missingChat}
 			<EmptyState icon={MessageSquareOff} title={m.chat_missing_title()} body={m.chat_missing_body()} action={{ label: m.nav_home(), href: '/' }} />
+		{:else if missingProject}
+			<EmptyState icon={FolderX} title={m.workspace_project_missing_title()} body={m.workspace_project_missing()} action={{ label: m.nav_projects(), href: '/projects' }} />
 		{:else if missingWorkspace}
 			<EmptyState icon={Building2} title={m.workspace_missing_title()} body={m.workspace_not_found()} action={{ label: m.settings_workspaces(), href: '/settings/workspaces' }} />
 		{:else}

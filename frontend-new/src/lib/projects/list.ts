@@ -54,7 +54,7 @@ export function projectCards(projects: ProjectSummary[], now: Date): ProjectCard
 			status: statusOf(project),
 			...(project.deploy_url && { url: project.deploy_url }),
 			footer: footer.join(' · '),
-			href: `/chat/${project.session_id}`,
+			href: `/projects/${project.id}`,
 			updated: Date.parse(project.updated_at),
 			created: Date.parse(project.created_at),
 		};
