@@ -84,4 +84,18 @@ describe('a project’s workspace on the server', () => {
 		const { event } = eventWith(() => new Response('This project does not use a database.', { status: 404 }));
 		expect(await workspace.readDatabase(event, 'p1', 'development', null)).toEqual({ error: 'This project does not use a database.', status: 404 });
 	});
+
+	it('finds workspaces to move to, transfers, and takes the app down', async () => {
+		const { backend, event } = eventWith((call) => (call.method === 'GET' ? json([{ id: 'w2', name: 'Kopi Kita', is_personal: false, owner_name: 'Siti', my_role: 'admin' }]) : new Response(null, { status: 204 })));
+		expect(await workspace.transferTargets(event, 'p1', 'kopi k')).toEqual([{ id: 'w2', name: 'Kopi Kita', is_personal: false, owner_name: 'Siti', my_role: 'admin' }]);
+		expect(await workspace.transfer(event, 'p1', 'w2', 'warung')).toEqual({ ok: true });
+		expect(await workspace.takeDown(event, 'p1')).toEqual({ ok: true });
+		expect(backend.calls.map((call) => [call.method, call.url.replace('http://api.test', ''), call.body ?? null])).toEqual([
+			['GET', '/api/projects/p1/transfer/orgs?q=kopi%20k', null],
+			['POST', '/api/projects/p1/transfer', { target_org_id: 'w2', confirm_name: 'warung' }],
+			['DELETE', '/api/projects/p1/deploy/environments/production', null],
+		]);
+		const wrong = eventWith(() => new Response("type the project's name to confirm the transfer", { status: 400 }));
+		expect(await workspace.transfer(wrong.event, 'p1', 'w2', 'x')).toEqual({ ok: false, status: 400, message: "type the project's name to confirm the transfer" });
+	});
 });

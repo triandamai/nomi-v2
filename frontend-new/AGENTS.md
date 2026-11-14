@@ -548,7 +548,13 @@ steps; what isn't there yet is left out, not drawn dead:
   database (or, once published, the live one), read only: the statement is built on the server
   from a table the backend listed. The pen's Edit rows and Download dump have no backend (a dump,
   row edits); the note says to ask Koda instead. The pen's "showing 5 of 7" says the rows shown.
-- Settings and Share come with their sheets; Export downloads the project as a zip. The pen's Share wears a download icon
+- Settings (steps 12, 15–17): Transfer, Take down and Delete, each through its dialog. Transfer goes
+  to another workspace the person is in (the backend moves projects between workspaces, not to a
+  person by email as the pen draws it), the project's name typed to confirm; Take down stops the
+  live address (publishing brings it back); Delete wants the name typed, as the pen draws it,
+  offers the export first, and Projects says it's gone. The pen's project-name field is left out
+  (no rename: BACKEND_TODO.md); People and Environment come next.
+- Share comes with its sheet; Export downloads the project as a zip. The pen's Share wears a download icon
   (pasted from Export): ours wears the share icon.
 - Once a project is live the preview shows the live app; the pen's preview of changes not yet
   published needs the runtime (below), as a static site's files already do.

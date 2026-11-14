@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
-	import { Activity, ArrowDownUp, Cpu, Database, Globe, History, Link, Lock, MemoryStick, MonitorX, Rocket } from '@lucide/svelte';
+	import { Activity, ArrowDownUp, Cpu, Database, Download, Globe, History, Link, Lock, MemoryStick, MonitorX, Rocket, Settings } from '@lucide/svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { pageAction } from '$lib/pageAction';
 	import { clock as appClock } from '$lib/clock';
@@ -22,6 +22,10 @@
 	import LogLines from '$lib/ds/projects/LogLines.svelte';
 	import TableChip from '$lib/ds/projects/TableChip.svelte';
 	import RowsGrid from '$lib/ds/projects/RowsGrid.svelte';
+	import SettingRow from '$lib/ds/settings/SettingRow.svelte';
+	import TextField from '$lib/ds/inputs/TextField.svelte';
+	import Search from '$lib/ds/inputs/Search.svelte';
+	import type { TransferTarget } from '$lib/server/workspace';
 	import { cellText } from '$lib/projects/database';
 	import type { DatabaseView } from '$lib/server/workspace';
 	import Icon from '$lib/ds/foundations/Icon.svelte';
@@ -218,10 +222,44 @@
 	});
 	const rowsLabel = (count: number) => (count < 0 ? m.database_rows_unknown() : count === 1 ? m.database_row_one() : m.database_rows({ count }));
 
+	// Settings (steps 12, 15–17): transfer to another workspace, take the live app down, delete.
+	let dialog = $state<'transfer' | 'takedown' | 'delete' | null>(null);
+	let targets = $state<TransferTarget[]>([]);
+	let targetQuery = $state('');
+	let target = $state<string | null>(null);
+	let confirmName = $state('');
+	let acting = $state(false);
+	let actError = $state<string>();
+	function openDialog(which: NonNullable<typeof dialog>) {
+		confirmName = '';
+		actError = undefined;
+		target = null;
+		dialog = which;
+		if (which === 'transfer') void findTargets('');
+	}
+	let findTimer: ReturnType<typeof setTimeout> | undefined;
+	async function findTargets(query: string) {
+		const response = await fetch(`/projects/${project.id}/transfer?q=${encodeURIComponent(query)}`).catch(() => null);
+		targets = response?.ok ? ((await response.json()) as TransferTarget[]) : [];
+	}
+	async function act(name: 'transfer' | 'takedown' | 'delete', fields: Record<string, string>) {
+		acting = true;
+		actError = undefined;
+		const result = await pageAction(`/projects/${project.id}`, name, fields);
+		acting = false;
+		if (!result.ok) return void (actError = result.message || m.action_failed());
+		if (name === 'takedown') {
+			dialog = null;
+			toasts.show({ kind: 'success', title: m.takedown_done({ name: project.name }) });
+			await invalidate('app:workspace-project');
+			await refresh();
+		}
+	}
+
 	let view = $state<PaneView>('preview');
 	let device = $state<'desktop' | 'phone'>('desktop');
 	let reloads = $state(0);
-	let sheet = $state<'deployments' | 'domain' | 'monitor' | 'database' | null>(null);
+	let sheet = $state<'deployments' | 'domain' | 'monitor' | 'database' | 'settings' | null>(null);
 	// An opened sheet takes the focus, so Escape (and a screen reader) is in it at once.
 	let sheetBox = $state<HTMLElement>();
 	$effect(() => {
@@ -250,7 +288,7 @@
 			{status}
 			space={project.org_name}
 			url={liveUrl ?? undefined}
-			nav={[...(deploy ? [{ id: 'deployments', label: m.workspace_deployments(), icon: History }] : []), ...(data.address ? [{ id: 'domain', label: m.workspace_domain(), icon: Link }] : []), ...(deploy ? [{ id: 'monitor', label: m.workspace_monitor(), icon: Activity }] : []), { id: 'database', label: m.workspace_database(), icon: Database }]}
+			nav={[...(deploy ? [{ id: 'deployments', label: m.workspace_deployments(), icon: History }] : []), ...(data.address ? [{ id: 'domain', label: m.workspace_domain(), icon: Link }] : []), ...(deploy ? [{ id: 'monitor', label: m.workspace_monitor(), icon: Activity }] : []), { id: 'database', label: m.workspace_database(), icon: Database }, { id: 'settings', label: m.project_settings(), icon: Settings }]}
 			navLabel={m.workspace_tools()}
 			active={sheet ?? undefined}
 			onnav={(id) => (sheet = sheet === id ? null : (id as typeof sheet))}
@@ -316,6 +354,26 @@
 			{/if}
 		</div>
 
+		{#if sheet === 'settings'}
+			<div bind:this={sheetBox} class="absolute inset-y-0 right-0 flex w-180 max-w-full">
+				<WorkspaceSheet icon={Settings} title={m.project_settings()} meta={project.name} onclose={() => (sheet = null)}>
+					<section class="flex flex-col gap-2">
+						<h3 class="font-mono text-label tracking-label text-text-3 uppercase">{m.settings_ownership()}</h3>
+						<div class="flex flex-col border-t border-border">
+							<SettingRow title={m.settings_transfer()} description={m.settings_transfer_body({ name: project.name })}>
+								{#snippet control()}<Button variant="secondary" label={m.settings_transfer_action()} onclick={() => openDialog('transfer')} />{/snippet}
+							</SettingRow>
+							<SettingRow title={m.settings_takedown()} description={liveUrl ? m.settings_takedown_body() : m.settings_takedown_not_live()}>
+								{#snippet control()}{#if liveUrl}<Button variant="secondary" label={m.settings_takedown_action()} onclick={() => openDialog('takedown')} />{/if}{/snippet}
+							</SettingRow>
+							<SettingRow title={m.settings_delete()} description={m.settings_delete_body()} danger>
+								{#snippet control()}<Button variant="danger" label={m.settings_delete_action()} onclick={() => openDialog('delete')} />{/snippet}
+							</SettingRow>
+						</div>
+					</section>
+				</WorkspaceSheet>
+			</div>
+		{/if}
 		{#if sheet === 'database'}
 			<div bind:this={sheetBox} class="absolute inset-y-0 right-0 flex w-180 max-w-full">
 				<WorkspaceSheet icon={Database} title={m.workspace_database()} meta={project.name} onclose={() => (sheet = null)}>
@@ -512,5 +570,62 @@
 	{#snippet actions()}
 		<Button variant="ghost" label={m.action_cancel()} onclick={() => (confirming = false)} />
 		<Button variant="primary" iconEnd={Rocket} label={m.deploy_publish_as({ number: nextNumber })} loading={sending} onclick={startPublish} />
+	{/snippet}
+</ProjectDialog>
+
+<ProjectDialog open={dialog === 'transfer'} title={m.transfer_title({ name: project.name })} description={m.transfer_body()} width={460} onclose={() => (dialog = null)}>
+	<div class="flex flex-col gap-3 pt-2">
+		<Search
+			placeholder={m.transfer_search()}
+			bind:value={targetQuery}
+			oninput={() => {
+				clearTimeout(findTimer);
+				findTimer = setTimeout(() => void findTargets(targetQuery.trim()), 300);
+			}}
+		/>
+		{#if targets.length}
+			<div role="radiogroup" aria-label={m.transfer_to()} class="flex max-h-48 flex-col overflow-y-auto rounded-sm outline -outline-offset-1 outline-border">
+				{#each targets as one (one.id)}
+					<label class={['flex cursor-pointer items-center gap-2.5 border-b border-border px-3 py-2.5 last:border-b-0', target === one.id ? 'bg-surface-2' : 'hover:bg-surface-2']}>
+						<input type="radio" name="transfer-target" value={one.id} bind:group={target} class="accent-text" />
+						<span class="min-w-0 flex-1 truncate text-ui text-text">{one.name}</span>
+						{#if one.owner_name}<span class="shrink-0 font-mono text-label text-text-3">{m.transfer_owner({ name: one.owner_name })}</span>{/if}
+					</label>
+				{/each}
+			</div>
+		{:else}
+			<p class="text-caption text-text-3">{m.transfer_none()}</p>
+		{/if}
+		<TextField label={m.confirm_type_name({ name: project.name })} bind:value={confirmName} mono autocomplete="off" error={actError} />
+	</div>
+	{#snippet actions()}
+		<Button variant="ghost" label={m.action_cancel()} onclick={() => (dialog = null)} />
+		<Button variant="inverse" label={m.transfer_send()} loading={acting} disabled={!target || confirmName.trim() !== project.name} onclick={() => act('transfer', { to: target ?? '', name: confirmName.trim() })} />
+	{/snippet}
+</ProjectDialog>
+
+<ProjectDialog open={dialog === 'takedown'} title={m.takedown_title({ name: project.name })} description={m.takedown_body({ address: shownUrl })} width={460} onclose={() => (dialog = null)}>
+	<div class="flex flex-col gap-2 pt-2">
+		<p class="font-mono text-label text-text-3"><span class="tracking-label uppercase">{m.takedown_stays()}</span> · {m.takedown_stays_body({ files: project.files.length, deploys: rows.length })}</p>
+		<p class="font-mono text-label text-text-3">{m.takedown_back()}</p>
+		{#if actError}<p class="text-caption text-danger">{actError}</p>{/if}
+	</div>
+	{#snippet actions()}
+		<Button variant="ghost" label={m.takedown_keep()} onclick={() => (dialog = null)} />
+		<Button variant="danger" label={m.settings_takedown()} loading={acting} onclick={() => act('takedown', {})} />
+	{/snippet}
+</ProjectDialog>
+
+<ProjectDialog open={dialog === 'delete'} title={m.delete_title({ name: project.name })} description={m.delete_body()} width={460} onclose={() => (dialog = null)}>
+	<div class="flex flex-col gap-3 pt-2">
+		<div class="flex items-center justify-between gap-3 rounded-sm bg-surface-2 px-3 py-2.5">
+			<span class="text-ui text-text-2">{m.delete_export_first()}</span>
+			<Button variant="secondary" iconStart={Download} label={m.workspace_export()} href="/projects/{project.id}/export" data-sveltekit-reload />
+		</div>
+		<TextField label={m.confirm_type_name({ name: project.name })} bind:value={confirmName} mono autocomplete="off" error={actError} />
+	</div>
+	{#snippet actions()}
+		<Button variant="ghost" label={m.action_cancel()} onclick={() => (dialog = null)} />
+		<Button variant="danger" label={m.delete_forever()} loading={acting} disabled={confirmName.trim() !== project.name} onclick={() => act('delete', { name: confirmName.trim() })} />
 	{/snippet}
 </ProjectDialog>
