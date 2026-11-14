@@ -9,6 +9,7 @@ const domainCheck = await import('./domain/check/+server');
 const transferSearch = await import('./transfer/+server');
 const summary = await import('./export/summary/+server');
 const preview = await import('./preview/[...path]/+server');
+const { sealPreview } = await import('$lib/server/previewGrant');
 const app = await import('./app/+page.server');
 const sandbox = await import('./sandbox/[action]/+server');
 const bySession = await import('../session/[sessionId]/+page.server');
@@ -23,14 +24,24 @@ describe('a project’s workspace', () => {
 		expect(await thrown(() => load(at(() => new Response('', { status: 404 }), { id: 'p1' }).event as never))).toMatchObject({ status: 404 });
 	});
 
-	it('passes the project’s files through for the preview, index first', async () => {
-		const { api, event } = at(() => new Response('<h1>Warung</h1>', { headers: { 'content-type': 'text/html' } }), { id: 'p1', path: '' });
-		const response = await preview.GET(event as never);
+	it('serves the project’s files to a grant in the address, sandboxed, and nothing without one', async () => {
+		const grant = sealPreview('p1', 'token-1');
+		const { api, event } = at(() => new Response('<h1>Warung</h1>', { headers: { 'content-type': 'text/html' } }), { id: 'p1', path: `~${grant}/` });
+		const response = await preview.GET({ ...event, locals: {} } as never);
 		expect([response.status, response.headers.get('content-type'), await response.text()]).toEqual([200, 'text/html', '<h1>Warung</h1>']);
-		expect(api.calls[0].url).toBe('http://api.test/api/projects/p1/preview');
-		const asset = at(() => new Response('body{}', { headers: { 'content-type': 'text/css' } }), { id: 'p1', path: 'css/app.css' });
+		expect(api.calls[0]).toMatchObject({ url: 'http://api.test/api/projects/p1/preview', headers: { authorization: 'Bearer token-1' } });
+		// The project's files are code Koda wrote: they run in a sandbox of their own origin, never as this app.
+		expect(response.headers.get('content-security-policy')).toBe('sandbox allow-scripts');
+		expect(response.headers.get('x-content-type-options')).toBe('nosniff');
+		expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+		const asset = at(() => new Response('body{}', { headers: { 'content-type': 'text/css' } }), { id: 'p1', path: `~${grant}/css/app.css` });
 		await preview.GET(asset.event as never);
 		expect(asset.api.calls[0].url).toBe('http://api.test/api/projects/p1/preview/css/app.css');
+		for (const path of ['', 'index.html', `~${grant}`, `~${grant}/../../users`, `~${grant}/./a.css`, `~${sealPreview('p2', 'token-1')}/`, '~made-up/']) {
+			const refused = at(() => new Response('<h1>Warung</h1>'), { id: 'p1', path });
+			expect((await preview.GET(refused.event as never)).status, path).toBe(403);
+			expect(refused.api.calls).toEqual([]);
+		}
 	});
 
 	it('takes the backend’s links to the workspace', async () => {
