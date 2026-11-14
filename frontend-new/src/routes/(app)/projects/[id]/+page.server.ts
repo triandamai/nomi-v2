@@ -12,14 +12,15 @@ export const load: PageServerLoad = async (event) => {
 	const loaded = await loadProject(event, event.params.id);
 	if (!loaded.project) error(loaded.status === 404 || loaded.status === 403 ? 404 : 503, { message: loaded.status === 404 || loaded.status === 403 ? m.workspace_project_missing() : m.error_title() });
 	const id = event.params.id;
-	const [chat, deploy, address, people, secrets] = await Promise.all([
+	const [chat, deploy, address, people, secrets, showcase] = await Promise.all([
 		loadChatPage(event, loaded.project.session_id),
 		loadDeploy(event, id),
 		loadDomain(event, id),
 		tools.loadPeople(event, id),
 		tools.loadSecrets(event, id),
+		tools.loadShowcase(event, id),
 	]);
-	return { ...chat, title: loaded.project.name, project: loaded.project, live: loaded.live, domain: loaded.domain, deploy, address, people, secrets };
+	return { ...chat, title: loaded.project.name, project: loaded.project, live: loaded.live, domain: loaded.domain, deploy, address, people, secrets, showcase };
 };
 
 const refused = (sent: { status: number; message: string }) => fail(sent.status, { message: sent.message || m.action_failed() });
@@ -105,6 +106,20 @@ export const actions: Actions = {
 		if (!name) return fail(400, { message: m.action_failed() });
 		const sent = await tools.removeSecret(event, event.params.id, name);
 		return sent.ok ? { removed: name } : refused(sent);
+	},
+	/** Export (step 8): one commit of the files to `owner/name`, made when asked, with the person's GitHub. */
+	github: async (event) => {
+		const form = await event.request.formData();
+		const repo = String(form.get('repo') ?? '').trim();
+		if (!/^([\w.-]+\/[\w.-]+|https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/?)$/.test(repo)) return fail(400, { field: 'repo', message: m.github_repo_rule() });
+		const sent = await tools.pushToGithub(event, event.params.id, { repo, create: form.get('create') === 'true', private: form.get('private') === 'true' });
+		return sent.ok ? { pushed: repo } : fail(sent.status, { field: 'repo', message: sent.message || m.action_failed() });
+	},
+	/** Share (step 7): the live app on show in the community, or only to those with the link. */
+	showcase: async (event) => {
+		const shown = (await event.request.formData()).get('showcase') === 'true';
+		const sent = await tools.setShowcase(event, event.params.id, shown, null);
+		return sent.ok ? { showcase: shown } : refused(sent);
 	},
 	/** Publishes an earlier deploy again, as a new one. */
 	rollback: async (event) => {

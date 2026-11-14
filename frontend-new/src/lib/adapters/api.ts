@@ -443,3 +443,8 @@ export type ProjectPerson = { user_id: string; name: string; email: string | nul
 export type ProjectMembers = { access: 'org' | 'members'; my_role: string; me: string; people: ProjectPerson[] };
 /** An environment variable's name, never its value (`GET /api/projects/:id/secrets`). */
 export type ProjectSecrets = { secrets: { name: string; updated_at: string; updated_by_name: string | null }[]; can_edit: boolean };
+
+/** `GET /api/projects/:id/export`: what an export holds (variables by name only). */
+export type ExportSummary = { name: string; files: number; bytes: number; database: 'postgres' | 'sqlite' | 'none' | string; env: string[] };
+/** `GET /api/projects/:id/showcase`: whether the live app is on show in the community. */
+export type ProjectShowcase = { showcase: boolean; blurb: string | null; url: string | null; can_edit: boolean };

@@ -45,6 +45,10 @@
 	import PhoneFrame from '$lib/ds/build/PhoneFrame.svelte';
 	import PublishButton from '$lib/ds/build/PublishButton.svelte';
 	import WorkspaceSheet from '$lib/ds/build/WorkspaceSheet.svelte';
+	import BuildShareDialog from '$lib/ds/build/BuildShareDialog.svelte';
+	import ExportDialog from '$lib/ds/build/ExportDialog.svelte';
+	import Checkbox from '$lib/ds/inputs/Checkbox.svelte';
+	import type { ExportSummary } from '$lib/adapters/api';
 	import EmptyState from '$lib/ds/lists/EmptyState.svelte';
 
 	// A project's workspace (Flow / Build — Sign in → live URL o882RC, Building and Live; Workspace
@@ -311,6 +315,47 @@
 		await invalidate('app:workspace-project');
 	}
 
+	// Share (first flow, step 7): the live link, its card, and whether it's on show in the community.
+	let sharing = $state(false);
+	let showcased = $state(untrack(() => data.showcase?.showcase ?? false));
+	$effect(() => {
+		showcased = data.showcase?.showcase ?? false;
+	});
+	async function setShown(next: boolean) {
+		const before = showcased;
+		showcased = next;
+		const result = await pageAction(`/projects/${project.id}`, 'showcase', { showcase: String(next) });
+		if (!result.ok) {
+			showcased = before;
+			if (result.message) toasts.show({ kind: 'error', title: m.action_failed(), detail: result.message });
+		}
+	}
+
+	// Export (step 8): what it holds, then GitHub or a zip, equal weight.
+	let exporting = $state(false);
+	let summary = $state<ExportSummary | null>(null);
+	async function openExport() {
+		exporting = true;
+		const response = await fetch(`/projects/${project.id}/export/summary`).catch(() => null);
+		summary = response?.ok ? ((await response.json()) as ExportSummary) : null;
+	}
+	const kilobytes = (bytes: number) => (bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`);
+	let pushing = $state(false);
+	let repo = $state('');
+	let createRepo = $state(true);
+	let privateRepo = $state(true);
+	let pushError = $state<string>();
+	let sendingPush = $state(false);
+	async function push() {
+		sendingPush = true;
+		pushError = undefined;
+		const result = await pageAction(`/projects/${project.id}`, 'github', { repo, create: String(createRepo), private: String(privateRepo) });
+		sendingPush = false;
+		if (!result.ok) return void (pushError = result.message || m.action_failed());
+		pushing = false;
+		toasts.show({ kind: 'success', title: m.github_pushed({ repo: repo.trim() }) });
+	}
+
 	let view = $state<PaneView>('preview');
 	let device = $state<'desktop' | 'phone'>('desktop');
 	let reloads = $state(0);
@@ -350,7 +395,8 @@
 			shareLabel={m.workspace_share()}
 			exportLabel={m.workspace_export()}
 			{initials}
-			onexport={() => (location.href = `/projects/${project.id}/export`)}
+			onexport={openExport}
+			onshare={liveUrl ? () => (sharing = true) : undefined}
 		>
 			{#snippet publish()}
 				{#if button.state === 'ready'}
@@ -798,5 +844,48 @@
 	{#snippet actions()}
 		<Button variant="ghost" label={m.action_cancel()} onclick={() => (dialog = null)} />
 		<Button variant="danger" label={m.delete_forever()} loading={acting} disabled={confirmName.trim() !== project.name} onclick={() => act('delete', { name: confirmName.trim() })} />
+	{/snippet}
+</ProjectDialog>
+
+{#if liveUrl}
+	<BuildShareDialog
+		bind:open={sharing}
+		url={liveUrl}
+		preview={{ title: project.name, ...(project.description && { description: project.description }) }}
+		visibility={showcased ? 'public' : 'unlisted'}
+		onvisibility={data.showcase?.can_edit ? (next) => void setShown(next === 'public') : undefined}
+		oninvite={people && projectAdmin
+			? () => {
+					sharing = false;
+					sheet = 'people';
+				}
+			: undefined}
+	/>
+{/if}
+
+<ExportDialog
+	bind:open={exporting}
+	project={project.name}
+	repo={summary ? (summary.files === 1 ? m.export_holds_one({ size: kilobytes(summary.bytes) }) : m.export_holds({ files: summary.files, size: kilobytes(summary.bytes) })) : m.export_reading()}
+	database={summary && summary.database !== 'none' ? m.export_database({ kind: summary.database }) : undefined}
+	env={summary?.env.length ? summary.env.join(' · ') : undefined}
+	onpush={() => {
+		exporting = false;
+		pushError = undefined;
+		pushing = true;
+	}}
+	ondownload={() => (location.href = `/projects/${project.id}/export`)}
+/>
+
+<ProjectDialog open={pushing} title={m.github_title()} description={m.github_body()} width={460} onclose={() => (pushing = false)}>
+	<div class="flex flex-col gap-3 pt-2">
+		<TextField label={m.github_repo()} bind:value={repo} mono placeholder="owner/{project.name}" autocomplete="off" error={pushError} />
+		<Checkbox label={m.github_create()} bind:checked={createRepo} />
+		<Checkbox label={m.github_private()} bind:checked={privateRepo} />
+		<p class="text-caption text-text-3">{m.github_note()} <a href="/settings/connections" class="text-text-2 underline underline-offset-2 hover:text-text">{m.github_connections()}</a></p>
+	</div>
+	{#snippet actions()}
+		<Button variant="ghost" label={m.action_cancel()} onclick={() => (pushing = false)} />
+		<Button variant="inverse" label={m.github_push()} loading={sendingPush} disabled={!repo.trim()} onclick={push} />
 	{/snippet}
 </ProjectDialog>

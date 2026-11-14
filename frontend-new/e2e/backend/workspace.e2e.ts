@@ -195,3 +195,28 @@ test('People and Environment: roles, access, an invite, and variables', async ({
 	await env.getByRole('button', { name: 'Add variable' }).click();
 	await expect(env.getByText(/isn't set up|not set up/i)).toBeVisible();
 });
+
+test('Export says what it holds and pushes to GitHub; Share waits for a live app', async ({ page, context }) => {
+	const account = await createAccount();
+	await signInAs(context, account);
+	const home = ((await (await api(account, '/api/orgs')).json()) as { orgs: { id: string }[] }).orgs[0].id;
+	const id = ((await (await api(account, '/api/projects', { method: 'POST', body: JSON.stringify({ org_id: home }) })).json()) as { project_id: string }).project_id;
+	await api(account, `/api/projects/${id}/import/files`, { method: 'POST', body: JSON.stringify({ files: [{ path: 'index.html', content: '<h1>Warung</h1>' }], finish: true }) });
+	await page.goto(`/projects/${id}`, { waitUntil: 'networkidle' });
+
+	await expect(page.getByRole('banner').getByRole('button', { name: 'Share' })).toHaveCount(0);
+
+	await page.getByRole('button', { name: 'Export repo' }).click();
+	const exporting = page.getByRole('dialog', { name: /Export/ });
+	await expect(exporting.getByText(/^1 file ·/)).toBeVisible();
+	await exporting.getByRole('button', { name: /GitHub/ }).click();
+	const push = page.getByRole('dialog', { name: 'Push to GitHub' });
+	await push.getByRole('textbox', { name: 'Repository' }).fill('not a repo');
+	await push.getByRole('button', { name: 'Push' }).click();
+	await expect(push.getByText('Name the repository as owner/name.')).toBeVisible();
+	// No GitHub connected here: the backend says so, under the field.
+	await push.getByRole('textbox', { name: 'Repository' }).fill('mario/warung-kopi');
+	await push.getByRole('button', { name: 'Push' }).click();
+	await expect(push.getByText(/GitHub/i).last()).toBeVisible();
+	await expect(push.getByRole('textbox', { name: 'Repository' })).toHaveAttribute('aria-invalid', 'true');
+});

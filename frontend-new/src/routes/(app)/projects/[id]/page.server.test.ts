@@ -7,6 +7,7 @@ const { load, actions } = await import('./+page.server');
 const deploy = await import('./deploy/+server');
 const domainCheck = await import('./domain/check/+server');
 const transferSearch = await import('./transfer/+server');
+const summary = await import('./export/summary/+server');
 const preview = await import('./preview/[...path]/+server');
 const app = await import('./app/+page.server');
 const bySession = await import('../session/[sessionId]/+page.server');
@@ -126,5 +127,22 @@ describe('a project’s workspace', () => {
 		expect(await actions.secret(posted({ name: '1bad', value: 'x' }, ok).event as never)).toMatchObject({ status: 400, data: { field: 'name' } });
 		expect(await actions.secret(posted({ name: 'X', value: 'v' }, () => new Response("publishing isn't set up on this Nomi", { status: 503 })).event as never)).toMatchObject({ status: 503, data: { field: 'value', message: "publishing isn't set up on this Nomi" } });
 		expect(await actions.unsecret(posted({ name: 'X' }, ok).event as never)).toEqual({ removed: 'X' });
+	});
+
+	it('pushes to a repository named owner/name, and shows the app or not', async () => {
+		const ok = () => new Response(null, { status: 204 });
+		const pushed = posted({ repo: 'mario/warung-kopi', create: 'true', private: 'true' }, ok);
+		expect(await actions.github(pushed.event as never)).toEqual({ pushed: 'mario/warung-kopi' });
+		expect(pushed.api.calls[0].body).toEqual({ repo: 'mario/warung-kopi', create: true, private: true });
+		expect(await actions.github(posted({ repo: 'not a repo' }, ok).event as never)).toMatchObject({ status: 400, data: { field: 'repo' } });
+		expect(await actions.github(posted({ repo: 'mario/x' }, () => new Response('connect GitHub first', { status: 409 })).event as never)).toMatchObject({ status: 409, data: { message: 'connect GitHub first' } });
+		const shown = posted({ showcase: 'true' }, ok);
+		expect(await actions.showcase(shown.event as never)).toEqual({ showcase: true });
+		expect(shown.api.calls[0].body).toEqual({ showcase: true, blurb: null });
+	});
+
+	it('says what an export holds', async () => {
+		const response = await summary.GET(at(() => json({ name: 'warung', files: 9, bytes: 1, database: 'none', env: [] }), { id: 'p1' }).event as never);
+		expect(await response.json()).toMatchObject({ files: 9 });
 	});
 });

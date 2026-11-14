@@ -118,4 +118,18 @@ describe('a project’s workspace on the server', () => {
 			['DELETE', '/api/projects/p1/secrets/ADMIN_PIN', null],
 		]);
 	});
+
+	it('reads the export and the showcase, pushes to GitHub and shows the app', async () => {
+		const { backend, event } = eventWith((call) =>
+			call.method !== 'GET' ? new Response(null, { status: 204 }) : call.url.endsWith('/export') ? json({ name: 'warung', files: 9, bytes: 2048, database: 'postgres', env: ['ADMIN_PIN'] }) : json({ showcase: false, blurb: null, url: null, can_edit: true }),
+		);
+		expect(await workspace.exportSummary(event, 'p1')).toMatchObject({ files: 9, env: ['ADMIN_PIN'] });
+		expect(await workspace.loadShowcase(event, 'p1')).toMatchObject({ showcase: false, can_edit: true });
+		await workspace.pushToGithub(event, 'p1', { repo: 'mario/warung', create: true, private: true });
+		await workspace.setShowcase(event, 'p1', true, null);
+		expect(backend.calls.slice(2).map((call) => [call.method, call.url.replace('http://api.test', ''), call.body])).toEqual([
+			['POST', '/api/projects/p1/export/github', { repo: 'mario/warung', create: true, private: true }],
+			['PUT', '/api/projects/p1/showcase', { showcase: true, blurb: null }],
+		]);
+	});
 });
