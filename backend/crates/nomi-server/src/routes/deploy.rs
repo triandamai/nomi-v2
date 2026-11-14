@@ -848,7 +848,11 @@ pub async fn delete_project(
             }
         }
     }
-    for prefix in [project_id.to_string(), format!("publishes/{project_id}")] {
+    for prefix in [
+        project_id.to_string(),
+        format!("publishes/{project_id}"),
+        format!("{}/{project_id}", nomi_agent_coding::files::VERSION_BLOBS_PREFIX),
+    ] {
         if let Err(e) = state.project_storage.delete_prefix(&prefix).await {
             tracing::warn!(error = %e, %prefix, "couldn't delete project storage");
         }

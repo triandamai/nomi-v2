@@ -234,6 +234,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/admin/usage", get(crate::routes::admin_usage::get_usage))
         .route("/api/maintenance", get(crate::routes::maintenance::get))
         .route("/api/showcase", get(crate::routes::showcase::list))
+        .route("/api/showcase/:id/remix", post(crate::routes::project_edit::remix))
         .route("/api/sessions/:id/shares", post(crate::routes::shares::create))
         .route("/api/sessions/:id/shares/:share_id", put(crate::routes::shares::update).delete(crate::routes::shares::revoke))
         .route("/api/shared/:token", get(crate::routes::shares::read))
@@ -389,7 +390,14 @@ pub fn build_router(state: AppState) -> Router {
             get(projects_routes::list_projects).post(projects_routes::create_project_session),
         )
         .route("/api/projects/by-session/:sessionId", get(projects_routes::get_project_by_session))
-        .route("/api/projects/:id", get(projects_routes::get_project).delete(crate::routes::deploy::delete_project))
+        .route(
+            "/api/projects/:id",
+            get(projects_routes::get_project).patch(crate::routes::project_edit::rename).delete(crate::routes::deploy::delete_project),
+        )
+        .route("/api/projects/:id/duplicate", post(crate::routes::project_edit::duplicate))
+        .route("/api/projects/:id/versions", get(crate::routes::project_versions::list))
+        .route("/api/projects/:id/versions/:version/restore", post(crate::routes::project_versions::restore))
+        .route("/api/search", get(crate::routes::search::search))
         .route("/api/projects/:id/transfer/orgs", get(projects_routes::search_transfer_orgs))
         .route("/api/projects/:id/transfer", post(projects_routes::transfer_project))
         .route(
