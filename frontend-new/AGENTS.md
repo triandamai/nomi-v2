@@ -539,8 +539,11 @@ steps; what isn't there yet is left out, not drawn dead:
   the place of the pen's uptime (not measured); requests per bucket; memory, CPU and bandwidth;
   the app's last lines. What wasn't measured says so, never 0. The pen's database size and its
   parsed log columns (method, path, status) aren't given: the log is the app's own lines.
-- The other tools (Database, Settings) and Share come with their sheets; Export downloads the
-  project as a zip. The pen's Share wears a download icon
+- Database (step 11) reads a project's tables and the first 50 rows of one, from the development
+  database (or, once published, the live one), read only: the statement is built on the server
+  from a table the backend listed. The pen's Edit rows and Download dump have no backend (a dump,
+  row edits); the note says to ask Koda instead. The pen's "showing 5 of 7" says the rows shown.
+- Settings and Share come with their sheets; Export downloads the project as a zip. The pen's Share wears a download icon
   (pasted from Export): ours wears the share icon.
 - Once a project is live the preview shows the live app; the pen's preview of changes not yet
   published needs the runtime (below), as a static site's files already do.

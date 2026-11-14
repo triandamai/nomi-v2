@@ -1526,5 +1526,21 @@
 	"monitor_cpu": "CPU",
 	"monitor_bandwidth": "Bandwidth",
 	"monitor_log": "Log langsung",
-	"monitor_log_empty": "Aplikasi belum mencetak apa pun."
+	"monitor_log_empty": "Aplikasi belum mencetak apa pun.",
+	"workspace_database": "Database",
+	"database_rows_unknown": "baris belum dihitung",
+	"database_row_one": "1 baris",
+	"database_rows": "{count} baris",
+	"database_source": "Database mana",
+	"database_development": "Pengembangan",
+	"database_production": "Live",
+	"database_loading": "Membaca tabel…",
+	"database_none_title": "Tidak ada database",
+	"database_failed_title": "Database tidak bisa dibaca",
+	"database_failed_body": "Coba lagi sebentar lagi.",
+	"database_empty_title": "Belum ada tabel",
+	"database_empty_body": "Koda membuat tabel saat aplikasi perlu menyimpan sesuatu. Minta di chat.",
+	"database_showing_first": "menampilkan {count} baris pertama",
+	"database_read_only": "Hanya baca di sini. Untuk mengubah kolom atau memperbaiki baris, minta Koda di chat.",
+	"database_unavailable_body": "Database proyek disimpan di tempat aplikasinya dipublikasikan, yang belum diatur oleh pengelola Nomi ini."
 }

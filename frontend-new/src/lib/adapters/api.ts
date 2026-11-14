@@ -431,3 +431,8 @@ export type ContainerUsage = {
 	container_id: string;
 	stats: { cpu_percent: number; memory_usage_bytes: number; memory_limit_bytes: number; memory_percent: number; net_rx_bytes: number; net_tx_bytes: number } | null;
 };
+
+/** A project's database table (`/database/tables`); the row count is Postgres' estimate, -1 before it's known. */
+export type DatabaseTable = { schema: string; name: string; rows_estimate: number };
+/** What reading the database answered (`/database/query`). */
+export type QueryResult = { columns: string[]; rows: unknown[][]; truncated: boolean; rows_affected: number | null; took_ms: number };

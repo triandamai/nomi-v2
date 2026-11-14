@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
-	import { Activity, ArrowDownUp, Cpu, Globe, History, Link, MemoryStick, MonitorX, Rocket } from '@lucide/svelte';
+	import { Activity, ArrowDownUp, Cpu, Database, Globe, History, Link, Lock, MemoryStick, MonitorX, Rocket } from '@lucide/svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { pageAction } from '$lib/pageAction';
 	import { clock as appClock } from '$lib/clock';
@@ -20,6 +20,11 @@
 	import TrafficBars from '$lib/ds/projects/TrafficBars.svelte';
 	import ResourceRow from '$lib/ds/projects/ResourceRow.svelte';
 	import LogLines from '$lib/ds/projects/LogLines.svelte';
+	import TableChip from '$lib/ds/projects/TableChip.svelte';
+	import RowsGrid from '$lib/ds/projects/RowsGrid.svelte';
+	import { cellText } from '$lib/projects/database';
+	import type { DatabaseView } from '$lib/server/workspace';
+	import Icon from '$lib/ds/foundations/Icon.svelte';
 	import Segmented from '$lib/ds/inputs/Segmented.svelte';
 	import { monitorStats, resourceRows, trafficBars } from '$lib/projects/monitor';
 	import type { Monitoring } from '$lib/server/workspace';
@@ -193,10 +198,30 @@
 	const resources = $derived(monitoring?.usage ? resourceRows(monitoring.usage) : null);
 	const RANGE_NOTE: Record<MetricsRange, () => string> = { '1h': m.monitor_last_hour, '24h': m.monitor_today, '7d': m.monitor_week };
 
+	// Database (step 11): the project's tables and the first rows of one, read only; production's
+	// once the app is published, else the development database Koda builds against.
+	let dbSource = $state<'development' | 'production'>('development');
+	let dbTable = $state<string | null>(null);
+	let database = $state<DatabaseView | null>(null);
+	let dbLoading = $state(false);
+	async function loadDatabase(source: typeof dbSource, table: string | null) {
+		dbLoading = true;
+		const query = new URLSearchParams({ source, ...(table && { table }) });
+		const response = await fetch(`/projects/${project.id}/database?${query}`).catch(() => null);
+		dbLoading = false;
+		database = response ? ((await response.json().catch(() => ({ error: '', status: 503 }))) as DatabaseView) : { error: '', status: 503 };
+	}
+	// Databases live where apps are published: without it there's nothing to read.
+	const canRead = $derived(deploy?.available !== false);
+	$effect(() => {
+		if (sheet === 'database' && canRead) void loadDatabase(dbSource, dbTable);
+	});
+	const rowsLabel = (count: number) => (count < 0 ? m.database_rows_unknown() : count === 1 ? m.database_row_one() : m.database_rows({ count }));
+
 	let view = $state<PaneView>('preview');
 	let device = $state<'desktop' | 'phone'>('desktop');
 	let reloads = $state(0);
-	let sheet = $state<'deployments' | 'domain' | 'monitor' | null>(null);
+	let sheet = $state<'deployments' | 'domain' | 'monitor' | 'database' | null>(null);
 	// An opened sheet takes the focus, so Escape (and a screen reader) is in it at once.
 	let sheetBox = $state<HTMLElement>();
 	$effect(() => {
@@ -225,7 +250,7 @@
 			{status}
 			space={project.org_name}
 			url={liveUrl ?? undefined}
-			nav={[...(deploy ? [{ id: 'deployments', label: m.workspace_deployments(), icon: History }] : []), ...(data.address ? [{ id: 'domain', label: m.workspace_domain(), icon: Link }] : []), ...(deploy ? [{ id: 'monitor', label: m.workspace_monitor(), icon: Activity }] : [])]}
+			nav={[...(deploy ? [{ id: 'deployments', label: m.workspace_deployments(), icon: History }] : []), ...(data.address ? [{ id: 'domain', label: m.workspace_domain(), icon: Link }] : []), ...(deploy ? [{ id: 'monitor', label: m.workspace_monitor(), icon: Activity }] : []), { id: 'database', label: m.workspace_database(), icon: Database }]}
 			navLabel={m.workspace_tools()}
 			active={sheet ?? undefined}
 			onnav={(id) => (sheet = sheet === id ? null : (id as typeof sheet))}
@@ -291,6 +316,55 @@
 			{/if}
 		</div>
 
+		{#if sheet === 'database'}
+			<div bind:this={sheetBox} class="absolute inset-y-0 right-0 flex w-180 max-w-full">
+				<WorkspaceSheet icon={Database} title={m.workspace_database()} meta={project.name} onclose={() => (sheet = null)}>
+					{#if liveUrl}
+						<div>
+							<Segmented
+								label={m.database_source()}
+								options={[
+									{ value: 'development', label: m.database_development() },
+									{ value: 'production', label: m.database_production() },
+								]}
+								value={dbSource}
+								onchange={(value) => {
+									dbSource = value as typeof dbSource;
+									dbTable = null;
+								}}
+							/>
+						</div>
+					{/if}
+					{#if !canRead}
+						<EmptyState icon={Database} title={m.deploy_unavailable_title()} body={m.database_unavailable_body()} />
+					{:else if !database && dbLoading}
+						<p class="text-ui text-text-3">{m.database_loading()}</p>
+					{:else if database && 'error' in database}
+						<EmptyState icon={Database} title={database.status === 404 ? m.database_none_title() : m.database_failed_title()} body={database.error || m.database_failed_body()} />
+					{:else if database && !database.tables.length}
+						<EmptyState icon={Database} title={m.database_empty_title()} body={m.database_empty_body()} />
+					{:else if database}
+						<div class="flex flex-wrap gap-2">
+							{#each database.tables as table (`${table.schema}.${table.name}`)}
+								<TableChip
+									name={table.name}
+									rows={rowsLabel(table.rows_estimate)}
+									selected={database.table?.name === table.name && database.table?.schema === table.schema}
+									onclick={() => (dbTable = `${table.schema}.${table.name}`)}
+								/>
+							{/each}
+						</div>
+						{#if database.rows && database.table}
+							<RowsGrid label={database.table.name} columns={database.rows.columns} rows={database.rows.rows.map((row) => row.map(cellText))} />
+							<p class="font-mono text-label text-text-3">{database.rows.truncated ? m.database_showing_first({ count: database.rows.rows.length }) : rowsLabel(database.rows.rows.length)}</p>
+						{/if}
+						<p class="flex items-center gap-2.5 rounded-sm bg-surface-2 px-3 py-2.5 text-ui text-text-2">
+							<span class="inline-flex shrink-0"><Icon icon={Lock} size={14} /></span>{m.database_read_only()}
+						</p>
+					{/if}
+				</WorkspaceSheet>
+			</div>
+		{/if}
 		{#if sheet === 'monitor' && deploy}
 			<div bind:this={sheetBox} class="absolute inset-y-0 right-0 flex w-180 max-w-full">
 				<WorkspaceSheet icon={Activity} title={m.workspace_monitor()} meta={project.name} onclose={() => (sheet = null)}>

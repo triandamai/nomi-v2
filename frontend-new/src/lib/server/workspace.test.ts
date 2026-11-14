@@ -68,4 +68,20 @@ describe('a project’s workspace on the server', () => {
 		expect(await workspace.loadMonitor(event, 'p1', '1h')).toEqual({ metrics: { range: '1h', buckets: [] }, usage: null, logs: ['GET /menu 200'], note: 'tail' });
 		expect(backend.calls.map((call) => call.url.replace('http://api.test', '')).sort()).toEqual(['/api/projects/p1/deploy/logs?tail=40', '/api/projects/p1/deploy/metrics?range=1h', '/api/projects/p1/deploy/usage']);
 	});
+
+	it('lists the tables and reads the one asked for, with a statement it builds itself', async () => {
+		const { backend, event } = eventWith((call) =>
+			call.url.includes('/tables') ? json([{ schema: 'public', name: 'menu', rows_estimate: 10 }, { schema: 'public', name: 'orders', rows_estimate: 7 }]) : json({ columns: ['id'], rows: [[7]], truncated: false, rows_affected: null, took_ms: 3 }),
+		);
+		expect(await workspace.readDatabase(event, 'p1', 'production', 'public.orders')).toMatchObject({ table: { name: 'orders' }, rows: { columns: ['id'], rows: [[7]] } });
+		expect(backend.calls[1]).toMatchObject({ method: 'POST', url: 'http://api.test/api/projects/p1/database/query', body: { sql: 'SELECT * FROM "public"."orders" LIMIT 50', source: 'production' } });
+		const picked = eventWith((call) => (call.url.includes('/tables') ? json([{ schema: 'public', name: 'menu', rows_estimate: 10 }]) : json({ columns: [], rows: [], truncated: false, rows_affected: null, took_ms: 1 })));
+		expect(await workspace.readDatabase(picked.event, 'p1', 'development', 'public."; DROP TABLE x; --')).toMatchObject({ table: { name: 'menu' } });
+		expect(picked.backend.calls[1].body).toMatchObject({ sql: 'SELECT * FROM "public"."menu" LIMIT 50' });
+	});
+
+	it('passes on why the database can’t be read', async () => {
+		const { event } = eventWith(() => new Response('This project does not use a database.', { status: 404 }));
+		expect(await workspace.readDatabase(event, 'p1', 'development', null)).toEqual({ error: 'This project does not use a database.', status: 404 });
+	});
 });

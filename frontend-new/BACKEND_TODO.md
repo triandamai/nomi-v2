@@ -313,3 +313,12 @@ Found while building Projects (2026-11-14).
 - **Until then:** Domain shows the app's address (and where it moves on the next publish) and renames it.
 
 Found while building the workspace's Domain (2026-11-14).
+
+### A project's database: a dump, and editing rows
+- **Needed by:** *Flow / Build — Workspace tools* (U16wU) step 11, Screen / Database (xYgNi): Download dump and Edit rows.
+- **Why:** people can see their app's data but not take a copy of it, or fix a wrong row without asking the crew.
+- **What exists today:** `GET /api/projects/:id/database/tables`, `POST /database/query` (SQL as the owner), `POST /database/credentials`.
+- **Proposed contract:** `GET /api/projects/:id/database/dump?source=` (a `pg_dump` file); row edits by primary key, `PATCH /api/projects/:id/database/tables/:schema/:table/rows` `{ key, changes }`, so the browser never sends SQL.
+- **Until then:** Database reads tables and rows; changes go through Koda.
+
+Found while building the workspace's Database (2026-11-14).
