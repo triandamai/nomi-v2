@@ -29,7 +29,7 @@ describe('Chip', () => {
 
 	it('picks who to ask, with their mascot', async () => {
 		const { container } = await render(Chip, { kind: 'agent', label: 'Nomi', agent: 'nomi' });
-		expect(container.querySelector('svg[viewBox="0 0 96 96"]')?.getAttribute('width')).toBe('20');
+		expect(container.querySelector('svg[viewBox="0 0 48 48"]')?.getAttribute('width')).toBe('20');
 		expect(getComputedStyle(page.getByText('Nomi').element()).fontSize).toBe('13px');
 	});
 
