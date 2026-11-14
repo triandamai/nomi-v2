@@ -18,6 +18,9 @@
 	import { useUserActivity } from '$lib/userActivityFeed.svelte';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime';
 	import { setAttachmentLimits } from '$lib/attachments';
+	import SearchDialog from '$lib/components/SearchDialog.svelte';
+	import IconSearch from '$lib/components/icons/IconSearch.svelte';
+	import { searchDialog } from '$lib/searchDialog.svelte';
 	import type { LayoutData } from './$types';
 
 	let { data, children }: { data: LayoutData; children: Snippet } = $props();
@@ -102,6 +105,9 @@
 				<AgentShape size={28} face />
 				<span style="font-family: var(--md-ref-typeface-brand); font-size: 1.3125rem; font-weight: 800; letter-spacing: -0.045em">nomi</span>
 			</a>
+			<IconButton onclick={() => (searchDialog.open = true)} aria-label={m.search_title()} class="ml-auto">
+				<IconSearch size={24} />
+			</IconButton>
 			<a href="/notifications" class="bell" aria-label={inbox.unread > 0 ? m.notif_bell_unread({ count: inbox.unread }) : m.notif_title()}>
 				<IconInbox size={24} />
 				{#if inbox.unread > 0}<span class="bell__badge" aria-hidden="true">{badgeLabel(inbox.unread)}</span>{/if}
@@ -114,6 +120,8 @@
 	</div>
 </div>
 {/if}
+
+<SearchDialog />
 
 {#if snackbar}
 	{@const shown = snackbar}
@@ -128,7 +136,6 @@
 		justify-content: center;
 		width: 48px;
 		height: 48px;
-		margin-left: auto;
 		border-radius: var(--md-sys-shape-corner-full);
 		color: var(--md-sys-color-on-surface-variant);
 	}

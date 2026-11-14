@@ -542,6 +542,58 @@ export interface ProjectSummary {
 	deploys_count?: number;
 	files_count?: number;
 	deploy_url?: string | null;
+	/** Questions and approvals the crew is waiting on in the project's chats. */
+	waiting_on_you?: number;
+	/** Its latest finished publish. */
+	last_deploy?: { status: 'ok' | 'failed'; at: string } | null;
+	/** While live in production: down when it crashed since its last publish. */
+	live_status?: 'up' | 'down' | null;
+}
+
+/** One of a project's versions (`GET /api/projects/:id/versions`). */
+export interface ProjectVersion {
+	version: number;
+	/** The crew member whose reply made it ("Koda"), or the person whose change it was. */
+	by: { name: string | null; agent: string | null };
+	at: string;
+	/** The prompt the crew answered with it. */
+	summary: string | null;
+	files: number;
+	/** False when it was made before versions kept their files. */
+	restorable: boolean;
+	restored_from: number | null;
+	current: boolean;
+}
+
+export interface ProjectVersions {
+	versions: ProjectVersion[];
+	current: number;
+	has_more: boolean;
+}
+
+/** An app on the showcase (`GET /api/showcase`), to open or remix. */
+export interface ShowcaseApp {
+	id: string;
+	name: string;
+	blurb: string | null;
+	url: string;
+	stack: string;
+	team: string | null;
+	showcased_at: string;
+}
+
+export type SearchKind = 'chat' | 'memory' | 'file';
+
+/** One hit from `GET /api/search`. */
+export interface SearchResult {
+	kind: SearchKind;
+	/** The chat's id, the memory's id, or the file's path. */
+	id: string;
+	title: string;
+	snippet: string | null;
+	session_id?: string;
+	project_id?: string;
+	updated_at: string;
 }
 
 export interface ProjectList {

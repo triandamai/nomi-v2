@@ -133,25 +133,16 @@ Found while planning the working v2 (sign in, chat and build against the real AP
   - The choice is kept (`users.active_org_id`, migration `0110_active_org.sql`): later sign-ins and refreshes keep it while the person is still an active member, else fall back to their first workspace.
   - `frontend/`: Organizations marks the active workspace and offers "Switch"; the new token is stored like sign-in's.
 
-### A project's versions, listed and restorable
-- **Needed by:** the Build flows' version line ("version N by Koda"), and restoring a version that was never published.
-- **Why:** `projects.version` moves once per Koda reply (migration `0107`), but it's only exposed on publishes (`PublishRow.version`) and activity items.
-- **What exists today:**
-  - `GET /api/projects/:id/activity` shows versions as they happened.
-  - `POST .../deploy/publishes/:pid/rollback` restores a published one.
-- **Proposed contract:** `GET /api/projects/:id/versions` → `{versions: [{version, by, at, summary}]}`. `POST /api/projects/:id/versions/:v/restore` → 202.
-- **Until then:** versions appear in the activity and on publishes. Rollback is offered for publishes only.
+### A project's versions, listed and restorable — done
+- **Built:** `GET /api/projects/:id/versions?before=&limit=` → `{ versions: [{ version, by: { name, agent }, at, summary, files, restorable, restored_from, current }], current, has_more }`, newest first; `summary` is the prompt Koda's version answered.
+  - `POST /api/projects/:id/versions/:v/restore` → 202 `{ version, restored_from }`: puts the files back as a new version made by the person (builders only; 409 for a version from before files were kept).
+  - Migration `0120_project_version_files.sql`: `project_versions` and `project_version_files`; every file's bytes are kept once per content (`versions/<project>/<sha256>` in project storage, `project_files.blob_sha`), recorded on each version bump. Older files are kept on the project's next change.
+  - `frontend/`: the project's Members sheet has a Versions tab with Restore.
 
-Found while building the app shell (App / Home, the account menu and the workspace switcher, 2026-11-10).
-
-### Search chats, memory and files
-- **Needed by:** *App / Home* (`Vr4nn`), the top bar's Search (`u8pcLQ`): "Search chats, memory, files ⌘K".
-- **Why:** people can't find an old chat, a remembered fact or a file without scrolling through each list.
-- **What exists today:**
-  - Only the lists themselves: `GET /api/sessions` (every chat, no query), `GET /api/memory`, and a project's files.
-  - The only search routes are an admin one (`/api/admin/tools/web_search/test`) and `GET /api/projects/:id/transfer/orgs`.
-- **Proposed contract:** `GET /api/search?q=&kinds=chat,memory,file&limit=20` → `{ results: [{ kind: "chat"|"memory"|"file", id, title, snippet, session_id?, project_id?, updated_at }] }`: the person's own things (and their projects' files) only, best match first.
-- **Until then:** the top bar has no search box. ⌘K opens a new chat, as the sidebar shows.
+### Search chats, memory and files — done
+- **Built:** `GET /api/search?q=&kinds=chat,memory,file&limit=20` → `{ results: [{ kind, id, title, snippet, session_id?, project_id?, updated_at }] }`: case-insensitive matching (ILIKE, wildcards literal) over the person's own chats in the active workspace (title and messages), their memory, and file paths in that workspace's projects they can open. Title and file-name hits first, then newest.
+  - `frontend/`: a search dialog in the app shell (⌘K / Ctrl+K, Search in the drawer and the phone's app bar).
+- **Still open:** file contents aren't searched (paths only).
 
 ### A person's pending workspace invites — done
 - **Built:** `GET /api/invites` → `{ invites: [{ code, org_id, org_name, inviter, role, projects, expires_at, project: { id, name } | null }] }`: open invites to any of the person's addresses, for workspaces they aren't in yet, newest first.
@@ -278,12 +269,11 @@ Found while building Settings › Workspaces (2026-11-13).
 
 Found while building Settings › Workspace (2026-11-13).
 
-### Projects: renaming, "Needs you", community apps
-- **Needed by:** *App / Projects* (JyWON) and its flows: Rename and Duplicate in the card menu, the Needs attention tab and the Needs answer card (Koda waiting on questions), the failed and down states, and Community (apps to remix).
-- **Why:** a project keeps the name "New project" forever, and people can't see which projects are waiting on them without opening each.
-- **What exists today:** `GET /api/projects` (status `planning` / `building` / `ready`, `deploy_url`, counts), `POST /api/projects`, `DELETE /api/projects/:id`, `/showcase` per project (no listing).
-- **Proposed contract:** `PATCH /api/projects/:id` `{ name, description }`; `POST /api/projects/:id/duplicate`; on each summary `waiting_on_you: number` (open questions), `last_deploy: { status: "ok" | "failed", at }` and `live_status: "up" | "down"`; `GET /api/showcase` (public apps to remix).
-- **Until then:** cards are live, building or draft; Needs attention stays empty.
+### Projects: renaming, "Needs you", community apps — done
+- **Built:** `PATCH /api/projects/:id` `{ name?, description? }` (builders); `POST /api/projects/:id/duplicate` `{ name?, org_id? }` → 201 `{ session_id, project_id }` (files, stack, description and plan; not its publishing, data or members).
+  - Summaries carry `waiting_on_you` (unanswered `questions` cards and pending approvals in its chats), `last_deploy: { status: "ok" | "failed", at }` and `live_status: "up" | "down"` (down after a `service.crashed` in the last 30 minutes with no publish since; null when not live).
+  - `GET /api/showcase` already listed the apps on show; added `POST /api/showcase/:id/remix` → 201 `{ session_id, project_id }`, a copy into the person's workspace for projects.
+  - `frontend/`: Rename and Duplicate in the card menu, a "Needs you" badge and the Needs attention tab, Community lists apps on show with Remix, and the showcase page has Remix.
 
 Found while building Projects (2026-11-14).
 
