@@ -57,7 +57,7 @@
 			max_org_members: null,
 			max_custom_crew: null,
 			max_storage_mb: null,
-			custom_domain: false,
+			custom_domain: true,
 			sandbox_size: null,
 			all_models: true,
 			model_ids: [],
