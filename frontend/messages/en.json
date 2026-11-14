@@ -1917,8 +1917,6 @@
 	"config_google_redirect_uri_hint": "e.g. https://nomi.example.com/connections/google/callback. List it under the client's authorized redirect URIs.",
 	"config_google_signin_redirect_uri": "Sign-in redirect URI",
 	"config_google_signin_redirect_uri_hint": "e.g. https://nomi.example.com/auth/google/callback. Also listed under the client's redirect URIs.",
-	"config_google_app_origins": "Other app origins",
-	"config_google_app_origins_hint": "Other web apps Google may come back to, comma separated, e.g. https://new.nomi.example.com. Each one's /auth/google/callback and /connections/google/callback must also be listed under the client's redirect URIs.",
 	"config_smtp": "SMTP",
 	"config_smtp_lede": "The mail server for sign-in codes, invites and notifications. Without one, emails are written to the server log.",
 	"config_smtp_host": "Host",

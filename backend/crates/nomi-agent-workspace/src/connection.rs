@@ -38,11 +38,6 @@ pub struct GoogleConfig {
     /// The app's Google sign-in callback page (GOOGLE_SIGNIN_REDIRECT_URI, else
     /// /auth/google/callback on the same site as `redirect_uri`).
     pub signin_redirect_uri: String,
-    /// Other web apps on this server that Google may answer, as origins
-    /// (`https://new.nomi.example.com`): a flow started there comes back to the same callback
-    /// path on that site (GOOGLE_APP_ORIGINS, comma or space separated). The sites of the two
-    /// redirect URIs are always allowed.
-    pub app_origins: Vec<String>,
     pub auth_url: String,
     pub token_url: String,
     pub revoke_url: String,
@@ -68,7 +63,6 @@ impl GoogleConfig {
             client_secret,
             redirect_uri,
             signin_redirect_uri,
-            app_origins: Vec::new(),
             auth_url: "https://accounts.google.com/o/oauth2/v2/auth".to_string(),
             token_url: "https://oauth2.googleapis.com/token".to_string(),
             revoke_url: "https://oauth2.googleapis.com/revoke".to_string(),
@@ -102,7 +96,6 @@ impl GoogleConfig {
                 "client_id" => "GOOGLE_CLIENT_ID",
                 "client_secret" => "GOOGLE_CLIENT_SECRET",
                 "redirect_uri" => "GOOGLE_REDIRECT_URI",
-                "app_origins" => "GOOGLE_APP_ORIGINS",
                 _ => "GOOGLE_SIGNIN_REDIRECT_URI",
             };
             std::env::var(name).ok()
@@ -117,21 +110,18 @@ impl GoogleConfig {
     }
 
     /// From Admin → Configuration's Google fields (`client_id`, `client_secret`, `redirect_uri`,
-    /// `signin_redirect_uri`, `app_origins`), as `get` answers them.
+    /// `signin_redirect_uri`), as `get` answers them.
     pub fn from_lookup(get: impl Fn(&str) -> Option<String>) -> Option<Self> {
         let get = |field: &str| get(field).map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
         let mut config = Self::new(get("client_id")?, get("client_secret")?, get("redirect_uri")?);
         if let Some(signin) = get("signin_redirect_uri") {
             config.signin_redirect_uri = signin;
         }
-        if let Some(origins) = get("app_origins") {
-            config.app_origins = origins.split([',', ' ', '\n']).filter_map(web_origin).collect();
-        }
         let get = |name: &str| std::env::var(name).ok().map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
         // Development only: every Google endpoint on one fake server.
         if let Some(base) = get("GOOGLE_FAKE_BASE_URL") {
             let fake = Self::all_at(&base);
-            config = Self { client_id: config.client_id, client_secret: config.client_secret, redirect_uri: config.redirect_uri, signin_redirect_uri: config.signin_redirect_uri, app_origins: config.app_origins, ..fake };
+            config = Self { client_id: config.client_id, client_secret: config.client_secret, redirect_uri: config.redirect_uri, signin_redirect_uri: config.signin_redirect_uri, ..fake };
         }
         Some(config)
     }
@@ -146,17 +136,17 @@ pub enum Callback {
     Workspace,
 }
 
-/// A flow was started from a web app Google isn't allowed to answer.
+/// A flow was started with an origin that isn't a web address.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OriginNotAllowed(pub String);
+pub struct InvalidOrigin(pub String);
 
-impl std::fmt::Display for OriginNotAllowed {
+impl std::fmt::Display for InvalidOrigin {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Google can't come back to {}. Add it to Google's app origins in Admin → Configuration, and its callback to the OAuth client.", self.0)
+        write!(f, "{:?} isn't a web address Google can come back to.", self.0)
     }
 }
 
-impl std::error::Error for OriginNotAllowed {}
+impl std::error::Error for InvalidOrigin {}
 
 /// The scheme, host and port of a web address (`https://nomi.example.com`), or `None` when it
 /// isn't one.
@@ -170,9 +160,10 @@ fn web_origin(url: &str) -> Option<String> {
 
 impl GoogleConfig {
     /// Where Google sends the person back for `callback`: the configured page, or, for a flow
-    /// started on the web app at `origin`, the same page on that site, so each app gets its own
-    /// people back. Only the redirect URIs' own sites and `app_origins` are allowed.
-    pub fn callback_for(&self, callback: Callback, origin: Option<&str>) -> Result<String, OriginNotAllowed> {
+    /// started on the web app at `origin`, the same page on that site, so each app (the app, the
+    /// new app) gets its own people back. Which sites may receive it is the OAuth client's list
+    /// of authorized redirect URIs: Google refuses any other, so this only checks it's a web address.
+    pub fn callback_for(&self, callback: Callback, origin: Option<&str>) -> Result<String, InvalidOrigin> {
         let configured = match callback {
             Callback::SignIn => &self.signin_redirect_uri,
             Callback::Workspace => &self.redirect_uri,
@@ -180,15 +171,11 @@ impl GoogleConfig {
         let Some(origin) = origin.map(str::trim).filter(|o| !o.is_empty()) else {
             return Ok(configured.clone());
         };
-        let wanted = web_origin(origin).ok_or_else(|| OriginNotAllowed(origin.to_string()))?;
+        let wanted = web_origin(origin).ok_or_else(|| InvalidOrigin(origin.to_string()))?;
         if web_origin(configured).as_deref() == Some(wanted.as_str()) {
             return Ok(configured.clone());
         }
-        let allowed = [&self.redirect_uri, &self.signin_redirect_uri].into_iter().filter_map(|u| web_origin(u)).chain(self.app_origins.iter().cloned()).any(|o| o == wanted);
-        if !allowed {
-            return Err(OriginNotAllowed(wanted));
-        }
-        let page = reqwest::Url::parse(configured).map_err(|_| OriginNotAllowed(wanted.clone()))?;
+        let page = reqwest::Url::parse(configured).map_err(|_| InvalidOrigin(wanted.clone()))?;
         let query = page.query().map(|q| format!("?{q}")).unwrap_or_default();
         Ok(format!("{wanted}{}{query}", page.path()))
     }

@@ -36,7 +36,6 @@ async fn google_signs_people_up_in_links_and_unlinks(pool: PgPool) {
     std::env::set_var("GOOGLE_CLIENT_SECRET", "secret");
     std::env::set_var("GOOGLE_REDIRECT_URI", "http://app.test/connections/google/callback");
     std::env::set_var("GOOGLE_FAKE_BASE_URL", server.uri());
-    std::env::set_var("GOOGLE_APP_ORIGINS", "http://new.app.test, http://localhost:5174");
     let app = App::new(pool.clone());
 
     let (status, available) = app.call("GET", "/api/auth/google/available", None, None).await;
@@ -107,14 +106,14 @@ async fn callbacks_follow_the_app_started_on(app: &App, google_at: &MockServer) 
         (None, "http://app.test/auth/google/callback"),
         (Some("http://app.test"), "http://app.test/auth/google/callback"),
         (Some("http://new.app.test/"), "http://new.app.test/auth/google/callback"),
-        (Some("http://localhost:5174"), "http://localhost:5174/auth/google/callback"),
+        (Some("http://localhost:5175"), "http://localhost:5175/auth/google/callback"),
     ] {
         let (status, started) = app.call("POST", "/api/auth/google/start", None, Some(start(origin))).await;
         assert_eq!(status, StatusCode::OK, "{origin:?}: {started}");
         assert_eq!(redirect_of(started["url"].as_str().unwrap()), expected, "{origin:?}");
     }
-    // Anywhere else is refused, not quietly sent to the configured page.
-    for origin in ["http://evil.test", "javascript:alert(1)", "http://new.app.test:8080"] {
+    // Which sites Google answers is the OAuth client's list; only what isn't a web address is refused.
+    for origin in ["javascript:alert(1)", "new.app.test", "file:///etc"] {
         assert_eq!(app.call("POST", "/api/auth/google/start", None, Some(start(Some(origin)))).await.0, StatusCode::BAD_REQUEST, "{origin}");
     }
 
@@ -136,14 +135,14 @@ async fn callbacks_follow_the_app_started_on(app: &App, google_at: &MockServer) 
     let (status, started) = app.call("POST", "/api/auth/google/link", Some(&cy.token), Some(start(Some("http://new.app.test")))).await;
     assert_eq!(status, StatusCode::OK, "{started}");
     assert_eq!(redirect_of(started["url"].as_str().unwrap()), "http://new.app.test/auth/google/callback");
-    assert_eq!(app.call("POST", "/api/auth/google/link", Some(&cy.token), Some(start(Some("http://evil.test")))).await.0, StatusCode::BAD_REQUEST);
+    assert_eq!(app.call("POST", "/api/auth/google/link", Some(&cy.token), Some(start(Some("not an origin")))).await.0, StatusCode::BAD_REQUEST);
     let (status, started) = app.send("POST", "/api/connections/google/start", &cy, json!({"services": ["gmail"], "origin": "http://new.app.test"})).await;
     assert_eq!(status, StatusCode::OK, "{started}");
     assert_eq!(redirect_of(started["url"].as_str().unwrap()), "http://new.app.test/connections/google/callback");
     let (status, started) = app.send("POST", "/api/connections/google/start", &cy, json!({"services": ["gmail"]})).await;
     assert_eq!(status, StatusCode::OK, "{started}");
     assert_eq!(redirect_of(started["url"].as_str().unwrap()), "http://app.test/connections/google/callback");
-    assert_eq!(app.send("POST", "/api/connections/google/start", &cy, json!({"services": ["gmail"], "origin": "http://evil.test"})).await.0, StatusCode::BAD_REQUEST);
+    assert_eq!(app.send("POST", "/api/connections/google/start", &cy, json!({"services": ["gmail"], "origin": "not an origin"})).await.0, StatusCode::BAD_REQUEST);
 }
 
 /// Connecting Google for the Workspace agent, on the same fake Google (the OAuth client is

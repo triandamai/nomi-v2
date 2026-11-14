@@ -49,7 +49,6 @@ export const SECTIONS: Record<string, { title: () => string; lede: () => string;
 			client_secret: { label: m.config_google_client_secret },
 			redirect_uri: { label: m.config_google_redirect_uri, hint: m.config_google_redirect_uri_hint },
 			signin_redirect_uri: { label: m.config_google_signin_redirect_uri, hint: m.config_google_signin_redirect_uri_hint },
-			app_origins: { label: m.config_google_app_origins, hint: m.config_google_app_origins_hint },
 		},
 	},
 	github: {
