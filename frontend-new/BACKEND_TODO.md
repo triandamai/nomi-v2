@@ -248,12 +248,13 @@ Found while building Settings › Memory & context (2026-11-13).
 
 Found while building Settings › Connections (2026-11-13).
 
-### A person's own crew: members, switching one off, permissions, soul.md, activity
-- **Needed by:** *App / Settings / Crew* (vVUeh, New member u377E4, Templates u2auTN): "Add crew member" and New member, Templates, the On switch on each member (and "paused" in the roster), Permissions per member (Allow / Ask first / Never), soul.md with its versions and Edit, and Activity · N.
-- **Why:** people can see who's on the crew and set Nomi's and Koda's models, but can't shape the crew: make a member of their own, turn one off, or limit what one may do without asking.
-- **What exists today:** `GET /api/agents` (name, role, state, status, custom or not); custom members are made by admins (`/api/admin/dynamic-agents`); Nomi's chat model and Koda's coding model; the personality's versions (`GET /api/personality/history`, `POST /api/personality/rollback`).
-- **Proposed contract:** `PUT /api/agents/:type` `{ enabled }`; `GET|PUT /api/agents/:type/permissions` `[{ key, label, level: "allow" | "ask" | "never" }]`; `GET|PUT /api/agents/:type/soul` `{ text, version }` with `/versions`; `GET /api/agents/:type/activity`; `POST /api/agents` (a person's own member, from scratch or a template) and `GET /api/agents/templates`.
-- **Until then:** Crew lists the members, Nomi's and Koda's models, what each is doing, and the personality's versions with Restore.
+### A person's own crew: members, switching one off, permissions, soul.md, activity — done
+- **Built:** `PUT /api/agents/:type {enabled}` → `{agent_type, enabled}` (400 for Nomi, 404 for a member not in their crew). `GET /api/agents` adds `enabled`, `is_own`, `is_default`, and `state: "paused"` for a switched-off member. The router never offers a switched-off member to the classifier, an `@mention` of one posts "… is switched off …" from Nomi and Nomi answers, an ongoing conversation with one ends, and delegation / `ask_agent` to one is refused with a reason.
+  - `GET|PUT /api/agents/:type/permissions` `[{key, label, description, level, default_level}]` (PUT takes `[{key, level}]`), by tool. The turn honours them: `never` refuses the call, `ask` always brings the existing approval card (even over an "always allow" rule), `allow` runs without one.
+  - `GET|PUT /api/agents/:type/soul` `{text, version}`, `GET /soul/versions`, `POST /soul/rollback {version}` (like the personality's). The soul.md joins the member's instructions on every turn.
+  - `GET /api/agents/:type/activity` → `{items: [{kind: task|tool|started|finished, text, status, session_id, chat_title, at}]}` from delegations and turn events, last 30 days.
+  - `POST /api/agents` `{template?, name?, role?, soul?, tools?, shape?, tone?, motion?}` → 201 `{agent_type, name, role, soul_version}`: a dynamic agent only that person sees and is routed to (409 for a name already in their crew, at most 20). `DELETE /api/agents/:type` removes one's own. `GET /api/agents/templates` (four, in code; their soul text in `prompts.rs`). Admin dynamic agents no longer list people's own.
+  - Migration `0136_personal_crew.sql`. `frontend/`: Crew links each member to its page (On switch, Permissions, soul.md with Edit and versions, Activity · N, Remove for one's own), shows "Paused", and New member (from a template or from scratch).
 
 Found while building Settings › Crew (2026-11-13).
 

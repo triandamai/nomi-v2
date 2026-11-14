@@ -1440,3 +1440,49 @@ export interface TransferOrgSummary {
 	owner_name: string | null;
 	my_role: string | null;
 }
+
+/** What a crew member may do with one tool, for this person (GET /api/agents/:type/permissions). */
+export type CrewPermissionLevel = 'allow' | 'ask' | 'never';
+
+export interface CrewPermission {
+	key: string;
+	label: string;
+	description: string;
+	level: CrewPermissionLevel;
+	default_level: CrewPermissionLevel;
+}
+
+/** A crew member's soul.md (GET /api/agents/:type/soul); version 0 before one is written. */
+export interface CrewSoul {
+	text: string;
+	version: number;
+}
+
+export interface CrewSoulVersion {
+	version: number;
+	text: string;
+	created_at: string;
+	is_current: boolean;
+}
+
+/** One line of a crew member's Activity (GET /api/agents/:type/activity). */
+export interface CrewActivityItem {
+	kind: 'task' | 'tool' | 'started' | 'finished';
+	text: string;
+	status: string | null;
+	session_id: string | null;
+	chat_title: string | null;
+	at: string;
+}
+
+/** A starting point for a member of one's own (GET /api/agents/templates). */
+export interface CrewTemplate {
+	key: string;
+	name: string;
+	role: string;
+	soul: string;
+	tools: string[];
+	shape: string;
+	tone: string;
+	motion: string;
+}
