@@ -3341,6 +3341,7 @@ dependencies = [
  "nomi-embedding",
  "nomi-llm",
  "nomi-sandbox",
+ "nomi-settings",
  "nomi-test-support",
  "serde",
  "serde_json",

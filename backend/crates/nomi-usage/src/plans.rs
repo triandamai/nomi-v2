@@ -34,11 +34,34 @@ pub struct PlanRow {
     /// When false, only the models in `model_ids` are included.
     pub all_models: bool,
     pub model_ids: Vec<Uuid>,
+    /// Price per month in whole currency units; 0 means it can't be bought.
+    pub price_amount: i64,
+    pub currency: String,
+    /// A cheaper monthly price, while `promo_ends_at` is in the future (or unset).
+    pub promo_price_amount: Option<i64>,
 }
+
+impl PlanRow {
+    /// The promo's monthly price while it is on: set, and not past its end date.
+    pub fn active_promo_price(&self, now: DateTime<Utc>) -> Option<i64> {
+        self.promo_price_amount.filter(|_| self.promo_ends_at.is_none_or(|end| end > now))
+    }
+
+    /// Whether people can pay for it: listed, and with a price.
+    pub fn for_sale(&self) -> bool {
+        self.is_active && self.price_amount > 0
+    }
+}
+
+/// The currency a plan is priced in unless an admin picks another.
+pub const DEFAULT_CURRENCY: &str = "IDR";
+/// Length of an ISO 4217 currency code.
+const CURRENCY_CODE_LEN: usize = 3;
 
 const PLAN_COLUMNS: &str = "id, slug, name, description, monthly_tokens, price_label, features, card_tone, promo_label, \
      promo_price_label, promo_ends_at, is_default, is_active, sort_order, max_projects, max_orgs, max_org_members, \
      max_custom_crew, max_storage_mb, custom_domain, sandbox_size, all_models, \
+     price_amount, currency, promo_price_amount, \
      ARRAY(SELECT model_id FROM plan_models WHERE plan_id = plans.id ORDER BY model_id) AS model_ids";
 
 /// What an admin fills in for a plan.
@@ -80,6 +103,16 @@ pub struct PlanInput {
     pub all_models: bool,
     #[serde(default)]
     pub model_ids: Vec<Uuid>,
+    #[serde(default)]
+    pub price_amount: i64,
+    #[serde(default = "default_currency")]
+    pub currency: String,
+    #[serde(default)]
+    pub promo_price_amount: Option<i64>,
+}
+
+fn default_currency() -> String {
+    DEFAULT_CURRENCY.to_string()
 }
 
 fn default_tone() -> String {
@@ -124,6 +157,13 @@ impl PlanInput {
         if self.sandbox_size.as_deref().is_some_and(|s| nomi_sandbox::Size::parse(s).is_none()) {
             return Err("unknown sandbox size");
         }
+        self.currency = self.currency.trim().to_ascii_uppercase();
+        if self.currency.len() != CURRENCY_CODE_LEN || !self.currency.chars().all(|c| c.is_ascii_uppercase()) {
+            return Err("currency must be a 3-letter code such as IDR");
+        }
+        if self.price_amount < 0 || negative(self.promo_price_amount) {
+            return Err("prices can't be negative");
+        }
         self.model_ids.sort();
         self.model_ids.dedup();
         Ok(self)
@@ -151,7 +191,7 @@ async fn get_plan_in(conn: &mut PgConnection, id: Uuid) -> Result<Option<PlanRow
     sqlx::query_as(&format!("SELECT {PLAN_COLUMNS} FROM plans WHERE id = $1")).bind(id).fetch_optional(conn).await
 }
 
-async fn default_plan_in(conn: &mut PgConnection) -> Result<PlanRow, sqlx::Error> {
+pub(crate) async fn default_plan_in(conn: &mut PgConnection) -> Result<PlanRow, sqlx::Error> {
     sqlx::query_as(&format!("SELECT {PLAN_COLUMNS} FROM plans ORDER BY is_default DESC, sort_order LIMIT 1")).fetch_one(conn).await
 }
 
@@ -160,8 +200,9 @@ pub async fn create_plan(pool: &PgPool, input: &PlanInput) -> Result<PlanRow, sq
     let id: Uuid = sqlx::query_scalar(
         "INSERT INTO plans (slug, name, description, monthly_tokens, price_label, features, card_tone, promo_label, \
                             promo_price_label, promo_ends_at, is_active, sort_order, max_projects, max_orgs, max_org_members, \
-                            max_custom_crew, max_storage_mb, custom_domain, sandbox_size, all_models) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20) RETURNING id",
+                            max_custom_crew, max_storage_mb, custom_domain, sandbox_size, all_models, \
+                            price_amount, currency, promo_price_amount) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23) RETURNING id",
     )
     .bind(&input.slug)
     .bind(&input.name)
@@ -183,6 +224,9 @@ pub async fn create_plan(pool: &PgPool, input: &PlanInput) -> Result<PlanRow, sq
     .bind(input.custom_domain)
     .bind(&input.sandbox_size)
     .bind(input.all_models)
+    .bind(input.price_amount)
+    .bind(&input.currency)
+    .bind(input.promo_price_amount)
     .fetch_one(&mut *tx)
     .await?;
     save_models(&mut tx, id, &input.model_ids).await?;
@@ -197,7 +241,7 @@ pub async fn update_plan(pool: &PgPool, id: Uuid, input: &PlanInput) -> Result<O
              card_tone = $8, promo_label = $9, promo_price_label = $10, promo_ends_at = $11, \
              is_active = $12 OR is_default, sort_order = $13, max_projects = $14, max_orgs = $15, max_org_members = $16, \
              max_custom_crew = $17, max_storage_mb = $18, custom_domain = $19, sandbox_size = $20, all_models = $21, \
-             updated_at = now() \
+             price_amount = $22, currency = $23, promo_price_amount = $24, updated_at = now() \
          WHERE id = $1",
     )
     .bind(id)
@@ -221,6 +265,9 @@ pub async fn update_plan(pool: &PgPool, id: Uuid, input: &PlanInput) -> Result<O
     .bind(input.custom_domain)
     .bind(&input.sandbox_size)
     .bind(input.all_models)
+    .bind(input.price_amount)
+    .bind(&input.currency)
+    .bind(input.promo_price_amount)
     .execute(&mut *tx)
     .await?
     .rows_affected();
@@ -271,7 +318,8 @@ pub async fn delete_plan(pool: &PgPool, id: Uuid) -> Result<DeletePlan, sqlx::Er
         return Ok(DeletePlan::IsDefault);
     }
     let used: bool = sqlx::query_scalar(
-        "SELECT EXISTS (SELECT 1 FROM user_subscriptions WHERE plan_id = $1) OR EXISTS (SELECT 1 FROM subscription_changes WHERE plan_id = $1)",
+        "SELECT EXISTS (SELECT 1 FROM user_subscriptions WHERE plan_id = $1) OR EXISTS (SELECT 1 FROM subscription_changes WHERE plan_id = $1) \
+         OR EXISTS (SELECT 1 FROM payments WHERE plan_id = $1)",
     )
     .bind(id)
     .fetch_one(pool)
@@ -293,6 +341,24 @@ pub struct Subscription {
     pub note: Option<String>,
     /// Tokens a month they may use on Nomi's models: the override while it lasts, else the plan's.
     pub monthly_tokens: i64,
+    /// When the paid period ends; `None` for a plan nobody paid for (the default, or an admin's).
+    pub paid_until: Option<DateTime<Utc>>,
+    pub term_months: Option<i32>,
+    pub auto_renew: bool,
+    /// The paid period and its grace have passed: they're on the default plan again.
+    pub lapsed: bool,
+}
+
+/// What `user_subscriptions` holds for one person.
+#[derive(sqlx::FromRow)]
+struct SubscriptionRow {
+    plan_id: Uuid,
+    quota_override: Option<i64>,
+    override_until: Option<DateTime<Utc>>,
+    note: Option<String>,
+    paid_until: Option<DateTime<Utc>>,
+    term_months: Option<i32>,
+    auto_renew: bool,
 }
 
 pub async fn subscription_for(pool: &PgPool, user_id: Uuid) -> Result<Subscription, sqlx::Error> {
@@ -301,25 +367,54 @@ pub async fn subscription_for(pool: &PgPool, user_id: Uuid) -> Result<Subscripti
 
 /// [`subscription_for`] on a connection already in hand.
 pub async fn subscription_in(conn: &mut PgConnection, user_id: Uuid) -> Result<Subscription, sqlx::Error> {
-    let row: Option<(Uuid, Option<i64>, Option<DateTime<Utc>>, Option<String>)> =
-        sqlx::query_as("SELECT plan_id, quota_override, override_until, note FROM user_subscriptions WHERE user_id = $1")
-            .bind(user_id)
-            .fetch_optional(&mut *conn)
-            .await?;
-    let (plan, quota_override, override_until, note) = match row {
-        Some((plan_id, quota_override, override_until, note)) => {
-            let plan = match get_plan_in(&mut *conn, plan_id).await? {
-                Some(plan) => plan,
-                None => default_plan_in(&mut *conn).await?,
-            };
-            (plan, quota_override, override_until, note)
+    let row: Option<SubscriptionRow> = sqlx::query_as(
+        "SELECT plan_id, quota_override, override_until, note, paid_until, term_months, auto_renew \
+         FROM user_subscriptions WHERE user_id = $1",
+    )
+    .bind(user_id)
+    .fetch_optional(&mut *conn)
+    .await?;
+    let Some(row) = row else {
+        let plan = default_plan_in(&mut *conn).await?;
+        let monthly_tokens = plan.monthly_tokens;
+        return Ok(Subscription {
+            plan,
+            quota_override: None,
+            override_until: None,
+            note: None,
+            monthly_tokens,
+            paid_until: None,
+            term_months: None,
+            auto_renew: true,
+            lapsed: false,
+        });
+    };
+    // A paid period that ran out (and its grace) puts them back on the default plan; an admin's
+    // override of the allowance is theirs to end, so it stays.
+    let grace_days = crate::billing::config().await.grace_days;
+    let lapsed = row.paid_until.is_some_and(|until| crate::billing::is_lapsed(until, Utc::now(), grace_days));
+    let plan = if lapsed {
+        default_plan_in(&mut *conn).await?
+    } else {
+        match get_plan_in(&mut *conn, row.plan_id).await? {
+            Some(plan) => plan,
+            None => default_plan_in(&mut *conn).await?,
         }
-        None => (default_plan_in(&mut *conn).await?, None, None, None),
     };
     // An override past its date no longer counts.
-    let active_override = quota_override.filter(|_| override_until.is_none_or(|until| until > Utc::now()));
+    let active_override = row.quota_override.filter(|_| row.override_until.is_none_or(|until| until > Utc::now()));
     let monthly_tokens = active_override.unwrap_or(plan.monthly_tokens);
-    Ok(Subscription { plan, quota_override: active_override, override_until: active_override.and(override_until), note, monthly_tokens })
+    Ok(Subscription {
+        plan,
+        quota_override: active_override,
+        override_until: active_override.and(row.override_until),
+        note: row.note,
+        monthly_tokens,
+        paid_until: row.paid_until,
+        term_months: row.term_months,
+        auto_renew: row.auto_renew,
+        lapsed,
+    })
 }
 
 /// An admin's change to someone's subscription.
@@ -337,12 +432,15 @@ pub struct SubscriptionChange {
 pub async fn change_subscription(pool: &PgPool, user_id: Uuid, change: &SubscriptionChange, changed_by: Uuid) -> Result<(), sqlx::Error> {
     let override_until = change.quota_override.and(change.override_until);
     let note = change.note.as_deref().map(str::trim).filter(|n| !n.is_empty());
+    // A plan an admin assigns has no end: only the same plan keeps the paid period it already has.
     let mut tx = pool.begin().await?;
     sqlx::query(
         "INSERT INTO user_subscriptions (user_id, plan_id, quota_override, override_until, note, updated_by) \
          VALUES ($1, $2, $3, $4, $5, $6) \
-         ON CONFLICT (user_id) DO UPDATE SET plan_id = $2, quota_override = $3, override_until = $4, note = $5, \
-             updated_by = $6, updated_at = now()",
+         ON CONFLICT (user_id) DO UPDATE SET \
+             paid_until = CASE WHEN user_subscriptions.plan_id = $2 THEN user_subscriptions.paid_until END, \
+             term_months = CASE WHEN user_subscriptions.plan_id = $2 THEN user_subscriptions.term_months END, \
+             plan_id = $2, quota_override = $3, override_until = $4, note = $5, updated_by = $6, updated_at = now()",
     )
     .bind(user_id)
     .bind(change.plan_id)
@@ -415,6 +513,9 @@ mod tests {
             sandbox_size: None,
             all_models: true,
             model_ids: vec![],
+            price_amount: 0,
+            currency: "idr ".into(),
+            promo_price_amount: None,
         }
     }
 
@@ -432,5 +533,9 @@ mod tests {
         assert!(PlanInput { sandbox_size: Some("huge".into()), ..input() }.validate().is_err());
         assert_eq!(PlanInput { sandbox_size: Some(" Small ".into()), ..input() }.validate().unwrap().sandbox_size.as_deref(), Some("small"));
         assert_eq!(PlanInput { sandbox_size: Some(" ".into()), ..input() }.validate().unwrap().sandbox_size, None);
+        assert_eq!(ok.currency, "IDR");
+        assert!(PlanInput { currency: "RUPIAH".into(), ..input() }.validate().is_err());
+        assert!(PlanInput { price_amount: -1, ..input() }.validate().is_err());
+        assert!(PlanInput { promo_price_amount: Some(-1), ..input() }.validate().is_err());
     }
 }

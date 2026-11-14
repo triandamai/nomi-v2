@@ -7,6 +7,7 @@ edition = "2021"
 nomi-llm = { path = "../nomi-llm" }
 nomi-embedding = { path = "../nomi-embedding" }
 nomi-sandbox = { path = "../nomi-sandbox" }
+nomi-settings = { path = "../nomi-settings" }
 async-trait = "0.1"
 async-stream = "0.3.6"
 futures-util = "0.3.33"
