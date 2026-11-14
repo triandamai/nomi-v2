@@ -264,6 +264,18 @@ async fn admin_model_config(pool: &PgPool, settings_key: &[u8; 32], model: setti
     }
 }
 
+/// Whether the person's plan includes this one of Nomi's models. A lookup that fails locks
+/// nothing, so a database hiccup never takes a model away.
+async fn plan_allows(pool: &PgPool, user_id: uuid::Uuid, model_id: uuid::Uuid) -> bool {
+    match nomi_usage::entitlements::for_user(pool, user_id).await {
+        Ok(plan) => nomi_usage::entitlements::model_allowed(&plan, model_id),
+        Err(e) => {
+            tracing::error!(%user_id, error = %e, "failed to load the plan's entitlements");
+            true
+        }
+    }
+}
+
 async fn resolve_for_purpose(
     pool: &PgPool,
     user_id: uuid::Uuid,
@@ -319,6 +331,10 @@ async fn session_model(pool: &PgPool, user_id: uuid::Uuid, session_id: uuid::Uui
     match picked.key {
         ModelKey::Admin(id) => {
             let model = settings::llm_models::get_admin_llm_model(pool, id).await.ok().flatten().filter(|m| m.enabled)?;
+            // Not in their plan (any more): the chat runs on their default instead.
+            if !plan_allows(pool, user_id, id).await {
+                return None;
+            }
             let label = model.label.clone();
             let support = media_support_for(&model.provider, &model.model_id, model.media_inputs.as_deref());
             let config = admin_model_config(pool, settings_key, model).await?;
@@ -358,7 +374,11 @@ async fn resolve_coding_model(pool: &PgPool, user_id: uuid::Uuid, settings_key: 
     });
     let picked = match choice {
         CodingChoice::SameAsChat => return None,
-        CodingChoice::Admin(id) => settings::llm_models::get_admin_llm_model(pool, id).await.ok().flatten().filter(|m| m.enabled),
+        CodingChoice::Admin(id) => match settings::llm_models::get_admin_llm_model(pool, id).await.ok().flatten().filter(|m| m.enabled) {
+            // Not in their plan: the admin's coding model, as when their pick is gone.
+            Some(model) if plan_allows(pool, user_id, model.id).await => Some(model),
+            _ => None,
+        },
         CodingChoice::Default => None,
     };
     // Their pick was deleted, or they left it to Nomi: the admin's coding model.
@@ -381,20 +401,22 @@ async fn resolve_llm_model_with_media(pool: &PgPool, user_id: uuid::Uuid, settin
 
     if let Some(row) = selection {
         if let Some(admin_model_id) = row.admin_model_id {
-            // A model an admin switched off falls back to the default.
-            if let Some(admin_model) = settings::llm_models::get_admin_llm_model(pool, admin_model_id)
+            // A model an admin switched off, or that their plan doesn't include, falls back to the default.
+            let listed = settings::llm_models::get_admin_llm_model(pool, admin_model_id)
                 .await
                 .expect("failed to query admin_llm_models")
-                .filter(|m| m.enabled)
-            {
-                let (id, label) = (admin_model.id, admin_model.label.clone());
-                let support = media_support_for(&admin_model.provider, &admin_model.model_id, admin_model.media_inputs.as_deref());
-                if let Some(config) = admin_model_config(pool, settings_key, admin_model).await {
-                    let tag = tag_for(&config, Some(id), false, label);
-                    return (config, tag, support);
+                .filter(|m| m.enabled);
+            if let Some(admin_model) = listed {
+                if plan_allows(pool, user_id, admin_model.id).await {
+                    let (id, label) = (admin_model.id, admin_model.label.clone());
+                    let support = media_support_for(&admin_model.provider, &admin_model.model_id, admin_model.media_inputs.as_deref());
+                    if let Some(config) = admin_model_config(pool, settings_key, admin_model).await {
+                        let tag = tag_for(&config, Some(id), false, label);
+                        return (config, tag, support);
+                    }
+                    // Decryption failed (e.g. a rotated/mismatched SETTINGS_ENCRYPTION_KEY) —
+                    // fall through to the admin default below.
                 }
-                // Decryption failed (e.g. a rotated/mismatched SETTINGS_ENCRYPTION_KEY) —
-                // fall through to the admin default below.
             }
             // Referenced admin model no longer exists — fall through to the default below.
         } else if let Some(resolved) = own_model(pool, user_id, settings_key, row).await {

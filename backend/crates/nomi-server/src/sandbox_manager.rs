@@ -547,12 +547,23 @@ impl SandboxManager {
         db(sqlx::query_scalar("SELECT count(*) FROM sandbox_sessions WHERE project_id = $1").bind(project_id).fetch_one(&self.pool).await)
     }
 
+    /// The size the project's owner's plan gives their sandboxes, else the platform default.
+    async fn size_for(&self, project_id: Uuid) -> nomi_sandbox::Size {
+        match nomi_usage::entitlements::for_project_owner(&self.pool, project_id).await {
+            Ok(plan) => plan.and_then(|p| p.sandbox_size).and_then(|name| nomi_sandbox::Size::parse(&name)).unwrap_or(self.cfg.size),
+            Err(e) => {
+                tracing::error!(%project_id, error = %e, "failed to load the plan's sandbox size");
+                self.cfg.size
+            }
+        }
+    }
+
     async fn create(&self, row: &SandboxRow) -> Result<SandboxId, Exit> {
         self.take_start(row).await?;
         self.set_state(row.project_id, State::Creating).await?;
         let n = self.generation(row.project_id).await?;
         let spec = CreateSpec {
-            size: self.cfg.size,
+            size: self.size_for(row.project_id).await,
             ttl: self.ttl(),
             from_snapshot: None,
             idempotency_key: format!("nomi-project-{}-{n}", row.project_id),

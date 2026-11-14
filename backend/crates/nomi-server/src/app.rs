@@ -348,6 +348,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/attachments/:id/content", get(attachments_routes::get_content))
         .route("/api/attachments/:id/preview", get(attachments_routes::get_preview))
         .route("/api/plans", get(plans_routes::list_for_user))
+.route("/api/entitlements", get(plans_routes::entitlements_for_user))
         .route("/api/admin/plans", get(plans_routes::admin_list).post(plans_routes::admin_create))
         .route("/api/admin/plans/:id", put(plans_routes::admin_update).delete(plans_routes::admin_delete))
         .route("/api/admin/plans/:id/default", put(plans_routes::admin_set_default))
