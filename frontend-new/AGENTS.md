@@ -560,7 +560,12 @@ steps; what isn't there yet is left out, not drawn dead:
   workspace, or only the people added). Environment lists the variables' names (never their
   values), adds one (it applies on the next publish) and removes one. The pen's "INVITED" row for
   an invite still open isn't drawn: the project's members don't list open invites.
-- Share comes with its sheet; Export downloads the project as a zip. The pen's Share wears a download icon
+- Share (first flow, step 7) opens once the app is live: the link, its card (the project's name and
+  description), and public or unlisted, which is whether it's on show in the community (the
+  backend's showcase); Invite opens People. The pen's QR, embed and editing the card aren't there
+  (no backend). Export (step 8) says what it holds (files and size, the database's tables, the
+  variables by name), then a zip or one commit to GitHub (`owner/name`, made when asked, private
+  when asked) with the GitHub connected in Connections. The pen's Share wears a download icon
   (pasted from Export): ours wears the share icon.
 - Once a project is live the preview shows the live app; the pen's preview of changes not yet
   published needs the runtime (below), as a static site's files already do.

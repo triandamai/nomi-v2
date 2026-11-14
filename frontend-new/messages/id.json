@@ -2519,5 +2519,19 @@
 	"env_name": "Nama",
 	"env_value": "Nilai",
 	"env_add": "Tambah variabel",
-	"env_note": "Nilai dienkripsi dan tidak pernah ditampilkan lagi, tidak diekspor, dan tidak dikirim ke chat. Berlaku saat publikasi berikutnya."
+	"env_note": "Nilai dienkripsi dan tidak pernah ditampilkan lagi, tidak diekspor, dan tidak dikirim ke chat. Berlaku saat publikasi berikutnya.",
+	"github_repo_rule": "Tulis repositorinya sebagai pemilik/nama.",
+	"github_pushed": "Dikirim ke {repo}",
+	"export_holds": "{files} file · {size}",
+	"export_reading": "Membaca isinya…",
+	"export_database": "tabel database {kind}",
+	"github_title": "Kirim ke GitHub",
+	"github_body": "Satu commit berisi file proyek di cabang utama repositori, dengan GitHub-mu. Rahasia dan hasil build tidak ikut.",
+	"github_repo": "Repositori",
+	"github_create": "Buat jika belum ada",
+	"github_private": "Jadikan repositori baru privat",
+	"github_note": "Memakai GitHub yang kamu hubungkan di",
+	"github_connections": "Koneksi",
+	"github_push": "Kirim",
+	"export_holds_one": "1 file · {size}"
 }

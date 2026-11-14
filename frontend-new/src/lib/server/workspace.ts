@@ -1,5 +1,5 @@
 import { isRedirect } from '@sveltejs/kit';
-import type { ContainerUsage, DatabaseTable, DeployOverview, DomainAnswer, MetricsRange, ProjectDetail, ProjectDomain, ProjectList, ProjectMembers, ProjectMetrics, ProjectSecrets, QueryResult } from '$lib/adapters/api';
+import type { ContainerUsage, DatabaseTable, DeployOverview, ExportSummary, ProjectShowcase, DomainAnswer, MetricsRange, ProjectDetail, ProjectDomain, ProjectList, ProjectMembers, ProjectMetrics, ProjectSecrets, QueryResult } from '$lib/adapters/api';
 import { apiFetch, type ApiEvent } from './api';
 import { readTable } from '$lib/projects/database';
 
@@ -183,3 +183,19 @@ export async function loadSecrets(event: ApiEvent, id: string): Promise<ProjectS
 }
 export const setSecret = (event: ApiEvent, id: string, name: string, value: string) => send(event, `${at(id)}/secrets/${encodeURIComponent(name)}`, 'PUT', { value });
 export const removeSecret = (event: ApiEvent, id: string, name: string) => send(event, `${at(id)}/secrets/${encodeURIComponent(name)}`, 'DELETE');
+
+/** What an export holds; null where it can't be read. */
+export async function exportSummary(event: ApiEvent, id: string): Promise<ExportSummary | null> {
+	const response = await call(event, `${at(id)}/export`);
+	return response.ok ? ((await response.json()) as ExportSummary) : null;
+}
+
+/** One commit of the project's files to `owner/name` on GitHub, with the person's GitHub. */
+export const pushToGithub = (event: ApiEvent, id: string, push: { repo: string; create: boolean; private: boolean }) => send(event, `${at(id)}/export/github`, 'POST', push);
+
+/** Whether the live app is on show; null where it can't be read. */
+export async function loadShowcase(event: ApiEvent, id: string): Promise<ProjectShowcase | null> {
+	const response = await call(event, `${at(id)}/showcase`);
+	return response.ok ? ((await response.json()) as ProjectShowcase) : null;
+}
+export const setShowcase = (event: ApiEvent, id: string, showcase: boolean, blurb: string | null) => send(event, `${at(id)}/showcase`, 'PUT', { showcase, blurb });

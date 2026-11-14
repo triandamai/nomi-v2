@@ -2519,5 +2519,19 @@
 	"env_name": "Name",
 	"env_value": "Value",
 	"env_add": "Add variable",
-	"env_note": "Values are encrypted and never shown again, never exported, and never sent to the chat. They apply on the next publish."
+	"env_note": "Values are encrypted and never shown again, never exported, and never sent to the chat. They apply on the next publish.",
+	"github_repo_rule": "Name the repository as owner/name.",
+	"github_pushed": "Pushed to {repo}",
+	"export_holds": "{files} files · {size}",
+	"export_reading": "Reading what it holds…",
+	"export_database": "the {kind} database’s tables",
+	"github_title": "Push to GitHub",
+	"github_body": "One commit of the project’s files on the repository’s main branch, with your GitHub. Secrets and build output stay out.",
+	"github_repo": "Repository",
+	"github_create": "Create it if it doesn’t exist",
+	"github_private": "Keep a new repository private",
+	"github_note": "It uses the GitHub you’ve connected in",
+	"github_connections": "Connections",
+	"github_push": "Push",
+	"export_holds_one": "1 file · {size}"
 }
