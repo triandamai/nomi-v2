@@ -15,7 +15,8 @@ use crate::registration::{place_in_org, OrgMode};
 pub struct GoogleSignInConfig {
     pub client_id: String,
     pub client_secret: String,
-    /// The app's sign-in callback page, registered with the OAuth client.
+    /// The app's sign-in callback page, registered with the OAuth client: the one Google is sent
+    /// to on `start` (and kept with the state for `finish`).
     pub redirect_uri: String,
     pub auth_url: String,
     pub token_url: String,
@@ -73,11 +74,13 @@ pub async fn start(pool: &PgPool, config: &GoogleSignInConfig, purpose: Purpose)
         Purpose::Link { user_id } => ("link", Some(user_id), None),
     };
     sqlx::query("DELETE FROM google_sign_in_states WHERE created_at < now() - interval '10 minutes'").execute(pool).await?;
-    sqlx::query("INSERT INTO google_sign_in_states (state, purpose, user_id, invite_code) VALUES ($1, $2, $3, $4)")
+    // Kept with the state: the code is traded with the address Google was sent to.
+    sqlx::query("INSERT INTO google_sign_in_states (state, purpose, user_id, invite_code, redirect_uri) VALUES ($1, $2, $3, $4, $5)")
         .bind(&state)
         .bind(kind)
         .bind(user_id)
         .bind(&invite_code)
+        .bind(&config.redirect_uri)
         .execute(pool)
         .await?;
 
@@ -110,14 +113,15 @@ struct UserInfo {
 /// Finishes a Google sign-in: checks the state, asks Google who this is, then signs in, creates
 /// the account, or links Google, as the state's purpose says.
 pub async fn finish(pool: &PgPool, http: &reqwest::Client, config: &GoogleSignInConfig, code: &str, state: &str) -> Result<Finished, SignInError> {
-    let pending: Option<(String, Option<Uuid>, Option<String>)> = sqlx::query_as(
+    let pending: Option<(String, Option<Uuid>, Option<String>, Option<String>)> = sqlx::query_as(
         "DELETE FROM google_sign_in_states WHERE state = $1 AND created_at > now() - interval '10 minutes' \
-         RETURNING purpose, user_id, invite_code",
+         RETURNING purpose, user_id, invite_code, redirect_uri",
     )
     .bind(state)
     .fetch_optional(pool)
     .await?;
-    let (purpose, link_user, invite_code) = pending.ok_or(SignInError::Expired)?;
+    let (purpose, link_user, invite_code, sent_to) = pending.ok_or(SignInError::Expired)?;
+    let redirect_uri = sent_to.unwrap_or_else(|| config.redirect_uri.clone());
 
     let response = http
         .post(&config.token_url)
@@ -125,7 +129,7 @@ pub async fn finish(pool: &PgPool, http: &reqwest::Client, config: &GoogleSignIn
             ("code", code),
             ("client_id", &config.client_id),
             ("client_secret", &config.client_secret),
-            ("redirect_uri", &config.redirect_uri),
+            ("redirect_uri", &redirect_uri),
             ("grant_type", "authorization_code"),
         ])
         .send()

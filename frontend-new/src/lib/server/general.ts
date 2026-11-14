@@ -33,8 +33,8 @@ async function read<T>(event: ApiEvent, path: string): Promise<T | null> {
 	return response.ok ? ((await response.json()) as T) : null;
 }
 
-async function send<T>(event: ApiEvent, path: string, method: string, parse = false): Promise<Outcome<T>> {
-	const response = await call(event, path, { method });
+async function send<T>(event: ApiEvent, path: string, method: string, parse = false, body?: unknown): Promise<Outcome<T>> {
+	const response = await call(event, path, { method, ...(body !== undefined && { body: JSON.stringify(body) }) });
 	if (!response.ok) return { ok: false, status: response.status, message: (await readApiError(response)).message };
 	return { ok: true, data: (parse ? await response.json() : undefined) as T };
 }
@@ -52,7 +52,8 @@ export async function loadGeneral(event: ApiEvent): Promise<GeneralData | null> 
 }
 
 /** Where Google asks the person to add their account; it comes back through /auth/google/callback. */
-export const startGoogleLink = (event: ApiEvent) => send<{ url: string }>(event, '/api/auth/google/link', 'POST', true);
+/** Google comes back to the app at `origin` (this one). */
+export const startGoogleLink = (event: ApiEvent, origin: string) => send<{ url: string }>(event, '/api/auth/google/link', 'POST', true, { origin });
 
 export const unlinkGoogle = (event: ApiEvent) => send<void>(event, '/api/auth/google', 'DELETE');
 
