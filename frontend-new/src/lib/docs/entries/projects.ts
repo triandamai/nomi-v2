@@ -349,4 +349,12 @@ export default [
 		accessibility: ['A real table, named by the table it shows, with column headers.'],
 		related: ['projects/TableChip.svelte'],
 	},
+	{
+		file: 'projects/SecretRow.svelte',
+		summary: 'One environment variable of an app: its name, when it was set, and its value masked.',
+		use: ['The Environment sheet in a project’s workspace.'],
+		donts: ['Show a value once it’s saved: it’s never shown again.'],
+		accessibility: ['Remove names the variable it removes.'],
+		related: ['projects/ProjectBar.svelte'],
+	},
 ] satisfies ComponentDoc[];

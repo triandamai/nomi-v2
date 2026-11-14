@@ -146,3 +146,52 @@ test('Settings: transfer to another workspace, and delete after typing the name'
 	await expect(page.getByText('New project deleted')).toBeVisible();
 	expect((await api(account, `/api/projects/${going}`)).status).toBe(404);
 });
+
+test('People and Environment: roles, access, an invite, and variables', async ({ page, context }) => {
+	const owner = await createAccount();
+	const sari = await createAccount();
+	const home = ((await (await api(owner, '/api/orgs')).json()) as { orgs: { id: string }[] }).orgs[0].id;
+	const code = ((await (await api(owner, `/api/orgs/${home}/invites`, { method: 'POST', body: JSON.stringify({ email: sari.email, role: 'member' }) })).json()) as { code: string }).code;
+	expect((await api(sari, `/api/invites/${code}/accept`, { method: 'POST' })).ok).toBe(true);
+	const id = ((await (await api(owner, '/api/projects', { method: 'POST', body: JSON.stringify({ org_id: home }) })).json()) as { project_id: string }).project_id;
+	type Members = { access: string; people: { user_id: string; name: string; project_role: string | null; is_owner: boolean }[] };
+	const members = async () => (await (await api(owner, `/api/projects/${id}/members`)).json()) as Members;
+	const sariName = (await members()).people.find((one) => !one.is_owner)!.name;
+
+	await signInAs(context, owner);
+	await page.goto(`/projects/${id}`, { waitUntil: 'networkidle' });
+	await page.getByRole('navigation', { name: 'Project tools' }).getByRole('button', { name: 'Settings' }).click();
+	await page.getByRole('button', { name: 'Manage' }).first().click();
+	const sheet = page.getByRole('region', { name: 'People' });
+
+	// Sari opens it through the workspace; made a viewer, then taken off again.
+	await sheet.getByRole('combobox', { name: `${sariName}’s role` }).selectOption('viewer');
+	await expect(page.getByText(`${sariName}’s role changed`)).toBeVisible();
+	await expect.poll(async () => (await members()).people.find((one) => one.name === sariName)?.project_role).toBe('viewer');
+	await sheet.getByRole('button', { name: `Remove ${sariName}` }).click();
+	await expect(page.getByText(`${sariName} removed from the project`)).toBeVisible();
+	await expect.poll(async () => (await members()).people.find((one) => one.name === sariName)?.project_role ?? null).toBeNull();
+
+	// Only the people added from now on.
+	await sheet.getByRole('radio', { name: 'Only people added' }).click();
+	await expect(page.getByText('Only people added can open it now')).toBeVisible();
+	await expect.poll(async () => (await members()).access).toBe('members');
+
+	// An invite by address.
+	await sheet.getByRole('textbox', { name: 'Email address' }).fill('budi@kopi.id');
+	await sheet.getByRole('button', { name: 'Invite' }).click();
+	await expect(page.getByText('budi@kopi.id invited')).toBeVisible();
+
+	// Environment: a proper name, then the backend's reason (no Shipyard here to keep it).
+	await sheet.getByRole('button', { name: 'Close' }).click();
+	await page.getByRole('button', { name: 'Manage' }).nth(1).click();
+	const env = page.getByRole('region', { name: 'Environment' });
+	await expect(env.getByText('No variables yet.', { exact: false })).toBeVisible();
+	await env.getByRole('textbox', { name: 'Name' }).fill('1bad');
+	await env.getByLabel('Value').fill('1234');
+	await env.getByRole('button', { name: 'Add variable' }).click();
+	await expect(env.getByText('Capitals, digits and underscores, starting with a letter (ADMIN_PIN).')).toBeVisible();
+	await env.getByRole('textbox', { name: 'Name' }).fill('ADMIN_PIN');
+	await env.getByRole('button', { name: 'Add variable' }).click();
+	await expect(env.getByText(/isn't set up|not set up/i)).toBeVisible();
+});

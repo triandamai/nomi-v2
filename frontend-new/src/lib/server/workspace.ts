@@ -1,5 +1,5 @@
 import { isRedirect } from '@sveltejs/kit';
-import type { ContainerUsage, DatabaseTable, DeployOverview, DomainAnswer, MetricsRange, ProjectDetail, ProjectDomain, ProjectList, ProjectMetrics, QueryResult } from '$lib/adapters/api';
+import type { ContainerUsage, DatabaseTable, DeployOverview, DomainAnswer, MetricsRange, ProjectDetail, ProjectDomain, ProjectList, ProjectMembers, ProjectMetrics, ProjectSecrets, QueryResult } from '$lib/adapters/api';
 import { apiFetch, type ApiEvent } from './api';
 import { readTable } from '$lib/projects/database';
 
@@ -160,3 +160,26 @@ export const transfer = (event: ApiEvent, id: string, targetOrgId: string, confi
 	send(event, `/api/projects/${encodeURIComponent(id)}/transfer`, 'POST', { target_org_id: targetOrgId, confirm_name: confirmName });
 /** Stops serving the live app (production); code, data and deploys stay, and publishing brings it back. */
 export const takeDown = (event: ApiEvent, id: string) => send(event, `/api/projects/${encodeURIComponent(id)}/deploy/environments/production`, 'DELETE');
+
+const at = (id: string) => `/api/projects/${encodeURIComponent(id)}`;
+
+/** Who's in the project's workspace and their place on the project; null where it can't be read. */
+export async function loadPeople(event: ApiEvent, id: string): Promise<ProjectMembers | null> {
+	const response = await call(event, `${at(id)}/members`);
+	return response.ok ? ((await response.json()) as ProjectMembers) : null;
+}
+
+/** Invites an address as `build` (admin), `prompt` (member) or `view` (viewer). */
+export const invitePerson = (event: ApiEvent, id: string, email: string, role: 'build' | 'prompt' | 'view') => send(event, `${at(id)}/invites`, 'POST', { email, role });
+export const setPersonRole = (event: ApiEvent, id: string, userId: string, role: 'admin' | 'member' | 'viewer') => send(event, `${at(id)}/members/${encodeURIComponent(userId)}`, 'PUT', { role });
+export const removePerson = (event: ApiEvent, id: string, userId: string) => send(event, `${at(id)}/members/${encodeURIComponent(userId)}`, 'DELETE');
+/** Opens the project to the whole workspace, or only to the people added. */
+export const setAccess = (event: ApiEvent, id: string, access: 'org' | 'members') => send(event, `${at(id)}/access`, 'PUT', { access });
+
+/** The project's environment variables, names only. */
+export async function loadSecrets(event: ApiEvent, id: string): Promise<ProjectSecrets | null> {
+	const response = await call(event, `${at(id)}/secrets`);
+	return response.ok ? ((await response.json()) as ProjectSecrets) : null;
+}
+export const setSecret = (event: ApiEvent, id: string, name: string, value: string) => send(event, `${at(id)}/secrets/${encodeURIComponent(name)}`, 'PUT', { value });
+export const removeSecret = (event: ApiEvent, id: string, name: string) => send(event, `${at(id)}/secrets/${encodeURIComponent(name)}`, 'DELETE');
