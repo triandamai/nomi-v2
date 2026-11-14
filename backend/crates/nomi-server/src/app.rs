@@ -438,6 +438,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/projects/:id/ws", get(crate::routes::deploy::project_stream))
         .route("/api/projects/:id/domain", get(crate::routes::domain::get).put(crate::routes::domain::change))
         .route("/api/projects/:id/domain/check", get(crate::routes::domain::check))
+        .route("/api/projects/:id/domains", get(crate::routes::custom_domains::list).post(crate::routes::custom_domains::add))
+        .route("/api/projects/:id/domains/:hostname", delete(crate::routes::custom_domains::remove))
+        .route("/api/projects/:id/domains/:hostname/check", post(crate::routes::custom_domains::check))
+        .route("/api/projects/:id/domains/:hostname/primary", put(crate::routes::custom_domains::make_primary))
         .route("/api/projects/:id/deploy/publishes/:publish_id", get(crate::routes::deploy::get_publish))
         .route("/api/projects/:id/deploy/publishes/:publish_id/rollback", post(crate::routes::deploy::rollback))
         .route("/api/projects/:id/deploy/deployments/:deployment_id", get(crate::routes::deploy::get_deployment))
@@ -481,6 +485,8 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/projects/:id/database/credentials", post(crate::routes::project_database::credentials))
         .route("/api/projects/:id/database/tables", get(crate::routes::project_database::tables))
         .route("/api/projects/:id/database/query", post(crate::routes::project_database::run_query))
+        .route("/api/projects/:id/database/dump", get(crate::routes::project_database_edit::dump))
+        .route("/api/projects/:id/database/tables/:schema/:table/rows", patch(crate::routes::project_database_edit::update_row))
         .route("/api/projects/:id/relay/preview", get(crate::routes::project_relay::preview))
         .route("/api/projects/:id/relay", get(crate::routes::project_relay::overview))
         .route("/api/projects/:id/relay/query", post(crate::routes::project_relay::run_query))
@@ -491,6 +497,7 @@ pub fn build_router(state: AppState) -> Router {
             put(crate::routes::project_secrets::set).delete(crate::routes::project_secrets::remove),
         )
         .route("/api/hooks/shipyard", post(crate::routes::deploy::webhook))
+        .route("/api/hooks/sites/:id", post(crate::routes::site_visits::report))
         .route(
             "/api/projects/:id/issues",
             get(crate::routes::project_issues::list_issues).post(crate::routes::project_issues::create_issue),

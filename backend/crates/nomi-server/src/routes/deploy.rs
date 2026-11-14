@@ -466,6 +466,12 @@ pub(crate) async fn start_publish(
     if !files.iter().any(|(p, _)| p == "package.json" || p == "index.html") {
         return Err((StatusCode::UNPROCESSABLE_ENTITY, "there's nothing to publish yet".to_string()));
     }
+    // A live site reports where its visits come from and the forms sent.
+    if environment == DEFAULT_ENV {
+        if let Some(url) = crate::routes::site_visits::report_url(project_id) {
+            crate::routes::site_visits::with_beacon(&mut files, &url);
+        }
+    }
     let database = manifest::detect_database(&files);
     if !files.iter().any(|(p, _)| p == "Dockerfile") {
         let dockerfile = manifest::dockerfile(&target.stack, &files);
@@ -768,7 +774,12 @@ pub async fn metrics(
     let target = target(&state, project_id).await?;
     let app = published_app(&target)?;
     let env = env_of(&EnvQuery { environment: query.environment.clone() })?;
-    let metrics = client(&state)?.metrics(&target.org_key(), app, &env, range, None).await.map_err(shipyard_error)?;
+    let mut metrics = client(&state)?.metrics(&target.org_key(), app, &env, range, None).await.map_err(shipyard_error)?;
+    // Where visits came from, forms sent and uptime: what the site reported and Nomi saw.
+    if env == DEFAULT_ENV {
+        let extras = crate::routes::site_visits::extras(&state.pool, project_id, range).await.map_err(internal("failed to read the site's visits"))?;
+        crate::routes::site_visits::merge(&mut metrics, extras);
+    }
     Ok(Json(metrics))
 }
 

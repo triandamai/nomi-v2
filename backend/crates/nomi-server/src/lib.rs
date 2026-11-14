@@ -5,6 +5,7 @@ pub mod background_worker;
 pub mod bootstrap;
 pub mod chat_events;
 pub mod delegation_worker;
+pub mod dns;
 pub mod github;
 pub mod routes;
 pub mod issue_worker;

@@ -284,30 +284,29 @@ Found while building Settings › Workspace (2026-11-13).
 
 Found while building Projects (2026-11-14).
 
-### A project's own domain (DNS)
-- **Needed by:** *Flow / Build — Workspace tools* (U16wU) steps 8–9, Screen / Domain (J2hPJ) and Domain connected (Dd60u): a domain the person owns (warungkopibusiti.id) beside the app's address, the records to set at their registrar (A, CNAME, TXT, each found or waiting), "last checked · every 5 min", Check now, HTTPS issued, Make primary and Remove domain.
-- **Why:** a business's app lives at Nomi's address only; people can't put it on their own domain.
-- **What exists today:** `GET|PUT /api/projects/:id/domain` and `/domain/check`: the app's name under Nomi's apps domain only.
-- **Proposed contract:** `POST /api/projects/:id/domains` `{ hostname }` → `{ hostname, records: [{ type, name, value, status: "found" | "waiting" }], checked_at, https: "pending" | "issued" }`; `POST /api/projects/:id/domains/:hostname/check`; `PUT /api/projects/:id/domains/:hostname/primary`; `DELETE /api/projects/:id/domains/:hostname`.
-- **Until then:** Domain shows the app's address (and where it moves on the next publish) and renames it.
+### A project's own domain (DNS) — done
+- **Built:** `GET|POST /api/projects/:id/domains` (`{hostname}` → 201), `POST /api/projects/:id/domains/:hostname/check`, `PUT …/:hostname/primary`, `DELETE …/:hostname` (204); migration `0140_project_domains.sql`.
+  - A domain is `{ hostname, records: [{ type, name, value, status: "found" | "waiting" }], checked_at, verified_at, primary, https: "pending" | "issued", created_at }`. Records: a CNAME to the app's live address (a bare domain like `warung.co.id` gets A records to the same ingress's addresses instead) and a TXT `_nomi-verify.<hostname>` = `nomi-verify=<token>`. Looked up with hickory-resolver when added, on Check now, and every 5 minutes by the scheduler loop; the page hears `domain.*` on the project stream.
+  - Admins add, make primary (only once every record is found) and remove; anyone on the project lists and checks. The app must be live first (409); a hostname is on one project only (409); one under Nomi's own apps domain is refused.
+  - `frontend/`: Domain lists the domains with their records (found or waiting), last checked · every 5 min, HTTPS, Check now, Make primary and Remove, and adds one.
+  - **Still open:** Shipyard serves one address per environment (`PUT …/domain`), with no extra hostnames, so a domain's HTTPS stays `pending` and making it primary is kept by Nomi only, until Shipyard can route and certify more than one hostname.
 
 Found while building the workspace's Domain (2026-11-14).
 
-### A project's database: a dump, and editing rows
-- **Needed by:** *Flow / Build — Workspace tools* (U16wU) step 11, Screen / Database (xYgNi): Download dump and Edit rows.
-- **Why:** people can see their app's data but not take a copy of it, or fix a wrong row without asking the crew.
-- **What exists today:** `GET /api/projects/:id/database/tables`, `POST /database/query` (SQL as the owner), `POST /database/credentials`.
-- **Proposed contract:** `GET /api/projects/:id/database/dump?source=` (a `pg_dump` file); row edits by primary key, `PATCH /api/projects/:id/database/tables/:schema/:table/rows` `{ key, changes }`, so the browser never sends SQL.
-- **Until then:** Database reads tables and rows; changes go through Koda.
+### A project's database: a dump, and editing rows — done
+- **Built:** `GET /api/projects/:id/database/dump?source=` streams a `.sql` file (`<project>-<source>-<date>.sql`). The server image has no `pg_dump`, so it's written from the catalog in one REPEATABLE READ snapshot: extensions, schemas, enum types, sequences, tables with defaults, identity, generated columns and constraints, the rows as INSERTs, then indexes, foreign keys, sequence positions and views (it restores into an empty database; functions and triggers aren't included).
+  - `PATCH /api/projects/:id/database/tables/:schema/:table/rows` `{ key, changes, source? }` → `{ row }`: the table and columns are checked against the catalog, the key must be exactly the primary key's columns, generated columns are refused, values are bound as parameters and cast to each column's type; 404 for a missing table or row, 409 for a table without a primary key, 422 with the database's reason for a bad value.
+  - `GET …/database/tables` now gives each table's `primary_key`.
+  - `frontend/`: Database has Download dump, and a browsed table's cells edit in place (Enter saves, Esc cancels).
 
 Found while building the workspace's Database (2026-11-14).
 
-### A site's visits: where they came from, form sends, uptime
-- **Needed by:** *Flow / Build — Landing page* (WUiji) step 5, Monitor for a site: "Where visits come from" (Instagram, Google search, WhatsApp links, Direct), Form sends with their share of visits, and Uptime.
-- **Why:** a studio's site is judged by who finds it and who gets in touch, not by requests and errors.
-- **What exists today:** `GET /api/projects/:id/deploy/metrics?range=`: visitors, requests, 4xx/5xx, p50/p95 per bucket. No referrers, form submissions or uptime.
-- **Proposed contract:** add to the metrics answer `sources: [{ name, share }]` (from the referrer, grouped), `form_sends: number | null` (POSTs answered 2xx to the site's own forms) and `uptime: { share, since } | null`.
-- **Until then:** a site's Monitor leads with visits and page load, its bars count visits, and the rest is left out.
+### A site's visits: where they came from, form sends, uptime — done
+- **Built:** `GET /api/projects/:id/deploy/metrics` (production) adds `sources: [{ name, share }] | null`, `form_sends: number | null` and `uptime: { share, since } | null`, where Shipyard's answer doesn't carry them. Migrations `0141_site_visits.sql`, `0142_site_uptime.sql`.
+  - Shipyard's metrics have no referrers, so a production publish puts a small script before `</head>` in the site's HTML pages that reports each arrival's referrer and each form sent to `POST /api/hooks/sites/:id` (forwarded by `frontend/` at `/hooks/sites/:id`); moving between the site's own pages isn't counted. Referrers group as Instagram, Google search, WhatsApp, Facebook, X, TikTok, LinkedIn, Direct, or the host.
+  - Uptime: the scheduler loop opens each live app's address every 5 minutes; `share` is the looks that got an answer below 500 over the range, `since` the first look. Reports and looks are kept 30 days.
+  - `frontend/`: Monitor shows where visits come from, form sends with their share of visitors, and uptime, each "Not measured" until there's data.
+  - **Still open:** a form send is counted when the form is submitted, not from the answer's status (the request log with statuses is Shipyard's); sites without HTML pages of their own (server-rendered without a `</head>` in the source) report nothing until Shipyard gives referrers.
 
 Found while building the Landing page flow (2026-11-14).
 

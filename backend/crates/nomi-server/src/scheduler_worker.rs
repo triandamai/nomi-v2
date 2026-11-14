@@ -227,6 +227,10 @@ pub async fn run(
     loop {
         tokio::time::sleep(POLL_INTERVAL).await;
 
+        // Projects' own domains and live apps' addresses, each looked at every few minutes.
+        crate::routes::custom_domains::recheck_due(&pool).await;
+        crate::routes::site_visits::probe_due(&pool, &http_client).await;
+
         loop {
             let claimed = match claim_next(&pool).await {
                 Ok(Some(job)) => job,
