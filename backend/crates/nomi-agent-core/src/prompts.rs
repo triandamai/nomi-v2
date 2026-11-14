@@ -237,6 +237,18 @@ written as a note rather than a sentence about \"the user\": \"Vegetarian\", \"P
 memory already says it, answer none. Something new, even on a known memory's topic (another sibling, a \
 second hobby), is an add, never an update.";
 
+/// System prompt for `memory_settings::refresh_profile`: rewriting the short profile every agent
+/// that uses memory reads, from the profile so far and the person's strongest memories.
+pub const MEMORY_PROFILE_SYSTEM_PROMPT: &str = "You keep a short profile of one person for their assistant crew: \
+who they are, what they care about, the people in their life, their routines, goals and preferences. \
+Rewrite the profile from the profile so far and their memories. Keep what the profile so far says unless a \
+memory contradicts it (the person may have written parts of it themselves). Leave out anything passing. \
+Write short plain lines, in the language most of the memories are in, within the word limit given. \
+Reply with the profile only.";
+
+/// The heading of the person's profile in every memory-using agent's system prompt.
+pub const MEMORY_PROFILE_HEADING: &str = "Who this person is (their profile; use it only where it helps):";
+
 /// System prompt for `recent_activity::note_chat`: rewriting the person's "recently" note from a
 /// chat that just went quiet.
 pub const RECENT_ACTIVITY_SYSTEM_PROMPT: &str = "You keep a short note of what one person did lately with \

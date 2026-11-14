@@ -9,7 +9,7 @@ use std::time::Duration;
 use sqlx::PgPool;
 
 use crate::bootstrap::{build_embedding_provider_from_settings_or_env, build_llm_provider_for_user};
-use nomi_agent_core::{memory, recent_activity, working_memory};
+use nomi_agent_core::{memory, memory_settings, recent_activity, working_memory};
 
 /// How often queued exchanges are checked: soon after a reply, without being on its path.
 const LEARN_INTERVAL: Duration = Duration::from_secs(5);
@@ -23,6 +23,8 @@ const LEARNING_TIME_LIMIT: Duration = Duration::from_secs(60);
 const SUMMARIES_PER_SWEEP: i64 = 5;
 /// Quiet chats noted into their person's "recently" note per sweep (one model call each).
 const NOTES_PER_SWEEP: i64 = 10;
+/// Profiles rewritten per sweep (one model call each, on the person's model).
+const PROFILES_PER_SWEEP: i64 = 5;
 /// People consolidated per sweep (no model calls).
 const CONSOLIDATIONS_PER_SWEEP: i64 = 50;
 
@@ -158,6 +160,7 @@ pub async fn sweep(pool: &PgPool, settings_key: &[u8; 32], http_client: &reqwest
     }
 
     note_recent_activity(pool, settings_key, http_client).await;
+    refresh_profiles(pool, settings_key, http_client).await;
 
     match working_memory::people_to_consolidate(pool, CONSOLIDATIONS_PER_SWEEP).await {
         Ok(people) => {
@@ -200,6 +203,27 @@ pub async fn note_recent_activity(pool: &PgPool, settings_key: &[u8; 32], http_c
             }
             Ok(Err(e)) => tracing::warn!(error = %e, %session_id, %user_id, "memory worker: noting recent activity failed"),
             Err(_) => tracing::warn!(%session_id, %user_id, limit_secs = LEARNING_TIME_LIMIT.as_secs(), "memory worker: noting recent activity timed out"),
+        }
+    }
+}
+
+/// Rewrites the profiles of people whose memories changed since (see memory_settings), on each
+/// person's own model.
+pub async fn refresh_profiles(pool: &PgPool, settings_key: &[u8; 32], http_client: &reqwest::Client) {
+    let people = match memory_settings::profiles_to_refresh(pool, PROFILES_PER_SWEEP).await {
+        Ok(people) => people,
+        Err(e) => {
+            tracing::error!(error = %e, "memory worker: failed to find profiles to rewrite");
+            return;
+        }
+    };
+    for user_id in people {
+        let provider = build_llm_provider_for_user(pool, user_id, settings_key, http_client.clone()).await;
+        match tokio::time::timeout(LEARNING_TIME_LIMIT, memory_settings::refresh_profile(pool, provider.as_ref(), user_id)).await {
+            Ok(Ok(true)) => tracing::info!(%user_id, "memory worker: profile rewritten"),
+            Ok(Ok(false)) => {}
+            Ok(Err(e)) => tracing::warn!(error = %e, %user_id, "memory worker: rewriting the profile failed"),
+            Err(_) => tracing::warn!(%user_id, limit_secs = LEARNING_TIME_LIMIT.as_secs(), "memory worker: rewriting the profile timed out"),
         }
     }
 }

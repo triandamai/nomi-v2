@@ -226,22 +226,25 @@ Found while building Settings › Plan & usage (2026-11-12).
 
 Found while building Settings › Models & providers (2026-11-13).
 
-### Memory settings, the profile and who learned what
-- **Needed by:** *App / Settings / Memory* (hANTE): the "You" profile row (the summary Nomi keeps of the person, its size), Learned by on each topic, and the settings column (Learn from chats, Keep a profile, Search past chats, the Memory and Profile budgets with their use, Storage).
-- **Why:** people can see and correct single memories, but not the profile the crew works from, which agent learned something, or switch learning off.
-- **What exists today:** `GET /api/memory` lists memories (content, weight, kind, uses, last used, needs_check); `PUT`/`DELETE /api/memory/:id`, `POST /api/memory/:id/confirm`.
-- **Proposed contract:** `GET|PUT /api/memory/settings` with `learn_from_chats`, `keep_profile`, `search_past_chats`, `memory_budget`, `profile_budget`; `GET|PUT /api/memory/profile` with `{ text, tokens, updated_at }`; `learned_by` (the agent type) on each memory.
-- **Until then:** Memory & context lists and edits memories only.
+### Memory settings, the profile and who learned what — done
+- **Built:** migration `0132_memory_settings_and_profile.sql` (`memory_settings`, `memory_profiles`, `memory_items.learned_by`, `memory_jobs.agent_type`), in `routes/memory.rs` and `nomi-agent-core/src/memory_settings.rs`.
+  - `GET|PUT /api/memory/settings` → `{ learn_from_chats, keep_profile, search_past_chats, memory_budget, profile_budget, memory_used, profile_used }` (budgets and use in tokens, ~4 characters each; defaults on, 8,000 and 1,000). PUT changes only the fields sent; `400 invalid_budget` outside 500–100,000 / 100–4,000.
+  - The crew honours them: `learn_from_chats` off queues nothing and drops what was queued; `search_past_chats` off leaves the "recently" note from other chats out of every prompt and stops writing it; recall never hands an agent more than `memory_budget`, and saving past it (or lowering it) archives the weakest memories; the profile is read and written within `profile_budget`.
+  - `GET|PUT /api/memory/profile` → `{ text, tokens, updated_at }`. Nothing kept a summary of the person before (personality is how Nomi talks), so it's new: every agent that uses memory reads it while `keep_profile` is on, the memory worker rewrites it about daily from the profile so far and the strongest memories (prompt in `prompts.rs`, so the person's own edits carry over), and PUT is the person's wording (`400 too_long` past the budget; empty clears it).
+  - Each memory in `GET /api/memory` has `learned_by` (the agent type whose reply it came from; null for older ones).
+  - `frontend/`: Memory has a "You" profile editor with its size, and Memory settings (the three switches, both budgets with a use bar); each memory says "Learned by Raga".
 
 Found while building Settings › Memory & context (2026-11-13).
 
 
-### More apps to connect, MCP servers, and a connection's health
-- **Needed by:** *App / Settings / Connections* (OBmgS): "Search 120+ apps" and the Add more catalog with its categories (For your crew, Work, Building, Health, Money, Home & media) and SUGGESTED FOR YOUR CREW; "Add MCP server" (top bar and the custom row); access per service on each chip ("Gmail · read", "Docs · write · ask"); "Needs you" with Reconnect when a sign-in has lapsed; who used a connection and when, for Google; and Manage's own page.
-- **Why:** the crew can work in three apps; everything else the pen offers (Notion, Slack, Strava…) and any MCP server has nothing to connect to, and a lapsed Google or Hevy sign-in is only found when a reply fails.
-- **What exists today:** `GET /api/connections` (Google: configured, email, services; Hevy: account, connected, last used), `GET|PUT|DELETE /api/connections/github`, Google and GitHub start/callback, `PUT|DELETE /api/connections/hevy`.
-- **Proposed contract:** `GET /api/connections/catalog` → `[{ id, name, category, for_agent, access: ["read" | "write" | "ask"], available }]`; `GET|POST|DELETE /api/connections/mcp` with `{ url | command, name }`; on each connection `status: "ok" | "expired"`, `expired_at`, `last_used_at` and `used_by: [agent]`, and per Google service an access level.
-- **Until then:** Connections shows Google Workspace, GitHub and Hevy, connected or to add; who uses each is the crew member it's for.
+### More apps to connect, MCP servers, and a connection's health — done
+- **Built:** migration `0133_connection_health_and_mcp.sql`, in `routes/connections_catalog.rs` and `routes/connections.rs`.
+  - `GET /api/connections/catalog` → `[{ id, name, category, for_agent, access, available }]`, a list kept in code (16 apps across work, building, health, money, home_media). `available` is true only for Hevy, GitHub and, when Google sign-in is set up, Google Workspace.
+  - `GET /api/connections/mcp` → `{ servers: [{ id, name, url, created_at }], callable: false }`; `POST` with `{ name, url }` → `201` (`400 missing_name | missing_url | invalid_url | command_not_supported`, `409 already_added | too_many` past 20); `DELETE /api/connections/mcp/:id` → `204` (the id is in the path). Only http/https addresses are kept; a `command` is refused, never stored or run.
+  - `GET /api/connections`: `google` adds `status` (`ok` | `expired`), `expired_at`, `last_used_at`, `used_by: ["workspace"]` and `service_access: [{ service, access }]` (Gmail and Calendar `read · write · ask`, Docs and Sheets `read · write`, Drive `read`); `hevy` adds `status`, `expired_at`, `used_by: ["health"]`. `GET /api/connections/github`'s connection adds `status`, `expired_at`, `used_by: []` (the person pushes, not the crew).
+  - A lapsed sign-in is kept and marked `expired` instead of being forgotten: Google when it refuses a refresh or a call, Hevy when it refuses the key (cleared when Hevy takes it again), GitHub when it refuses a push. Connecting again clears it. Google records `last_used_at` on each use.
+  - `frontend/`: Connections lists the catalog (coming soon unless it connects), GitHub with its login, per-service access under Google, "Needs you" with Reconnect on a lapsed one, who uses each, and an MCP servers section with an Add form.
+  - **Still open:** nothing in the crew can call MCP tools yet, so servers are only stored (`callable: false`); the catalog's other apps need their own connectors.
 
 Found while building Settings › Connections (2026-11-13).
 

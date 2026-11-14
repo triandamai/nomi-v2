@@ -207,6 +207,15 @@ async fn hevy_errors_read_plainly_and_a_rejected_key_asks_for_a_new_one(pool: Pg
 
     let rejected = s.run("hevy_routine", json!({"routine_id": "forbidden"})).await.unwrap();
     assert!(matches!(rejected.block, Some(ContentBlock::ConnectorConnect { ref reason, .. }) if reason == "key_rejected"));
+    // Kept, marked expired, so Connections shows Reconnect; a call Hevy accepts clears it.
+    let status = |s: &Setup| {
+        let (pool, user) = (s.pool.clone(), s.user);
+        async move { connection::status(&mut pool.acquire().await.unwrap(), user, connection::HEVY).await.unwrap().unwrap().status }
+    };
+    assert_eq!(status(&s).await, "expired");
+    hevy(&server, "GET", "/v1/body_measurements", 200, json!({"page": 1, "page_count": 1, "body_measurements": []})).await;
+    s.run("hevy_body_measurements", json!({})).await.unwrap();
+    assert_eq!(status(&s).await, "ok");
 
     let http = reqwest::Client::new();
     let client = Hevy { http: &http, base_url: format!("{}/", server.uri()), api_key: "k" };

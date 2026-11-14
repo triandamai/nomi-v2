@@ -210,6 +210,9 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/money/period", put(money_routes::set_period))
         .route("/api/money/budgets/:category", delete(money_routes::delete_budget))
         .route("/api/connections", get(connections_routes::overview))
+        .route("/api/connections/catalog", get(crate::routes::connections_catalog::get_catalog))
+        .route("/api/connections/mcp", get(crate::routes::connections_catalog::list_mcp).post(crate::routes::connections_catalog::add_mcp))
+        .route("/api/connections/mcp/:id", delete(crate::routes::connections_catalog::delete_mcp))
         .route("/api/connections/hevy", get(connections_routes::get_hevy).put(connections_routes::connect_hevy).delete(connections_routes::disconnect_hevy))
         .route("/api/connections/google", get(connections_routes::get_google).delete(connections_routes::disconnect_google))
         .route("/api/connections/google/start", post(connections_routes::start_google))
@@ -221,6 +224,8 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/reminders/:id", post(reminders_routes::reminder_action))
         .route("/api/scheduled-tasks/:id/cancel", post(reminders_routes::cancel_scheduled_task))
         .route("/api/memory", get(memory_routes::list_my_memories))
+        .route("/api/memory/settings", get(memory_routes::get_memory_settings).put(memory_routes::put_memory_settings))
+        .route("/api/memory/profile", get(memory_routes::get_memory_profile).put(memory_routes::put_memory_profile))
         .route("/api/memory/:memory_id", delete(memory_routes::delete_my_memory).put(memory_routes::edit_my_memory))
         .route("/api/memory/:memory_id/confirm", post(memory_routes::confirm_my_memory))
         .route(

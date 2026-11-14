@@ -10,6 +10,7 @@ pub mod admin_users;
 pub mod attachments;
 pub mod auth;
 pub mod connections;
+pub mod connections_catalog;
 pub mod deploy;
 pub mod github;
 pub mod publish_requests;

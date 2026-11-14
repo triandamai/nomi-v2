@@ -558,7 +558,14 @@ const PERSONALITY_TOOL_NAMES: [&str; 3] = ["set_personality", "reset_chat_person
 
 /// After an agent answers in chat (a reply, or the summary it finished with), queues the exchange
 /// so the memory worker can save anything lasting the person said. Never waits on a model call.
-async fn learn_from_turn(conn: &mut PoolConnection<Postgres>, user_id: Uuid, session_id: Uuid, messages: &[LlmMessage], answer: &str) {
+async fn learn_from_turn(
+    conn: &mut PoolConnection<Postgres>,
+    agent: &dyn SubAgent,
+    user_id: Uuid,
+    session_id: Uuid,
+    messages: &[LlmMessage],
+    answer: &str,
+) {
     // Fallback only: the queue reads the person's latest chat message itself.
     let last_user_text = messages
         .iter()
@@ -569,7 +576,7 @@ async fn learn_from_turn(conn: &mut PoolConnection<Postgres>, user_id: Uuid, ses
             _ => None,
         }))
         .unwrap_or_default();
-    memory::queue_learning(conn, user_id, session_id, &last_user_text, answer).await;
+    memory::queue_learning(conn, user_id, session_id, agent.agent_type().as_ref(), &last_user_text, answer).await;
 }
 
 /// Runs one agent turn to completion: retrieves memory first if `agent.uses_memory()`,
@@ -693,6 +700,8 @@ async fn run_agent_turn_in_reply(
         }
     }
 
+    // What the person lets Nomi do with memory (Settings → Memory).
+    let memory_settings = crate::memory_settings::load(&mut **conn, user_id).await;
     let memories = if agent.uses_memory() {
         let last_user_text = messages
             .iter()
@@ -703,7 +712,8 @@ async fn run_agent_turn_in_reply(
                 _ => None,
             }))
             .unwrap_or_default();
-        memory::try_retrieve_memories(conn, embedding_provider, user_id, &last_user_text).await
+        let found = memory::try_retrieve_memories(conn, embedding_provider, user_id, &last_user_text).await;
+        memory::within_budget(found, memory_settings.memory_budget)
     } else {
         Vec::new()
     };
@@ -723,9 +733,23 @@ async fn run_agent_turn_in_reply(
         prompt
     };
 
+    // The profile Nomi keeps of the person, unless they turned it off.
+    let system_prompt = match agent.uses_memory() {
+        true => match crate::memory_settings::profile_for_agents(conn, user_id, &memory_settings).await {
+            Some(profile) => format!("{system_prompt}\n\n{}\n{profile}", crate::prompts::MEMORY_PROFILE_HEADING),
+            None => system_prompt,
+        },
+        false => system_prompt,
+    };
+
     // What the person did lately across their chats (recent_activity): every agent sees it, so
-    // whoever picks up a new chat knows what they were up to.
-    let system_prompt = match crate::recent_activity::for_person(&mut **conn, user_id).await? {
+    // whoever picks up a new chat knows what they were up to, unless they turned off searching
+    // past chats.
+    let past_chats = match memory_settings.search_past_chats {
+        true => crate::recent_activity::for_person(&mut **conn, user_id).await?,
+        false => None,
+    };
+    let system_prompt = match past_chats {
         Some(note) => format!("{system_prompt}\n\n{}\n{note}", crate::prompts::RECENT_ACTIVITY_HEADING),
         None => system_prompt,
     };
@@ -963,7 +987,7 @@ async fn run_agent_turn_in_reply(
             if reply_text.is_empty() && !cut_off {
                 if let Some((message_id, text)) = answer_posted_since(conn, session_id, agent.display_name().as_ref(), started_at).await {
                     if agent.uses_memory() {
-                        learn_from_turn(conn, user_id, session_id, &messages, &text).await;
+                        learn_from_turn(conn, agent, user_id, session_id, &messages, &text).await;
                     }
                     update_agent_phase(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, PHASE_WAITING, None).await;
                     return Ok(LoopOutcome::Posted {
@@ -1002,7 +1026,7 @@ async fn run_agent_turn_in_reply(
             let reply_text = keep_plan_in_draft(conn, s3, mqtt, agent, session_id, agent_session_id, user_id, locale, wrote_plan, reply_text).await;
 
             if agent.uses_memory() {
-                learn_from_turn(conn, user_id, session_id, &messages, &reply_text).await;
+                learn_from_turn(conn, agent, user_id, session_id, &messages, &reply_text).await;
             }
 
             update_agent_phase(conn, mqtt.map(|(p, _)| p), session_id, agent_session_id, PHASE_WAITING, None).await;
@@ -1091,7 +1115,7 @@ async fn run_agent_turn_in_reply(
                 let summary = keep_plan_in_draft(conn, s3, mqtt, agent, session_id, agent_session_id, user_id, locale, wrote_plan, summary).await;
                 // The summary is this agent's answer in chat, so it's a turn to learn from too.
                 if agent.uses_memory() {
-                    learn_from_turn(conn, user_id, session_id, &messages, &summary).await;
+                    learn_from_turn(conn, agent, user_id, session_id, &messages, &summary).await;
                 }
                 tracing::info!(%session_id, %agent_session_id, %status, summary_len = summary.len(), "agent completed task");
                 return Ok(LoopOutcome::Completed { status, summary });

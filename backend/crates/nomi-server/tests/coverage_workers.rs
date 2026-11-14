@@ -96,7 +96,7 @@ async fn learning_and_sweeping_settle_what_was_queued(pool: PgPool) {
             .unwrap();
     }
     let mut conn = pool.acquire().await.unwrap();
-    nomi_agent_core::memory::queue_learning(&mut conn, user, session, "I take the MRT to work", "Noted!").await;
+    nomi_agent_core::memory::queue_learning(&mut conn, user, session, "chitchat", "I take the MRT to work", "Noted!").await;
     drop(conn);
     let queued: i64 = sqlx::query_scalar("SELECT count(*) FROM memory_jobs").fetch_one(&pool).await.unwrap();
     assert_eq!(queued, 1);
@@ -109,6 +109,13 @@ async fn learning_and_sweeping_settle_what_was_queued(pool: PgPool) {
     // The chat went quiet half an hour ago: its person's "recently" note is written, or (no model
     // set up here) the chat waits for the next sweep.
     assert_eq!(nomi_agent_core::recent_activity::chats_gone_quiet(&pool, 10).await.unwrap(), vec![(session, user)]);
+    // A memory to write the profile from: the sweep rewrites it, or (no model) leaves it be.
+    sqlx::query("INSERT INTO memory_items (user_id, content, embedding) VALUES ($1, 'Takes the MRT', $2::vector)")
+        .bind(user)
+        .bind(format!("[{}]", vec!["0.01"; 1536].join(",")))
+        .execute(&pool)
+        .await
+        .unwrap();
     nomi_server::memory_worker::sweep(&pool, &KEY, &http).await;
     let noted = nomi_agent_core::recent_activity::for_person(&pool, user).await.unwrap().is_some();
     let waiting = !nomi_agent_core::recent_activity::chats_gone_quiet(&pool, 10).await.unwrap().is_empty();
