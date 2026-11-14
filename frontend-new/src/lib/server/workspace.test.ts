@@ -28,4 +28,18 @@ describe('a project’s workspace on the server', () => {
 		expect(backend.calls[0].url).toBe('http://api.test/api/projects/by-session/s%201');
 		expect(await workspace.projectOfChat(eventWith(() => new Response('', { status: 404 })).event, 's1')).toBeNull();
 	});
+
+	it('loads the deploy overview, publishes and rolls back, passing the backend’s reason on', async () => {
+		const { backend, event } = eventWith((call) => (call.method === 'GET' ? json({ available: true, publishes: [] }) : json({}, 202)));
+		expect(await workspace.loadDeploy(event, 'p1')).toEqual({ available: true, publishes: [] });
+		expect(await workspace.publish(event, 'p1')).toEqual({ ok: true });
+		expect(await workspace.rollBack(event, 'p1', 'pub 1')).toEqual({ ok: true });
+		expect(backend.calls.map((call) => [call.method, call.url.replace('http://api.test', '')])).toEqual([
+			['GET', '/api/projects/p1/deploy'],
+			['POST', '/api/projects/p1/deploy/publish'],
+			['POST', '/api/projects/p1/deploy/publishes/pub%201/rollback'],
+		]);
+		const busy = eventWith(() => new Response('a publish is already running', { status: 409 }));
+		expect(await workspace.publish(busy.event, 'p1')).toEqual({ ok: false, status: 409, message: 'a publish is already running' });
+	});
 });

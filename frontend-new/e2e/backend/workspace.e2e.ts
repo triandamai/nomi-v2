@@ -71,3 +71,19 @@ test('a project that isn’t theirs says so', async ({ page, context }) => {
 	await page.getByRole('main').getByRole('link', { name: 'Projects' }).click();
 	await expect(page).toHaveURL(/\/projects$/);
 });
+
+test('Deployments says when this Nomi can’t publish, and nothing offers to', async ({ page, context }) => {
+	const account = await createAccount();
+	await signInAs(context, account);
+	const org = ((await (await api(account, '/api/orgs')).json()) as { orgs: { id: string }[] }).orgs[0].id;
+	const made = (await (await api(account, '/api/projects', { method: 'POST', body: JSON.stringify({ org_id: org }) })).json()) as { project_id: string };
+	await page.goto(`/projects/${made.project_id}`, { waitUntil: 'networkidle' });
+	await expect(page.getByRole('button', { name: /^Publish/ })).toHaveCount(0);
+	const tools = page.getByRole('navigation', { name: 'Project tools' });
+	await tools.getByRole('button', { name: 'Deployments' }).click();
+	await expect(tools.getByRole('button', { name: 'Deployments' })).toHaveAttribute('aria-pressed', 'true');
+	await expect(page.getByText('Publishing isn’t set up here')).toBeVisible();
+	await page.keyboard.press('Escape');
+	await expect(page.getByText('Publishing isn’t set up here')).toHaveCount(0);
+});
+

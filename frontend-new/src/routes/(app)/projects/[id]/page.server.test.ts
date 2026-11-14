@@ -3,7 +3,8 @@ import { fakeBackend, fakeEvent, json, thrown } from '$lib/server/testing/fakeEv
 
 vi.mock('$env/dynamic/private', () => ({ env: { API_URL: 'http://api.test' } }));
 
-const { load } = await import('./+page.server');
+const { load, actions } = await import('./+page.server');
+const deploy = await import('./deploy/+server');
 const preview = await import('./preview/[...path]/+server');
 const app = await import('./app/+page.server');
 const bySession = await import('../session/[sessionId]/+page.server');
@@ -32,5 +33,21 @@ describe('a project’s workspace', () => {
 		expect(await thrown(() => app.load({ params: { id: 'p1' } } as never))).toMatchObject({ status: 303, location: '/projects/p1' });
 		expect(await thrown(() => bySession.load(at(() => json({ id: 'p1' }), { sessionId: 's1' }).event as never))).toMatchObject({ location: '/projects/p1' });
 		expect(await thrown(() => bySession.load(at(() => new Response('', { status: 404 }), { sessionId: 's1' }).event as never))).toMatchObject({ location: '/chat/s1' });
+	});
+
+	it('publishes and rolls back, and says why not', async () => {
+		const ok = at(() => json({}, 202), { id: 'p1' });
+		expect(await actions.publish(ok.event as never)).toEqual({ publishing: true });
+		expect(ok.api.calls[0]).toMatchObject({ method: 'POST', url: 'http://api.test/api/projects/p1/deploy/publish' });
+		expect(await actions.publish(at(() => new Response("there's nothing to publish yet", { status: 422 }), { id: 'p1' }).event as never)).toMatchObject({ status: 422, data: { message: "there's nothing to publish yet" } });
+		const back = at(() => json({}, 202), { id: 'p1' });
+		const withForm = { ...back.event, request: new Request('http://localhost/projects/p1', { method: 'POST', body: new URLSearchParams({ publish: 'pub1' }) }) };
+		expect(await actions.rollback(withForm as never)).toEqual({ rolledBack: 'pub1' });
+		expect(back.api.calls[0].url).toBe('http://api.test/api/projects/p1/deploy/publishes/pub1/rollback');
+	});
+
+	it('gives the deploy overview to look at again', async () => {
+		const response = await deploy.GET(at(() => json({ available: false, publishes: [] }), { id: 'p1' }).event as never);
+		expect(await response.json()).toEqual({ available: false, publishes: [] });
 	});
 });
