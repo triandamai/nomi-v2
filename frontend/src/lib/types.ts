@@ -560,11 +560,38 @@ export interface OrgSummary {
 	role: OrgRole;
 	members: number;
 	projects: number;
+	/** Someone's own space, made with their account. */
+	is_personal: boolean;
+	/** The first few members, owners first. */
+	member_avatars: { name: string; avatar_url: string | null }[];
+	/** The newest thing that happened in its projects. */
+	last_activity: OrgActivity | null;
+}
+
+export interface OrgActivity {
+	kind: 'published' | 'worked_on';
+	project: string;
+	by: string | null;
+	at: string;
 }
 
 export interface OrgList {
 	orgs: OrgSummary[];
 	project_org_id: string | null;
+	/** Where Nomi opens on sign-in; null is the workspace last used. */
+	open_org_id: string | null;
+}
+
+/** An open invite to the signed-in person's address (`GET /api/invites`). */
+export interface MyInvite {
+	code: string;
+	org_id: string;
+	org_name: string;
+	inviter: string;
+	role: OrgRole;
+	projects: number;
+	expires_at: string;
+	project: { id: string; name: string } | null;
 }
 
 export interface OrgMember {
@@ -574,6 +601,9 @@ export interface OrgMember {
 	avatar_url: string | null;
 	role: OrgRole;
 	joined_at: string;
+	/** Projects in this workspace they started or were added to. */
+	projects: number;
+	last_active_at: string | null;
 }
 
 export interface OrgInvite {
@@ -582,11 +612,16 @@ export interface OrgInvite {
 	role: OrgRole;
 	created_at: string;
 	expires_at: string;
+	/** A link anyone can join with, rather than an invite to one address. */
+	link: boolean;
 }
 
 export interface OrgDetail {
 	id: string;
 	name: string;
+	is_personal: boolean;
+	created_by: { id: string; name: string } | null;
+	created_at: string;
 	my_role: OrgRole;
 	me: string;
 	members: OrgMember[];
@@ -599,7 +634,7 @@ export interface InviteInfo {
 	org_name: string;
 	inviter: string;
 	role: OrgRole;
-	state: 'open' | 'expired' | 'used' | 'member' | 'other_address';
+	state: 'open' | 'expired' | 'used' | 'declined' | 'member' | 'other_address';
 	/** The invited address, partly hidden. */
 	email: string | null;
 	/** An invite to build one project together, and as what. */

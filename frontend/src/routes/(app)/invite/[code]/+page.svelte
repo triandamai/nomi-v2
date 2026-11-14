@@ -63,6 +63,7 @@
 					{#if invite.state === 'member'}{m.invite_state_member({ org: invite.org_name })}
 					{:else if invite.state === 'used'}{m.invite_state_used({ inviter: invite.inviter })}
 					{:else if invite.state === 'expired'}{m.invite_state_expired({ inviter: invite.inviter })}
+					{:else if invite.state === 'declined'}{m.invite_state_declined({ inviter: invite.inviter })}
 					{:else}{m.invite_state_other_address({ email: invite.email ?? '' })}{/if}
 				</p>
 				<Button href="/projects" variant="tonal" size="m">{m.invite_open_projects()}</Button>
