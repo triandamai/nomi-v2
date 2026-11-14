@@ -599,7 +599,8 @@ steps; what isn't there yet is left out, not drawn dead:
   Yours is only sent from the pane itself: a pointer over the preview frame belongs to the app
   inside it, which runs sandboxed. So a teammate sees your pointer over Code and Terminal, not over
   the running app. When two people's initials match, one face takes the name's first two letters
-  (the faces are told apart by them).
+  (the faces are told apart by them). A teammate's message in the chat (step 6) wears their name and
+  colour (by name: messages don't carry an id), with when and which crew member they asked.
 - The chat pane is the project's chat itself (`ChatView`), as on its own page; its header's history
   and collapse buttons are left out, and it names Koda and Nomi as the crew building.
 - The chat is 520 wide as the flow draws it, dragged between 360 and 720 by the resize handle:

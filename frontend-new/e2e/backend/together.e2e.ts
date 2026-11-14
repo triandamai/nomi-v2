@@ -59,3 +59,23 @@ test('two people in one project: who’s here, where, and following', async ({ p
 	await theirs.close();
 	await expect(here).toHaveCount(0);
 });
+
+test('a teammate’s message in the project chat carries her name, her colour and whom she asked', async ({ page, context }) => {
+	const mario = await createAccount();
+	const sari = await createAccount();
+	await api(sari, '/api/profile', { method: 'PUT', body: JSON.stringify({ display_name: 'Sari Wulandari' }) });
+	const org = ((await (await api(mario, '/api/orgs')).json()) as Orgs).orgs[0].id;
+	const invite = (await (await api(mario, `/api/orgs/${org}/invites`, { method: 'POST', body: JSON.stringify({ email: sari.email, role: 'member' }) })).json()) as { code: string };
+	expect((await api(sari, `/api/invites/${invite.code}/accept`, { method: 'POST' })).ok).toBe(true);
+	const made = (await (await api(mario, '/api/projects', { method: 'POST', body: JSON.stringify({ org_id: org }) })).json()) as { project_id: string };
+	const session = ((await (await api(mario, `/api/projects/${made.project_id}`)).json()) as { session_id: string }).session_id;
+	expect((await api(sari, `/api/sessions/${session}/messages`, { method: 'POST', body: JSON.stringify({ text: 'Tambah bagian Makanan' }) })).ok).toBe(true);
+
+	await signInAs(context, mario);
+	await page.goto(`/projects/${made.project_id}`, { waitUntil: 'networkidle' });
+	const chat = page.getByRole('region', { name: 'Chat' });
+	const hers = chat.getByRole('article').filter({ hasText: 'Tambah bagian Makanan' });
+	await expect(hers.getByText('Sari Wulandari')).toBeVisible();
+	await expect(hers.getByText(/^to /)).toBeVisible();
+	await expect(hers.getByText('SW')).toBeVisible();
+});

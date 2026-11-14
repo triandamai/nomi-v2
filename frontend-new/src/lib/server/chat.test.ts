@@ -137,4 +137,19 @@ describe('the chat on the server', () => {
 		const { event } = eventWith(() => new Response('', { status: 401 }));
 		expect(await thrown(() => chat.sendMessage(event, 's1', 'x'))).toMatchObject({ status: 303, location: '/sign-in' });
 	});
+	it('names a teammate’s message fetched on its own, as the list does (the single read doesn’t)', async () => {
+		const { backend, event } = eventWith((call) =>
+			call.url.includes('/messages/u1') ? json(message('u1', { sender: 'user' })) : json({ messages: [message('u0', { sender: 'user' }), message('u1', { sender: 'user', author_name: 'Sari Wulandari' })] }),
+		);
+		const result = await chat.message(event, 's1', 'u1');
+		expect(result.ok && result.data.author_name).toBe('Sari Wulandari');
+		expect(backend.calls.map((call) => call.url.replace('http://api.test', ''))).toEqual(['/api/sessions/s1/messages/u1', '/api/sessions/s1/messages?limit=20']);
+		// A reply, or the person's own message, costs no second read.
+		const reply = eventWith(() => json(message('a1')));
+		await chat.message(reply.event, 's1', 'a1');
+		expect(reply.backend.calls).toHaveLength(1);
+		const mine = eventWith((call) => (call.url.includes('/messages/u2') ? json(message('u2', { sender: 'user' })) : json({ messages: [message('u2', { sender: 'user' })] })));
+		const own = await chat.message(mine.event, 's1', 'u2');
+		expect(own.ok && own.data.author_name).toBeUndefined();
+	});
 });

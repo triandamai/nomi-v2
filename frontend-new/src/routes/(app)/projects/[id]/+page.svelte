@@ -443,7 +443,8 @@
 	const myName = $derived(data.person?.name ?? '');
 	// Faces are told apart by their initials: yours and everyone else's, made distinct together.
 	const faces = $derived(distinctInitials([myName, ...(live?.people ?? []).map((person) => person.name)]));
-	const peers = $derived((live?.people ?? []).map((person, index) => ({ ...person, initials: faces[index + 1], peer: peerFor(person.user_id) })));
+	// A teammate's colour comes from their name, as in the chat (messages name their author, not their id).
+	const peers = $derived((live?.people ?? []).map((person, index) => ({ ...person, initials: faces[index + 1], peer: peerFor(person.name) })));
 	$effect(() => {
 		live?.moveTo({ view, path: view === 'code' ? codePath : null });
 	});
@@ -463,13 +464,15 @@
 	const followedView = $derived(followed ? ((followed.view ?? 'preview') as PaneView) : null);
 	const followedPath = $derived(followed?.path ?? null);
 	$effect(() => {
+		// Both are read here, so a move to another file alone follows too.
 		const where = followedView;
+		const path = followedPath;
 		if (!where || (where === 'terminal' && !sandboxOn)) return;
 		untrack(() => {
 			if (view !== where) view = where;
-			if (where === 'code' && followedPath && followedPath !== codePath) {
+			if (where === 'code' && path && path !== codePath) {
 				codeText = null;
-				codePath = followedPath;
+				codePath = path;
 			}
 		});
 	});
@@ -484,7 +487,7 @@
 		const timer = setInterval(() => (pointerClock = Date.now()), 1000);
 		return () => clearInterval(timer);
 	});
-	const pointers = $derived(live ? pointersIn(live.pointers, view, pointerClock).map((pointer) => ({ ...pointer, peer: peerFor(pointer.user_id) })) : []);
+	const pointers = $derived(live ? pointersIn(live.pointers, view, pointerClock).map((pointer) => ({ ...pointer, peer: peerFor(pointer.name) })) : []);
 	function trackPointer(event: PointerEvent) {
 		const box = (event.currentTarget as HTMLElement).getBoundingClientRect();
 		live?.point(view, (event.clientX - box.left) / box.width, (event.clientY - box.top) / box.height);

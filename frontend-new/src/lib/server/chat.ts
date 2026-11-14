@@ -76,9 +76,22 @@ export async function messagePage(event: ApiEvent, sessionId: string, before: st
 	return { status: response.status, messages: await Promise.all(page.messages.map(render)), hasOlder: Boolean(page.has_more) };
 }
 
-/** One message, rendered (a live update fetches what changed). */
+/**
+ * One message, rendered (a live update fetches what changed). The backend names a teammate's
+ * message in a shared project chat only in the list, so a person's message is looked up there too
+ * (BACKEND_TODO.md): without it, a teammate's new message would look like the person's own.
+ */
 export async function message(event: ApiEvent, sessionId: string, messageId: string): Promise<Outcome<RenderedMessage>> {
-	return outcome(await call(event, `/api/sessions/${sessionId}/messages/${messageId}`), async (response) => render((await response.json()) as MessageItem));
+	return outcome(await call(event, `/api/sessions/${sessionId}/messages/${messageId}`), async (response) => {
+		const found = (await response.json()) as MessageItem;
+		if (found.sender === 'user' && !found.author_name) {
+			const listed = await call(event, `/api/sessions/${sessionId}/messages?limit=20`);
+			const page = listed.ok ? ((await listed.json()) as { messages: MessageItem[] }) : null;
+			const author = page?.messages.find((one) => one.id === found.id)?.author_name;
+			if (author) found.author_name = author;
+		}
+		return render(found);
+	});
 }
 
 /** The person's chats, latest first; [] when they can't be read. */

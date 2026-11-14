@@ -331,3 +331,12 @@ Found while building the workspace's Database (2026-11-14).
 - **Until then:** a site's Monitor leads with visits and page load, its bars count visits, and the rest is left out.
 
 Found while building the Landing page flow (2026-11-14).
+
+### A message read on its own names its author
+- **Needed by:** *Flow / Build — Invite & build together* (TnwQT) step 6: a teammate's message in the project chat, in their colour and name.
+- **Why:** the list (`GET /api/sessions/:id/messages`) names someone else's message (`author_name`), but the single read a live update uses (`GET /api/sessions/:id/messages/:message_id`) doesn't, so a teammate's new message would look like the person's own.
+- **What exists today:** `attach_authors` runs for the list only.
+- **Proposed contract:** run `attach_authors` in `get_message` too.
+- **Until then:** v2's server reads the newest page of the list for a person's message read on its own and takes the author from there.
+
+Found while building Invite & build together (2026-11-14).

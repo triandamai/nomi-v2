@@ -27,7 +27,7 @@ export function distinctInitials(names: string[]): string[] {
 	});
 }
 
-/** Peer colour 1 or 2 for a person (by their id), the same in the bar, the chat and the preview. */
+/** Peer colour 1 or 2 for a person (by their name: chat messages carry no id), the same in the bar, the chat and the preview. */
 export function peerFor(key: string): 1 | 2 {
 	let hash = 0;
 	for (const char of key.toLowerCase()) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
