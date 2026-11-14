@@ -5,6 +5,7 @@
 	import Button from '$lib/components/m3/Button.svelte';
 	import LoadingIndicator from '$lib/components/m3/LoadingIndicator.svelte';
 	import PlanCard from '$lib/components/PlanCard.svelte';
+	import { plansForSale } from '$lib/billing';
 	import type { PlansForUser } from '$lib/types';
 
 	// The plans on offer (Admin → Plans), loaded when the sheet opens, with the person's own
@@ -13,6 +14,8 @@
 
 	let plans = $state<PlansForUser | null>(null);
 	let failed = $state(false);
+	// Plans with a price that aren't the person's own can be chosen here.
+	const buyable = $derived(new Set((plans ? plansForSale(plans) : []).map((p) => p.id)));
 
 	$effect(() => {
 		if (!open || plans) return;
@@ -36,7 +39,13 @@
 		{#if plans}
 			<div class="plans-sheet__grid">
 				{#each plans.plans as plan (plan.id)}
-					<PlanCard {plan} current={plan.id === plans.current_plan_id} />
+					<PlanCard {plan} current={plan.id === plans.current_plan_id}>
+						{#snippet actions()}
+							{#if buyable.has(plan.id)}
+								<Button variant="gradient" size="s" href="/billing/checkout/{plan.id}">{m.billing_choose()}</Button>
+							{/if}
+						{/snippet}
+					</PlanCard>
 				{/each}
 			</div>
 		{:else if failed}
