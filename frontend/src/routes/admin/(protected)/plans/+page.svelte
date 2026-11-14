@@ -14,7 +14,8 @@
 	import Checkbox from '$lib/components/m3/Checkbox.svelte';
 	import Select from '$lib/components/m3/Select.svelte';
 	import type { Plan } from '$lib/types';
-	import { MB_PER_GB, formatStorage } from './planLimits';
+	import { MB_PER_GB, formatStorage, parseAmount } from './planLimits';
+	import { DEFAULT_CURRENCY } from '$lib/billing';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -25,6 +26,9 @@
 	let featuresText = $state('');
 	let promoEnds = $state('');
 	let tokensText = $state('1000000');
+	// Prices are typed as text so an empty promo price means none.
+	let priceText = $state('0');
+	let promoPriceText = $state('');
 	let orderText = $state('0');
 	// Limits are typed as text so an empty box can mean unlimited.
 	let projectsText = $state('');
@@ -46,6 +50,9 @@
 			price_label: '',
 			features: [],
 			card_tone: 'glow',
+			price_amount: 0,
+			currency: DEFAULT_CURRENCY,
+			promo_price_amount: null,
 			promo_label: null,
 			promo_price_label: null,
 			promo_ends_at: null,
@@ -70,6 +77,8 @@
 		featuresText = '';
 		promoEnds = '';
 		tokensText = String(draft.monthly_tokens);
+		priceText = String(draft.price_amount);
+		promoPriceText = '';
 		orderText = String(draft.sort_order);
 		loadLimits(draft);
 		slugTouched = false;
@@ -82,6 +91,8 @@
 		featuresText = plan.features.join('\n');
 		promoEnds = plan.promo_ends_at ? plan.promo_ends_at.slice(0, 10) : '';
 		tokensText = String(plan.monthly_tokens);
+		priceText = String(plan.price_amount);
+		promoPriceText = plan.promo_price_amount === null ? '' : String(plan.promo_price_amount);
 		orderText = String(plan.sort_order);
 		loadLimits(plan);
 		sheetOpen = true;
@@ -133,6 +144,8 @@
 		...draft,
 		name: draft.name || m.plans_admin_name(),
 		monthly_tokens: Number(tokensText) || 0,
+		price_amount: parseAmount(priceText) ?? 0,
+		promo_price_amount: parseAmount(promoPriceText),
 		features: featuresText.split('\n').map((f) => f.trim()).filter(Boolean),
 		promo_ends_at: promoEnds ? `${promoEnds}T23:59:59` : null,
 	});
@@ -209,6 +222,10 @@
 				<TextField id="plan-tokens" name="monthly_tokens" type="number" min="1" label={m.plans_admin_tokens()} bind:value={tokensText} required />
 				<TextField id="plan-price" name="price_label" label={m.plans_admin_price()} bind:value={draft.price_label} placeholder="Rp 49.000 / month" />
 			</div>
+			<div class="row">
+				<TextField id="plan-price-amount" name="price_amount" type="number" min="0" step="1" label={m.plans_admin_price_amount()} supportingText={m.plans_admin_price_amount_hint()} bind:value={priceText} />
+				<TextField id="plan-currency" name="currency" label={m.plans_admin_currency()} value={draft.currency} readonly />
+			</div>
 			<label class="field">
 				<span class="field__label">{m.plans_admin_features()}</span>
 				<textarea name="features" rows="4" bind:value={featuresText} placeholder={m.plans_admin_features_hint()}></textarea>
@@ -235,6 +252,7 @@
 					<TextField id="plan-promo" name="promo_label" label={m.plans_admin_promo_label()} value={draft.promo_label ?? ''} oninput={(e) => (draft.promo_label = (e.currentTarget as HTMLInputElement).value || null)} />
 					<TextField id="plan-promo-price" name="promo_price_label" label={m.plans_admin_promo_price()} value={draft.promo_price_label ?? ''} oninput={(e) => (draft.promo_price_label = (e.currentTarget as HTMLInputElement).value || null)} />
 				</div>
+				<TextField id="plan-promo-price-amount" name="promo_price_amount" type="number" min="0" step="1" label={m.plans_admin_promo_price_amount()} supportingText={m.plans_admin_promo_price_amount_hint()} bind:value={promoPriceText} />
 				<DatePicker id="plan-promo-ends" name="promo_ends_at" label={m.plans_admin_promo_ends()} bind:value={promoEnds} min={todayISO()} />
 			</fieldset>
 			<fieldset class="limits">

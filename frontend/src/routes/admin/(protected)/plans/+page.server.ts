@@ -3,7 +3,8 @@ import { apiFetch } from '$lib/server/api';
 import type { AdminLlmModel, Plan } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
 import { m } from '$lib/paraglide/messages';
-import { readPlanLimits } from './planLimits';
+import { parseAmount, readPlanLimits } from './planLimits';
+import { DEFAULT_CURRENCY } from '$lib/billing';
 
 export type AdminPlan = Plan & { subscribers: number };
 
@@ -32,6 +33,9 @@ function readPlan(data: FormData) {
 		price_label: text('price_label'),
 		features: text('features').split('\n').map((f) => f.trim()).filter(Boolean),
 		card_tone: text('card_tone') || 'glow',
+		price_amount: parseAmount(text('price_amount')) ?? 0,
+		currency: text('currency') || DEFAULT_CURRENCY,
+		promo_price_amount: parseAmount(text('promo_price_amount')),
 		promo_label: text('promo_label') || null,
 		promo_price_label: text('promo_price_label') || null,
 		// The promo runs to the end of the chosen day.

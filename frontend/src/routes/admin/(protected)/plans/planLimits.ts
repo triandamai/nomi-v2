@@ -1,7 +1,6 @@
 import type { Plan } from '$lib/types';
 
-/** Storage is entered in MB; from this many MB the form also shows it in GB. */
-export const MB_PER_GB = 1024;
+export { MB_PER_GB, formatStorage } from '$lib/storage';
 
 export const SANDBOX_SIZES = ['small', 'default', 'large'] as const;
 export type SandboxSize = (typeof SANDBOX_SIZES)[number];
@@ -37,8 +36,10 @@ export function readPlanLimits(data: FormData): PlanLimits {
 	};
 }
 
-/** "512 MB" below a gigabyte, "1 GB" / "1.5 GB" from there. */
-export function formatStorage(mb: number): string {
-	if (mb < MB_PER_GB) return `${mb} MB`;
-	return `${Number((mb / MB_PER_GB).toFixed(1))} GB`;
+/** A price typed in: a whole number of zero or more, or null when empty or not one. */
+export function parseAmount(raw: string): number | null {
+	const text = raw.trim();
+	if (text === '') return null;
+	const value = Number(text);
+	return Number.isInteger(value) && value >= 0 ? value : null;
 }

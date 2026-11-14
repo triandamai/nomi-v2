@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MB_PER_GB, formatStorage, parseLimit, readPlanLimits } from './planLimits';
+import { MB_PER_GB, formatStorage, parseAmount, parseLimit, readPlanLimits } from './planLimits';
 
 function form(entries: [string, string][]) {
 	const data = new FormData();
@@ -87,5 +87,16 @@ describe('formatStorage', () => {
 		expect(formatStorage(MB_PER_GB)).toBe('1 GB');
 		expect(formatStorage(MB_PER_GB * 1.5)).toBe('1.5 GB');
 		expect(formatStorage(MB_PER_GB * 10)).toBe('10 GB');
+	});
+});
+
+describe('parseAmount', () => {
+	it('reads a whole price, and nothing for an empty or odd one', () => {
+		expect(parseAmount('49000')).toBe(49_000);
+		expect(parseAmount(' 0 ')).toBe(0);
+		expect(parseAmount('')).toBeNull();
+		expect(parseAmount('-1')).toBeNull();
+		expect(parseAmount('4.5')).toBeNull();
+		expect(parseAmount('abc')).toBeNull();
 	});
 });
