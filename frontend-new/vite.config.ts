@@ -23,14 +23,16 @@ export default defineConfig({
 		rolldownOptions: {
 			checks: { pluginTimings: false },
 			// The static copy goes to share hosts that cap a site at about 500 files, so its design-system
-			// code ships as one shared chunk instead of hundreds of small ones. The rest of the app's code
-			// (its routes are built too, though never served there) goes into one more, so new app pages
-			// don't push the copy over the cap.
+			// code, its messages, its packages and the rest of the app's code (its routes are built too,
+			// though never served there) each ship as one shared chunk instead of many small ones, so new
+			// app pages don't push the copy over the cap.
 			output: galleryStatic
 				? {
 						advancedChunks: {
 							groups: [
 								{ name: 'design-system', test: /src[\\/]lib[\\/](ds|gallery|docs)[\\/]/ },
+								{ name: 'messages', test: /src[\\/]lib[\\/]paraglide[\\/]/ },
+								{ name: 'vendor', test: /node_modules[\\/]/ },
 								{ name: 'app', test: /src[\\/](lib|routes)[\\/]/ },
 							],
 						},

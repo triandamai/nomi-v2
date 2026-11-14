@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
-	import { Globe, History, Link, MonitorX, Rocket } from '@lucide/svelte';
+	import { Activity, ArrowDownUp, Cpu, Globe, History, Link, MemoryStick, MonitorX, Rocket } from '@lucide/svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { pageAction } from '$lib/pageAction';
 	import { clock as appClock } from '$lib/clock';
@@ -16,6 +16,14 @@
 	import ProjectDialog from '$lib/ds/projects/ProjectDialog.svelte';
 	import DeployRow from '$lib/ds/projects/DeployRow.svelte';
 	import AddressRow from '$lib/ds/projects/AddressRow.svelte';
+	import MonitorStat from '$lib/ds/projects/MonitorStat.svelte';
+	import TrafficBars from '$lib/ds/projects/TrafficBars.svelte';
+	import ResourceRow from '$lib/ds/projects/ResourceRow.svelte';
+	import LogLines from '$lib/ds/projects/LogLines.svelte';
+	import Segmented from '$lib/ds/inputs/Segmented.svelte';
+	import { monitorStats, resourceRows, trafficBars } from '$lib/projects/monitor';
+	import type { Monitoring } from '$lib/server/workspace';
+	import type { MetricsRange } from '$lib/adapters/api';
 	import SubdomainField, { type SubdomainCheck } from '$lib/ds/projects/SubdomainField.svelte';
 	import { invalidate } from '$app/navigation';
 	import FileList from '$lib/ds/build/FileList.svelte';
@@ -163,10 +171,32 @@
 		await invalidate('app:workspace-project');
 	}
 
+	// Monitor (step 10): the live app's numbers, looked at again every 30 seconds while it's open.
+	let range = $state<MetricsRange>('24h');
+	let monitoring = $state<Monitoring | null>(null);
+	let monitorFailed = $state(false);
+	async function loadMonitoring(asked: MetricsRange) {
+		const response = await fetch(`/projects/${project.id}/monitor?range=${asked}`).catch(() => null);
+		if (asked !== range) return;
+		monitorFailed = !response?.ok;
+		monitoring = response?.ok ? ((await response.json()) as Monitoring) : null;
+	}
+	$effect(() => {
+		if (sheet !== 'monitor' || !liveUrl) return;
+		const asked = range;
+		void loadMonitoring(asked);
+		const timer = setInterval(() => !document.hidden && void loadMonitoring(asked), 30_000);
+		return () => clearInterval(timer);
+	});
+	const stats = $derived(monitoring?.metrics ? monitorStats(monitoring.metrics) : null);
+	const traffic = $derived(monitoring?.metrics ? trafficBars(monitoring.metrics.buckets, time.timeZone) : null);
+	const resources = $derived(monitoring?.usage ? resourceRows(monitoring.usage) : null);
+	const RANGE_NOTE: Record<MetricsRange, () => string> = { '1h': m.monitor_last_hour, '24h': m.monitor_today, '7d': m.monitor_week };
+
 	let view = $state<PaneView>('preview');
 	let device = $state<'desktop' | 'phone'>('desktop');
 	let reloads = $state(0);
-	let sheet = $state<'deployments' | 'domain' | null>(null);
+	let sheet = $state<'deployments' | 'domain' | 'monitor' | null>(null);
 	// An opened sheet takes the focus, so Escape (and a screen reader) is in it at once.
 	let sheetBox = $state<HTMLElement>();
 	$effect(() => {
@@ -195,7 +225,7 @@
 			{status}
 			space={project.org_name}
 			url={liveUrl ?? undefined}
-			nav={[...(deploy ? [{ id: 'deployments', label: m.workspace_deployments(), icon: History }] : []), ...(data.address ? [{ id: 'domain', label: m.workspace_domain(), icon: Link }] : [])]}
+			nav={[...(deploy ? [{ id: 'deployments', label: m.workspace_deployments(), icon: History }] : []), ...(data.address ? [{ id: 'domain', label: m.workspace_domain(), icon: Link }] : []), ...(deploy ? [{ id: 'monitor', label: m.workspace_monitor(), icon: Activity }] : [])]}
 			navLabel={m.workspace_tools()}
 			active={sheet ?? undefined}
 			onnav={(id) => (sheet = sheet === id ? null : (id as typeof sheet))}
@@ -261,6 +291,67 @@
 			{/if}
 		</div>
 
+		{#if sheet === 'monitor' && deploy}
+			<div bind:this={sheetBox} class="absolute inset-y-0 right-0 flex w-180 max-w-full">
+				<WorkspaceSheet icon={Activity} title={m.workspace_monitor()} meta={project.name} onclose={() => (sheet = null)}>
+					{#if !liveUrl}
+						<EmptyState icon={Activity} title={m.monitor_unpublished_title()} body={m.monitor_unpublished_body()} />
+					{:else if monitorFailed}
+						<EmptyState icon={Activity} title={m.monitor_failed_title()} body={m.monitor_failed_body()} />
+					{:else}
+						<div class="flex flex-col gap-4.5">
+							<div>
+								<Segmented
+									label={m.monitor_range()}
+									options={[
+										{ value: '1h', label: '1h' },
+										{ value: '24h', label: m.monitor_range_today() },
+										{ value: '7d', label: '7d' },
+									]}
+									value={range}
+									onchange={(value) => (range = value as MetricsRange)}
+								/>
+							</div>
+							<div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
+								<MonitorStat label={m.monitor_requests()} value={stats?.requests} note={RANGE_NOTE[range]()} notMeasured={m.monitor_not_measured()} />
+								<MonitorStat label={m.monitor_errors()} value={stats?.errors} note={stats?.errorShare ? m.monitor_error_share({ share: stats.errorShare }) : undefined} notMeasured={m.monitor_not_measured()} />
+								<MonitorStat label="P95" value={stats?.p95} note={m.monitor_p95_note()} notMeasured={m.monitor_not_measured()} />
+								<MonitorStat label={m.monitor_visitors()} value={stats?.visitors} note={RANGE_NOTE[range]()} notMeasured={m.monitor_not_measured()} />
+							</div>
+							{#if traffic?.bars.length}
+								<section class="flex flex-col gap-2">
+									<h3 class="flex justify-between font-mono text-label text-text-3">
+										<span class="tracking-label uppercase">{m.monitor_traffic({ range: RANGE_NOTE[range]() })}</span>
+										{#if traffic.peak}<span>{m.monitor_peak({ at: traffic.peak.at, count: traffic.peak.requests })}</span>{/if}
+									</h3>
+									<TrafficBars label={m.monitor_traffic({ range: RANGE_NOTE[range]() })} bars={traffic.bars} axis={[traffic.bars[0].at, traffic.bars[traffic.bars.length - 1].at]} />
+								</section>
+							{/if}
+							<section class="flex flex-col gap-2">
+								<h3 class="font-mono text-label tracking-label text-text-3 uppercase">{m.monitor_resources()}</h3>
+								{#if resources?.memory}
+									<div class="flex flex-col">
+										<ResourceRow icon={MemoryStick} name={m.monitor_memory()} value={resources.memory} />
+										<ResourceRow icon={Cpu} name={m.monitor_cpu()} value={resources.cpu ?? ''} />
+										<ResourceRow icon={ArrowDownUp} name={m.monitor_bandwidth()} value={resources.bandwidth ?? ''} />
+									</div>
+								{:else}
+									<p class="text-ui text-text-3">{m.monitor_not_measured()}</p>
+								{/if}
+							</section>
+							<section class="flex flex-col gap-0.5">
+								<h3 class="font-mono text-label tracking-label text-text-3 uppercase">{m.monitor_log()}</h3>
+								{#if monitoring?.logs?.length}
+									<LogLines label={m.monitor_log()} lines={monitoring.logs.slice(-40)} />
+								{:else}
+									<p class="text-ui text-text-3">{monitoring?.note ?? m.monitor_log_empty()}</p>
+								{/if}
+							</section>
+						</div>
+					{/if}
+				</WorkspaceSheet>
+			</div>
+		{/if}
 		{#if sheet === 'domain' && address}
 			<div bind:this={sheetBox} class="absolute inset-y-0 right-0 flex w-180 max-w-full">
 				<WorkspaceSheet icon={Link} title={m.workspace_domain()} meta={project.name} onclose={() => (sheet = null)}>

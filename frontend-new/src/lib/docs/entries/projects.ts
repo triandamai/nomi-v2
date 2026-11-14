@@ -306,4 +306,32 @@ export default [
 		accessibility: ['The field names itself; what the check says is announced politely and described by the field.'],
 		related: ['projects/AddressRow.svelte'],
 	},
+	{
+		file: 'projects/MonitorStat.svelte',
+		summary: 'One number of a running app: requests, errors, p95 or visitors, with a note.',
+		use: ['The Monitor sheet.'],
+		donts: ['Show 0 for something that wasn’t measured: say Not measured.'],
+		related: ['projects/TrafficBars.svelte'],
+	},
+	{
+		file: 'projects/TrafficBars.svelte',
+		summary: 'Requests per bucket as bars against the busiest, with the axis under them.',
+		use: ['The Monitor sheet’s traffic.'],
+		dos: ['Leave an unmeasured bucket empty; draw a quiet one as a line.'],
+		accessibility: ['An image named by what it counts; each bar’s title gives its time and count.'],
+		related: ['projects/MonitorStat.svelte'],
+	},
+	{
+		file: 'projects/ResourceRow.svelte',
+		summary: 'One resource of a running app: memory, CPU or bandwidth, its value in mono.',
+		use: ['The Monitor sheet’s resources.'],
+		related: ['projects/MonitorStat.svelte'],
+	},
+	{
+		file: 'projects/LogLines.svelte',
+		summary: 'What a running app prints, newest last, errors and warnings in their colours.',
+		use: ['The Monitor sheet’s live log.'],
+		accessibility: ['A log region, named.'],
+		related: ['projects/MonitorStat.svelte'],
+	},
 ] satisfies ComponentDoc[];
