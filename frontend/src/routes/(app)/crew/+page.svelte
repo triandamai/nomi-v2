@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages';
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
+	import Button from '$lib/components/m3/Button.svelte';
 	import { crewByActivity, rosterKey, type CrewRosterMember } from '$lib/crew';
 	import type { PageData } from './$types';
 
@@ -9,31 +10,35 @@
 	// Every agent the app has, with what each is doing for you right now (/api/agents, loaded by
 	// the app layout).
 	const crew = $derived(crewByActivity(data.crew));
-	const busy = $derived(crew.filter((m) => m.state !== 'idle'));
+	const busy = $derived(crew.filter((m) => m.state !== 'idle' && m.state !== 'paused'));
 	const ready = $derived(crew.filter((m) => m.state === 'idle'));
+	const paused = $derived(crew.filter((m) => m.state === 'paused'));
 
 	const BADGES: Record<CrewRosterMember['state'], string | null> = {
 		working: m.home_working(),
 		waiting: m.home_needs_you(),
 		done: m.common_done(),
 		idle: null,
+		paused: m.crewpage_paused(),
 	};
 </script>
 
 {#snippet card(member: CrewRosterMember)}
 	{@const key = rosterKey(member.agent_type)}
 	<li class="card" data-state={member.state}>
+		<a class="card__link" href="/crew/{encodeURIComponent(member.agent_type)}" aria-label={member.name}></a>
 		<AgentShape agent={key} size={56} face={key === 'nomi'} working={member.state === 'working'} />
 		<div class="card__text">
 			<div class="card__top">
 				<h3 class="card__name">{member.name}</h3>
-				{#if member.is_dynamic}<span class="card__custom">{m.crewpage_custom()}</span>{/if}
+				{#if member.is_own}<span class="card__custom">{m.crewpage_yours()}</span>
+				{:else if member.is_dynamic}<span class="card__custom">{m.crewpage_custom()}</span>{/if}
 				{#if BADGES[member.state]}
 					<span class="card__badge" data-state={member.state}>{BADGES[member.state]}</span>
 				{/if}
 			</div>
 			<p class="card__role">{member.role}</p>
-			{#if member.state !== 'idle' && member.status}
+			{#if member.state !== 'idle' && member.state !== 'paused' && member.status}
 				<p class="card__status">{member.status}</p>
 			{/if}
 		</div>
@@ -47,6 +52,9 @@
 			<p class="md-body-large crew-page__lede">
 				{m.crewpage_lede()}
 			</p>
+			<div class="crew-page__actions">
+				<Button variant="tonal" size="s" href="/crew/new">{m.crewpage_new_member()}</Button>
+			</div>
 		</header>
 
 		{#if crew.length === 0}
@@ -66,6 +74,14 @@
 					{#each ready as member (member.agent_type)}{@render card(member)}{/each}
 				</ul>
 			</section>
+			{#if paused.length > 0}
+				<section aria-labelledby="paused-title">
+					<h2 id="paused-title" class="section-label">{m.crewpage_paused_title({ count: paused.length })}</h2>
+					<ul class="grid">
+						{#each paused as member (member.agent_type)}{@render card(member)}{/each}
+					</ul>
+				</section>
+			{/if}
 		{/if}
 	</div>
 </div>
@@ -114,7 +130,11 @@
 		padding: 0;
 		list-style: none;
 	}
+	.crew-page__actions {
+		margin-top: 14px;
+	}
 	.card {
+		position: relative;
 		display: flex;
 		align-items: flex-start;
 		gap: 14px;
@@ -122,6 +142,18 @@
 		border-radius: var(--md-sys-shape-corner-extra-large);
 		background: var(--md-sys-color-surface-container-lowest);
 		color: var(--md-sys-color-on-surface);
+	}
+	.card__link {
+		position: absolute;
+		inset: 0;
+		border-radius: inherit;
+	}
+	.card__link:focus-visible {
+		outline: 2px solid var(--md-sys-color-primary);
+		outline-offset: 2px;
+	}
+	.card[data-state='paused'] {
+		opacity: 0.72;
 	}
 	.card[data-state='working'],
 	.card[data-state='waiting'] {
@@ -166,6 +198,10 @@
 	.card__badge[data-state='waiting'] {
 		background: var(--md-sys-color-tertiary);
 		color: var(--md-sys-color-on-tertiary);
+	}
+	.card__badge[data-state='paused'] {
+		background: var(--md-sys-color-surface-container-highest);
+		color: var(--md-sys-color-on-surface-variant);
 	}
 	.card__badge[data-state='done'] {
 		background: var(--md-sys-color-surface-container-high);

@@ -64,6 +64,13 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/auth/refresh", post(auth_routes::refresh_handler))
         .route("/api/auth/logout", post(auth_routes::logout_handler))
         .route("/api/auth/verify", post(auth_routes::verify_handler))
+        .route("/api/auth/start", post(auth_routes::start_handler))
+        .route("/api/auth/password", put(auth_routes::change_password_handler))
+        .route("/api/auth/active-org", put(auth_routes::active_org_handler))
+        .route("/api/account", delete(crate::routes::account::delete_account))
+        .route("/api/account/delete/code", post(crate::routes::account::start_delete))
+        .route("/api/account/email", post(crate::routes::account::start_email_change))
+        .route("/api/account/email/verify", post(crate::routes::account::verify_email_change))
         .route("/api/auth/resend", post(auth_routes::resend_handler))
         .route("/api/auth/challenge/:id", get(auth_routes::challenge_handler))
         .route("/api/auth/forgot", post(auth_routes::forgot_handler))
@@ -79,16 +86,24 @@ pub fn build_router(state: AppState) -> Router {
             get(|AuthClaims(claims): AuthClaims| async move { axum::Json(claims) }),
         )
         .route("/api/orgs", get(crate::routes::orgs::list_orgs).post(crate::routes::orgs::create_org))
-        .route("/api/orgs/:org_id", get(crate::routes::orgs::get_org).patch(crate::routes::orgs::rename_org))
+        .route(
+            "/api/orgs/:org_id",
+            get(crate::routes::orgs::get_org).patch(crate::routes::orgs::rename_org).delete(crate::routes::orgs::delete_org),
+        )
         .route("/api/orgs/:org_id/invites", post(crate::routes::orgs::create_invite))
+        .route("/api/orgs/:org_id/invite-links", post(crate::routes::orgs::create_invite_link))
         .route("/api/orgs/:org_id/invites/:code", delete(crate::routes::orgs::revoke_invite))
+        .route("/api/orgs/:org_id/invites/:code/resend", post(crate::routes::orgs::resend_invite))
         .route(
             "/api/orgs/:org_id/members/:user_id",
             delete(crate::routes::orgs::remove_member).patch(crate::routes::orgs::set_member_role),
         )
+        .route("/api/invites", get(crate::routes::orgs::list_my_invites))
         .route("/api/invites/:code", get(crate::routes::orgs::get_invite))
         .route("/api/invites/:code/accept", post(crate::routes::orgs::accept_invite))
+        .route("/api/invites/:code/decline", post(crate::routes::orgs::decline_invite))
         .route("/api/preferences/project-org", put(crate::routes::orgs::set_project_org))
+        .route("/api/preferences/open-org", put(crate::routes::orgs::set_open_org))
         .route(
             "/api/sessions",
             post(sessions_routes::create_session).get(sessions_routes::list_sessions),
@@ -182,7 +197,20 @@ pub fn build_router(state: AppState) -> Router {
             put(provider_connections_routes::update_shared).delete(provider_connections_routes::disconnect_shared),
         )
         .route("/api/admin/settings/llm/connections/:id/models", post(provider_connections_routes::shared_models))
-        .route("/api/agents", get(agents_routes::list_crew))
+        .route("/api/agents", get(agents_routes::list_crew).post(crate::routes::crew_settings::create_member))
+        .route("/api/agents/templates", get(crate::routes::crew_settings::templates))
+        .route(
+            "/api/agents/:type",
+            put(crate::routes::crew_settings::set_enabled).delete(crate::routes::crew_settings::delete_member),
+        )
+        .route(
+            "/api/agents/:type/permissions",
+            get(crate::routes::crew_settings::get_permissions).put(crate::routes::crew_settings::set_permissions),
+        )
+        .route("/api/agents/:type/soul", get(crate::routes::crew_settings::get_soul).put(crate::routes::crew_settings::set_soul))
+        .route("/api/agents/:type/soul/versions", get(crate::routes::crew_settings::soul_versions))
+        .route("/api/agents/:type/soul/rollback", post(crate::routes::crew_settings::rollback_soul))
+        .route("/api/agents/:type/activity", get(crate::routes::crew_settings::activity))
         .route("/api/home", get(home_routes::home_summary))
         .route("/api/home/updates", get(home_routes::updates_page))
         .route("/api/home/today", get(home_routes::today_page))
@@ -195,6 +223,9 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/money/period", put(money_routes::set_period))
         .route("/api/money/budgets/:category", delete(money_routes::delete_budget))
         .route("/api/connections", get(connections_routes::overview))
+        .route("/api/connections/catalog", get(crate::routes::connections_catalog::get_catalog))
+        .route("/api/connections/mcp", get(crate::routes::connections_catalog::list_mcp).post(crate::routes::connections_catalog::add_mcp))
+        .route("/api/connections/mcp/:id", delete(crate::routes::connections_catalog::delete_mcp))
         .route("/api/connections/hevy", get(connections_routes::get_hevy).put(connections_routes::connect_hevy).delete(connections_routes::disconnect_hevy))
         .route("/api/connections/google", get(connections_routes::get_google).delete(connections_routes::disconnect_google))
         .route("/api/connections/google/start", post(connections_routes::start_google))
@@ -206,6 +237,8 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/reminders/:id", post(reminders_routes::reminder_action))
         .route("/api/scheduled-tasks/:id/cancel", post(reminders_routes::cancel_scheduled_task))
         .route("/api/memory", get(memory_routes::list_my_memories))
+        .route("/api/memory/settings", get(memory_routes::get_memory_settings).put(memory_routes::put_memory_settings))
+        .route("/api/memory/profile", get(memory_routes::get_memory_profile).put(memory_routes::put_memory_profile))
         .route("/api/memory/:memory_id", delete(memory_routes::delete_my_memory).put(memory_routes::edit_my_memory))
         .route("/api/memory/:memory_id/confirm", post(memory_routes::confirm_my_memory))
         .route(
@@ -223,9 +256,12 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/admin/usage", get(crate::routes::admin_usage::get_usage))
         .route("/api/maintenance", get(crate::routes::maintenance::get))
         .route("/api/showcase", get(crate::routes::showcase::list))
+        .route("/api/showcase/:id/remix", post(crate::routes::project_edit::remix))
         .route("/api/sessions/:id/shares", post(crate::routes::shares::create))
         .route("/api/sessions/:id/shares/:share_id", put(crate::routes::shares::update).delete(crate::routes::shares::revoke))
         .route("/api/shared/:token", get(crate::routes::shares::read))
+        .route("/api/shared/:token/report", post(crate::routes::shares::report))
+        .route("/api/admin/shared-reports", get(crate::routes::shares::admin_list))
         .route("/api/shares", get(crate::routes::shares::list))
         .route("/api/admin/maintenance", get(crate::routes::maintenance::admin_get).put(crate::routes::maintenance::put))
         .route("/api/support/v1/ask", post(crate::routes::support::ask))
@@ -348,6 +384,9 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/attachments/:id/content", get(attachments_routes::get_content))
         .route("/api/attachments/:id/preview", get(attachments_routes::get_preview))
         .route("/api/plans", get(plans_routes::list_for_user))
+        .route("/api/plans/:id/checkout", post(crate::routes::plan_checkout::checkout))
+        .route("/api/plans/:id/waitlist", post(crate::routes::plan_checkout::join_waitlist))
+        .route("/api/payments/xendit/webhook", post(crate::routes::plan_checkout::xendit_webhook))
         .route("/api/admin/plans", get(plans_routes::admin_list).post(plans_routes::admin_create))
         .route("/api/admin/plans/:id", put(plans_routes::admin_update).delete(plans_routes::admin_delete))
         .route("/api/admin/plans/:id/default", put(plans_routes::admin_set_default))
@@ -356,6 +395,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/notifications/unread", get(notifications_routes::unread))
         .route("/api/notifications/read-all", post(notifications_routes::mark_all_read))
         .route("/api/notifications/preferences", get(notifications_routes::get_preferences).put(notifications_routes::put_preferences))
+        .route(
+            "/api/notifications/reminder-preferences",
+            get(notifications_routes::get_reminder_preferences).put(notifications_routes::put_reminder_preferences),
+        )
         .route("/api/notifications/:id/read", post(notifications_routes::mark_read))
         .route("/api/admin/notifications/broadcast", post(notifications_routes::broadcast))
         .route("/api/admin/notifications/broadcasts", get(notifications_routes::list_broadcasts))
@@ -376,7 +419,14 @@ pub fn build_router(state: AppState) -> Router {
             get(projects_routes::list_projects).post(projects_routes::create_project_session),
         )
         .route("/api/projects/by-session/:sessionId", get(projects_routes::get_project_by_session))
-        .route("/api/projects/:id", get(projects_routes::get_project).delete(crate::routes::deploy::delete_project))
+        .route(
+            "/api/projects/:id",
+            get(projects_routes::get_project).patch(crate::routes::project_edit::rename).delete(crate::routes::deploy::delete_project),
+        )
+        .route("/api/projects/:id/duplicate", post(crate::routes::project_edit::duplicate))
+        .route("/api/projects/:id/versions", get(crate::routes::project_versions::list))
+        .route("/api/projects/:id/versions/:version/restore", post(crate::routes::project_versions::restore))
+        .route("/api/search", get(crate::routes::search::search))
         .route("/api/projects/:id/transfer/orgs", get(projects_routes::search_transfer_orgs))
         .route("/api/projects/:id/transfer", post(projects_routes::transfer_project))
         .route(
@@ -392,6 +442,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/projects/:id/ws", get(crate::routes::deploy::project_stream))
         .route("/api/projects/:id/domain", get(crate::routes::domain::get).put(crate::routes::domain::change))
         .route("/api/projects/:id/domain/check", get(crate::routes::domain::check))
+        .route("/api/projects/:id/domains", get(crate::routes::custom_domains::list).post(crate::routes::custom_domains::add))
+        .route("/api/projects/:id/domains/:hostname", delete(crate::routes::custom_domains::remove))
+        .route("/api/projects/:id/domains/:hostname/check", post(crate::routes::custom_domains::check))
+        .route("/api/projects/:id/domains/:hostname/primary", put(crate::routes::custom_domains::make_primary))
         .route("/api/projects/:id/deploy/publishes/:publish_id", get(crate::routes::deploy::get_publish))
         .route("/api/projects/:id/deploy/publishes/:publish_id/rollback", post(crate::routes::deploy::rollback))
         .route("/api/projects/:id/deploy/deployments/:deployment_id", get(crate::routes::deploy::get_deployment))
@@ -435,6 +489,8 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/projects/:id/database/credentials", post(crate::routes::project_database::credentials))
         .route("/api/projects/:id/database/tables", get(crate::routes::project_database::tables))
         .route("/api/projects/:id/database/query", post(crate::routes::project_database::run_query))
+        .route("/api/projects/:id/database/dump", get(crate::routes::project_database_edit::dump))
+        .route("/api/projects/:id/database/tables/:schema/:table/rows", patch(crate::routes::project_database_edit::update_row))
         .route("/api/projects/:id/relay/preview", get(crate::routes::project_relay::preview))
         .route("/api/projects/:id/relay", get(crate::routes::project_relay::overview))
         .route("/api/projects/:id/relay/query", post(crate::routes::project_relay::run_query))
@@ -445,6 +501,7 @@ pub fn build_router(state: AppState) -> Router {
             put(crate::routes::project_secrets::set).delete(crate::routes::project_secrets::remove),
         )
         .route("/api/hooks/shipyard", post(crate::routes::deploy::webhook))
+        .route("/api/hooks/sites/:id", post(crate::routes::site_visits::report))
         .route(
             "/api/projects/:id/issues",
             get(crate::routes::project_issues::list_issues).post(crate::routes::project_issues::create_issue),

@@ -283,8 +283,9 @@ async fn failures_read_as_google_said_and_a_revoked_token_asks_to_reconnect(pool
     Mock::given(method("GET")).and(path("/drive/v3/files")).respond_with(ResponseTemplate::new(401)).mount(&server).await;
     let revoked = run(&agent, &pool, user, "drive_search", json!({"query": "x"})).await.unwrap();
     assert!(matches!(revoked.block, Some(ContentBlock::WorkspaceConnect { ref reason, .. }) if reason == "not_connected"));
-    let left: i64 = sqlx::query_scalar("SELECT count(*) FROM workspace_connections WHERE user_id = $1").bind(user).fetch_one(&pool).await.unwrap();
-    assert_eq!(left, 0, "a revoked connection is forgotten");
+    let expired: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM workspace_connections WHERE user_id = $1 AND expired_at IS NOT NULL").bind(user).fetch_one(&pool).await.unwrap();
+    assert_eq!(expired, 1, "a revoked connection is kept, marked expired");
 }
 
 #[sqlx::test(migrations = "../../migrations")]

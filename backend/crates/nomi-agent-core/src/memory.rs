@@ -94,6 +94,18 @@ pub async fn try_retrieve_memories(
     .unwrap_or_default()
 }
 
+/// Recalled memories, best first, as many as fit in `budget` tokens (the person's memory budget).
+pub fn within_budget(memories: Vec<RetrievedMemory>, budget: i32) -> Vec<RetrievedMemory> {
+    let mut used = 0;
+    memories
+        .into_iter()
+        .take_while(|m| {
+            used += crate::memory_settings::tokens(&m.content);
+            used <= budget
+        })
+        .collect()
+}
+
 /// A reply drew on these memories: they get a little stronger, and count as recently useful
 /// (so they don't fade). A thumbs-down on the reply takes back more than this gives.
 pub async fn mark_used(conn: &mut sqlx::PgConnection, memory_ids: &[Uuid]) -> Result<(), sqlx::Error> {
@@ -226,7 +238,7 @@ pub async fn extract_and_store_memory_in(
         tracing::info!(%user_id, ?session_id, "memory: nothing the person said to learn from");
         return;
     };
-    match learn(conn, provider, embedding_provider, user_id, source_message_id, &user_text, assistant_text).await {
+    match learn(conn, provider, embedding_provider, user_id, None, source_message_id, &user_text, assistant_text).await {
         Ok(learned) => tracing::info!(%user_id, ?learned, "memory: learned from the exchange"),
         Err(e) => tracing::warn!(error = %e, %user_id, "memory: learning from the exchange failed"),
     }
@@ -266,19 +278,27 @@ pub async fn queue_learning(
     conn: &mut PoolConnection<Postgres>,
     user_id: Uuid,
     session_id: Uuid,
+    agent_type: &str,
     fallback_user_text: &str,
     answer: &str,
 ) {
+    if !crate::memory_settings::load(&mut **conn, user_id).await.learn_from_chats {
+        tracing::info!(%user_id, %session_id, "memory: the person turned off learning from chats, not queued");
+        return;
+    }
     let Some((source_message_id, person_text)) = what_the_person_said(conn, Some(session_id), fallback_user_text).await else {
         tracing::info!(%user_id, %session_id, "memory: nothing the person said to learn from, not queued");
         return;
     };
     let queued: Result<Uuid, sqlx::Error> =
-        sqlx::query_scalar("INSERT INTO memory_jobs (user_id, source_message_id, person_text, answer) VALUES ($1, $2, $3, $4) RETURNING id")
-            .bind(user_id)
-            .bind(source_message_id)
-            .bind(&person_text)
-            .bind(answer)
+        sqlx::query_scalar(
+            "INSERT INTO memory_jobs (user_id, source_message_id, person_text, answer, agent_type) VALUES ($1, $2, $3, $4, $5) RETURNING id",
+        )
+        .bind(user_id)
+        .bind(source_message_id)
+        .bind(&person_text)
+        .bind(answer)
+        .bind(agent_type)
             .fetch_one(&mut **conn)
             .await;
     match queued {
@@ -297,6 +317,8 @@ pub struct LearningJob {
     pub answer: String,
     /// Tries so far, this one included.
     pub attempts: i32,
+    /// The agent whose reply this was (the memory's `learned_by`).
+    pub agent_type: Option<String>,
 }
 
 /// How often a job is tried before it's dropped (a model that keeps failing or timing out).
@@ -307,7 +329,7 @@ pub async fn take_learning_jobs(pool: &sqlx::PgPool, limit: i64) -> Result<Vec<L
     sqlx::query_as(
         "UPDATE memory_jobs SET attempts = attempts + 1 \
          WHERE id IN (SELECT id FROM memory_jobs WHERE attempts < $2 ORDER BY created_at LIMIT $1 FOR UPDATE SKIP LOCKED) \
-         RETURNING id, user_id, source_message_id, person_text, answer, attempts",
+         RETURNING id, user_id, source_message_id, person_text, answer, attempts, agent_type",
     )
     .bind(limit)
     .bind(LEARNING_ATTEMPTS)
@@ -324,7 +346,13 @@ pub async fn run_learning_job(
     job: &LearningJob,
 ) -> Result<Learned, LearnError> {
     let mut conn = pool.acquire().await?;
-    let learned = learn(&mut conn, provider, embedding_provider, job.user_id, job.source_message_id, &job.person_text, &job.answer).await?;
+    // Learning was turned off after this was queued: it's dropped, not learned from.
+    if !crate::memory_settings::load(&mut *conn, job.user_id).await.learn_from_chats {
+        sqlx::query("DELETE FROM memory_jobs WHERE id = $1").bind(job.id).execute(&mut *conn).await?;
+        return Ok(Learned::Nothing);
+    }
+    let learned_by = job.agent_type.as_deref();
+    let learned = learn(&mut conn, provider, embedding_provider, job.user_id, learned_by, job.source_message_id, &job.person_text, &job.answer).await?;
     sqlx::query("DELETE FROM memory_jobs WHERE id = $1").bind(job.id).execute(&mut *conn).await?;
     Ok(learned)
 }
@@ -387,11 +415,13 @@ async fn embed_checked(embedding_provider: &dyn EmbeddingProvider, text: &str, f
 /// Decides whether the exchange taught Nomi something lasting about the person, and adds,
 /// updates or retires one memory accordingly. Every step is logged, so an empty Memory page can
 /// be traced to the step that stopped it.
+#[allow(clippy::too_many_arguments)]
 async fn learn(
     conn: &mut PoolConnection<Postgres>,
     provider: &dyn LlmProvider,
     embedding_provider: &dyn EmbeddingProvider,
     user_id: Uuid,
+    learned_by: Option<&str>,
     source_message_id: Option<Uuid>,
     user_text: &str,
     assistant_text: &str,
@@ -467,23 +497,28 @@ async fn learn(
             }
             None => Ok(Learned::UnknownTarget { target }),
         },
-        MemoryChange::Add { kind, text } => store_new(conn, embedding_provider, user_id, &kind, &text, source_message_id, None).await,
+        MemoryChange::Add { kind, text } => store_new(conn, embedding_provider, user_id, learned_by, &kind, &text, source_message_id, None).await,
         MemoryChange::Update { target, kind, text } => match known.get(target - 1) {
             Some((old_id, old_kind, _)) => {
                 let kind = kind.unwrap_or_else(|| old_kind.clone());
-                store_new(conn, embedding_provider, user_id, &kind, &text, source_message_id, Some(*old_id)).await
+                store_new(conn, embedding_provider, user_id, learned_by, &kind, &text, source_message_id, Some(*old_id)).await
             }
-            None => store_new(conn, embedding_provider, user_id, &kind.unwrap_or_else(|| "fact".to_string()), &text, source_message_id, None).await,
+            None => {
+                let kind = kind.unwrap_or_else(|| "fact".to_string());
+                store_new(conn, embedding_provider, user_id, learned_by, &kind, &text, source_message_id, None).await
+            }
         },
     }
 }
 
 /// Stores a new memory (or strengthens the identical one already there). When it `replaces` an
 /// older memory, it takes over that memory's strength and the old one is retired.
+#[allow(clippy::too_many_arguments)]
 async fn store_new(
     conn: &mut PoolConnection<Postgres>,
     embedding_provider: &dyn EmbeddingProvider,
     user_id: Uuid,
+    learned_by: Option<&str>,
     kind: &str,
     text: &str,
     source_message_id: Option<Uuid>,
@@ -519,8 +554,9 @@ async fn store_new(
 
     let mut tx = sqlx::Acquire::begin(&mut **conn).await?;
     let new_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO memory_items (user_id, content, kind, embedding, embedding_provider, embedding_model, source_message_id, weight) \
-         VALUES ($1, $2, $3, $4::vector, $5, $6, $7, COALESCE((SELECT weight FROM memory_items WHERE id = $8), 1.0)) RETURNING id",
+        "INSERT INTO memory_items (user_id, content, kind, embedding, embedding_provider, embedding_model, source_message_id, weight, learned_by) \
+         VALUES ($1, $2, $3, $4::vector, $5, $6, $7, COALESCE((SELECT weight FROM memory_items WHERE id = $8), 1.0), \
+                 COALESCE($9, (SELECT learned_by FROM memory_items WHERE id = $8))) RETURNING id",
     )
     .bind(user_id)
     .bind(text)
@@ -530,6 +566,7 @@ async fn store_new(
     .bind(embedding_provider.model_id())
     .bind(source_message_id)
     .bind(replaces)
+    .bind(learned_by)
     .fetch_one(&mut *tx)
     .await?;
     if let Some(old) = replaces {
@@ -539,8 +576,11 @@ async fn store_new(
             .execute(&mut *tx)
             .await?;
     }
+    // Past the person's memory budget, the weakest memories make room.
+    let budget = crate::memory_settings::load(&mut *tx, user_id).await.memory_budget;
+    let made_room = crate::memory_settings::enforce_memory_budget(&mut *tx, user_id, budget).await?;
     tx.commit().await?;
-    tracing::info!(%user_id, memory_id = %new_id, kind, "memory: saved");
+    tracing::info!(%user_id, memory_id = %new_id, kind, made_room, "memory: saved");
     Ok(match replaces {
         Some(_) => Learned::Updated { text: text.to_string() },
         None => Learned::Added { kind: kind.to_string(), text: text.to_string() },

@@ -1,15 +1,19 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
-import type { OrgList, ProjectList, SessionSummary } from '$lib/types';
+import type { OrgList, ProjectList, SessionSummary, ShowcaseApp } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
 import { m } from '$lib/paraglide/messages';
 
 export const load: PageServerLoad = async ({ cookies, fetch }) => {
-	const [orgsResponse, projectsResponse, sessionsResponse] = await Promise.all([
+	const [orgsResponse, projectsResponse, sessionsResponse, showcaseResponse] = await Promise.all([
 		apiFetch(fetch, cookies, '/api/orgs'),
 		apiFetch(fetch, cookies, '/api/projects'),
 		apiFetch(fetch, cookies, '/api/sessions').catch(() => null),
+		// Apps people chose to show, to remix; none when it can't be reached.
+		apiFetch(fetch, cookies, '/api/showcase').catch(() => null),
 	]);
+	const shown: unknown = showcaseResponse?.ok ? await showcaseResponse.json().catch(() => []) : [];
+	const showcase: ShowcaseApp[] = Array.isArray(shown) ? shown : [];
 	if (!orgsResponse.ok || !projectsResponse.ok) {
 		throw error(500, m.err_load_projects());
 	}
@@ -34,6 +38,7 @@ export const load: PageServerLoad = async ({ cookies, fetch }) => {
 		baseDomain: list.base_domain ?? null,
 		sessions,
 		members: orgMembers,
+		showcase,
 	};
 };
 
@@ -124,6 +129,33 @@ export const actions: Actions = {
 		if (!response.ok) return fail(500, { importError: m.err_new_project() });
 		const { session_id, project_id } = (await response.json()) as { session_id: string; project_id: string };
 		return { imported: { session_id, project_id } };
+	},
+
+	// Renames the project (and sets its description) from the card's menu.
+	renameProject: async ({ request, cookies, fetch }) => {
+		const formData = await request.formData();
+		const projectId = String(formData.get('project_id') ?? '');
+		const name = String(formData.get('name') ?? '').trim();
+		const description = String(formData.get('description') ?? '').trim();
+		if (!projectId || !name) return fail(400, { renameError: m.projects_err_rename() });
+		const response = await apiFetch(fetch, cookies, `/api/projects/${projectId}`, {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ name, description }),
+		});
+		if (!response.ok) return fail(response.status, { renameError: m.projects_err_rename() });
+		return { renamed: projectId };
+	},
+
+	// A copy of the project, opened right away.
+	duplicateProject: async ({ request, cookies, fetch }) => {
+		const projectId = String((await request.formData()).get('project_id') ?? '');
+		if (!projectId) return fail(400, { error: m.projects_err_duplicate() });
+		const response = await apiFetch(fetch, cookies, `/api/projects/${projectId}/duplicate`, { method: 'POST' });
+		if (response.status === 409) return fail(409, { needsOrg: true });
+		if (!response.ok) return fail(response.status, { error: m.projects_err_duplicate() });
+		const { session_id } = (await response.json()) as { session_id: string };
+		throw redirect(303, `/projects/session/${session_id}`);
 	},
 
 	deleteProject: async ({ request, cookies, fetch }) => {

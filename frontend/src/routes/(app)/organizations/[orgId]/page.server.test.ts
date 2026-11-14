@@ -70,4 +70,23 @@ describe('organization [orgId] page.server', () => {
 		const left = await settle(() => actions.leave(event({ cookies, params: { orgId: 'org1' } })));
 		expect(left).toHaveProperty('thrown');
 	});
+
+	it('resends an invite, makes a link, and deletes the workspace', async () => {
+		const cookies = cookieJar({ access_token: 'valid' });
+		vi.stubGlobal('fetch', vi.fn(async () => json({ code: 'c1', email: 'bob@example.com', link: false })));
+		expect(await actions.resend(event({ cookies, params: { orgId: 'org1' }, form: { code: 'c1' } }))).toEqual({ resent: 'bob@example.com' });
+		vi.stubGlobal('fetch', vi.fn(async () => json({ code: 'L1', email: null, link: true }, 201)));
+		expect(await actions.link(event({ cookies, params: { orgId: 'org1' }, form: { role: 'member' } }))).toEqual({ linkCode: 'L1' });
+		vi.stubGlobal('fetch', vi.fn(async () => json({}, 404)));
+		expect(await actions.resend(event({ cookies, params: { orgId: 'org1' }, form: { code: 'c1' } }))).toMatchObject({ status: 404 });
+		expect(await actions.link(event({ cookies, params: { orgId: 'org1' }, form: {} }))).toMatchObject({ status: 404 });
+		expect(await actions.delete(event({ cookies, params: { orgId: 'org1' } }))).toMatchObject({ status: 404 });
+
+		vi.stubGlobal('fetch', vi.fn(async () => new Response('move or delete its projects first', { status: 409 })));
+		expect(await actions.delete(event({ cookies, params: { orgId: 'org1' } }))).toMatchObject({ status: 409, data: { error: expect.any(String) } });
+		vi.stubGlobal('fetch', vi.fn(async () => new Response('only owners can delete a workspace', { status: 403 })));
+		expect(await actions.delete(event({ cookies, params: { orgId: 'org1' } }))).toMatchObject({ status: 403 });
+		vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 204 })));
+		expect(await settle(() => actions.delete(event({ cookies, params: { orgId: 'org1' } })))).toMatchObject({ thrown: { location: '/organizations' } });
+	});
 });

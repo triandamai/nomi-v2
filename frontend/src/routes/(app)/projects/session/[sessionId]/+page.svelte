@@ -226,7 +226,7 @@
 		if (names.length === 2) return m.pj_typing_two({ first: names[0], second: names[1] });
 		return m.pj_typing_many({ first: names[0], second: names[1], count: names.length - 2 });
 	});
-	let membersTab = $state<'people' | 'activity'>('people');
+	let membersTab = $state<'people' | 'activity' | 'versions'>('people');
 	function openActivity() {
 		membersTab = 'activity';
 		openSheet('members');

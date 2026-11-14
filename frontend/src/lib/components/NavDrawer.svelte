@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
-	import { LogOut } from '@lucide/svelte';
+	import { LogOut, Search } from '@lucide/svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { page } from '$app/state';
 	import { afterNavigate } from '$app/navigation';
@@ -13,6 +13,8 @@
 	import { FEATURES, PERMANENT, type FeatureId } from '$lib/features';
 	import { currentPins } from '$lib/drawerStore.svelte';
 	import { inbox } from '$lib/notifications.svelte';
+	import { searchDialog } from '$lib/searchDialog.svelte';
+	import { mobileNav } from '$lib/mobileNav.svelte';
 	import { NAV_ICONS } from '$lib/navIcons';
 	import { isNavActive } from '$lib/navActive';
 	import { isRecentChatActive, loadRecentChats, refreshesAfterNavigation, type RecentsSettings, type RecentsState } from '$lib/drawerRecents';
@@ -69,6 +71,18 @@
 
 <div class="nav-drawer">
 <DsSidebar newChatHref="/chat/new" newChatShortcut="" {oncollapse}>
+	<!-- Search (⌘K) opens the app's search dialog rather than a page. -->
+	<div
+		class="contents"
+		role="presentation"
+		onclick={(event) => {
+			event.preventDefault();
+			mobileNav.open = false;
+			searchDialog.open = true;
+		}}
+	>
+		<NavItem href="#search" icon={Search} label={m.search_open()} />
+	</div>
 	{#each ids as id (id)}
 		{@const feature = FEATURES[id]}
 		<NavItem

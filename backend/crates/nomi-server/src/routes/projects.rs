@@ -37,7 +37,58 @@ pub struct ProjectSummary {
     pub files_count: i64,
     #[serde(default)]
     pub deploy_url: Option<String>,
+    /// Questions and approvals the crew is waiting on in the project's chats.
+    #[serde(default)]
+    pub waiting_on_you: i64,
+    /// `{ status: "ok" | "failed", at }` for its latest finished publish, if any.
+    #[serde(default)]
+    pub last_deploy: Option<serde_json::Value>,
+    /// `up` or `down` while it is live in production (down when it crashed since its last
+    /// publish, lately); null when it isn't published.
+    #[serde(default)]
+    pub live_status: Option<String>,
 }
+
+/// A crash this recent, with no publish since, has the app shown as down.
+const CRASH_WINDOW_MINUTES: i32 = 30;
+/// The longest project name.
+pub const NAME_MAX_CHARS: usize = 80;
+/// The longest project description.
+pub const DESCRIPTION_MAX_CHARS: usize = 500;
+
+/// The summary columns every project list shares; `p` is the project. `$2` is the crash window.
+const SUMMARY_COLUMNS: &str = "p.id, p.session_id, p.name, p.description, p.status, p.created_at, p.updated_at, \
+    COALESCE(NULLIF(up.display_name, ''), split_part(COALESCE(w.email, g.email, ''), '@', 1)) AS created_by, \
+    (SELECT count(*) FROM project_issues i WHERE i.project_id = p.id AND i.status = 'open') AS open_issues, \
+    p.stack, p.backend, p.shipyard_app, \
+    (SELECT count(*) FROM sessions s WHERE s.id = p.session_id OR s.in_project_id = p.id) AS chats_count, \
+    (SELECT count(*) FROM project_publishes pp WHERE pp.project_id = p.id) AS deploys_count, \
+    (SELECT count(*) FROM project_files pf WHERE pf.project_id = p.id) AS files_count, \
+    (SELECT pp.url FROM project_publishes pp WHERE pp.project_id = p.id AND pp.status = 'succeeded' ORDER BY pp.created_at DESC LIMIT 1) AS deploy_url, \
+    (SELECT count(*) FROM sessions s WHERE (s.id = p.session_id OR s.in_project_id = p.id \
+         OR s.id IN (SELECT i.session_id FROM project_issues i WHERE i.project_id = p.id)) \
+       AND EXISTS (SELECT 1 FROM messages q WHERE q.session_id = s.id AND q.sender_channel_identity_id IS NULL \
+                   AND jsonb_typeof(q.content_blocks) = 'array' AND q.content_blocks @> '[{\"kind\": \"questions\"}]'::jsonb \
+                   AND NOT EXISTS (SELECT 1 FROM messages u WHERE u.session_id = s.id AND u.sender_channel_identity_id IS NOT NULL AND u.created_at > q.created_at))) \
+    + (SELECT count(*) FROM agent_sessions a WHERE a.status IN ('active', 'awaiting_approval') \
+         AND COALESCE((a.state->>'paused_for_approval')::boolean, false) \
+         AND a.session_id IN (SELECT s.id FROM sessions s WHERE s.id = p.session_id OR s.in_project_id = p.id \
+                              UNION SELECT i.session_id FROM project_issues i WHERE i.project_id = p.id)) AS waiting_on_you, \
+    (SELECT jsonb_build_object('status', CASE pp.status WHEN 'succeeded' THEN 'ok' ELSE 'failed' END, 'at', COALESCE(pp.finished_at, pp.created_at)) \
+       FROM project_publishes pp WHERE pp.project_id = p.id AND pp.status IN ('succeeded', 'failed') \
+       ORDER BY COALESCE(pp.finished_at, pp.created_at) DESC LIMIT 1) AS last_deploy, \
+    (SELECT CASE WHEN EXISTS (SELECT 1 FROM shipyard_events e WHERE e.project_id = p.id AND e.type = 'service.crashed' \
+                               AND COALESCE(e.environment, 'production') = 'production' \
+                               AND e.created_at > COALESCE(lp.finished_at, lp.created_at) \
+                               AND e.created_at > now() - make_interval(mins => $2)) \
+                 THEN 'down' ELSE 'up' END \
+       FROM project_publishes lp WHERE lp.project_id = p.id AND lp.environment = 'production' AND lp.status = 'succeeded' \
+         AND p.shipyard_app IS NOT NULL ORDER BY lp.created_at DESC LIMIT 1) AS live_status";
+
+const SUMMARY_JOINS: &str = "FROM projects p \
+    LEFT JOIN user_profiles up ON up.user_id = p.user_id \
+    LEFT JOIN web_credentials w ON w.user_id = p.user_id \
+    LEFT JOIN google_identities g ON g.user_id = p.user_id";
 
 #[derive(Debug, Deserialize)]
 pub struct ListProjectsQuery {
@@ -102,25 +153,13 @@ pub async fn list_projects(
         return Ok(Json(ListProjectsResponse { org_id: None, projects: Vec::new(), base_domain: crate::configuration::apps_base_domain().await }));
     };
 
-    let projects: Vec<ProjectSummary> = sqlx::query_as(
-        "SELECT p.id, p.session_id, p.name, p.description, p.status, p.created_at, p.updated_at, \
-                COALESCE(NULLIF(up.display_name, ''), split_part(COALESCE(w.email, g.email, ''), '@', 1)) AS created_by, \
-                (SELECT count(*) FROM project_issues i WHERE i.project_id = p.id AND i.status = 'open') AS open_issues, \
-                p.stack, p.backend, p.shipyard_app, \
-                (SELECT count(*) FROM sessions s WHERE s.id = p.session_id OR s.in_project_id = p.id) AS chats_count, \
-                (SELECT count(*) FROM project_publishes pp WHERE pp.project_id = p.id) AS deploys_count, \
-                (SELECT count(*) FROM project_files pf WHERE pf.project_id = p.id) AS files_count, \
-                (SELECT pp.url FROM project_publishes pp WHERE pp.project_id = p.id AND pp.status = 'succeeded' ORDER BY pp.created_at DESC LIMIT 1) AS deploy_url \
-         FROM projects p \
-         LEFT JOIN user_profiles up ON up.user_id = p.user_id \
-         LEFT JOIN web_credentials w ON w.user_id = p.user_id \
-         LEFT JOIN google_identities g ON g.user_id = p.user_id \
-         WHERE p.org_id = $1 ORDER BY p.updated_at DESC",
-    )
-    .bind(org_id)
-    .fetch_all(&state.pool)
-    .await
-    .map_err(internal("failed to list projects"))?;
+    let projects: Vec<ProjectSummary> =
+        sqlx::query_as(&format!("SELECT {SUMMARY_COLUMNS} {SUMMARY_JOINS} WHERE p.org_id = $1 ORDER BY p.updated_at DESC"))
+            .bind(org_id)
+            .bind(CRASH_WINDOW_MINUTES)
+            .fetch_all(&state.pool)
+            .await
+            .map_err(internal("failed to list projects"))?;
 
     Ok(Json(ListProjectsResponse { org_id: Some(org_id), projects, base_domain: crate::configuration::apps_base_domain().await }))
 }
@@ -168,7 +207,20 @@ pub async fn create_project_session(
             .ok_or((StatusCode::CONFLICT, "choose an organization for projects first"))?,
     };
 
-    ensure_web_channel_identity(&state.pool, claims.sub).await.map_err(|e| {
+    let created = start_project(&state, claims.sub, claims.active_org_id, org_id, "New project").await?;
+    Ok((StatusCode::CREATED, Json(created)))
+}
+
+/// A new project named `name` in `org_id`, owned by `user_id`, with its own chat. Shared by
+/// "+ Add new project", Duplicate and Remix.
+pub(crate) async fn start_project(
+    state: &AppState,
+    user_id: Uuid,
+    active_org_id: Uuid,
+    org_id: Uuid,
+    name: &str,
+) -> Result<CreateProjectSessionResponse, (StatusCode, &'static str)> {
+    ensure_web_channel_identity(&state.pool, user_id).await.map_err(|e| {
         tracing::error!(error = %e, "failed to resolve web identity");
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to create project")
     })?;
@@ -179,8 +231,8 @@ pub async fn create_project_session(
         "web",
         "dm",
         &chat_id,
-        &claims.sub.to_string(),
-        Some(claims.active_org_id),
+        &user_id.to_string(),
+        Some(active_org_id),
     )
     .await
     .map_err(|e| {
@@ -189,22 +241,20 @@ pub async fn create_project_session(
     })?;
 
     // Where the project runs is chosen once, here: projects that already exist keep theirs.
-    let runtime = nomi_settings::config::new_project_runtime(claims.sub).await;
+    let runtime = nomi_settings::config::new_project_runtime(user_id).await;
     let project_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO projects (user_id, session_id, org_id, name, runtime) VALUES ($1, $2, $3, 'New project', $4) RETURNING id",
+        "INSERT INTO projects (user_id, session_id, org_id, name, runtime) VALUES ($1, $2, $3, $4, $5) RETURNING id",
     )
-    .bind(claims.sub)
+    .bind(user_id)
     .bind(bootstrap_result.session_id)
     .bind(org_id)
+    .bind(name)
     .bind(runtime)
     .fetch_one(&state.pool)
     .await
     .map_err(internal("failed to create project"))?;
 
-    Ok((
-        StatusCode::CREATED,
-        Json(CreateProjectSessionResponse { session_id: bootstrap_result.session_id, project_id }),
-    ))
+    Ok(CreateProjectSessionResponse { session_id: bootstrap_result.session_id, project_id })
 }
 
 #[derive(Serialize, sqlx::FromRow)]
@@ -469,7 +519,7 @@ pub async fn put_project_file(
         Some(other) => return Err((StatusCode::BAD_REQUEST, format!("unknown encoding {other}"))),
     }
     .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
-    nomi_agent_coding::files::bump_files_version(&mut conn, project_id).await.map_err(|e| {
+    nomi_agent_coding::files::bump_files_version_by(&mut conn, project_id, claims.sub).await.map_err(|e| {
         tracing::error!(error = %e, "failed to bump project files version");
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to save file".to_string())
     })?;
@@ -498,7 +548,7 @@ pub async fn delete_project_file(
         tracing::error!(error = %e, "failed to delete project file");
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to delete file".to_string())
     })?;
-    nomi_agent_coding::files::bump_files_version(&mut conn, project_id).await.map_err(|e| {
+    nomi_agent_coding::files::bump_files_version_by(&mut conn, project_id, claims.sub).await.map_err(|e| {
         tracing::error!(error = %e, "failed to bump project files version");
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to delete file".to_string())
     })?;
@@ -599,7 +649,7 @@ pub async fn search_transfer_orgs(
             "SELECT o.id, o.name, o.is_personal, m.role \
              FROM organizations o \
              LEFT JOIN memberships m ON m.org_id = o.id AND m.user_id = $2 AND m.status = 'active' \
-             WHERE o.name ILIKE $1 AND o.id != $3 AND o.is_personal = false \
+             WHERE o.name ILIKE $1 AND o.id != $3 AND o.is_personal = false AND o.deleted_at IS NULL \
              ORDER BY (m.role IS NOT NULL) DESC, o.name ASC \
              LIMIT 20",
         )
@@ -701,7 +751,7 @@ pub async fn transfer_project(
         return Err((StatusCode::BAD_REQUEST, "type the project's name to confirm the transfer".to_string()));
     }
 
-    let target_org_exists: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM organizations WHERE id = $1)")
+    let target_org_exists: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM organizations WHERE id = $1 AND deleted_at IS NULL)")
         .bind(req.target_org_id)
         .fetch_one(&state.pool)
         .await

@@ -50,6 +50,7 @@ pub async fn chats_gone_quiet(pool: &PgPool, limit: i64) -> Result<Vec<(Uuid, Uu
            AND last.at > COALESCE(s.activity_noted_through, '-infinity'::timestamptz) \
            AND last.at < now() - $2::interval \
            AND last.at > now() - $3::interval \
+           AND NOT EXISTS (SELECT 1 FROM memory_settings ms WHERE ms.user_id = s.user_id AND NOT ms.search_past_chats) \
          ORDER BY last.at ASC LIMIT $1"
     ))
     .bind(limit)

@@ -165,6 +165,13 @@ pub struct GoogleOverview {
     pub configured: bool,
     pub email: Option<String>,
     pub services: Vec<String>,
+    /// `ok` or `expired` (Google refused it on use: Reconnect); null when not connected.
+    pub status: Option<&'static str>,
+    pub expired_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub last_used_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub used_by: Vec<&'static str>,
+    /// What the crew can do with each allowed service.
+    pub service_access: Vec<connection::ServiceAccess>,
 }
 
 /// `GET /api/connections`
@@ -176,6 +183,11 @@ pub async fn overview(State(state): State<AppState>, AuthClaims(claims): AuthCla
         google: GoogleOverview {
             configured: GoogleConfig::current().await.is_some(),
             email: google.as_ref().map(|g| g.email.clone()),
+            status: google.as_ref().map(|g| g.status),
+            expired_at: google.as_ref().and_then(|g| g.expired_at),
+            last_used_at: google.as_ref().and_then(|g| g.last_used_at),
+            used_by: google.as_ref().map(|g| g.used_by.clone()).unwrap_or_default(),
+            service_access: google.as_ref().map(|g| g.service_access.clone()).unwrap_or_default(),
             services: google.map(|g| g.services).unwrap_or_default(),
         },
         hevy,

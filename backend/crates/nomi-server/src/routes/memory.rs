@@ -23,6 +23,8 @@ pub struct MemoryItemResponse {
     /// A strong memory nobody has confirmed (or edited) in a long while: worth asking whether
     /// it's still true.
     pub needs_check: bool,
+    /// The crew member (agent type) whose reply this was learned from; null for older memories.
+    pub learned_by: Option<String>,
     /// The raw embedding vector — the frontend reduces this to 2D itself (PCA) to plot a
     /// similarity map; the backend has no reason to do that projection since every consumer
     /// so far is a single per-user view.
@@ -46,11 +48,12 @@ pub async fn list_my_memories(
     AuthClaims(claims): AuthClaims,
 ) -> Result<Json<MemoryListResponse>, (StatusCode, &'static str)> {
     // Replaced, merged and faded memories stay out of the list (and out of recall).
-    let rows: Vec<(Uuid, String, f64, String, DateTime<Utc>, DateTime<Utc>, i64, Option<DateTime<Utc>>, bool, String)> = sqlx::query_as(
+    type Row = (Uuid, String, f64, String, DateTime<Utc>, DateTime<Utc>, i64, Option<DateTime<Utc>>, bool, String, Option<String>);
+    let rows: Vec<Row> = sqlx::query_as(
         "SELECT m.id, m.content, m.weight, m.kind, m.created_at, m.updated_at, \
                 (SELECT count(*) FROM message_memory_usage u WHERE u.memory_id = m.id), m.last_used_at, \
                 (m.weight >= 2.5 AND COALESCE(m.confirmed_at, m.created_at) < now() - interval '90 days'), \
-                m.embedding::text \
+                m.embedding::text, m.learned_by \
          FROM memory_items m WHERE m.user_id = $1 AND m.archived_at IS NULL ORDER BY m.updated_at DESC",
     )
     .bind(claims.sub)
@@ -60,7 +63,7 @@ pub async fn list_my_memories(
 
     let memories = rows
         .into_iter()
-        .map(|(id, content, weight, kind, created_at, updated_at, uses, last_used_at, needs_check, embedding_text)| MemoryItemResponse {
+        .map(|(id, content, weight, kind, created_at, updated_at, uses, last_used_at, needs_check, embedding_text, learned_by)| MemoryItemResponse {
             id,
             content,
             weight,
@@ -70,6 +73,7 @@ pub async fn list_my_memories(
             uses,
             last_used_at,
             needs_check,
+            learned_by,
             embedding: parse_vector_literal(&embedding_text),
         })
         .collect();
@@ -145,4 +149,113 @@ pub async fn confirm_my_memory(
         Ok(false) => Err((StatusCode::NOT_FOUND, "memory not found")),
         Err(_) => Err((StatusCode::INTERNAL_SERVER_ERROR, "failed to confirm memory")),
     }
+}
+
+use nomi_agent_core::memory_settings::{self, MemorySettings};
+
+/// `GET /api/memory/settings`: the settings, plus how much of each budget is in use.
+#[derive(Serialize)]
+pub struct MemorySettingsResponse {
+    #[serde(flatten)]
+    pub settings: MemorySettings,
+    /// Tokens the live memories take.
+    pub memory_used: i64,
+    /// Tokens the profile takes.
+    pub profile_used: i32,
+}
+
+type ApiError = (StatusCode, Json<serde_json::Value>);
+
+fn api_error(status: StatusCode, code: &str) -> ApiError {
+    (status, Json(serde_json::json!({ "error": code })))
+}
+
+fn server_error<E: std::fmt::Display>(e: E) -> ApiError {
+    tracing::error!(error = %e, "memory settings request failed");
+    api_error(StatusCode::INTERNAL_SERVER_ERROR, "server_error")
+}
+
+async fn settings_response(state: &AppState, user_id: Uuid) -> Result<MemorySettingsResponse, ApiError> {
+    let settings = memory_settings::load(&state.pool, user_id).await;
+    let memory_used = memory_settings::memory_tokens(&state.pool, user_id).await.map_err(server_error)?;
+    let profile_used = memory_settings::profile(&state.pool, user_id).await.map_err(server_error)?.tokens;
+    Ok(MemorySettingsResponse { settings, memory_used, profile_used })
+}
+
+pub async fn get_memory_settings(State(state): State<AppState>, AuthClaims(claims): AuthClaims) -> Result<Json<MemorySettingsResponse>, ApiError> {
+    Ok(Json(settings_response(&state, claims.sub).await?))
+}
+
+/// Only the fields sent change.
+#[derive(Deserialize)]
+pub struct UpdateMemorySettings {
+    pub learn_from_chats: Option<bool>,
+    pub keep_profile: Option<bool>,
+    pub search_past_chats: Option<bool>,
+    pub memory_budget: Option<i32>,
+    pub profile_budget: Option<i32>,
+}
+
+/// `PUT /api/memory/settings`. A budget outside its range is `400 invalid_budget`. Lowering the
+/// memory budget retires the weakest memories past it straight away.
+pub async fn put_memory_settings(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Json(req): Json<UpdateMemorySettings>,
+) -> Result<Json<MemorySettingsResponse>, ApiError> {
+    let mut settings = memory_settings::load(&state.pool, claims.sub).await;
+    if let Some(v) = req.learn_from_chats {
+        settings.learn_from_chats = v;
+    }
+    if let Some(v) = req.keep_profile {
+        settings.keep_profile = v;
+    }
+    if let Some(v) = req.search_past_chats {
+        settings.search_past_chats = v;
+    }
+    if let Some(v) = req.memory_budget {
+        if !(memory_settings::MIN_MEMORY_BUDGET..=memory_settings::MAX_MEMORY_BUDGET).contains(&v) {
+            return Err(api_error(StatusCode::BAD_REQUEST, "invalid_budget"));
+        }
+        settings.memory_budget = v;
+    }
+    if let Some(v) = req.profile_budget {
+        if !(memory_settings::MIN_PROFILE_BUDGET..=memory_settings::MAX_PROFILE_BUDGET).contains(&v) {
+            return Err(api_error(StatusCode::BAD_REQUEST, "invalid_budget"));
+        }
+        settings.profile_budget = v;
+    }
+    let mut tx = state.pool.begin().await.map_err(server_error)?;
+    memory_settings::save(&mut *tx, claims.sub, &settings).await.map_err(server_error)?;
+    memory_settings::enforce_memory_budget(&mut *tx, claims.sub, settings.memory_budget).await.map_err(server_error)?;
+    if !settings.learn_from_chats {
+        sqlx::query("DELETE FROM memory_jobs WHERE user_id = $1").bind(claims.sub).execute(&mut *tx).await.map_err(server_error)?;
+    }
+    tx.commit().await.map_err(server_error)?;
+    Ok(Json(settings_response(&state, claims.sub).await?))
+}
+
+/// `GET /api/memory/profile` → `{ text, tokens, updated_at }` (empty text and null until written).
+pub async fn get_memory_profile(State(state): State<AppState>, AuthClaims(claims): AuthClaims) -> Result<Json<memory_settings::Profile>, ApiError> {
+    Ok(Json(memory_settings::profile(&state.pool, claims.sub).await.map_err(server_error)?))
+}
+
+#[derive(Deserialize)]
+pub struct UpdateProfile {
+    pub text: String,
+}
+
+/// `PUT /api/memory/profile` with `{ text }`: the person's own wording (Nomi's next rewrite
+/// keeps it). Over the profile budget is `400 too_long`; empty text clears it.
+pub async fn put_memory_profile(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Json(req): Json<UpdateProfile>,
+) -> Result<Json<memory_settings::Profile>, ApiError> {
+    let budget = memory_settings::load(&state.pool, claims.sub).await.profile_budget;
+    if memory_settings::tokens(req.text.trim()) > budget {
+        return Err(api_error(StatusCode::BAD_REQUEST, "too_long"));
+    }
+    memory_settings::set_profile(&state.pool, claims.sub, &req.text).await.map_err(server_error)?;
+    Ok(Json(memory_settings::profile(&state.pool, claims.sub).await.map_err(server_error)?))
 }

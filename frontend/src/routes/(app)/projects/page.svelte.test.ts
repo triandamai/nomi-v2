@@ -68,6 +68,19 @@ describe('projects page', () => {
 		expect(text()).toContain('Shop');
 	});
 
+	it('shows what waits on the person, and the apps on show to remix', () => {
+		const root = page(
+			data({
+				projects: [project({ waiting_on_you: 2 }), project({ id: 'p4dddddd', session_id: 's4', name: 'Down', live_status: 'down' })],
+				showcase: [{ id: 'a1', name: 'Kopi corner', blurb: 'Coffee orders', url: 'https://kopi.apps.test', stack: 'sveltekit', team: null, showcased_at: '2026-11-01T00:00:00Z' }],
+			}),
+		);
+		const shown = text(root);
+		expect(shown).toContain(m.projects_needs_you({ count: 2 }));
+		expect(shown).toContain(m.projects_app_down());
+		expect(shown).toContain('Kopi corner');
+	});
+
 	it('asks where projects live before anything else', () => {
 		const root = page(data({ orgId: null, projects: [], members: [] }), { orgError: 'Name it' });
 		expect(root.textContent).toBeTruthy();

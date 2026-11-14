@@ -33,9 +33,14 @@ pub struct ProviderConnectionRow {
     pub headers_encrypted: Option<Vec<u8>>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
+    /// How the key fared on the last call made with it: "ok", "balance_empty" or "rejected".
+    pub key_status: String,
+    /// When that call was made; None until one is.
+    pub key_checked_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
-const COLUMNS: &str = "id, user_id, provider_id, label, kind, auth_type, api_key_encrypted, base_url, headers_encrypted, created_at, updated_at";
+const COLUMNS: &str =
+    "id, user_id, provider_id, label, kind, auth_type, api_key_encrypted, base_url, headers_encrypted, created_at, updated_at, key_status, key_checked_at";
 
 pub struct NewConnection<'a> {
     pub provider_id: &'a str,
@@ -124,6 +129,8 @@ pub async fn update_connection(pool: &PgPool, scope: Scope, id: Uuid, update: Co
             api_key_encrypted = COALESCE($4, api_key_encrypted), \
             base_url = COALESCE($5, base_url), \
             headers_encrypted = COALESCE($6, headers_encrypted), \
+            key_status = CASE WHEN $4::bytea IS NULL AND $5::text IS NULL AND $6::bytea IS NULL THEN key_status ELSE 'ok' END, \
+            key_checked_at = CASE WHEN $4::bytea IS NULL AND $5::text IS NULL AND $6::bytea IS NULL THEN key_checked_at END, \
             updated_by = $7, updated_at = now() \
          WHERE id = $1 AND user_id IS NOT DISTINCT FROM $2 RETURNING {COLUMNS}"
     ))

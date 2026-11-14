@@ -110,7 +110,7 @@ pub async fn finish(pool: &PgPool, token: &str, new_password: &str) -> Result<Uu
     .await?;
     let Some(user_id) = user_id else { return Err(ResetError::Expired) };
 
-    sqlx::query("UPDATE web_credentials SET password_hash = $2, email_verified_at = COALESCE(email_verified_at, now()) WHERE user_id = $1")
+    sqlx::query("UPDATE web_credentials SET password_hash = $2, password_login = true, email_verified_at = COALESCE(email_verified_at, now()) WHERE user_id = $1")
         .bind(user_id)
         .bind(&password_hash)
         .execute(&mut *tx)
@@ -129,6 +129,48 @@ pub async fn finish(pool: &PgPool, token: &str, new_password: &str) -> Result<Uu
         .await?;
     tx.commit().await?;
     Ok(user_id)
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ChangeError {
+    /// A password is set and `current` was missing or isn't it.
+    #[error("current password is wrong")]
+    WrongPassword,
+    #[error("password too short")]
+    TooShort,
+    #[error("no such account")]
+    NoAccount,
+    #[error(transparent)]
+    Db(#[from] sqlx::Error),
+    #[error(transparent)]
+    Password(#[from] PasswordError),
+}
+
+/// Sets or changes the signed-in person's password. When one is set already, `current` has to be
+/// it; an account without one (made with Google, or with an emailed code) just sets it. Unlike
+/// the emailed reset, other devices stay signed in.
+pub async fn change(pool: &PgPool, user_id: Uuid, current: Option<&str>, new_password: &str) -> Result<(), ChangeError> {
+    if new_password.chars().count() < MIN_PASSWORD_LENGTH {
+        return Err(ChangeError::TooShort);
+    }
+    let row: Option<(String, bool)> = sqlx::query_as("SELECT password_hash, password_login FROM web_credentials WHERE user_id = $1")
+        .bind(user_id)
+        .fetch_optional(pool)
+        .await?;
+    let Some((hash, has_password)) = row else { return Err(ChangeError::NoAccount) };
+    if has_password {
+        let matches = current.is_some_and(|c| crate::password::verify_password(c, &hash).unwrap_or(false));
+        if !matches {
+            return Err(ChangeError::WrongPassword);
+        }
+    }
+    let password_hash = hash_password(new_password)?;
+    sqlx::query("UPDATE web_credentials SET password_hash = $2, password_login = true WHERE user_id = $1")
+        .bind(user_id)
+        .bind(&password_hash)
+        .execute(pool)
+        .await?;
+    Ok(())
 }
 
 #[cfg(test)]

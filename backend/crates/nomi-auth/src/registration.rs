@@ -58,13 +58,62 @@ pub async fn register_user(
     Ok(user_id)
 }
 
+/// A new account from an emailed code (`POST /api/auth/start`): no password yet (the stored hash
+/// is of a random secret nobody knows, so password sign-in stays off until they set one), the
+/// email already confirmed by the code, and the invite's workspace, or a personal one of their own
+/// when there's no invite or it no longer works.
+pub async fn create_from_code(conn: &mut PgConnection, email: &str, invite_code: Option<&str>) -> Result<Uuid, RegistrationError> {
+    let unusable_password = {
+        use rand::RngCore;
+        let mut bytes = [0u8; UNUSABLE_SECRET_BYTES];
+        rand::thread_rng().fill_bytes(&mut bytes);
+        hash_password(&hex::encode(bytes))?
+    };
+    let user_id: Uuid = sqlx::query_scalar("INSERT INTO users DEFAULT VALUES RETURNING id").fetch_one(&mut *conn).await?;
+    sqlx::query(
+        "INSERT INTO web_credentials (user_id, email, password_hash, password_login, email_verified_at) VALUES ($1, $2, $3, false, now())",
+    )
+    .bind(user_id)
+    .bind(email)
+    .bind(&unusable_password)
+    .execute(&mut *conn)
+    .await?;
+
+    let joined = match invite_code {
+        Some(code) => place_in_org(conn, user_id, OrgMode::Join { invite_code: code.to_string() }).await?,
+        None => false,
+    };
+    if !joined {
+        let local = email.split('@').next().filter(|l| !l.is_empty()).unwrap_or("My");
+        let org_id: Uuid = sqlx::query_scalar("INSERT INTO organizations (name, is_personal, created_by) VALUES ($1, true, $2) RETURNING id")
+            .bind(format!("{local}'s space"))
+            .bind(user_id)
+            .fetch_one(&mut *conn)
+            .await?;
+        sqlx::query("INSERT INTO memberships (org_id, user_id, role) VALUES ($1, $2, 'owner')")
+            .bind(org_id)
+            .bind(user_id)
+            .execute(&mut *conn)
+            .await?;
+    }
+    Ok(user_id)
+}
+
+/// Bytes of the random secret behind an account's unusable starting password.
+const UNUSABLE_SECRET_BYTES: usize = 32;
+
+/// An open invite a new account joins with: its workspace, role, inviter, project (and role
+/// there), and whether it's a link that stays open.
+type JoinInvite = (Uuid, String, Uuid, Option<Uuid>, Option<String>, bool);
+
 /// Puts a new user in an organization: one of their own (as owner), or the invite's (with its
 /// role, using the invite up). `false` when the invite is unknown, expired or already used.
 pub(crate) async fn place_in_org(conn: &mut PgConnection, user_id: Uuid, org_mode: OrgMode) -> Result<bool, sqlx::Error> {
     match org_mode {
         OrgMode::Create { name } => {
-            let org_id: Uuid = sqlx::query_scalar("INSERT INTO organizations (name, is_personal) VALUES ($1, false) RETURNING id")
+            let org_id: Uuid = sqlx::query_scalar("INSERT INTO organizations (name, is_personal, created_by) VALUES ($1, false, $2) RETURNING id")
                 .bind(&name)
+                .bind(user_id)
                 .fetch_one(&mut *conn)
                 .await?;
             sqlx::query("INSERT INTO memberships (org_id, user_id, role) VALUES ($1, $2, 'owner')")
@@ -74,19 +123,43 @@ pub(crate) async fn place_in_org(conn: &mut PgConnection, user_id: Uuid, org_mod
                 .await?;
         }
         OrgMode::Join { invite_code } => {
-            let invite: Option<(Uuid, String)> =
-                sqlx::query_as("SELECT org_id, role FROM org_invites WHERE code = $1 AND used_at IS NULL AND expires_at > now()")
-                    .bind(&invite_code)
-                    .fetch_optional(&mut *conn)
-                    .await?;
-            let Some((org_id, role)) = invite else { return Ok(false) };
-            sqlx::query("INSERT INTO memberships (org_id, user_id, role) VALUES ($1, $2, $3)")
+            let invite: Option<JoinInvite> = sqlx::query_as(
+                "SELECT i.org_id, i.role, i.invited_by, i.project_id, i.project_role, i.is_link FROM org_invites i \
+                 JOIN organizations o ON o.id = i.org_id AND o.deleted_at IS NULL \
+                 WHERE i.code = $1 AND i.used_at IS NULL AND i.declined_at IS NULL AND i.expires_at > now()",
+            )
+            .bind(&invite_code)
+            .fetch_optional(&mut *conn)
+            .await?;
+            let Some((org_id, role, invited_by, project_id, project_role, is_link)) = invite else { return Ok(false) };
+            sqlx::query("INSERT INTO memberships (org_id, user_id, role, invited_by) VALUES ($1, $2, $3, $4)")
                 .bind(org_id)
                 .bind(user_id)
                 .bind(&role)
+                .bind(invited_by)
                 .execute(&mut *conn)
                 .await?;
-            sqlx::query("UPDATE org_invites SET used_at = now() WHERE code = $1").bind(&invite_code).execute(&mut *conn).await?;
+            // A link stays open for the next person; an invite to an address is used up.
+            if !is_link {
+                sqlx::query("UPDATE org_invites SET used_at = now(), used_by = $2 WHERE code = $1")
+                    .bind(&invite_code)
+                    .bind(user_id)
+                    .execute(&mut *conn)
+                    .await?;
+            }
+            // An invite to build a project also puts them on it, as `accept_invite` does.
+            if let (Some(project_id), Some(project_role)) = (project_id, project_role) {
+                sqlx::query(
+                    "INSERT INTO project_members (project_id, user_id, role, added_by) VALUES ($1, $2, $3, $4) \
+                     ON CONFLICT (project_id, user_id) DO UPDATE SET role = $3",
+                )
+                .bind(project_id)
+                .bind(user_id)
+                .bind(&project_role)
+                .bind(invited_by)
+                .execute(&mut *conn)
+                .await?;
+            }
         }
     }
     Ok(true)

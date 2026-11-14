@@ -107,7 +107,17 @@ async fn the_selector_offers_nomis_models_by_provider_and_the_persons_own_provid
 
     assert_eq!(groups[0]["source"], "nomi");
     assert_eq!(groups[0]["provider_id"], "anthropic");
-    assert_eq!(groups[0]["models"], json!([{ "key": format!("admin:{haiku}"), "label": "Haiku", "model_id": "claude-haiku-4-5", "free": false, "enabled": true }]));
+    let haiku_option = &groups[0]["models"][0];
+    assert_eq!(groups[0]["models"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        (&haiku_option["key"], &haiku_option["label"], &haiku_option["model_id"], &haiku_option["free"], &haiku_option["enabled"]),
+        (&json!(format!("admin:{haiku}")), &json!("Haiku"), &json!("claude-haiku-4-5"), &json!(false), &json!(true))
+    );
+    // What it reads and what it's good at, from the catalog.
+    let catalog_context = nomi_llm::catalog::model("anthropic", "claude-haiku-4-5").and_then(|m| m.context);
+    assert_eq!(haiku_option["context"].as_u64(), catalog_context);
+    assert!(haiku_option["capabilities"].as_array().unwrap().contains(&json!("fast")));
+    assert_eq!(haiku_option["recommended"], false);
     assert_eq!(groups[1]["provider_id"], "google");
     assert_eq!(groups[1]["models"][0]["key"], format!("admin:{flash}"));
 
@@ -118,6 +128,8 @@ async fn the_selector_offers_nomis_models_by_provider_and_the_persons_own_provid
     assert!(models.iter().all(|m| m["enabled"] == false), "a person's own provider's models start hidden");
     assert!(models.iter().any(|m| m["free"] == true), "free models are marked");
     assert!(models[0]["key"].as_str().unwrap().starts_with(&format!("conn:{opencode}:")));
+    assert!(models.iter().all(|m| m["capabilities"].is_array() && m["recommended"].is_boolean()));
+    assert!(models.iter().any(|m| m["context"].as_u64().is_some()), "context comes from the catalog");
 
     assert_eq!(body["current"]["key"], format!("admin:{haiku}"), "the default model");
     assert_eq!(body["current"]["chat_only"], false);

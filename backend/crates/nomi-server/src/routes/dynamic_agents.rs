@@ -55,7 +55,7 @@ pub async fn list_dynamic_agents(
 ) -> Result<Json<Vec<DynamicAgentResponse>>, (StatusCode, &'static str)> {
     crate::routes::admin_access::require_admin(&claims, "agents", "view")?;
 
-    let rows: Vec<DynamicAgentRow> = sqlx::query_as(&format!("SELECT {SELECT_COLUMNS} FROM dynamic_agents ORDER BY created_at DESC"))
+    let rows: Vec<DynamicAgentRow> = sqlx::query_as(&format!("SELECT {SELECT_COLUMNS} FROM dynamic_agents WHERE owner_user_id IS NULL ORDER BY created_at DESC"))
         .fetch_all(&state.pool)
         .await
         .map_err(|e| {
@@ -173,7 +173,7 @@ pub async fn update_dynamic_agent(
         "UPDATE dynamic_agents SET name = $1, system_prompt = $2, intent_label = $3, intent_description = $4, \
          granted_tools = $5, supports_todos = $6, supports_plans = $7, can_delegate = $8, \
          shape = $10, tone = $11, motion = $12, updated_at = now() \
-         WHERE id = $9 RETURNING {SELECT_COLUMNS}"
+         WHERE id = $9 AND owner_user_id IS NULL RETURNING {SELECT_COLUMNS}"
     ))
     .bind(&req.name)
     .bind(&req.system_prompt)
@@ -205,7 +205,7 @@ pub async fn toggle_active_dynamic_agent(
     crate::routes::admin_access::require_admin(&claims, "agents", "write")?;
 
     let row: Option<DynamicAgentRow> = sqlx::query_as(&format!(
-        "UPDATE dynamic_agents SET is_active = NOT is_active, updated_at = now() WHERE id = $1 RETURNING {SELECT_COLUMNS}"
+        "UPDATE dynamic_agents SET is_active = NOT is_active, updated_at = now() WHERE id = $1 AND owner_user_id IS NULL RETURNING {SELECT_COLUMNS}"
     ))
     .bind(id)
     .fetch_optional(&state.pool)

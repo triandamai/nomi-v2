@@ -99,8 +99,11 @@ pub async fn callback(State(state): State<AppState>, headers: axum::http::Header
     match finished {
         Finished::Linked { email, .. } => Ok(Json(CallbackResponse { email, is_new: false, linked: true, access_token: None, refresh_token: None })),
         Finished::SignedIn { user_id, email, is_new } => {
+            if is_new {
+                super::orgs::announce_signup_joins(&state.pool, user_id).await;
+            }
             let failed = |_| (StatusCode::INTERNAL_SERVER_ERROR, "Signed in, but couldn't start your session. Try again.".to_string());
-            let access_token = nomi_auth::login::issue_access_token(&state.pool, user_id, &state.jwt_secret).await.map_err(failed)?;
+            let access_token = nomi_auth::login::issue_sign_in_token(&state.pool, user_id, &state.jwt_secret).await.map_err(failed)?;
             let refresh_token = nomi_auth::refresh_token::issue_refresh_token(&state.pool, user_id)
                 .await
                 .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Signed in, but couldn't start your session. Try again.".to_string()))?;

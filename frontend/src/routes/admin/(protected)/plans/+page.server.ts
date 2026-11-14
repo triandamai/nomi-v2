@@ -32,6 +32,8 @@ function readPlan(data: FormData) {
 		promo_ends_at: ends ? new Date(`${ends}T23:59:59`).toISOString() : null,
 		is_active: data.get('is_active') === 'true',
 		sort_order: Number(text('sort_order')) || 0,
+		// Empty: not sold yet (people join its waitlist).
+		price_idr: Number(text('price_idr')) > 0 ? Math.round(Number(text('price_idr'))) : null,
 	};
 }
 

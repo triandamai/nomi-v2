@@ -9,6 +9,7 @@
 	import Pagination from '$lib/components/m3/Pagination.svelte';
 	import { goto } from '$app/navigation';
 	import { refreshUnread } from '$lib/notifications.svelte';
+	import { DEFAULT_QUIET_HOURS, isTime } from '$lib/accountSettings';
 	import type { NotificationKind } from '$lib/types';
 	import type { PageData } from './$types';
 
@@ -17,10 +18,23 @@
 	const items = $derived(data.inbox.items);
 	let emailAccount = $state(true);
 	let emailPromos = $state(true);
+	let pushReminders = $state(true);
+	let quiet = $state(false);
+	let quietStart = $state(DEFAULT_QUIET_HOURS.start);
+	let quietEnd = $state(DEFAULT_QUIET_HOURS.end);
 	$effect(() => {
 		emailAccount = data.preferences.email_account;
 		emailPromos = data.preferences.email_promos;
+		pushReminders = data.preferences.push_reminders ?? true;
+		quiet = data.preferences.quiet_hours != null;
+		quietStart = data.preferences.quiet_hours?.start ?? DEFAULT_QUIET_HOURS.start;
+		quietEnd = data.preferences.quiet_hours?.end ?? DEFAULT_QUIET_HOURS.end;
 	});
+	const savePrefs = () => queueMicrotask(() => prefsForm?.requestSubmit());
+	/** A time is saved once it's a whole time and the hours don't start where they end. */
+	function saveQuietTimes() {
+		if (isTime(quietStart) && isTime(quietEnd) && quietStart !== quietEnd) savePrefs();
+	}
 	let prefsForm: HTMLFormElement | undefined = $state();
 
 	// Each kind wears a crew look: Nomi for the account, the citrus reminder look for promos.
@@ -125,6 +139,8 @@
 			<form method="POST" action="?/preferences" bind:this={prefsForm} use:enhance={() => async ({ update }) => update({ reset: false })}>
 				<input type="hidden" name="email_account" value={String(emailAccount)} />
 				<input type="hidden" name="email_promos" value={String(emailPromos)} />
+				<input type="hidden" name="push_reminders" value={String(pushReminders)} />
+				<input type="hidden" name="quiet" value={String(quiet)} />
 				<div class="pref">
 					<span class="pref__text">
 						<span class="pref__label">{m.notif_email_account()}</span>
@@ -139,6 +155,32 @@
 					</span>
 					<Switch bind:checked={emailPromos} aria-label={m.notif_email_promos()} onchange={() => queueMicrotask(() => prefsForm?.requestSubmit())} />
 				</div>
+				<div class="pref">
+					<span class="pref__text">
+						<span class="pref__label">{m.notif_push_reminders()}</span>
+						<span class="pref__hint">{m.notif_push_reminders_hint()}</span>
+					</span>
+					<Switch bind:checked={pushReminders} aria-label={m.notif_push_reminders()} onchange={savePrefs} />
+				</div>
+				<div class="pref">
+					<span class="pref__text">
+						<span class="pref__label">{m.notif_quiet_hours()}</span>
+						<span class="pref__hint">{m.notif_quiet_hours_hint()}</span>
+					</span>
+					<Switch bind:checked={quiet} aria-label={m.notif_quiet_hours()} onchange={savePrefs} />
+				</div>
+				{#if quiet}
+					<div class="pref pref--times">
+						<label class="pref__time">
+							<span>{m.notif_quiet_from()}</span>
+							<input type="time" name="quiet_start" bind:value={quietStart} onchange={saveQuietTimes} required />
+						</label>
+						<label class="pref__time">
+							<span>{m.notif_quiet_until()}</span>
+							<input type="time" name="quiet_end" bind:value={quietEnd} onchange={saveQuietTimes} required />
+						</label>
+					</div>
+				{/if}
 			</form>
 		</section>
 	</div>
@@ -302,5 +344,25 @@
 	.pref__hint {
 		font-size: 0.8125rem;
 		color: var(--md-sys-color-on-surface-variant);
+	}
+	.pref--times {
+		justify-content: flex-start;
+		padding-top: 0;
+	}
+	.pref__time {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		font-size: 0.8125rem;
+		color: var(--md-sys-color-on-surface-variant);
+	}
+	.pref__time input {
+		font: inherit;
+		font-size: 0.9375rem;
+		color: var(--md-sys-color-on-surface);
+		background: var(--md-sys-color-surface-container-high);
+		border: 1px solid var(--md-sys-color-outline-variant);
+		border-radius: 8px;
+		padding: 6px 10px;
 	}
 </style>

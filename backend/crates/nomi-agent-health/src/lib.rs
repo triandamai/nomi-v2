@@ -330,6 +330,7 @@ impl SubAgent for HealthAgent {
         let mut saved = None;
         match run_tool(&hevy, user_id, name, &input, &mut saved).await {
             Ok(text) => {
+                connection::set_expired(conn, user_id, connection::HEVY, false).await;
                 let block = match saved {
                     Some((key, value)) => {
                         let locale = nomi_agent_core::user_locale(conn, user_id).await;
@@ -339,7 +340,10 @@ impl SubAgent for HealthAgent {
                 };
                 Ok(ToolOutcome { display_text: text, block })
             }
-            Err(HevyError::KeyRejected) => Ok(connect_card("key_rejected", "Hevy rejected the saved API key (revoked, or the account isn't on Hevy Pro). A card to set a new key is shown to the person.")),
+            Err(HevyError::KeyRejected) => {
+                connection::set_expired(conn, user_id, connection::HEVY, true).await;
+                Ok(connect_card("key_rejected", "Hevy rejected the saved API key (revoked, or the account isn't on Hevy Pro). A card to set a new key is shown to the person."))
+            }
             Err(e) => Err(e.to_string()),
         }
     }

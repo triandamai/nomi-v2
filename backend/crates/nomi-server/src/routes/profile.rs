@@ -234,7 +234,7 @@ pub async fn load_profile_data(pool: &sqlx::PgPool, user_id: Uuid) -> Result<Pro
     };
 
     let model_rows: Vec<(String, i64)> = sqlx::query_as(
-        "SELECT COALESCE(NULLIF(label, ''), model_id) AS model_name, \
+        "SELECT COALESCE(NULLIF(model_label, ''), model_id) AS model_name, \
                 COALESCE(ROUND(SUM(input_tokens - cached_input_tokens + output_tokens + cached_input_tokens * 0.1)), 0)::bigint AS tokens \
          FROM llm_usage \
          WHERE user_id = $1 AND created_at >= (now() - interval '30 days') \
@@ -368,13 +368,27 @@ pub async fn load_profile_data(pool: &sqlx::PgPool, user_id: Uuid) -> Result<Pro
     })
 }
 
+/// The person's own profile: what the public one can show, plus the hours they're most active
+/// and the insights worked out from their usage (never shown publicly).
+#[derive(Serialize)]
+pub struct OwnProfileResponse {
+    #[serde(flatten)]
+    pub profile: ProfileResponse,
+    pub active_hours: Option<super::profile_insights::ActiveHours>,
+    pub insights: Vec<super::profile_insights::Insight>,
+}
+
 #[tracing::instrument(skip(state, claims))]
 pub async fn get_profile(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
-) -> Result<Json<ProfileResponse>, (StatusCode, &'static str)> {
+) -> Result<Json<OwnProfileResponse>, (StatusCode, &'static str)> {
     let profile = load_profile_data(&state.pool, claims.sub).await?;
-    Ok(Json(profile))
+    let (active_hours, insights) = super::profile_insights::load(&state.pool, claims.sub).await.unwrap_or_else(|e| {
+        tracing::warn!(error = %e, "couldn't work out the profile's insights");
+        (None, Vec::new())
+    });
+    Ok(Json(OwnProfileResponse { profile, active_hours, insights }))
 }
 
 #[derive(Deserialize)]
@@ -748,6 +762,64 @@ pub struct PreferencesResponse {
     /// Recent chats listed in the navigation drawer, and how many.
     pub drawer_recents: bool,
     pub drawer_recents_limit: i16,
+    #[serde(flatten)]
+    pub general: GeneralPreferences,
+}
+
+/// Settings › General's formats and chat rows.
+#[derive(Serialize)]
+pub struct GeneralPreferences {
+    /// The region numbers and dates are written for (e.g. "en-GB"); null follows the language.
+    pub formats: Option<String>,
+    /// The crew member new chats start with (an `agent_type` from `/api/agents`); null is Nomi.
+    pub default_agent: Option<String>,
+    /// Enter sends a message (Shift+Enter for a new line); off, Enter makes a new line.
+    pub enter_sends: bool,
+    /// Show the tokens a reply used under it.
+    pub show_reply_tokens: bool,
+}
+
+const DEFAULT_ENTER_SENDS: bool = true;
+const DEFAULT_SHOW_REPLY_TOKENS: bool = false;
+const MAX_FORMATS_LENGTH: usize = 16;
+const MAX_AGENT_TYPE_LENGTH: usize = 64;
+
+type GeneralRow = (Option<String>, Option<String>, Option<bool>, Option<bool>);
+
+fn general_from(row: Option<GeneralRow>) -> GeneralPreferences {
+    let (formats, default_agent, enter_sends, show_reply_tokens) = row.unwrap_or_default();
+    GeneralPreferences {
+        formats,
+        default_agent,
+        enter_sends: enter_sends.unwrap_or(DEFAULT_ENTER_SENDS),
+        show_reply_tokens: show_reply_tokens.unwrap_or(DEFAULT_SHOW_REPLY_TOKENS),
+    }
+}
+
+async fn load_general<'e, E: sqlx::PgExecutor<'e>>(executor: E, user_id: Uuid) -> Result<GeneralPreferences, sqlx::Error> {
+    let row: Option<GeneralRow> =
+        sqlx::query_as("SELECT formats, default_agent, enter_sends, show_reply_tokens FROM user_preferences WHERE user_id = $1")
+            .bind(user_id)
+            .fetch_optional(executor)
+            .await?;
+    Ok(general_from(row))
+}
+
+/// A region tag like "en", "en-GB" or "id-ID".
+fn is_formats_tag(value: &str) -> bool {
+    let mut parts = value.split('-');
+    let language = parts.next().unwrap_or_default();
+    let region = parts.next();
+    value.len() <= MAX_FORMATS_LENGTH
+        && parts.next().is_none()
+        && (2..=3).contains(&language.len())
+        && language.chars().all(|c| c.is_ascii_lowercase())
+        && region.is_none_or(|r| r.len() == 2 && r.chars().all(|c| c.is_ascii_uppercase()))
+}
+
+/// An agent's type: lowercase letters, digits, `_` and `-`.
+fn is_agent_type(value: &str) -> bool {
+    (1..=MAX_AGENT_TYPE_LENGTH).contains(&value.len()) && value.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
 }
 
 /// How many recent chats the drawer lists until the person picks another of the allowed sizes.
@@ -774,7 +846,12 @@ pub async fn get_preferences(
 
     let (theme, accent_color, timezone, language, drawer_pins, home_layout, animated_backdrop, drawer_recents, drawer_recents_limit) =
         row.unwrap_or((None, None, None, None, None, None, None, None, None));
+    let general = load_general(&state.pool, claims.sub).await.map_err(|e| {
+        tracing::error!(error = %e, "failed to load preferences");
+        (StatusCode::INTERNAL_SERVER_ERROR, "failed to load preferences")
+    })?;
     Ok(Json(PreferencesResponse {
+        general,
         theme: theme.unwrap_or_else(|| "system".to_string()),
         accent_color: accent_color.unwrap_or_else(|| DEFAULT_ACCENT_COLOR.to_string()),
         has_stored_timezone: timezone.is_some(),
@@ -802,6 +879,12 @@ pub struct UpdatePreferencesRequest {
     pub animated_backdrop: Option<bool>,
     pub drawer_recents: Option<bool>,
     pub drawer_recents_limit: Option<i16>,
+    /// An empty string goes back to following the language.
+    pub formats: Option<String>,
+    /// An empty string goes back to Nomi.
+    pub default_agent: Option<String>,
+    pub enter_sends: Option<bool>,
+    pub show_reply_tokens: Option<bool>,
 }
 
 /// A home layout is a slug the frontend knows (its layouts live in $lib/homeLayouts), so adding
@@ -868,6 +951,15 @@ pub async fn put_preferences(
         }
     }
 
+    let formats = req.formats.as_deref().map(str::trim);
+    if formats.is_some_and(|f| !f.is_empty() && !is_formats_tag(f)) {
+        return Err((StatusCode::BAD_REQUEST, "formats must be a region like en-GB"));
+    }
+    let default_agent = req.default_agent.as_deref().map(str::trim);
+    if default_agent.is_some_and(|a| !a.is_empty() && !is_agent_type(a)) {
+        return Err((StatusCode::BAD_REQUEST, "default_agent must be a crew member's agent_type"));
+    }
+
     let mut tx = state.pool.begin().await.map_err(|e| {
         tracing::error!(error = %e, "failed to save preferences");
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to save preferences")
@@ -931,12 +1023,38 @@ pub async fn put_preferences(
         })?,
     };
 
+    // The row exists now: an empty string clears a text field, a field left out stays.
+    sqlx::query(
+        "UPDATE user_preferences SET \
+            formats = CASE WHEN $2::text IS NULL THEN formats ELSE NULLIF($2, '') END, \
+            default_agent = CASE WHEN $3::text IS NULL THEN default_agent ELSE NULLIF($3, '') END, \
+            enter_sends = COALESCE($4, enter_sends), \
+            show_reply_tokens = COALESCE($5, show_reply_tokens) \
+         WHERE user_id = $1",
+    )
+    .bind(claims.sub)
+    .bind(formats)
+    .bind(default_agent)
+    .bind(req.enter_sends)
+    .bind(req.show_reply_tokens)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, "failed to save preferences");
+        (StatusCode::INTERNAL_SERVER_ERROR, "failed to save preferences")
+    })?;
+    let general = load_general(&mut *tx, claims.sub).await.map_err(|e| {
+        tracing::error!(error = %e, "failed to save preferences");
+        (StatusCode::INTERNAL_SERVER_ERROR, "failed to save preferences")
+    })?;
+
     tx.commit().await.map_err(|e| {
         tracing::error!(error = %e, "failed to save preferences");
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to save preferences")
     })?;
 
     Ok(Json(PreferencesResponse {
+        general,
         theme,
         accent_color,
         timezone,

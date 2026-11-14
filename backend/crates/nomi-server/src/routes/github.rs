@@ -32,6 +32,13 @@ pub struct GithubConnection {
     pub kind: String,
     pub created_at: DateTime<Utc>,
     pub last_used_at: Option<DateTime<Utc>>,
+    /// Set when GitHub refused the token on a push: connect again to fix.
+    pub expired_at: Option<DateTime<Utc>>,
+    /// `ok` or `expired`.
+    pub status: String,
+    /// No crew member pushes with it: the person exports a project themselves.
+    #[sqlx(skip)]
+    pub used_by: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -54,7 +61,8 @@ fn github_error(e: GithubError) -> ApiError {
 }
 
 async fn connection(pool: &sqlx::PgPool, user_id: Uuid) -> Result<Option<GithubConnection>, ApiError> {
-    sqlx::query_as("SELECT login, kind, created_at, last_used_at FROM github_connections WHERE user_id = $1")
+    sqlx::query_as("SELECT login, kind, created_at, last_used_at, expired_at, \
+         CASE WHEN expired_at IS NULL THEN 'ok' ELSE 'expired' END AS status FROM github_connections WHERE user_id = $1")
         .bind(user_id)
         .fetch_optional(pool)
         .await
@@ -71,7 +79,7 @@ async fn save(state: &AppState, user_id: Uuid, token: &str, kind: &str) -> Resul
     sqlx::query(
         "INSERT INTO github_connections (user_id, login, kind, token_encrypted) VALUES ($1, $2, $3, $4) \
          ON CONFLICT (user_id) DO UPDATE SET login = EXCLUDED.login, kind = EXCLUDED.kind, token_encrypted = EXCLUDED.token_encrypted, \
-         created_at = now(), last_used_at = NULL",
+         created_at = now(), last_used_at = NULL, expired_at = NULL",
     )
     .bind(user_id)
     .bind(&login)
@@ -208,7 +216,19 @@ pub async fn export(
     if files.is_empty() {
         return Err((StatusCode::UNPROCESSABLE_ENTITY, "there's nothing to push yet".to_string()));
     }
-    let pushed = Github::new(&state.http_client, &token).push(&owner, &name, req.create, req.private, &files, &message).await.map_err(github_error)?;
+    let pushed = match Github::new(&state.http_client, &token).push(&owner, &name, req.create, req.private, &files, &message).await {
+        Ok(pushed) => pushed,
+        Err(GithubError::TokenRejected) => {
+            // Kept, marked expired, so Connections shows Reconnect.
+            sqlx::query("UPDATE github_connections SET expired_at = COALESCE(expired_at, now()) WHERE user_id = $1")
+                .bind(claims.sub)
+                .execute(&state.pool)
+                .await
+                .map_err(internal("failed to record the GitHub connection's state"))?;
+            return Err(github_error(GithubError::TokenRejected));
+        }
+        Err(e) => return Err(github_error(e)),
+    };
     sqlx::query("UPDATE github_connections SET last_used_at = now() WHERE user_id = $1")
         .bind(claims.sub)
         .execute(&state.pool)

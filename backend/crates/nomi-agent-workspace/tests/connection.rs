@@ -96,10 +96,16 @@ async fn status_refresh_and_disconnect(pool: PgPool) {
     assert_eq!(connected.resume_session_id, Some(session));
     let shown = connection::status(&mut conn, user).await.unwrap().unwrap();
     assert_eq!(shown.email, "ana@example.com");
+    assert_eq!(shown.status, "ok");
+    assert_eq!(shown.used_by, vec!["workspace"]);
+    assert_eq!(shown.service_access[0].service, "gmail");
+    assert_eq!(shown.service_access[0].access, vec!["read", "write", "ask"]);
+    assert_eq!(shown.last_used_at, None);
 
     // A live token is used as it is.
     let http = reqwest::Client::new();
     assert_eq!(connection::access_token(&mut conn, &http, &config, &KEY, user, "gmail").await.unwrap(), "a1");
+    assert!(connection::status(&mut conn, user).await.unwrap().unwrap().last_used_at.is_some(), "using it is recorded");
     assert_eq!(connection::access_token(&mut conn, &http, &config, &KEY, user, "sheets").await.unwrap_err(), AccessError::ServiceNotAllowed("sheets".into()));
     assert_eq!(connection::access_token(&mut conn, &http, &config, &KEY, seed_user(&pool).await, "gmail").await.unwrap_err(), AccessError::NotConnected);
 

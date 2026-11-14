@@ -6,7 +6,7 @@
 use std::borrow::Cow;
 
 use async_trait::async_trait;
-use chrono::{DateTime, Datelike, FixedOffset, NaiveDateTime, TimeZone, Utc};
+use chrono::{DateTime, Datelike, FixedOffset, NaiveDateTime, NaiveTime, TimeZone, Utc};
 use serde::Serialize;
 use serde_json::{json, Value};
 use sqlx::pool::PoolConnection;
@@ -200,11 +200,57 @@ pub async fn snooze(conn: &mut PgConnection, user_id: Uuid, id: Uuid, minutes: i
     Ok(changed > 0)
 }
 
+/// A reminder that just went off: where it was posted, and what it says (for the push).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Fired {
+    pub reminder_id: Uuid,
+    pub user_id: Uuid,
+    pub session_id: Uuid,
+    pub message_id: Uuid,
+    pub title: String,
+    pub notes: Option<String>,
+}
+
+/// When the quiet hours `start`–`end` (local times in `tz`; `start` after `end` runs over
+/// midnight) that cover `now` end, as an instant; `None` when `now` is outside them.
+pub fn quiet_hours_end(now: DateTime<Utc>, tz: chrono_tz::Tz, start: NaiveTime, end: NaiveTime) -> Option<DateTime<Utc>> {
+    if start == end {
+        return None;
+    }
+    let local = now.with_timezone(&tz);
+    let time = local.time();
+    let inside = if start < end { time >= start && time < end } else { time >= start || time < end };
+    if !inside {
+        return None;
+    }
+    // Before midnight in hours that run over it, they end tomorrow; otherwise today.
+    let date = if time >= end { local.date_naive().succ_opt()? } else { local.date_naive() };
+    let naive = date.and_time(end);
+    // A clock change can skip the end time: then they end once the clock has moved on.
+    let at = tz.from_local_datetime(&naive).earliest().or_else(|| tz.from_local_datetime(&(naive + chrono::Duration::hours(1))).earliest())?;
+    Some(at.with_timezone(&Utc))
+}
+
+/// The person's quiet hours and time zone, when they keep quiet hours.
+async fn quiet_hours(conn: &mut PgConnection, user_id: Uuid) -> Result<Option<(chrono_tz::Tz, NaiveTime, NaiveTime)>, sqlx::Error> {
+    let row: Option<(String, Option<NaiveTime>, Option<NaiveTime>)> =
+        sqlx::query_as("SELECT timezone, quiet_hours_start, quiet_hours_end FROM user_preferences WHERE user_id = $1")
+            .bind(user_id)
+            .fetch_optional(&mut *conn)
+            .await?;
+    Ok(match row {
+        Some((tz, Some(start), Some(end))) => Some((tz.parse().unwrap_or(chrono_tz::UTC), start, end)),
+        _ => None,
+    })
+}
+
 /// Claims due reminders (any worker instance, without double-firing) and posts each into its chat.
-/// Returns `(session_id, message_id)` for every reminder posted, for the caller to announce.
-pub async fn fire_due(pool: &PgPool, limit: i64) -> Result<Vec<(Uuid, Uuid)>, sqlx::Error> {
+/// A reminder due inside its person's quiet hours is held until they end. Returns every reminder
+/// posted, for the caller to announce.
+pub async fn fire_due(pool: &PgPool, limit: i64) -> Result<Vec<Fired>, sqlx::Error> {
     let due: Vec<Reminder> = sqlx::query_as(&format!(
         "WITH claimed AS (SELECT id FROM reminders WHERE status = 'active' AND claimed_at IS NULL AND due_at <= now() \
+                          AND (held_until IS NULL OR held_until <= now()) \
                           ORDER BY due_at FOR UPDATE SKIP LOCKED LIMIT $1) \
          UPDATE reminders SET claimed_at = now() WHERE id IN (SELECT id FROM claimed) RETURNING {COLUMNS}"
     ))
@@ -215,6 +261,17 @@ pub async fn fire_due(pool: &PgPool, limit: i64) -> Result<Vec<(Uuid, Uuid)>, sq
     let mut posted = Vec::new();
     for reminder in due {
         let mut tx = pool.begin().await?;
+        if let Some((tz, start, end)) = quiet_hours(&mut tx, reminder.user_id).await? {
+            if let Some(until) = quiet_hours_end(Utc::now(), tz, start, end) {
+                sqlx::query("UPDATE reminders SET claimed_at = NULL, held_until = $2, updated_at = now() WHERE id = $1")
+                    .bind(reminder.id)
+                    .bind(until)
+                    .execute(&mut *tx)
+                    .await?;
+                tx.commit().await?;
+                continue;
+            }
+        }
         let block = nomi_agent_core::ContentBlock::Reminder {
             reminder_id: reminder.id,
             title: reminder.title.clone(),
@@ -244,21 +301,28 @@ pub async fn fire_due(pool: &PgPool, limit: i64) -> Result<Vec<(Uuid, Uuid)>, sq
                 while next <= Utc::now() {
                     next = next_due(next, recurrence, reminder.recurrence_day_of_month, tz);
                 }
-                sqlx::query("UPDATE reminders SET due_at = $2, claimed_at = NULL, last_fired_at = now(), updated_at = now() WHERE id = $1")
+                sqlx::query("UPDATE reminders SET due_at = $2, claimed_at = NULL, held_until = NULL, last_fired_at = now(), updated_at = now() WHERE id = $1")
                     .bind(reminder.id)
                     .bind(next)
                     .execute(&mut *tx)
                     .await?;
             }
             None => {
-                sqlx::query("UPDATE reminders SET status = 'fired', last_fired_at = now(), updated_at = now() WHERE id = $1")
+                sqlx::query("UPDATE reminders SET status = 'fired', held_until = NULL, last_fired_at = now(), updated_at = now() WHERE id = $1")
                     .bind(reminder.id)
                     .execute(&mut *tx)
                     .await?;
             }
         }
         tx.commit().await?;
-        posted.push((reminder.session_id, message_id));
+        posted.push(Fired {
+            reminder_id: reminder.id,
+            user_id: reminder.user_id,
+            session_id: reminder.session_id,
+            message_id,
+            title: reminder.title,
+            notes: reminder.notes,
+        });
     }
     Ok(posted)
 }
@@ -484,5 +548,23 @@ mod tests {
         let monday_morning = parse_due_at("2026-10-05T06:00:00+07:00", chrono_tz::UTC).unwrap();
         assert_eq!(recurrence_fields(Some("weekly"), &monday_morning).unwrap(), (Some("weekly".into()), Some(1), None));
         assert!(recurrence_fields(Some("hourly"), &monday_morning).is_err());
+    }
+
+    #[test]
+    fn quiet_hours_hold_a_reminder_until_they_end_in_local_time() {
+        let jakarta = chrono_tz::Asia::Jakarta;
+        let (night, morning) = (NaiveTime::from_hms_opt(22, 0, 0).unwrap(), NaiveTime::from_hms_opt(6, 0, 0).unwrap());
+        let at = |text: &str| parse_due_at(text, jakarta).unwrap().with_timezone(&Utc);
+        let ends = |now: &str, start, end| quiet_hours_end(at(now), jakarta, start, end).map(|t| t.with_timezone(&jakarta).to_rfc3339());
+        // Over midnight: before it they end tomorrow, after it today.
+        assert_eq!(ends("2026-10-05T23:30", night, morning).as_deref(), Some("2026-10-06T06:00:00+07:00"));
+        assert_eq!(ends("2026-10-06T03:00", night, morning).as_deref(), Some("2026-10-06T06:00:00+07:00"));
+        assert_eq!(ends("2026-10-06T06:00", night, morning), None, "they end at their end time");
+        assert_eq!(ends("2026-10-06T12:00", night, morning), None);
+        // Within one day.
+        let (lunch, after) = (NaiveTime::from_hms_opt(12, 0, 0).unwrap(), NaiveTime::from_hms_opt(13, 0, 0).unwrap());
+        assert_eq!(ends("2026-10-06T12:30", lunch, after).as_deref(), Some("2026-10-06T13:00:00+07:00"));
+        assert_eq!(ends("2026-10-06T21:00", lunch, after), None);
+        assert_eq!(ends("2026-10-06T12:30", lunch, lunch), None, "no hours when start and end match");
     }
 }

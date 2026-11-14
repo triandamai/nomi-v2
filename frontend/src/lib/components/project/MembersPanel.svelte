@@ -9,6 +9,7 @@
 	// as members (they build it) or admins (they also publish and manage it).
 	import { m } from '$lib/paraglide/messages';
 	import ProjectActivity from '$lib/components/project/ProjectActivity.svelte';
+	import ProjectVersions from '$lib/components/project/ProjectVersions.svelte';
 	import { projectApi } from '$lib/projectApi';
 	import type { ProjectDeploy } from '$lib/projectDeploy.svelte';
 	import type { ProjectPresence } from '$lib/projectPresence.svelte';
@@ -24,8 +25,8 @@
 	}: {
 		projectId: string;
 		orgId: string;
-		/** People: who can open the project. Activity: who's here and what's happening. */
-		tab?: 'people' | 'activity';
+		/** People: who can open the project. Activity: who's here and what's happening. Versions: the project's versions, to restore. */
+		tab?: 'people' | 'activity' | 'versions';
 		presence?: ProjectPresence | null;
 		deploy?: ProjectDeploy | null;
 		/** For the invite's preview. */
@@ -114,10 +115,13 @@
 <div class="tabs" role="tablist" aria-label={m.pj_act_tabs()}>
 	<button type="button" role="tab" class="tab" aria-selected={tab === 'people'} onclick={() => (tab = 'people')}>{m.pj_act_tab_people()}</button>
 	<button type="button" role="tab" class="tab" aria-selected={tab === 'activity'} onclick={() => (tab = 'activity')}>{m.pj_act_tab_activity()}</button>
+	<button type="button" role="tab" class="tab" aria-selected={tab === 'versions'} onclick={() => (tab = 'versions')}>{m.pj_ver_tab()}</button>
 </div>
 
 {#if tab === 'activity'}
 	<ProjectActivity {projectId} {presence} {deploy} />
+{:else if tab === 'versions'}
+	<ProjectVersions {projectId} canBuild={data?.my_role !== 'viewer'} />
 {:else}
 
 {#if !data}

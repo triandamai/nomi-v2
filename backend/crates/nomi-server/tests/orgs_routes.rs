@@ -115,6 +115,10 @@ async fn an_invited_teammate_joins_and_works_on_the_projects(pool: PgPool) {
     assert_eq!(call(&router, "POST", &format!("/api/sessions/{session_id}/messages"), json!({"text": "Can we add a menu page?"}), &bob).await.0, StatusCode::ACCEPTED);
     let (_, thread) = call(&router, "GET", &format!("/api/sessions/{session_id}/messages"), Value::Null, &ana).await;
     assert_eq!(thread["messages"][0]["author_name"], "bob");
+    // The single read a live update uses names him too.
+    let message_id = thread["messages"][0]["id"].as_str().unwrap();
+    let (_, single) = call(&router, "GET", &format!("/api/sessions/{session_id}/messages/{message_id}"), Value::Null, &ana).await;
+    assert_eq!(single["author_name"], "bob");
     let (_, thread) = call(&router, "GET", &format!("/api/sessions/{session_id}/messages"), Value::Null, &bob).await;
     assert_eq!(thread["messages"][0]["author_name"], Value::Null);
     assert_eq!(call(&router, "DELETE", &format!("/api/sessions/{session_id}"), Value::Null, &bob).await.0, StatusCode::FORBIDDEN);

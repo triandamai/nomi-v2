@@ -23,7 +23,59 @@ fn provider_and_status(text: &str) -> (Option<&'static str>, Option<u16>) {
     (provider, status)
 }
 
+/// What a provider's answer says about the key it was called with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum KeyHealth {
+    Ok,
+    /// The provider wants payment: the account's balance or credits ran out.
+    BalanceEmpty,
+    /// The provider refused the key.
+    Rejected,
+}
+
+impl KeyHealth {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            KeyHealth::Ok => "ok",
+            KeyHealth::BalanceEmpty => "balance_empty",
+            KeyHealth::Rejected => "rejected",
+        }
+    }
+}
+
+/// HTTP 402.
+const PAYMENT_REQUIRED: u16 = 402;
+/// HTTP 401 and 403.
+const UNAUTHORIZED: u16 = 401;
+const FORBIDDEN: u16 = 403;
+
+fn out_of_credits(status: Option<u16>, lower: &str) -> bool {
+    status == Some(PAYMENT_REQUIRED) || lower.contains("insufficient_quota") || lower.contains("more credits") || lower.contains("billing")
+        || lower.contains("insufficient balance") || lower.contains("credit balance is too low")
+}
+
+fn key_refused(status: Option<u16>, lower: &str) -> bool {
+    matches!(status, Some(UNAUTHORIZED) | Some(FORBIDDEN)) || lower.contains("invalid api key") || lower.contains("invalid_api_key")
+}
+
 impl LlmError {
+    /// What this failure says about the key the call was made with: its balance ran out, or the
+    /// provider refused it. None for anything else (unreachable, rate limited, a bad request…),
+    /// which says nothing about the key.
+    pub fn key_health(&self) -> Option<KeyHealth> {
+        let LlmError::ProviderError(text) = self else { return None };
+        let (_, status) = provider_and_status(text);
+        let lower = text.to_lowercase();
+        if out_of_credits(status, &lower) {
+            Some(KeyHealth::BalanceEmpty)
+        } else if key_refused(status, &lower) {
+            Some(KeyHealth::Rejected)
+        } else {
+            None
+        }
+    }
+
     /// What went wrong and what the user can do about it, in a sentence or two, in English.
     pub fn user_message(&self) -> String {
         self.user_message_in(Locale::En)
@@ -46,11 +98,11 @@ impl LlmError {
         };
         let lower = text.to_lowercase();
 
-        if status == Some(402) || lower.contains("insufficient_quota") || lower.contains("more credits") || lower.contains("billing") {
+        if out_of_credits(status, &lower) {
             let your_provider = provider.map(str::to_string).unwrap_or_else(|| locale.t("error.llm_your_provider"));
             return locale.tf("error.llm_no_credits", &[("account", &account), ("provider", &your_provider)]);
         }
-        if matches!(status, Some(401) | Some(403)) || lower.contains("invalid api key") || lower.contains("invalid_api_key") {
+        if key_refused(status, &lower) {
             return locale.tf("error.llm_bad_key", &[("who", &who_capital)]);
         }
         if status == Some(429) {
@@ -71,7 +123,23 @@ impl LlmError {
 
 #[cfg(test)]
 mod tests {
+    use super::KeyHealth;
     use crate::LlmError;
+
+    #[test]
+    fn tells_an_empty_balance_from_a_refused_key() {
+        let health = |text: &str| provider(text).key_health();
+        assert_eq!(health(r#"openrouter returned 402 Payment Required: {"error":{"message":"more credits"}}"#), Some(KeyHealth::BalanceEmpty));
+        assert_eq!(health(r#"openai returned 429 Too Many Requests: {"error":{"code":"insufficient_quota"}}"#), Some(KeyHealth::BalanceEmpty));
+        assert_eq!(health("anthropic returned 400 Bad Request: Your credit balance is too low"), Some(KeyHealth::BalanceEmpty));
+        assert_eq!(health("deepseek returned 402 Payment Required: Insufficient Balance"), Some(KeyHealth::BalanceEmpty));
+        assert_eq!(health("anthropic returned 401 Unauthorized: invalid x-api-key"), Some(KeyHealth::Rejected));
+        assert_eq!(health("gemini returned 403 Forbidden: denied"), Some(KeyHealth::Rejected));
+        assert_eq!(health("openai returned 429 Too Many Requests: slow down"), None);
+        assert_eq!(health("openai returned 503 Service Unavailable: overloaded"), None);
+        assert_eq!(LlmError::QuotaExceeded.key_health(), None);
+        assert_eq!(KeyHealth::BalanceEmpty.as_str(), "balance_empty");
+    }
 
     fn provider(text: &str) -> LlmError {
         LlmError::ProviderError(text.to_string())

@@ -108,6 +108,17 @@ impl PushMessage {
         PushMessage { title, body: preview.to_string(), data, kind: PushKind::Alert }
     }
 
+    /// A reminder going off as an alert: its title, with its notes as the body; it opens its chat.
+    pub fn reminder(title: &str, notes: Option<&str>, session_id: Uuid, message_id: Uuid, reminder_id: Uuid) -> Self {
+        let data = BTreeMap::from([
+            ("session_id".to_string(), session_id.to_string()),
+            ("message_id".to_string(), message_id.to_string()),
+            ("reminder_id".to_string(), reminder_id.to_string()),
+            ("kind".to_string(), "reminder".to_string()),
+        ]);
+        PushMessage { title: title.to_string(), body: notes.unwrap_or_default().to_string(), data, kind: PushKind::Alert }
+    }
+
     /// Moves the iPhone's Live Activity to `content_state`.
     pub fn live_activity_update(content_state: Value) -> Self {
         PushMessage { title: String::new(), body: String::new(), data: BTreeMap::new(), kind: PushKind::LiveActivityUpdate { content_state } }

@@ -10,7 +10,7 @@
 	import IconSearch from '$lib/components/icons/IconSearch.svelte';
 	import IconSliders from '$lib/components/icons/IconSliders.svelte';
 	import ProviderLogo from '$lib/components/providers/ProviderLogo.svelte';
-	import { flattenModels, searchModelGroups, selectorGroups, type ModelChoice, type ModelGroup } from '$lib/modelPicker';
+	import { flattenModels, searchModelGroups, selectorGroups, type ModelChoice, type ModelGroup, formatContext } from '$lib/modelPicker';
 	import { CUSTOM_PROVIDER_ID, stepHighlight } from '$lib/providers';
 	import { touchScreen } from '$lib/touch';
 
@@ -202,6 +202,7 @@
 								onmouseenter={() => (highlighted = index)}
 							>
 								<span class="option__name" data-name>{model.label || model.model_id}</span>
+								{#if model.context}<span class="option__meta">{formatContext(model.context)}</span>{/if}
 								{#if model.free}<span class="badge">{m.msel_free()}</span>{/if}
 								{#if chosen}<span class="option__check" data-check><IconCheck size={18} /></span>{/if}
 							</div>
@@ -366,6 +367,11 @@
 		.option {
 			min-height: 44px;
 		}
+	}
+	.option__meta {
+		flex: none;
+		font-size: 0.75rem;
+		color: var(--md-sys-color-on-surface-variant);
 	}
 	.option__name {
 		flex: 1;

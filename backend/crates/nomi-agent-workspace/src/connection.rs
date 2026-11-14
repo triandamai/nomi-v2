@@ -27,6 +27,20 @@ pub fn service_scope(service: &str) -> Option<&'static str> {
     }
 }
 
+/// What the crew can do with a service: `read`, `write`, and `ask` when some of it waits for the
+/// person's OK in chat (sending email, inviting people to an event).
+pub fn service_access(service: &str) -> &'static [&'static str] {
+    match service {
+        "gmail" | "calendar" => &["read", "write", "ask"],
+        "sheets" | "docs" => &["read", "write"],
+        "drive" => &["read"],
+        _ => &[],
+    }
+}
+
+/// The crew members that use a Google connection.
+pub const USED_BY: [&str; 1] = ["workspace"];
+
 /// Where Google lives. Every URL is swappable so tests can point at a fake server.
 #[derive(Debug, Clone)]
 pub struct GoogleConfig {
@@ -334,7 +348,7 @@ pub async fn complete_authorization(
          ON CONFLICT (user_id) DO UPDATE SET google_email = EXCLUDED.google_email, services = EXCLUDED.services, \
            access_token_encrypted = EXCLUDED.access_token_encrypted, \
            refresh_token_encrypted = COALESCE(EXCLUDED.refresh_token_encrypted, workspace_connections.refresh_token_encrypted), \
-           expires_at = EXCLUDED.expires_at, updated_at = now()",
+           expires_at = EXCLUDED.expires_at, expired_at = NULL, updated_at = now()",
     )
     .bind(user_id)
     .bind(&info.email)
@@ -349,21 +363,65 @@ pub async fn complete_authorization(
     Ok(Connected { email: info.email, services: granted, resume_session_id })
 }
 
+/// One allowed service and what the crew can do with it.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct ServiceAccess {
+    pub service: String,
+    pub access: Vec<&'static str>,
+}
+
 /// What the Connections page shows.
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct ConnectionStatus {
     pub email: String,
     pub services: Vec<String>,
     pub connected_at: DateTime<Utc>,
+    /// `ok`, or `expired` when Google refused it on use (connect again to fix).
+    pub status: &'static str,
+    pub expired_at: Option<DateTime<Utc>>,
+    pub last_used_at: Option<DateTime<Utc>>,
+    pub used_by: Vec<&'static str>,
+    pub service_access: Vec<ServiceAccess>,
+}
+
+/// `ok`, or `expired` once a sign-in has lapsed.
+pub fn health(expired_at: Option<DateTime<Utc>>) -> &'static str {
+    if expired_at.is_some() {
+        "expired"
+    } else {
+        "ok"
+    }
 }
 
 pub async fn status(conn: &mut PgConnection, user_id: Uuid) -> Result<Option<ConnectionStatus>, sqlx::Error> {
-    let row: Option<(String, Vec<String>, DateTime<Utc>)> =
-        sqlx::query_as("SELECT google_email, services, created_at FROM workspace_connections WHERE user_id = $1")
+    type Row = (String, Vec<String>, DateTime<Utc>, Option<DateTime<Utc>>, Option<DateTime<Utc>>);
+    let row: Option<Row> =
+        sqlx::query_as("SELECT google_email, services, created_at, expired_at, last_used_at FROM workspace_connections WHERE user_id = $1")
             .bind(user_id)
             .fetch_optional(&mut *conn)
             .await?;
-    Ok(row.map(|(email, services, connected_at)| ConnectionStatus { email, services, connected_at }))
+    Ok(row.map(|(email, services, connected_at, expired_at, last_used_at)| ConnectionStatus {
+        service_access: services.iter().map(|s| ServiceAccess { service: s.clone(), access: service_access(s).to_vec() }).collect(),
+        email,
+        services,
+        connected_at,
+        status: health(expired_at),
+        expired_at,
+        last_used_at,
+        used_by: USED_BY.to_vec(),
+    }))
+}
+
+/// Google refused the connection (revoked, or the sign-in lapsed): it's kept, marked expired, so
+/// the person sees Reconnect. Connecting again clears it.
+pub async fn mark_expired(conn: &mut PgConnection, user_id: Uuid) {
+    let marked = sqlx::query("UPDATE workspace_connections SET expired_at = COALESCE(expired_at, now()) WHERE user_id = $1")
+        .bind(user_id)
+        .execute(&mut *conn)
+        .await;
+    if let Err(e) = marked {
+        tracing::warn!(error = %e, %user_id, "workspace: couldn't mark the connection expired");
+    }
 }
 
 /// Disconnects: asks Google to revoke the token (best effort) and forgets it.
@@ -407,7 +465,8 @@ pub async fn access_token(
     service: &str,
 ) -> Result<String, AccessError> {
     let row: Option<TokenRow> = sqlx::query_as(
-        "SELECT services, access_token_encrypted, refresh_token_encrypted, expires_at FROM workspace_connections WHERE user_id = $1",
+        "SELECT services, access_token_encrypted, refresh_token_encrypted, expires_at FROM workspace_connections \
+         WHERE user_id = $1 AND expired_at IS NULL",
     )
     .bind(user_id)
     .fetch_optional(&mut *conn)
@@ -418,7 +477,9 @@ pub async fn access_token(
         return Err(AccessError::ServiceNotAllowed(service.to_string()));
     }
     if expires_at > Utc::now() + Duration::seconds(60) {
-        return nomi_settings::crypto::decrypt(key, &access).map_err(|_| AccessError::NotConnected);
+        let token = nomi_settings::crypto::decrypt(key, &access).map_err(|_| AccessError::NotConnected)?;
+        mark_used(conn, user_id).await;
+        return Ok(token);
     }
 
     let Some(refresh) = refresh.and_then(|r| nomi_settings::crypto::decrypt(key, &r).ok()) else {
@@ -437,7 +498,7 @@ pub async fn access_token(
         .map_err(|e| AccessError::Other(e.to_string()))?;
     if response.status().as_u16() == 400 || response.status().as_u16() == 401 {
         // invalid_grant: the user revoked access in their Google account, or it lapsed.
-        let _ = sqlx::query("DELETE FROM workspace_connections WHERE user_id = $1").bind(user_id).execute(&mut *conn).await;
+        mark_expired(conn, user_id).await;
         return Err(AccessError::NotConnected);
     }
     let tokens: TokenResponse = response
@@ -446,7 +507,9 @@ pub async fn access_token(
         .json()
         .await
         .map_err(|e| AccessError::Other(e.to_string()))?;
-    sqlx::query("UPDATE workspace_connections SET access_token_encrypted = $2, expires_at = $3, updated_at = now() WHERE user_id = $1")
+    sqlx::query(
+        "UPDATE workspace_connections SET access_token_encrypted = $2, expires_at = $3, updated_at = now(), last_used_at = now() WHERE user_id = $1",
+    )
         .bind(user_id)
         .bind(nomi_settings::crypto::encrypt(key, &tokens.access_token))
         .bind(Utc::now() + Duration::seconds(tokens.expires_in))
@@ -454,6 +517,10 @@ pub async fn access_token(
         .await
         .map_err(|e| AccessError::Other(e.to_string()))?;
     Ok(tokens.access_token)
+}
+
+async fn mark_used(conn: &mut PgConnection, user_id: Uuid) {
+    let _ = sqlx::query("UPDATE workspace_connections SET last_used_at = now() WHERE user_id = $1").bind(user_id).execute(&mut *conn).await;
 }
 
 /// One change the agent made in the user's account.

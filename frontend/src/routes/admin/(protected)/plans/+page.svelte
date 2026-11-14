@@ -23,6 +23,7 @@
 	let promoEnds = $state('');
 	let tokensText = $state('1000000');
 	let orderText = $state('0');
+	let priceIdrText = $state('');
 
 	function blank(): Plan {
 		return {
@@ -40,6 +41,7 @@
 			is_default: false,
 			is_active: true,
 			sort_order: data.plans.length,
+			price_idr: null,
 		};
 	}
 
@@ -50,6 +52,7 @@
 		promoEnds = '';
 		tokensText = String(draft.monthly_tokens);
 		orderText = String(draft.sort_order);
+		priceIdrText = '';
 		slugTouched = false;
 		sheetOpen = true;
 	}
@@ -61,6 +64,7 @@
 		promoEnds = plan.promo_ends_at ? plan.promo_ends_at.slice(0, 10) : '';
 		tokensText = String(plan.monthly_tokens);
 		orderText = String(plan.sort_order);
+		priceIdrText = plan.price_idr ? String(plan.price_idr) : '';
 		sheetOpen = true;
 	}
 
@@ -144,6 +148,7 @@
 				<TextField id="plan-tokens" name="monthly_tokens" type="number" min="1" label={m.plans_admin_tokens()} bind:value={tokensText} required />
 				<TextField id="plan-price" name="price_label" label={m.plans_admin_price()} bind:value={draft.price_label} placeholder="Rp 49.000 / month" />
 			</div>
+			<TextField id="plan-price-idr" name="price_idr" type="number" min="1" label={m.plans_admin_price_idr()} supportingText={m.plans_admin_price_idr_hint()} bind:value={priceIdrText} />
 			<label class="field">
 				<span class="field__label">{m.plans_admin_features()}</span>
 				<textarea name="features" rows="4" bind:value={featuresText} placeholder={m.plans_admin_features_hint()}></textarea>

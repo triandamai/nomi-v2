@@ -90,8 +90,6 @@ const SHARED_MESSAGES: &str = "SELECT m.id, m.sender_channel_identity_id IS NOT 
 type SharedRow = (Uuid, bool, Option<String>, String, DateTime<Utc>);
 /// A share as its owner sees it: id, token, chat, scope, reply, mask, anyone, expiry.
 type ShareRow = (Uuid, String, Uuid, String, Option<Uuid>, bool, bool, Option<DateTime<Utc>>);
-/// A share as its link reads it: chat, scope, reply, mask, anyone, expiry, the chat's title.
-type LinkRow = (Uuid, String, Option<Uuid>, bool, bool, Option<DateTime<Utc>>, Option<String>);
 
 /// Only the chat's owner shares it: a 404 for anyone else, as for a chat they can't see.
 async fn owned_session(pool: &sqlx::PgPool, user_id: Uuid, session_id: Uuid) -> Result<(), (StatusCode, &'static str)> {
@@ -287,31 +285,72 @@ pub struct SharedChat {
     pub masked: bool,
     pub messages: Vec<SharedMessage>,
     pub expires_at: Option<DateTime<Utc>>,
+    /// Who shared it: their name, or its initials ("M. P.") when the link is masked.
+    pub shared_by: String,
+    /// When the link was made.
+    pub shared_at: DateTime<Utc>,
+    /// The signed-in viewer made this link: the page shows its owner's banner.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub own: bool,
+    /// For the owner only: the link's id and its chat (to stop sharing: `DELETE
+    /// /api/sessions/:session_id/shares/:share_id`), and how many others opened it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub share_id: Option<Uuid>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<Uuid>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub views: Option<i64>,
 }
 
-/// Whether the request carries a valid sign-in, for links only signed-in people may open.
-fn signed_in(headers: &HeaderMap, secret: &str) -> bool {
+/// Who the request is signed in as, if anyone.
+fn signed_in_as(headers: &HeaderMap, secret: &str) -> Option<Uuid> {
     headers
         .get(axum::http::header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.strip_prefix("Bearer "))
-        .is_some_and(|token| nomi_auth::claims::Claims::decode(token, secret).is_ok())
+        .and_then(|token| nomi_auth::claims::Claims::decode(token, secret).ok())
+        .map(|claims| claims.sub)
+}
+
+/// A name as its initials: "Maya Putri" reads "M. P.".
+pub fn initials(name: &str) -> String {
+    name.split_whitespace().filter_map(|word| word.chars().next()).map(|first| format!("{}.", first.to_uppercase())).collect::<Vec<_>>().join(" ")
+}
+
+/// A share as its link reads it: id, owner, chat, scope, reply, mask, anyone, expiry, made, views,
+/// the chat's title and the owner's name.
+type LinkRow = (Uuid, Uuid, Uuid, String, Option<Uuid>, bool, bool, Option<DateTime<Utc>>, DateTime<Utc>, i64, Option<String>, String);
+
+/// The live link behind `token`: an expired, revoked or unknown one is a 404.
+async fn live_link(pool: &sqlx::PgPool, token: &str) -> Result<LinkRow, (StatusCode, &'static str)> {
+    let share: Option<LinkRow> = sqlx::query_as(
+        "SELECT c.id, c.created_by, c.session_id, c.scope, c.message_id, c.mask, c.anyone, c.expires_at, c.created_at, c.views, s.title, \
+                COALESCE(NULLIF(up.display_name, ''), split_part(COALESCE(w.email, g.email, ''), '@', 1)) \
+         FROM chat_shares c JOIN sessions s ON s.id = c.session_id \
+         LEFT JOIN user_profiles up ON up.user_id = c.created_by \
+         LEFT JOIN web_credentials w ON w.user_id = c.created_by \
+         LEFT JOIN google_identities g ON g.user_id = c.created_by \
+         WHERE c.token = $1 AND c.revoked_at IS NULL AND (c.expires_at IS NULL OR c.expires_at > now())",
+    )
+    .bind(token)
+    .fetch_optional(pool)
+    .await
+    .map_err(failed)?;
+    share.ok_or((StatusCode::NOT_FOUND, "link not found"))
 }
 
 /// GET /api/shared/:token — what the link shows. Public when the owner said anyone may view; an
-/// expired, revoked or unknown link is a 404, so links can't be probed.
+/// expired, revoked or unknown link is a 404, so links can't be probed. Each open by someone other
+/// than the owner counts as a view; the owner sees the count, and the link's id to stop sharing.
 pub async fn read(State(state): State<AppState>, headers: HeaderMap, Path(token): Path<String>) -> Result<Json<SharedChat>, (StatusCode, &'static str)> {
-    let share: Option<LinkRow> = sqlx::query_as(
-        "SELECT c.session_id, c.scope, c.message_id, c.mask, c.anyone, c.expires_at, s.title FROM chat_shares c JOIN sessions s ON s.id = c.session_id \
-         WHERE c.token = $1 AND c.revoked_at IS NULL AND (c.expires_at IS NULL OR c.expires_at > now())",
-    )
-    .bind(&token)
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(failed)?;
-    let (session_id, scope, message_id, mask_on, anyone, expires_at, title) = share.ok_or((StatusCode::NOT_FOUND, "link not found"))?;
-    if !anyone && !signed_in(&headers, &state.jwt_secret) {
+    let (share_id, owner, session_id, scope, message_id, mask_on, anyone, expires_at, shared_at, views, title, owner_name) = live_link(&state.pool, &token).await?;
+    let viewer = signed_in_as(&headers, &state.jwt_secret);
+    if !anyone && viewer.is_none() {
         return Err((StatusCode::UNAUTHORIZED, "sign in to open this link"));
+    }
+    let own = viewer == Some(owner);
+    if !own {
+        sqlx::query("UPDATE chat_shares SET views = views + 1 WHERE id = $1").bind(share_id).execute(&state.pool).await.map_err(failed)?;
     }
     let rows: Vec<SharedRow> = sqlx::query_as(&format!("{SHARED_MESSAGES} ORDER BY m.created_at")).bind(session_id).fetch_all(&state.pool).await.map_err(failed)?;
     let messages = rows
@@ -324,7 +363,129 @@ pub async fn read(State(state): State<AppState>, headers: HeaderMap, Path(token)
             created_at,
         })
         .collect();
-    Ok(Json(SharedChat { title: if mask_on { title.map(|t| mask(&t)) } else { title }, scope, masked: mask_on, messages, expires_at }))
+    Ok(Json(SharedChat {
+        title: if mask_on { title.map(|t| mask(&t)) } else { title },
+        scope,
+        masked: mask_on,
+        messages,
+        expires_at,
+        shared_by: if mask_on { initials(&owner_name) } else { owner_name },
+        shared_at,
+        own,
+        share_id: own.then_some(share_id),
+        session_id: own.then_some(session_id),
+        views: own.then_some(views),
+    }))
+}
+
+/// Why a viewer flags a shared page.
+pub const REPORT_REASONS: [&str; 5] = ["spam", "abuse", "personal_info", "illegal", "other"];
+/// The longest note a report keeps, in characters.
+const REPORT_NOTE_CHARS: usize = 1000;
+/// How many reports one viewer (person or address) may send in [`REPORT_WINDOW_MINUTES`].
+const REPORTS_PER_WINDOW: i64 = 5;
+/// The window reports are counted over.
+const REPORT_WINDOW_MINUTES: i32 = 60;
+/// The most reports the admin list returns.
+const ADMIN_REPORTS_LIMIT: i64 = 200;
+
+#[derive(Deserialize)]
+pub struct ReportRequest {
+    /// One of [`REPORT_REASONS`].
+    pub reason: String,
+    #[serde(default)]
+    pub note: Option<String>,
+}
+
+/// Who a report came from, for rate-limiting: the signed-in person, or a hash of the address the
+/// request came from (the first hop the proxy saw), so raw addresses aren't stored.
+fn reporter(headers: &HeaderMap, viewer: Option<Uuid>) -> String {
+    use sha2::{Digest, Sha256};
+    if let Some(user_id) = viewer {
+        return format!("user:{user_id}");
+    }
+    let address = ["x-forwarded-for", "x-real-ip"]
+        .iter()
+        .find_map(|name| headers.get(*name).and_then(|value| value.to_str().ok()))
+        .and_then(|value| value.split(',').next())
+        .map(str::trim)
+        .unwrap_or("unknown");
+    format!("addr:{}", hex::encode(Sha256::digest(address.as_bytes())))
+}
+
+/// POST /api/shared/:token/report — flag a shared page for an admin to look at. Open without a
+/// sign-in (a link only for signed-in people still needs one); each viewer may send a few an hour.
+pub async fn report(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(token): Path<String>,
+    Json(req): Json<ReportRequest>,
+) -> Result<StatusCode, (StatusCode, &'static str)> {
+    if !REPORT_REASONS.contains(&req.reason.as_str()) {
+        return Err((StatusCode::BAD_REQUEST, "reason must be spam, abuse, personal_info, illegal or other"));
+    }
+    let (share_id, _, _, _, _, _, anyone, ..) = live_link(&state.pool, &token).await?;
+    let viewer = signed_in_as(&headers, &state.jwt_secret);
+    if !anyone && viewer.is_none() {
+        return Err((StatusCode::UNAUTHORIZED, "sign in to open this link"));
+    }
+    let who = reporter(&headers, viewer);
+    let recent: i64 = sqlx::query_scalar("SELECT count(*) FROM shared_page_reports WHERE reporter = $1 AND created_at > now() - make_interval(mins => $2)")
+        .bind(&who)
+        .bind(REPORT_WINDOW_MINUTES)
+        .fetch_one(&state.pool)
+        .await
+        .map_err(failed)?;
+    if recent >= REPORTS_PER_WINDOW {
+        return Err((StatusCode::TOO_MANY_REQUESTS, "too many reports; try again later"));
+    }
+    let note = req.note.map(|note| note.trim().chars().take(REPORT_NOTE_CHARS).collect::<String>()).filter(|note| !note.is_empty());
+    sqlx::query("INSERT INTO shared_page_reports (share_id, reason, note, reporter) VALUES ($1, $2, $3, $4)")
+        .bind(share_id)
+        .bind(&req.reason)
+        .bind(note)
+        .bind(&who)
+        .execute(&state.pool)
+        .await
+        .map_err(failed)?;
+    Ok(StatusCode::CREATED)
+}
+
+#[derive(Serialize, sqlx::FromRow)]
+pub struct SharedPageReport {
+    pub id: Uuid,
+    pub share_id: Uuid,
+    pub token: String,
+    pub session_id: Uuid,
+    pub title: Option<String>,
+    /// The link's owner.
+    pub shared_by: Uuid,
+    pub reason: String,
+    pub note: Option<String>,
+    /// The link was revoked since.
+    pub revoked: bool,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Serialize)]
+pub struct SharedPageReports {
+    pub reports: Vec<SharedPageReport>,
+}
+
+/// GET /api/admin/shared-reports — what viewers flagged, newest first (support, view).
+pub async fn admin_list(State(state): State<AppState>, AuthClaims(claims): AuthClaims) -> Result<Json<SharedPageReports>, (StatusCode, &'static str)> {
+    crate::routes::admin_access::require_admin(&claims, "support", "view")?;
+    let reports: Vec<SharedPageReport> = sqlx::query_as(
+        "SELECT r.id, r.share_id, c.token, c.session_id, s.title, c.created_by AS shared_by, r.reason, r.note, \
+                c.revoked_at IS NOT NULL AS revoked, r.created_at \
+         FROM shared_page_reports r JOIN chat_shares c ON c.id = r.share_id JOIN sessions s ON s.id = c.session_id \
+         ORDER BY r.created_at DESC LIMIT $1",
+    )
+    .bind(ADMIN_REPORTS_LIMIT)
+    .fetch_all(&state.pool)
+    .await
+    .map_err(failed)?;
+    Ok(Json(SharedPageReports { reports }))
 }
 
 #[cfg(test)]
@@ -341,6 +502,13 @@ mod tests {
     #[test]
     fn masking_hides_email_addresses_and_phone_numbers() {
         assert_eq!(mask("Mail sri@example.co.id or call +62 812-3456-7890"), "Mail ••• or call •••");
+    }
+
+    #[test]
+    fn initials_keep_each_word_s_first_letter() {
+        assert_eq!(initials("maya putri"), "M. P.");
+        assert_eq!(initials("sri"), "S.");
+        assert_eq!(initials("  "), "");
     }
 
     #[test]

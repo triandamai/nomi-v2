@@ -19,7 +19,7 @@ use serde::Serialize;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use nomi_llm::{LlmError, LlmEventStream, LlmProvider, LlmRequest, StreamEvent};
+use nomi_llm::{KeyHealth, LlmError, LlmEventStream, LlmProvider, LlmRequest, StreamEvent};
 
 /// Whose model a provider calls, as recorded on each usage row.
 #[derive(Debug, Clone, PartialEq)]
@@ -32,6 +32,9 @@ pub struct ModelTag {
     pub label: String,
     pub provider: String,
     pub model_id: String,
+    /// The provider connection whose key the call is made with, when it is one: how the key
+    /// fared is kept on it (see [`record_key_health`]).
+    pub connection_id: Option<Uuid>,
 }
 
 /// A provider that records each finished call's tokens for `user_id`, and on Nomi's own model
@@ -61,7 +64,13 @@ impl LlmProvider for MeteredProvider {
                 Err(e) => tracing::warn!(error = %e, user_id = %self.user_id, "failed to check the token allowance"),
             }
         }
-        let mut events = self.inner.complete_stream(request).await?;
+        let mut events = match self.inner.complete_stream(request).await {
+            Ok(events) => events,
+            Err(e) => {
+                note_key_health(&self.pool, &self.tag, e.key_health()).await;
+                return Err(e);
+            }
+        };
         let (pool, user_id, tag) = (self.pool.clone(), self.user_id, self.tag.clone());
         Ok(Box::pin(async_stream::stream! {
             let mut cached_input_tokens = 0;
@@ -69,7 +78,11 @@ impl LlmProvider for MeteredProvider {
                 if let Ok(StreamEvent::CacheUsage { cached_input_tokens: cached }) = &event {
                     cached_input_tokens = *cached;
                 }
+                if let Err(e) = &event {
+                    note_key_health(&pool, &tag, e.key_health()).await;
+                }
                 if let Ok(StreamEvent::Done { input_tokens, output_tokens, .. }) = &event {
+                    note_key_health(&pool, &tag, Some(KeyHealth::Ok)).await;
                     // Recorded before the caller sees the end of the stream, so a finished turn's
                     // usage is always there to read. A failed write never fails the reply.
                     let tokens = Tokens { input: *input_tokens, output: *output_tokens, cached_input: cached_input_tokens };
@@ -81,6 +94,25 @@ impl LlmProvider for MeteredProvider {
             }
         }))
     }
+}
+
+/// Keeps on the call's connection what its answer said about the key, when it said anything.
+/// A failed write never fails the call.
+async fn note_key_health(pool: &PgPool, tag: &ModelTag, health: Option<KeyHealth>) {
+    let (Some(connection_id), Some(health)) = (tag.connection_id, health) else { return };
+    if let Err(e) = record_key_health(pool, connection_id, health).await {
+        tracing::warn!(error = %e, %connection_id, "failed to record a provider key's status");
+    }
+}
+
+/// Records how connection `connection_id`'s key fared on a call just made with it.
+pub async fn record_key_health(pool: &PgPool, connection_id: Uuid, health: KeyHealth) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE llm_provider_connections SET key_status = $2, key_checked_at = now() WHERE id = $1")
+        .bind(connection_id)
+        .bind(health.as_str())
+        .execute(pool)
+        .await?;
+    Ok(())
 }
 
 /// How much a cached input token counts toward the monthly allowance. Providers bill input they
