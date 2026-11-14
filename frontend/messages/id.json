@@ -1917,6 +1917,8 @@
 	"config_google_redirect_uri_hint": "mis. https://nomi.example.com/connections/google/callback. Daftarkan di redirect URI yang diizinkan pada klien.",
 	"config_google_signin_redirect_uri": "Redirect URI masuk",
 	"config_google_signin_redirect_uri_hint": "mis. https://nomi.example.com/auth/google/callback. Daftarkan juga di redirect URI klien.",
+	"config_google_app_origins": "Origin aplikasi lain",
+	"config_google_app_origins_hint": "Aplikasi web lain yang boleh dituju Google saat kembali, dipisah koma, mis. https://new.nomi.example.com. /auth/google/callback dan /connections/google/callback masing-masing juga harus terdaftar di redirect URI client.",
 	"config_smtp": "SMTP",
 	"config_smtp_lede": "Server email untuk kode masuk, undangan, dan notifikasi. Tanpa server, email ditulis ke log server.",
 	"config_smtp_host": "Host",

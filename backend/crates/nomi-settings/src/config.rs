@@ -91,6 +91,8 @@ pub const GOOGLE: SectionDef = SectionDef {
         field("client_secret", "GOOGLE_CLIENT_SECRET", Kind::Secret),
         field("redirect_uri", "GOOGLE_REDIRECT_URI", Kind::Text),
         field("signin_redirect_uri", "GOOGLE_SIGNIN_REDIRECT_URI", Kind::Text),
+        // Other web apps Google may come back to (e.g. the new app), comma separated.
+        field("app_origins", "GOOGLE_APP_ORIGINS", Kind::Text),
     ],
 };
 

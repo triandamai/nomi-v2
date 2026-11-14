@@ -38,6 +38,11 @@ pub struct GoogleConfig {
     /// The app's Google sign-in callback page (GOOGLE_SIGNIN_REDIRECT_URI, else
     /// /auth/google/callback on the same site as `redirect_uri`).
     pub signin_redirect_uri: String,
+    /// Other web apps on this server that Google may answer, as origins
+    /// (`https://new.nomi.example.com`): a flow started there comes back to the same callback
+    /// path on that site (GOOGLE_APP_ORIGINS, comma or space separated). The sites of the two
+    /// redirect URIs are always allowed.
+    pub app_origins: Vec<String>,
     pub auth_url: String,
     pub token_url: String,
     pub revoke_url: String,
@@ -63,6 +68,7 @@ impl GoogleConfig {
             client_secret,
             redirect_uri,
             signin_redirect_uri,
+            app_origins: Vec::new(),
             auth_url: "https://accounts.google.com/o/oauth2/v2/auth".to_string(),
             token_url: "https://oauth2.googleapis.com/token".to_string(),
             revoke_url: "https://oauth2.googleapis.com/revoke".to_string(),
@@ -96,6 +102,7 @@ impl GoogleConfig {
                 "client_id" => "GOOGLE_CLIENT_ID",
                 "client_secret" => "GOOGLE_CLIENT_SECRET",
                 "redirect_uri" => "GOOGLE_REDIRECT_URI",
+                "app_origins" => "GOOGLE_APP_ORIGINS",
                 _ => "GOOGLE_SIGNIN_REDIRECT_URI",
             };
             std::env::var(name).ok()
@@ -110,20 +117,80 @@ impl GoogleConfig {
     }
 
     /// From Admin → Configuration's Google fields (`client_id`, `client_secret`, `redirect_uri`,
-    /// `signin_redirect_uri`), as `get` answers them.
+    /// `signin_redirect_uri`, `app_origins`), as `get` answers them.
     pub fn from_lookup(get: impl Fn(&str) -> Option<String>) -> Option<Self> {
         let get = |field: &str| get(field).map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
         let mut config = Self::new(get("client_id")?, get("client_secret")?, get("redirect_uri")?);
         if let Some(signin) = get("signin_redirect_uri") {
             config.signin_redirect_uri = signin;
         }
+        if let Some(origins) = get("app_origins") {
+            config.app_origins = origins.split([',', ' ', '\n']).filter_map(web_origin).collect();
+        }
         let get = |name: &str| std::env::var(name).ok().map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
         // Development only: every Google endpoint on one fake server.
         if let Some(base) = get("GOOGLE_FAKE_BASE_URL") {
             let fake = Self::all_at(&base);
-            config = Self { client_id: config.client_id, client_secret: config.client_secret, redirect_uri: config.redirect_uri, signin_redirect_uri: config.signin_redirect_uri, ..fake };
+            config = Self { client_id: config.client_id, client_secret: config.client_secret, redirect_uri: config.redirect_uri, signin_redirect_uri: config.signin_redirect_uri, app_origins: config.app_origins, ..fake };
         }
         Some(config)
+    }
+}
+
+/// Which of the app's Google callback pages.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Callback {
+    /// /auth/google/callback: signing in, or adding Google to an account.
+    SignIn,
+    /// /connections/google/callback: connecting Workspace.
+    Workspace,
+}
+
+/// A flow was started from a web app Google isn't allowed to answer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OriginNotAllowed(pub String);
+
+impl std::fmt::Display for OriginNotAllowed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Google can't come back to {}. Add it to Google's app origins in Admin → Configuration, and its callback to the OAuth client.", self.0)
+    }
+}
+
+impl std::error::Error for OriginNotAllowed {}
+
+/// The scheme, host and port of a web address (`https://nomi.example.com`), or `None` when it
+/// isn't one.
+fn web_origin(url: &str) -> Option<String> {
+    let parsed = reqwest::Url::parse(url.trim()).ok()?;
+    if !matches!(parsed.scheme(), "http" | "https") || parsed.host_str().is_none() {
+        return None;
+    }
+    Some(parsed.origin().ascii_serialization())
+}
+
+impl GoogleConfig {
+    /// Where Google sends the person back for `callback`: the configured page, or, for a flow
+    /// started on the web app at `origin`, the same page on that site, so each app gets its own
+    /// people back. Only the redirect URIs' own sites and `app_origins` are allowed.
+    pub fn callback_for(&self, callback: Callback, origin: Option<&str>) -> Result<String, OriginNotAllowed> {
+        let configured = match callback {
+            Callback::SignIn => &self.signin_redirect_uri,
+            Callback::Workspace => &self.redirect_uri,
+        };
+        let Some(origin) = origin.map(str::trim).filter(|o| !o.is_empty()) else {
+            return Ok(configured.clone());
+        };
+        let wanted = web_origin(origin).ok_or_else(|| OriginNotAllowed(origin.to_string()))?;
+        if web_origin(configured).as_deref() == Some(wanted.as_str()) {
+            return Ok(configured.clone());
+        }
+        let allowed = [&self.redirect_uri, &self.signin_redirect_uri].into_iter().filter_map(|u| web_origin(u)).chain(self.app_origins.iter().cloned()).any(|o| o == wanted);
+        if !allowed {
+            return Err(OriginNotAllowed(wanted));
+        }
+        let page = reqwest::Url::parse(configured).map_err(|_| OriginNotAllowed(wanted.clone()))?;
+        let query = page.query().map(|q| format!("?{q}")).unwrap_or_default();
+        Ok(format!("{wanted}{}{query}", page.path()))
     }
 }
 
@@ -156,11 +223,13 @@ pub async fn start_authorization(
         .execute(&mut *conn)
         .await
         .map_err(|e| e.to_string())?;
-    sqlx::query("INSERT INTO workspace_oauth_states (state, user_id, services, resume_session_id) VALUES ($1, $2, $3, $4)")
+    // Kept with the state: the code is traded with the address Google was sent to.
+    sqlx::query("INSERT INTO workspace_oauth_states (state, user_id, services, resume_session_id, redirect_uri) VALUES ($1, $2, $3, $4, $5)")
         .bind(&state)
         .bind(user_id)
         .bind(&services)
         .bind(resume_session_id)
+        .bind(&config.redirect_uri)
         .execute(&mut *conn)
         .await
         .map_err(|e| e.to_string())?;
@@ -217,18 +286,19 @@ pub async fn complete_authorization(
     code: &str,
     state: &str,
 ) -> Result<Connected, String> {
-    let pending: Option<(Vec<String>, Option<Uuid>)> = sqlx::query_as(
+    let pending: Option<(Vec<String>, Option<Uuid>, Option<String>)> = sqlx::query_as(
         "DELETE FROM workspace_oauth_states WHERE state = $1 AND user_id = $2 AND created_at > now() - interval '10 minutes' \
-         RETURNING services, resume_session_id",
+         RETURNING services, resume_session_id, redirect_uri",
     )
     .bind(state)
     .bind(user_id)
     .fetch_optional(&mut *conn)
     .await
     .map_err(|e| e.to_string())?;
-    let Some((_, resume_session_id)) = pending else {
+    let Some((_, resume_session_id, sent_to)) = pending else {
         return Err("This sign-in link has expired. Start connecting again.".to_string());
     };
+    let redirect_uri = sent_to.unwrap_or_else(|| config.redirect_uri.clone());
 
     let response = http
         .post(&config.token_url)
@@ -236,7 +306,7 @@ pub async fn complete_authorization(
             ("code", code),
             ("client_id", &config.client_id),
             ("client_secret", &config.client_secret),
-            ("redirect_uri", &config.redirect_uri),
+            ("redirect_uri", &redirect_uri),
             ("grant_type", "authorization_code"),
         ])
         .send()

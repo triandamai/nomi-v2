@@ -51,8 +51,9 @@ export async function loadConnections(event: ApiEvent): Promise<{ overview: Conn
 	return { overview, github };
 }
 
-export const startGoogle = (event: ApiEvent, services: string[], resume: string | null) =>
-	send<{ url: string }>(event, '/api/connections/google/start', 'POST', { services, resume_session_id: resume });
+/** Google comes back to the app at `origin` (this one). */
+export const startGoogle = (event: ApiEvent, services: string[], resume: string | null, origin: string) =>
+	send<{ url: string }>(event, '/api/connections/google/start', 'POST', { services, resume_session_id: resume, origin });
 export const finishGoogle = (event: ApiEvent, code: string, state: string) =>
 	send<{ email: string; services: string[]; resume_session_id: string | null }>(event, '/api/connections/google/callback', 'POST', { code, state });
 export const disconnectGoogle = (event: ApiEvent) => send<void>(event, '/api/connections/google', 'DELETE');

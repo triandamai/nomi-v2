@@ -27,6 +27,27 @@ fn config_comes_from_all_three_fields_and_derives_the_sign_in_callback() {
 }
 
 #[test]
+fn callbacks_go_to_the_app_the_flow_started_on() {
+    use nomi_agent_workspace::connection::{Callback, OriginNotAllowed};
+    let fields = |pairs: &'static [(&'static str, &'static str)]| move |f: &str| pairs.iter().find(|(k, _)| *k == f).map(|(_, v)| v.to_string());
+    let config = GoogleConfig::from_lookup(fields(&[
+        ("client_id", "id"),
+        ("client_secret", "s"),
+        ("redirect_uri", "https://nomi.app/connections/google/callback"),
+        ("app_origins", "https://new.nomi.app/path, http://localhost:5174 not-a-url"),
+    ]))
+    .unwrap();
+    assert_eq!(config.app_origins, ["https://new.nomi.app", "http://localhost:5174"]);
+    assert_eq!(config.callback_for(Callback::SignIn, None).unwrap(), "https://nomi.app/auth/google/callback");
+    assert_eq!(config.callback_for(Callback::Workspace, Some(" ")).unwrap(), "https://nomi.app/connections/google/callback");
+    assert_eq!(config.callback_for(Callback::SignIn, Some("https://nomi.app")).unwrap(), "https://nomi.app/auth/google/callback");
+    assert_eq!(config.callback_for(Callback::SignIn, Some("https://new.nomi.app/")).unwrap(), "https://new.nomi.app/auth/google/callback");
+    assert_eq!(config.callback_for(Callback::Workspace, Some("http://localhost:5174")).unwrap(), "http://localhost:5174/connections/google/callback");
+    assert_eq!(config.callback_for(Callback::SignIn, Some("https://evil.app")), Err(OriginNotAllowed("https://evil.app".into())));
+    assert!(config.callback_for(Callback::SignIn, Some("nomi.app")).is_err());
+}
+
+#[test]
 fn only_known_services_have_scopes() {
     for service in connection::SERVICES {
         assert!(connection::service_scope(service).unwrap().starts_with("https://www.googleapis.com/auth/"));
