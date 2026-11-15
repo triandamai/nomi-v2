@@ -178,7 +178,8 @@ export async function loadPeople(event: ApiEvent, id: string): Promise<ProjectMe
 }
 
 /** Invites an address as `build` (admin), `prompt` (member) or `view` (viewer). */
-export const invitePerson = (event: ApiEvent, id: string, email: string, role: 'build' | 'prompt' | 'view') => send(event, `${at(id)}/invites`, 'POST', { email, role });
+export const invitePerson = (event: ApiEvent, id: string, email: string, role: 'build' | 'prompt' | 'view') =>
+	send(event, `${at(id)}/invites`, 'POST', { email, role });
 export const setPersonRole = (event: ApiEvent, id: string, userId: string, role: 'admin' | 'member' | 'viewer') => send(event, `${at(id)}/members/${encodeURIComponent(userId)}`, 'PUT', { role });
 export const removePerson = (event: ApiEvent, id: string, userId: string) => send(event, `${at(id)}/members/${encodeURIComponent(userId)}`, 'DELETE');
 /** Opens the project to the whole workspace, or only to the people added. */
