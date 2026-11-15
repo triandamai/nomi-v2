@@ -60,7 +60,10 @@
 	import FollowBar from '$lib/ds/build/FollowBar.svelte';
 	import PeerCursor from '$lib/ds/build/PeerCursor.svelte';
 	import { ProjectLive } from '$lib/projects/live.svelte';
-	import { distinctInitials, peerFor, pointersIn, whereLabel } from '$lib/projects/peers';
+	import { distinctInitials, initials as initialsOf, peerFor, pointersIn, whereLabel } from '$lib/projects/peers';
+	import AsksInLine from '$lib/ds/projects/AsksInLine.svelte';
+	import PublishRequest from '$lib/ds/build/PublishRequest.svelte';
+	import { answeredRequests, askLine, movableAsk, myOpenRequest, openRequests, requestMeta, type PublishRequestRow, type QueuedAsk } from '$lib/projects/asks';
 
 	// A project's workspace (Flow / Build — Sign in → live URL o882RC, Building and Live; Workspace
 	// tools U16wU, Changes ready → Publish → Publish failed → Published → Deployments): the project
@@ -493,6 +496,110 @@
 		live?.point(view, (event.clientX - box.left) / box.width, (event.clientY - box.top) / box.height);
 	}
 
+	// Two asks at once (Invite & build together TnwQT, step 9): the asks waiting for Koda in the
+	// project's chat, read again whenever the chat moves on (ChatView's activity), one read at a time.
+	let asks = $state<QueuedAsk[]>([]);
+	let readingQueue: Promise<void> | null = null;
+	let queueAgain = false;
+	function loadQueue(): Promise<void> {
+		if (readingQueue) {
+			queueAgain = true;
+			return readingQueue;
+		}
+		readingQueue = (async () => {
+			do {
+				queueAgain = false;
+				const response = await fetch(`/projects/${project.id}/queue`).catch(() => null);
+				// The line is a nicety: when it can't be read, the last one stays until the chat moves on.
+				if (response?.ok) asks = ((await response.json()) as { asks: QueuedAsk[] }).asks;
+			} while (queueAgain);
+			readingQueue = null;
+		})();
+		return readingQueue;
+	}
+	const viewer = $derived(deploy?.role === 'viewer');
+	const line = $derived(askLine(asks));
+	const movable = $derived(viewer ? -1 : movableAsk(asks));
+	async function letFirst(index: number) {
+		const ask = asks[index];
+		if (!ask) return;
+		const response = await fetch(`/projects/${project.id}/queue/${encodeURIComponent(ask.id)}`, { method: 'POST' }).catch(() => null);
+		const body = response ? ((await response.json().catch(() => null)) as { asks?: QueuedAsk[]; message?: string } | null) : null;
+		if (response?.ok && body?.asks) return void (asks = body.asks);
+		toasts.show({ kind: 'error', title: m.queue_move_failed(), detail: body?.message || undefined });
+		void loadQueue();
+	}
+
+	// Sari's change is ready (step 10): someone who may change the project but not publish it asks
+	// its admins to; an admin sees each request at the end of the chat and publishes it (approve) or
+	// declines; the person who asked can take it back. Requests change live over the project's link.
+	const me = $derived(people?.me ?? null);
+	const role = $derived(deploy?.role ?? null);
+	let requestRows = $state<PublishRequestRow[]>([]);
+	async function loadRequests() {
+		const response = await fetch(`/projects/${project.id}/requests`).catch(() => null);
+		if (!response?.ok) return;
+		const next = ((await response.json()) as { requests: PublishRequestRow[] }).requests;
+		for (const answer of answeredRequests(requestRows, next, me)) {
+			toasts.show(
+				answer.status === 'approved'
+					? { kind: 'success', title: m.publish_request_approved({ name: answer.by }) }
+					: { kind: 'info', title: m.publish_request_declined({ name: answer.by }), detail: m.publish_request_answer_note() },
+			);
+		}
+		requestRows = next;
+	}
+	onMount(() => {
+		void loadQueue();
+		void loadRequests();
+	});
+	$effect(() => {
+		const link = live;
+		if (!link) return;
+		// A request asked or answered, a publish moving on: both read again.
+		return link.onDeployChange(() => {
+			void loadRequests();
+			void refresh();
+		});
+	});
+	const theirs = $derived(role === 'admin' ? openRequests(requestRows, me) : []);
+	const mine = $derived(role === 'member' ? myOpenRequest(requestRows, me) : null);
+	let mineOpen = $state(false);
+	let asking = $state(false);
+	async function askPublish() {
+		asking = true;
+		const result = await pageAction(`/projects/${project.id}`, 'ask');
+		asking = false;
+		if (!result.ok) return void (result.message && toasts.show({ kind: 'error', title: m.publish_ask_failed(), detail: result.message }));
+		toasts.show({ kind: 'success', title: m.publish_asked_toast() });
+		await loadRequests();
+	}
+	let answering = $state<string | null>(null);
+	async function answerRequest(row: PublishRequestRow, action: 'approve' | 'decline' | 'cancel') {
+		if (answering) return;
+		answering = row.id;
+		const result = await pageAction(`/projects/${project.id}`, 'answer', { request: row.id, action });
+		answering = null;
+		const name = row.requested_by_name.split(/\s+/)[0];
+		if (!result.ok) {
+			// Approving publishes: where the publish can't start, the request stays open and the backend says why.
+			if (result.message) toasts.show({ kind: 'error', title: action === 'approve' ? m.deploy_couldnt_start() : m.publish_request_answer_failed(), detail: result.message });
+		} else if (action === 'approve') {
+			toasts.show({ kind: 'success', title: m.publish_request_publishing({ name }) });
+		} else if (action === 'decline') {
+			toasts.show({ kind: 'success', title: m.publish_request_declined_done({ name }) });
+		} else {
+			mineOpen = false;
+			toasts.show({ kind: 'success', title: m.publish_request_cancelled() });
+		}
+		await loadRequests();
+		if (result.ok && action === 'approve') await refresh();
+	}
+	function review() {
+		view = 'preview';
+		workspaceView = 'pane';
+	}
+
 	const shownUrl = $derived(liveUrl ? liveUrl.replace(/^https?:\/\//, '').replace(/\/$/, '') : m.workspace_preview_files());
 	const initials = $derived(
 		(data.person?.name ?? '')
@@ -505,6 +612,28 @@
 </script>
 
 <svelte:head><title>{project.name} · {m.app_name()}</title></svelte:head>
+
+{#snippet together()}
+	{#if theirs.length || line.length > 1}
+		<div class="flex flex-col gap-4">
+			{#each theirs as row (row.id)}
+				{@const name = row.requested_by_name}
+				<div class="flex flex-col items-end gap-1">
+					<PublishRequest
+						who={{ name, initials: initialsOf(name), peer: peerFor(name) }}
+						meta={requestMeta(row, deploy?.unpublished_changes ?? null, time.timeZone)}
+						onpublish={() => void answerRequest(row, 'approve')}
+						onreview={review}
+					/>
+					<Button variant="ghost" label={m.publish_request_decline()} aria-label={m.publish_request_decline_of({ name })} onclick={() => void answerRequest(row, 'decline')} />
+				</div>
+			{/each}
+			{#if line.length > 1}
+				<AsksInLine asks={line} first={movable >= 0 ? movable : undefined} onfirst={(index) => void letFirst(index)} />
+			{/if}
+		</div>
+	{/if}
+{/snippet}
 
 {#snippet here()}
 	<div bind:this={hereBox} class="relative shrink-0 max-sm:hidden">
@@ -558,7 +687,18 @@
 			onshare={liveUrl ? () => (sharing = true) : undefined}
 		>
 			{#snippet publish()}
-				{#if button.state === 'ready'}
+				{#if role === 'member'}
+					<!-- Someone who can't publish asks the admins to, where Publish would be (step 10). -->
+					{#if button.state === 'publishing'}
+						<PublishButton state="publishing" elapsed={button.elapsed} />
+					{:else if mine}
+						<Button variant="secondary" iconStart={Hourglass} label={m.publish_asked()} aria-haspopup="dialog" onclick={() => (mineOpen = true)} />
+					{:else if button.state === 'idle'}
+						<PublishButton state="idle" />
+					{:else}
+						<Button iconStart={Rocket} label={m.publish_ask()} loading={asking} onclick={askPublish} />
+					{/if}
+				{:else if button.state === 'ready'}
 					<PublishButton state="ready" count={button.count} onpublish={() => (confirming = true)} />
 				{:else if button.state === 'publishing'}
 					<PublishButton state="publishing" elapsed={button.elapsed} />
@@ -572,7 +712,7 @@
 	{/snippet}
 	{#snippet chat()}
 		<ChatPaneHeader title={m.workspace_chat()} crew={['koda', 'nomi']} />
-		<div class="min-h-0 flex-1"><ChatView {data} pane {quote} onunquote={() => (quote = null)} /></div>
+		<div class="min-h-0 flex-1"><ChatView {data} pane {quote} onunquote={() => (quote = null)} onactivity={() => void loadQueue()} after={together} /></div>
 	{/snippet}
 	<div class="relative flex min-h-0 flex-1 flex-col">
 		<PaneTabs
@@ -1002,6 +1142,14 @@
 	{#snippet actions()}
 		<Button variant="ghost" label={m.action_cancel()} onclick={() => (confirming = false)} />
 		<Button variant="primary" iconEnd={Rocket} label={m.deploy_publish_as({ number: nextNumber })} loading={sending} onclick={startPublish} />
+	{/snippet}
+</ProjectDialog>
+
+<ProjectDialog open={mineOpen && Boolean(mine)} title={m.publish_request_mine_title()} description={m.publish_request_mine_body()} width={420} onclose={() => (mineOpen = false)}>
+	{#if mine}<p class="font-mono text-label text-text-3">{requestMeta(mine, deploy?.unpublished_changes ?? null, time.timeZone)}</p>{/if}
+	{#snippet actions()}
+		<Button variant="ghost" label={m.publish_request_keep()} onclick={() => (mineOpen = false)} />
+		<Button variant="secondary" label={m.publish_request_cancel()} loading={Boolean(mine) && answering === mine?.id} onclick={() => mine && void answerRequest(mine, 'cancel')} />
 	{/snippet}
 </ProjectDialog>
 

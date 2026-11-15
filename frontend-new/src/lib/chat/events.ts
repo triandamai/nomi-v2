@@ -19,7 +19,9 @@ export type ChatEvent =
 	| { kind: 'AgentSessionStarted'; agent_session_id: string; agent_type: string; agent_display_name: string }
 	| { kind: 'AgentSessionEnded'; agent_session_id: string; reason: string }
 	| { kind: 'AgentDelegationUpdated'; delegation_id: string }
-	| { kind: 'PersonalityChanged' };
+	| { kind: 'PersonalityChanged' }
+	/** The chat's line of asks changed: one started running or was moved up. */
+	| { kind: 'QueueChanged' };
 
 type Raw = Record<string, unknown>;
 const text = (value: unknown): value is string => typeof value === 'string';
@@ -41,6 +43,7 @@ const SHAPES: Record<ChatEvent['kind'], (raw: Raw) => boolean> = {
 	AgentSessionEnded: () => true,
 	AgentDelegationUpdated: () => true,
 	PersonalityChanged: () => true,
+	QueueChanged: () => true,
 };
 
 /** One envelope from the feed, or null when it isn't one this build knows. */
