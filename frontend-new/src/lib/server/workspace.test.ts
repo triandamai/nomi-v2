@@ -178,4 +178,34 @@ describe('a project’s workspace on the server', () => {
 		expect(backend.calls[0].url).toBe('http://api.test/api/projects/p1/presence');
 		expect(await workspace.loadPresence(eventWith(() => new Response('', { status: 404 })).event, 'p1')).toBeNull();
 	});
+	it('reads the asks in line in the project’s chat and lets one go first, with the backend’s reason when it can’t', async () => {
+		const line = { asks: [{ id: 'j 1', text: 'Make it green', who: 'Mario', mine: true, state: 'running', created_at: '2026-11-14T02:14:00Z' }] };
+		const { backend, event } = eventWith((call) => (call.url.includes('/queue') ? json(line) : json({ id: 'p1', session_id: 's1' })));
+		expect(await workspace.loadQueue(event, 'p1')).toEqual(line);
+		expect(await workspace.moveFirst(event, 'p1', 'j 1')).toEqual({ ok: true, asks: line.asks });
+		expect(backend.calls.map((call) => [call.method, call.url.replace('http://api.test', '')])).toEqual([
+			['GET', '/api/projects/p1'],
+			['GET', '/api/sessions/s1/queue'],
+			['GET', '/api/projects/p1'],
+			['POST', '/api/sessions/s1/queue/j%201/first'],
+		]);
+		const gone = eventWith((call) => (call.url.endsWith('/first') ? new Response('that ask isn’t waiting any more', { status: 409 }) : json({ id: 'p1', session_id: 's1' })));
+		expect(await workspace.moveFirst(gone.event, 'p1', 'j1')).toEqual({ ok: false, status: 409, message: 'that ask isn’t waiting any more' });
+		expect(await workspace.loadQueue(eventWith(() => new Response('', { status: 404 })).event, 'p1')).toBeNull();
+	});
+	it('reads the requests to publish, asks, and answers one, passing the backend’s reason on', async () => {
+		const rows = { requests: [{ id: 'r1', status: 'pending' }] };
+		const { backend, event } = eventWith((call) => (call.method === 'GET' ? json(rows) : json({ id: 'r1' }, call.url.endsWith('/requests') ? 201 : 200)));
+		expect(await workspace.loadRequests(event, 'p1')).toEqual(rows);
+		expect(await workspace.askToPublish(event, 'p1')).toEqual({ ok: true });
+		expect(await workspace.answerRequest(event, 'p1', 'r 1', 'approve')).toEqual({ ok: true });
+		expect(backend.calls.map((call) => [call.method, call.url.replace('http://api.test', ''), call.body ?? null])).toEqual([
+			['GET', '/api/projects/p1/deploy/requests', null],
+			['POST', '/api/projects/p1/deploy/requests', {}],
+			['POST', '/api/projects/p1/deploy/requests/r%201', { action: 'approve' }],
+		]);
+		const off = eventWith(() => new Response('publishing isn’t set up on this Nomi', { status: 503 }));
+		expect(await workspace.answerRequest(off.event, 'p1', 'r1', 'approve')).toEqual({ ok: false, status: 503, message: 'publishing isn’t set up on this Nomi' });
+		expect(await workspace.loadRequests(off.event, 'p1')).toBeNull();
+	});
 });

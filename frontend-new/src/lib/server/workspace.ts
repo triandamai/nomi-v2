@@ -2,6 +2,7 @@ import { isRedirect } from '@sveltejs/kit';
 import type { ContainerUsage, DatabaseTable, DeployOverview, ExportSummary, ProjectShowcase, DomainAnswer, MetricsRange, ProjectDetail, ProjectDomain, ProjectList, ProjectMembers, ProjectMetrics, ProjectSecrets, QueryResult, SandboxLogs, SandboxStatus } from '$lib/adapters/api';
 import { apiFetch, type ApiEvent } from './api';
 import { readTable } from '$lib/projects/database';
+import type { PublishRequestRow, QueuedAsk } from '$lib/projects/asks';
 
 // A project's workspace on the server: the project (its files and chat), where it's live (the
 // list carries the address; the project itself doesn't), and finding a project by its chat.
@@ -242,6 +243,47 @@ export async function hasTables(event: ApiEvent, id: string): Promise<boolean> {
 	const response = await call(event, `${at(id)}/database/tables?source=development`);
 	return response.ok && ((await response.json()) as DatabaseTable[]).length > 0;
 }
+
+/** The project's chat: the queue lives on the chat, so the project is read for it (and the chat is this project's). */
+async function chatOf(event: ApiEvent, id: string): Promise<string | null> {
+	const response = await call(event, at(id));
+	return response.ok ? (((await response.json()) as { session_id?: string }).session_id ?? null) : null;
+}
+
+/** The asks waiting or running in the project's chat, in the order they'll be answered; null where it can't be read. */
+export async function loadQueue(event: ApiEvent, id: string): Promise<{ asks: QueuedAsk[] } | null> {
+	const session = await chatOf(event, id);
+	if (!session) return null;
+	const response = await call(event, `/api/sessions/${encodeURIComponent(session)}/queue`);
+	return response.ok ? ((await response.json()) as { asks: QueuedAsk[] }) : null;
+}
+
+/** Answers this waiting ask next; the line as it is now, or why not. */
+export async function moveFirst(event: ApiEvent, id: string, jobId: string): Promise<({ ok: true } & { asks: QueuedAsk[] }) | Exclude<Sent, { ok: true }>> {
+	const session = await chatOf(event, id);
+	if (!session) return { ok: false, status: 404, message: '' };
+	let response: Response;
+	try {
+		response = await apiFetch(event, `/api/sessions/${encodeURIComponent(session)}/queue/${encodeURIComponent(jobId)}/first`, { method: 'POST' });
+	} catch (error) {
+		if (isRedirect(error)) throw error;
+		return { ok: false, status: 503, message: '' };
+	}
+	if (!response.ok) return { ok: false, status: response.status, message: (await response.text()).trim().slice(0, 300) };
+	return { ok: true, asks: ((await response.json()) as { asks: QueuedAsk[] }).asks };
+}
+
+/** The project's requests to publish, open ones first; null where they can't be read. */
+export async function loadRequests(event: ApiEvent, id: string): Promise<{ requests: PublishRequestRow[] } | null> {
+	const response = await call(event, `${at(id)}/deploy/requests`);
+	return response.ok ? ((await response.json()) as { requests: PublishRequestRow[] }) : null;
+}
+
+/** Asks the project's admins to publish (someone who may change it but not publish it). */
+export const askToPublish = (event: ApiEvent, id: string) => send(event, `${at(id)}/deploy/requests`, 'POST', {});
+/** An admin publishes (approve) or declines a request; the person who asked takes it back (cancel). */
+export const answerRequest = (event: ApiEvent, id: string, requestId: string, action: 'approve' | 'decline' | 'cancel') =>
+	send(event, `${at(id)}/deploy/requests/${encodeURIComponent(requestId)}`, 'POST', { action });
 
 /** Someone else with the project open: what they look at (preview, code or terminal) and which file. */
 export type PresentPerson = { user_id: string; name: string; avatar_url: string | null; view: string | null; path: string | null };

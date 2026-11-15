@@ -133,6 +133,19 @@ export const actions: Actions = {
 		const sent = await tools.setShowcase(event, event.params.id, shown, null);
 		return sent.ok ? { showcase: shown } : refused(sent);
 	},
+	/** Building together (step 10): someone who can't publish asks the project's admins to. */
+	ask: async (event) => {
+		const sent = await tools.askToPublish(event, event.params.id);
+		return sent.ok ? { asked: true } : refused(sent);
+	},
+	/** An admin publishes (approve) or declines a request; the person who asked takes theirs back (cancel). */
+	answer: async (event) => {
+		const form = await event.request.formData();
+		const [request, action] = [String(form.get('request') ?? ''), String(form.get('action') ?? '')];
+		if (!request || (action !== 'approve' && action !== 'decline' && action !== 'cancel')) return fail(400, { message: m.action_failed() });
+		const sent = await tools.answerRequest(event, event.params.id, request, action);
+		return sent.ok ? { answered: action } : refused(sent);
+	},
 	/** Publishes an earlier deploy again, as a new one. */
 	rollback: async (event) => {
 		const id = String((await event.request.formData()).get('publish') ?? '');

@@ -26,6 +26,7 @@ export class ProjectLive {
 	#lastPointer = 0;
 	#reading: Promise<void> | null = null;
 	#again = false;
+	#deployListeners = new Set<(event: string) => void>();
 
 	constructor(projectId: string, openSocket: (url: string) => LinkSocket = (url) => new WebSocket(url)) {
 		this.#id = projectId;
@@ -39,6 +40,8 @@ export class ProjectLive {
 				opened: () => {
 					void this.refresh();
 					this.#sendWhere();
+					// Nothing missed while the link was down is replayed: anything could have changed.
+					for (const listener of this.#deployListeners) listener('');
 				},
 				message: (data) => this.#handle(String(data)),
 				lost: () => {},
@@ -77,6 +80,16 @@ export class ProjectLive {
 		return this.#reading;
 	}
 
+	/**
+	 * Hears what changed about the project's publishing (`DeployChanged`: a publish moved on, a
+	 * request to publish was asked or answered), with its reason (`publish_request.changed`…), or
+	 * '' after (re)connecting. Returns the way to stop hearing it.
+	 */
+	onDeployChange(listener: (event: string) => void): () => void {
+		this.#deployListeners.add(listener);
+		return () => this.#deployListeners.delete(listener);
+	}
+
 	/** Where the person is now, told to the others when it changes. */
 	moveTo(where: Whereabouts) {
 		const path = where.path ?? null;
@@ -100,13 +113,14 @@ export class ProjectLive {
 	}
 
 	#handle(data: string) {
-		let event: { kind?: string; user_id?: string; name?: string; x?: number; y?: number; view?: string };
+		let event: { kind?: string; user_id?: string; name?: string; x?: number; y?: number; view?: string; event?: string };
 		try {
 			event = JSON.parse(data);
 		} catch {
 			return;
 		}
 		if (event.kind === 'PresenceChanged' && event.user_id !== this.me) void this.refresh();
+		if (event.kind === 'DeployChanged') for (const listener of this.#deployListeners) listener(typeof event.event === 'string' ? event.event : '');
 		if (event.kind === 'Cursor' && event.user_id && event.user_id !== this.me && typeof event.x === 'number' && typeof event.y === 'number') {
 			this.pointers = { ...this.pointers, [event.user_id]: { name: event.name ?? '', x: event.x, y: event.y, view: event.view ?? 'preview', at: Date.now() } };
 		}

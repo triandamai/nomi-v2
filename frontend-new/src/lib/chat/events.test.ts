@@ -13,6 +13,8 @@ describe('parseChatEvent', () => {
 		expect(parseChatEvent('{"kind":"TurnFailed","turn_job_id":"t","error":"DeepSeek is having trouble right now."}')).toMatchObject({ kind: 'TurnFailed', error: 'DeepSeek is having trouble right now.' });
 		expect(parseChatEvent('{"kind":"MessagesDeleted","message_ids":["a","b"]}')).toEqual({ kind: 'MessagesDeleted', message_ids: ['a', 'b'] });
 		expect(parseChatEvent('{"kind":"SessionDeleted"}')).toEqual({ kind: 'SessionDeleted' });
+		// The line of asks changed (one started running or was moved up): read it again.
+		expect(parseChatEvent('{"kind":"QueueChanged"}')).toEqual({ kind: 'QueueChanged' });
 		expect(parseChatEvent('{"kind":"ChatSettled","outcome":"done","waiting":null,"agent":"Dana"}')).toMatchObject({ kind: 'ChatSettled', outcome: 'done' });
 	});
 
