@@ -52,7 +52,8 @@ test('says when nothing was found, and New chat is ⌘⇧O', async ({ page, cont
 	await expect(page.getByText('Nothing found for “zzqx”')).toBeVisible();
 	await page.keyboard.press('Escape');
 	await expect(page.getByText('Nothing found for “zzqx”')).toHaveCount(0);
-	await page.locator('body').click();
+	// Off the field, onto something that does nothing when clicked (the middle of Home is a starter).
+	await page.getByRole('heading', { level: 1 }).click();
 	await page.keyboard.press('ControlOrMeta+Shift+O');
 	await expect(page).toHaveURL(/\/chat\/new/);
 });
