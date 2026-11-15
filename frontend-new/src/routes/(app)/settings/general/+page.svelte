@@ -62,6 +62,11 @@
 		active = passed.at(-1)?.href ?? groups[0].href;
 	}
 
+	// After a save, the page's own data is read again too: the rows below keep their state in
+	// `$derived(data…)`, and the next `app:shell` refresh rebuilds `data` from whatever the page last
+	// loaded, which would put a row just saved back as it was.
+	const refresh = (shell = false) => Promise.all([invalidate('app:general'), shell && invalidate('app:shell')]);
+
 	/** Saves one preference through /preferences; false when it didn't take. */
 	async function savePreference(change: { theme?: Theme; language?: string; timezone?: string; default_agent?: string; enter_sends?: boolean }): Promise<boolean> {
 		const response = await fetch('/preferences', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(change) }).catch(() => null);
@@ -79,7 +84,7 @@
 		const before = theme;
 		theme = next as Theme;
 		applyTheme(theme);
-		if (await savePreference({ theme })) return void invalidate('app:shell');
+		if (await savePreference({ theme })) return void refresh(true);
 		theme = before;
 		applyTheme(before);
 	}
@@ -94,8 +99,7 @@
 	async function changeZone(next: string) {
 		const before = data.preferences.has_stored_timezone ? data.preferences.timezone : '';
 		if (await savePreference({ timezone: next })) {
-			await invalidate('app:general');
-			await invalidate('app:shell');
+			await refresh(true);
 		} else zone = before;
 	}
 
@@ -106,7 +110,7 @@
 		const before = emails;
 		emails = { ...emails, ...change };
 		const result = await pageAction('/settings/general', 'emails', { email_account: String(emails.email_account), email_promos: String(emails.email_promos) });
-		if (result.ok) return;
+		if (result.ok) return void refresh();
 		emails = before;
 		if (result.message) toasts.show({ kind: 'error', title: m.general_save_failed(), detail: result.message });
 	}
@@ -123,13 +127,13 @@
 	const starterMascot = $derived((startsWith && crewOf(startsWith)) || 'nomi');
 	async function changeStarter(next: string) {
 		const before = data.preferences.default_agent ?? '';
-		if (await savePreference({ default_agent: next })) await invalidate('app:shell');
+		if (await savePreference({ default_agent: next })) await refresh(true);
 		else startsWith = before;
 	}
 	let enterSends = $derived(data.preferences.enter_sends ?? true);
 	async function changeEnterSends(on: boolean) {
 		enterSends = on;
-		if (await savePreference({ enter_sends: on })) await invalidate('app:shell');
+		if (await savePreference({ enter_sends: on })) await refresh(true);
 		else enterSends = !on;
 	}
 
@@ -143,7 +147,7 @@
 		const before = reminders;
 		reminders = next;
 		const result = await pageAction('/settings/general', 'reminders', fields);
-		if (result.ok) return;
+		if (result.ok) return void refresh();
 		reminders = before;
 		if (result.message) toasts.show({ kind: 'error', title: m.general_save_failed(), detail: result.message });
 	}
