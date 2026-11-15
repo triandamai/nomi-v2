@@ -21,6 +21,31 @@ const base = { name: 'salah-daily-tracker', description: 'Daily salah tracker wi
 const zone = () => page.getByTestId('status-zone').element();
 
 describe('ProjectCard', () => {
+	it('is selected by a click on the card or its name, not on its controls', async () => {
+		const onselect = vi.fn();
+		const onaction = vi.fn();
+		await render(ProjectCard, { ...base, status: 'stopped', detail: 'nothing deployed · files kept', onaction, onselect });
+		await page.getByText('nothing deployed · files kept').click();
+		expect(onselect).toHaveBeenCalledOnce();
+		await page.getByRole('button', { name: 'Resume' }).click();
+		expect(onaction).toHaveBeenCalledOnce();
+		expect(onselect).toHaveBeenCalledOnce();
+		const name = page.getByRole('button', { name: 'salah-daily-tracker' });
+		await expect.element(name).toHaveAttribute('aria-pressed', 'false');
+		name.element().focus();
+		await userEvent.keyboard('{Enter}');
+		expect(onselect).toHaveBeenCalledTimes(2);
+		// The name keeps its place and size as a button.
+		expect(box(name.element()).height).toBe(17);
+	});
+
+	it('says what Koda is doing in its own words when it’s changing a live app or deploying', async () => {
+		await render(ProjectCard, { ...base, status: 'building', statusLabel: 'Koda is deploying', meta: '00:24', detail: 'deploy #1 · building 3 files', footer: '1 chat · just now' });
+		await expect.element(page.getByText('Koda is deploying')).toBeInTheDocument();
+		await expect.element(page.getByText('00:24')).toBeInTheDocument();
+		await expect.element(page.getByText('Koda is building')).not.toBeInTheDocument();
+	});
+
 	it('is 384 × 192: identity, a 58 status zone and a divided footer, 12 apart', async () => {
 		await render(ProjectCard, { ...base, status: 'live', url: 'salah-daily-tracker-0ab8f8.trian.space', href: '/projects/p1' });
 		const card = page.getByRole('article', { name: 'salah-daily-tracker' }).element();

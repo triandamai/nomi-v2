@@ -6,7 +6,8 @@
 
 	// Design System / Projects → Project / Deploy Dialog (A3CDJ): before a draft's first deploy,
 	// what will happen and the facts that come with it, on the page colour (10 / 12 in, 6 apart):
-	// a 56 wide key in text-3, the value in mono. 420 wide; Deploy is the inverse main action.
+	// a 56 wide key in text-3, the value in mono. 420 wide; Deploy is the inverse main action. Uses
+	// is left out where the plan's allowance isn't known.
 	type Props = {
 		open?: boolean;
 		inline?: boolean;
@@ -18,17 +19,13 @@
 		/** Where its data lives ("none yet · add a database later"). */
 		data: string;
 		/** What it uses of the plan ("1 build · 26 of 30 left in Oct"). */
-		uses: string;
+		uses?: string;
 		ondeploy: () => void;
 		onclose?: () => void;
 	};
 	let { open = $bindable(false), inline = false, name, files, url, data, uses, ondeploy, onclose }: Props = $props();
 
-	const facts = $derived([
-		[m.projects_fact_url(), url],
-		[m.projects_fact_data(), data],
-		[m.projects_fact_uses(), uses],
-	]);
+	const facts = $derived([[m.projects_fact_url(), url], [m.projects_fact_data(), data], ...(uses ? [[m.projects_fact_uses(), uses]] : [])]);
 </script>
 
 <ProjectDialog bind:open {inline} {onclose} title={m.projects_deploy_title({ name })} description={m.projects_deploy_body({ files })}>

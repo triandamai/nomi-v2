@@ -19,6 +19,10 @@
 	//    32 tall (taller than Button, as the pen draws them);
 	//  · what's in it: 31 rows (a 14px icon, a 72 key, the value in mono, Export on the code);
 	//  · its chats (Koda's mascot, the title, the age; 36 rows under a stroke) and Ask Koda.
+	// `docked` is how the Projects page draws it beside the list (App / Projects JyWON): the column's
+	// full height and width (380 there, the phone's width on a phone), no radius, one stroke on its
+	// left. `ask` takes Ask Koda's place while the person
+	// asks (the Ask Field, Detail panel flow step 2).
 	type Props = {
 		name: string;
 		tone: CrewId;
@@ -33,9 +37,12 @@
 		onexport?: () => void;
 		chats: ProjectChat[];
 		onask: () => void;
+		/** Shown in place of Ask Koda: the field the person asks in. */
+		ask?: Snippet;
 		onclose: () => void;
+		docked?: boolean;
 	};
-	let { name, tone, live, preview, workspaceHref, url, parts, onexport, chats, onask, onclose }: Props = $props();
+	let { name, tone, live, preview, workspaceHref, url, parts, onexport, chats, onask, ask, onclose, docked = false }: Props = $props();
 
 	const rows = $derived([
 		{ icon: GitBranch, key: m.projects_part_code(), value: parts.code, code: true },
@@ -46,7 +53,8 @@
 	]);
 </script>
 
-<aside aria-label={name} class="flex w-95 max-w-full flex-col rounded-md bg-bg outline -outline-offset-1 outline-border">
+<aside aria-label={name} class={['flex max-w-full flex-col bg-bg', docked ? 'relative min-h-full w-full' : 'w-95 rounded-md outline -outline-offset-1 outline-border']}>
+	{#if docked}<span aria-hidden="true" class="absolute inset-y-0 left-0 w-px bg-border"></span>{/if}
 	<div class="flex flex-col gap-3.5 border-b border-border px-5 pt-5 pb-3.75">
 		<div class="flex items-center gap-3">
 			<span class="inline-flex size-8 shrink-0 items-center justify-center rounded-sm" style="background: var(--crew-{tone}-bg)">
@@ -122,9 +130,13 @@
 				<span class="shrink-0 font-mono text-label text-text-3">{chat.age}</span>
 			</a>
 		{/each}
-		<button type="button" onclick={onask} class="inline-flex cursor-pointer items-center gap-1.5 self-start rounded-xs py-1 text-ui text-text-2 outline-offset-2 hover:text-text">
-			<Icon icon={Plus} size={14} />
-			{m.projects_detail_ask()}
-		</button>
+		{#if ask}
+			{@render ask()}
+		{:else}
+			<button type="button" onclick={onask} class="inline-flex cursor-pointer items-center gap-1.5 self-start rounded-xs py-1 text-ui text-text-2 outline-offset-2 hover:text-text">
+				<Icon icon={Plus} size={14} />
+				{m.projects_detail_ask()}
+			</button>
+		{/if}
 	</div>
 </aside>

@@ -514,14 +514,49 @@ change owners; nobody changes or removes themselves (they leave); the last owner
 - The invite box keeps what's typed as text when it loses focus: turning it into chips then moved
   the role cards under a click (a person picking Admin got Member).
 
-On Projects (`JyWON`), the cards are the backend's projects: live once they have an address,
-building while Koda builds, else a draft.
+On Projects (`JyWON`), the cards are the backend's projects: building while Koda is at work in
+the project's chat ("Koda is changing it" once it's live), deploying while a publish started from
+the card runs, live once it has an address, stopped when Koda left a build unfinished (files
+written, never reported done: an imported project starts here too), else a draft.
 
-- Left out for now: the detail panel and Community (next), importing from GitHub, and the card
-  menu's Rename, Duplicate, Move, Share, Settings and Take down; the backend has no rename or
-  duplicate, nor a "waiting on you" count, so Needs attention stays empty (BACKEND_TODO.md).
-- Until the project's workspace lands, a card has no footer action (the pen's Deploy, Stop, Resume
-  belong to it) and Open goes to the project's chat, where Koda works on it.
+- A card's one action (Act from the card `syolc`): Stop asks first and tells the project's chat to
+  stop, as the chat's own Stop does; the dialog says what's kept without the pen's step counts (the
+  build's steps aren't given), and the toast offers Resume. Resume asks Koda, in the project's
+  chat, to carry on where it stopped. Deploy (a draft with files, where this Nomi has Shipyard)
+  confirms with the address it'll get (a new one under the apps domain: the name is picked on the
+  first publish) and its data; the pen's "Uses · 1 build · 26 of 30 left" is left out (no build
+  allowance to read). The card then shows the publish with its time ("Koda is deploying · 00:24"),
+  without the pen's Stop (a publish can't be cancelled), and the toast says it's live with Copy URL,
+  or why it failed. Open on a live card goes to its workspace.
+- What needs the person: a card whose chat has questions or approvals waiting on them is the pen's
+  needs-answer card (Answer opens the project's chat); a live app the backend says is down after a
+  crash is the down card (Ask Koda to check); a last deploy that failed is the failed card, saying
+  the deploy still live (Ask Koda to fix). Check and Fix say it to Koda in the project's chat, and
+  Needs attention holds these. The pen's failure reason ("build error in src/lib/pdf.ts") isn't
+  given with the list; building cards show no step ("3 of 6") or file Koda is writing
+  (BACKEND_TODO.md).
+- The card menu (`M9O0iU`): Open, Visit, Rename, Duplicate, Move, Export, Settings, Share (once live), Take down (once
+  live) and Delete. Share, Export, Settings and Take down open the workspace with that dialog or
+  sheet open, as the flow says ("the same dialogs the workspace uses"). Move lists the workspaces
+  the backend allows (never a personal one) and moves the project at once: the dialog's choice is
+  the confirmation (the name the backend wants is the card's), and its note says the chosen
+  workspace's owner gets the project, as the backend does, in place of the pen's "Trian approves
+  the move"; so there's no "Waiting on the owner" (step 6). Rename edits the name on the card (F2),
+  as the pen's renaming card draws it; Duplicate (⌘D) makes a copy in the same workspace (its
+  files, stack, description and plan; not its publishing, data or people) and the toast opens it.
+- The detail panel (`pgSon`) docks beside the list on a desktop of 1280 and wider (the first
+  project in it, as drawn) and opens over the list below that, the phone's full width. Its
+  picture of the app is the app's initial in its tint (Nomi keeps no screenshots). Code is the
+  file count and stack (a commit, "main@a3f9c21", isn't given); Deploys counts the publishes that
+  went live, with how long the last one took; Members is who can open it. Asking Koda for a
+  change sends it to the project's own chat, where Koda builds it, not to a new chat as the pen draws
+  (a chat moved into a project doesn't build it), so the field's note says where it goes.
+- The first load comes with the page, so the loading cards show while Retry reads the list again.
+  A list that couldn't be read says so with the status and time, and Retry; the toolbar waits
+  (there are no counts to show). Offline (step 3) and Community are left out.
+- Importing from GitHub (`qJxWu`) is left out: the backend imports a public repository into a
+  project by `owner/name`, but can't list a person's repos, read a private one, or say what Koda
+  found (BACKEND_TODO.md).
 - The composer leaves the domain chip out where this Nomi has no base domain.
 
 A project's workspace (Flow / Build — Sign in → live URL `o882RC`, Building and Live) is built in

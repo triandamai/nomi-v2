@@ -153,6 +153,35 @@ describe('ImportReview (TcRMc)', () => {
 });
 
 describe('ProjectDetailPanel (I1bGE)', () => {
+	const props = () => ({
+		name: 'salah-daily-tracker',
+		tone: 'nomi' as const,
+		preview: createRawSnippet(() => ({ render: () => '<div>S</div>' })),
+		workspaceHref: '/projects/p1',
+		parts: { code: '23 files · SvelteKit', url: 'after the first deploy', data: 'none yet', deploys: 'none yet', members: 'you' },
+		chats: [],
+		onask: () => {},
+		onclose: () => {},
+	});
+
+	it('docks beside the list: the column’s full height, no radius, one stroke on its left', async () => {
+		await render(ProjectDetailPanel, { ...props(), docked: true });
+		const panel = page.getByRole('complementary', { name: 'salah-daily-tracker' }).element();
+		expect(style(panel).borderTopLeftRadius).toBe('0px');
+		expect(style(panel).outlineStyle).toBe('none');
+		const line = panel.querySelector('span[aria-hidden="true"]')!;
+		expect([box(line).width, box(line).height, box(line).left]).toEqual([1, box(panel).height, box(panel).left]);
+		// The content keeps the pen's 20 inset: the stroke takes no room.
+		expect(box(page.getByRole('heading', { name: 'salah-daily-tracker' }).element()).left - box(panel).left).toBe(64);
+	});
+
+	it('shows the field the person asks in, in Ask Koda’s place', async () => {
+		const ask = createRawSnippet(() => ({ render: () => '<form aria-label="Ask Koda"></form>' }));
+		await render(ProjectDetailPanel, { ...props(), ask });
+		await expect.element(page.getByRole('form', { name: 'Ask Koda' })).toBeInTheDocument();
+		await expect.element(page.getByRole('button', { name: 'Ask Koda to change something' })).not.toBeInTheDocument();
+	});
+
 	it('is 380 × 641: header, what’s in it, its chats', async () => {
 		const onclose = vi.fn();
 		const onask = vi.fn();
@@ -201,5 +230,10 @@ describe('AskField (oZ6Le)', () => {
 		await expect.element(page.getByText('new chat in salah-daily-tracker')).toBeInTheDocument();
 		await page.getByRole('button', { name: 'Send' }).click();
 		expect(onask).toHaveBeenCalledWith('Add a Maghrib reminder 10 minutes before');
+	});
+
+	it('says where the question goes when it isn’t a new chat', async () => {
+		await render(AskField, { project: 'salah-daily-tracker', hint: 'to Koda in salah-daily-tracker’s chat', onask: () => {} });
+		await expect.element(page.getByText('to Koda in salah-daily-tracker’s chat')).toBeInTheDocument();
 	});
 });
