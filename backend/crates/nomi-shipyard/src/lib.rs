@@ -130,6 +130,9 @@ pub enum ShipyardError {
 impl std::fmt::Display for ShipyardError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            ShipyardError::Rejected { status: 413, message, .. } => {
+                write!(f, "Shipyard refused it: payload too large ({message})")
+            }
             ShipyardError::Rejected { message, .. } => write!(f, "Shipyard refused it: {message}"),
             ShipyardError::NotFound(message) => write!(f, "Shipyard has no such thing: {message}"),
             ShipyardError::Unauthorized(message) => write!(f, "Shipyard rejected Nomi's key: {message}"),
@@ -145,8 +148,8 @@ fn unwrap_envelope(status: u16, body: &str) -> Result<Value, ShipyardError> {
     let parsed: Value = serde_json::from_str(body).unwrap_or_else(|_| json!({ "raw": body.chars().take(500).collect::<String>() }));
     let error = parsed.get("error").filter(|e| !e.is_null());
     let message = error
-        .and_then(|e| e.get("message"))
-        .and_then(Value::as_str)
+        .and_then(|e| if e.is_string() { e.as_str() } else { e.get("message").and_then(Value::as_str) })
+        .or_else(|| parsed.get("message").and_then(Value::as_str))
         .map(str::to_string)
         .unwrap_or_else(|| {
             let trimmed = body.trim_start();
@@ -156,7 +159,12 @@ fn unwrap_envelope(status: u16, body: &str) -> Result<Value, ShipyardError> {
                 body.chars().take(300).collect()
             }
         });
-    let code = error.and_then(|e| e.get("code")).and_then(Value::as_str).unwrap_or_default().to_string();
+    let code = error
+        .and_then(|e| e.get("code"))
+        .or_else(|| parsed.get("code"))
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
     match status {
         200..=299 => Ok(parsed.get("data").cloned().unwrap_or(parsed)),
         401 => Err(ShipyardError::Unauthorized(message)),
@@ -660,6 +668,9 @@ mod tests {
         // A plan or billing refusal is Shipyard's answer for the person, not a broken key.
         let billing = unwrap_envelope(403, r#"{"data":null,"error":{"code":"FORBIDDEN","message":"billing is past due"}}"#).unwrap_err();
         assert_eq!(billing, ShipyardError::Rejected { status: 403, code: "FORBIDDEN".into(), message: "billing is past due".into() });
+        let too_large = unwrap_envelope(413, r#"{"message":"Payload Too Large"}"#).unwrap_err();
+        assert_eq!(too_large, ShipyardError::Rejected { status: 413, code: "".into(), message: "Payload Too Large".into() });
+        assert_eq!(too_large.to_string(), "Shipyard refused it: payload too large (Payload Too Large)");
         assert_eq!(unwrap_envelope(200, r#"{"data":{"a":1},"error":null}"#).unwrap(), json!({ "a": 1 }));
     }
 
