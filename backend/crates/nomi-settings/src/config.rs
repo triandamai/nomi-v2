@@ -210,7 +210,21 @@ pub const SANDBOX: SectionDef = SectionDef {
     ],
 };
 
-pub const SECTIONS: [&SectionDef; 11] = [&ATTACHMENTS, &STORAGE, &GOOGLE, &GITHUB, &SMTP, &AGENT_LOOP, &RELAY, &DOMAINS, &XENDIT, &BILLING, &SANDBOX];
+/// Sora and the design workflow. `enabled` is the kill switch: anything but "on" (including
+/// nothing saved) keeps the crew and Rena exactly as they were; `rollout` then says who gets it.
+pub const DESIGN: SectionDef = SectionDef {
+    name: "design",
+    fields: &[
+        saved_only("enabled", Kind::Choice(&["off", "on"])),
+        saved_only("rollout", Kind::Choice(&["off", "allowlist", "percent", "all"])),
+        // Comma-separated user ids, for the `allowlist` rollout.
+        saved_only("rollout_allowlist", Kind::Text),
+        // 1 to 100, for the `percent` rollout.
+        saved_only("rollout_percent", Kind::Number),
+    ],
+};
+
+pub const SECTIONS: [&SectionDef; 12] = [&ATTACHMENTS, &STORAGE, &GOOGLE, &GITHUB, &SMTP, &AGENT_LOOP, &RELAY, &DOMAINS, &XENDIT, &BILLING, &SANDBOX, &DESIGN];
 
 pub fn section_named(name: &str) -> Option<&'static SectionDef> {
     SECTIONS.into_iter().find(|s| s.name == name)
@@ -478,7 +492,7 @@ const PERCENT_MAX: u8 = 100;
 /// The share of users a percentage rollout is spread over.
 const PERCENT_BUCKETS: u32 = 100;
 
-/// Who gets the sandbox runtime instead of WebContainer.
+/// Who gets a feature that is being rolled out (the sandbox runtime, the design workflow).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Rollout {
     Off,
@@ -488,8 +502,8 @@ pub enum Rollout {
 }
 
 impl Rollout {
-    /// Parses `rollout` from the `sandbox` section (`All` when left at the default while the
-    /// sandbox switch is on).
+    /// Parses a section's `rollout` (`All` when left at the default while the section's switch
+    /// is on).
     pub fn from_section(section: &Section) -> Self {
         match section.get("rollout").as_deref() {
             Some("all") | None => Rollout::All,
@@ -515,6 +529,17 @@ impl Rollout {
             }
         }
     }
+}
+
+/// Whether `section` (the `design` section) gives `user_id` Sora and the design workflow: the
+/// switch is on and the rollout includes them.
+pub fn design_enabled(section: &Section, user_id: Uuid) -> bool {
+    section.get("enabled").as_deref() == Some("on") && Rollout::from_section(section).includes(user_id)
+}
+
+/// `design_enabled` for what is saved now.
+pub async fn design_enabled_for(user_id: Uuid) -> bool {
+    design_enabled(&current(&DESIGN).await, user_id)
 }
 
 /// Where a new project for `user_id` runs (`"sandbox"` when the sandbox switch is on, a key is
@@ -561,6 +586,23 @@ mod tests {
         for bad in ["nomi", "https://nomi.app", "nomi.app/x", "-nomi.app", "nomi..app", "*.nomi.app", "10.0.0.1", "no mi.app"] {
             assert!(check(field, bad).is_err(), "{bad}");
         }
+    }
+
+    fn design(values: &[(&'static str, &str)]) -> Section {
+        Saved { def: &DESIGN, values: values.iter().map(|(k, v)| (*k, v.to_string())).collect() }.with_env(|_| None)
+    }
+
+    #[test]
+    fn design_is_off_until_switched_on_and_then_follows_its_rollout() {
+        let someone = Uuid::from_u128(1);
+        let other = Uuid::from_u128(2);
+        assert!(!design_enabled(&design(&[]), someone), "nothing saved: off");
+        assert!(!design_enabled(&design(&[("enabled", "off"), ("rollout", "all")]), someone));
+        assert!(design_enabled(&design(&[("enabled", "on")]), someone), "on with no rollout: everyone");
+        assert!(!design_enabled(&design(&[("enabled", "on"), ("rollout", "off")]), someone));
+        let allowlist = design(&[("enabled", "on"), ("rollout", "allowlist"), ("rollout_allowlist", &someone.to_string())]);
+        assert!(design_enabled(&allowlist, someone));
+        assert!(!design_enabled(&allowlist, other));
     }
 
     #[test]

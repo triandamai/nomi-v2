@@ -32,6 +32,7 @@ nomi-agent-personality = { path = "../nomi-agent-personality" }
 nomi-agent-supervisor = { path = "../nomi-agent-supervisor" }
 nomi-agent-planning = { path = "../nomi-agent-planning" }
 nomi-agent-inspector = { path = "../nomi-agent-inspector" }
+nomi-agent-design = { path = "../nomi-agent-design" }
 nomi-agent-coding = { path = "../nomi-agent-coding" }
 nomi-turn = { path = "../nomi-turn" }
 nomi-payment = { path = "../nomi-payment" }

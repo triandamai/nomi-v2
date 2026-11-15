@@ -163,6 +163,10 @@ pub async fn list_crew(
             }
         })
         .collect();
+    // Sora isn't in the crew until the design workflow is rolled out to this person.
+    if !nomi_settings::config::design_enabled_for(claims.sub).await {
+        agents.retain(|a| a.agent_type != nomi_agent_core::crew::DESIGN_AGENT_TYPE);
+    }
     // Nomi leads the crew.
     if let Some(index) = agents.iter().position(|a| a.agent_type == registry.default_agent().agent_type()) {
         let nomi = agents.remove(index);

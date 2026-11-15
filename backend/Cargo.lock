@@ -3070,6 +3070,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "nomi-agent-design"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "nomi-agent-core",
+ "nomi-llm",
+ "nomi-test-support",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "nomi-agent-files"
 version = "0.1.0"
 dependencies = [
@@ -3397,6 +3411,7 @@ dependencies = [
  "nomi-agent-chitchat",
  "nomi-agent-coding",
  "nomi-agent-core",
+ "nomi-agent-design",
  "nomi-agent-files",
  "nomi-agent-health",
  "nomi-agent-inspector",

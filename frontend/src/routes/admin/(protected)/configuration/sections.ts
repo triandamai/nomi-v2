@@ -124,6 +124,17 @@ export const SECTIONS: Record<string, { title: () => string; lede: () => string;
 			reaper_mode: { label: m.config_sandbox_reaper_mode, hint: m.config_sandbox_reaper_mode_hint },
 		},
 	},
+	design: {
+		title: m.config_design,
+		lede: m.config_design_lede,
+		note: m.config_design_note,
+		fields: {
+			enabled: { label: m.config_design_enabled, hint: m.config_design_enabled_hint },
+			rollout: { label: m.config_design_rollout, hint: m.config_design_rollout_hint },
+			rollout_allowlist: { label: m.config_design_rollout_allowlist, hint: m.config_design_rollout_allowlist_hint },
+			rollout_percent: { label: m.config_design_rollout_percent },
+		},
+	},
 	billing: {
 		title: m.config_billing,
 		lede: m.config_billing_lede,
@@ -136,4 +147,4 @@ export const SECTIONS: Record<string, { title: () => string; lede: () => string;
 		},
 	},
 };
-export const ORDER = ['attachments', 'storage', 'google', 'smtp', 'agent_loop', 'relay', 'domains', 'sandbox', 'billing'];
+export const ORDER = ['attachments', 'storage', 'google', 'smtp', 'agent_loop', 'relay', 'domains', 'sandbox', 'design', 'billing'];
