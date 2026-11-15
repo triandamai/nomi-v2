@@ -1,5 +1,6 @@
-//! Sora's own tools: the tools on the MCP servers the person connected (visual references,
-//! moodboards, whatever they have), through `McpOps`.
+//! Sora's own tools: proposing directions, building a preview of one, and the tools on the MCP
+//! servers the person connected (visual references, moodboards, whatever they have), through
+//! `McpOps`.
 
 use async_trait::async_trait;
 use serde_json::{json, Value};
@@ -8,12 +9,15 @@ use sqlx::Postgres;
 use uuid::Uuid;
 
 use nomi_agent_core::mcp_ops::{format_listing, McpOps, SharedMcpOps, CARRY_ON};
+use nomi_agent_core::design_artifact::{self, DesignArtifact, Manifest, ID_ATTRIBUTE};
 use nomi_agent_core::design_brief;
+use nomi_agent_core::static_publish::{self, PublishRequest, Published, SharedStaticPublisher};
 use nomi_agent_core::design_directions::{self, DesignDirections};
 use nomi_agent_core::{ContentBlock, Tool, ToolOutcome, View};
 use nomi_llm::ToolDefinition;
 
 pub const PROPOSE_DIRECTIONS: &str = "propose_directions";
+pub const SAVE_PREVIEW: &str = "save_preview";
 pub const LIST_CONNECTED_TOOLS: &str = "list_connected_tools";
 pub const USE_CONNECTED_TOOL: &str = "use_connected_tool";
 /// The tools' group in listings.
@@ -153,9 +157,110 @@ impl Tool for ProposeDirections {
     }
 }
 
+/// Whether `direction_id` is one of the directions proposed in this chat; the error tells Sora
+/// what to do instead.
+pub fn known_direction(set: Option<&DesignDirections>, direction_id: &str) -> Result<(), String> {
+    let Some(set) = set else {
+        return Err(format!("propose directions with {PROPOSE_DIRECTIONS} first, then build the one the person picks"));
+    };
+    if set.find(direction_id).is_some() {
+        return Ok(());
+    }
+    let ids: Vec<&str> = set.directions.iter().map(|d| d.id.as_str()).collect();
+    Err(format!("there is no direction \"{direction_id}\": the directions are {}", ids.join(", ")))
+}
+
+fn counted(count: usize, one: &str) -> String {
+    let plural = if count == 1 { "" } else { "s" };
+    format!("{count} {one}{plural}")
+}
+
+/// What Sora is told after a preview was saved: its version, the ids that went missing since
+/// the direction's last version, and its address or that it has none.
+pub fn saved_message(version: i32, manifest: &Manifest, missing: &[String], published: &Result<Published, String>) -> String {
+    let mut said = format!(
+        "Preview saved as version {version} of direction {}: {}, {}.",
+        manifest.direction_id,
+        counted(manifest.pages.len(), "page"),
+        counted(manifest.elements.len(), "element id")
+    );
+    if !missing.is_empty() {
+        said.push_str(&format!(
+            " These ids from the last version of this direction are gone: {}. Feedback on them has nowhere to point now: keep an element's id for as long as the element exists.",
+            missing.join(", ")
+        ));
+    }
+    match published {
+        Ok(published) => said.push_str(&format!(" It is published at {}: give the person exactly that link.", published.url)),
+        Err(why) => said.push_str(&format!(
+            " It has no address yet ({why}), so the person can't open it: never give a link, and tell them in words what you built and what changed."
+        )),
+    }
+    said
+}
+
+/// `save_preview`: checks the files, saves them as the chat's next preview version, and
+/// publishes it when a provider is set up. A preview that can't be published is still saved.
+pub struct SavePreview {
+    pub publisher: SharedStaticPublisher,
+}
+
+#[async_trait]
+impl Tool for SavePreview {
+    fn definition(&self) -> ToolDefinition {
+        ToolDefinition {
+            name: SAVE_PREVIEW.to_string(),
+            description: format!(
+                "Build a preview of one proposed direction as static pages: every file whole (index.html, other pages, css, js, svg), \
+                 responsive, with a {ID_ATTRIBUTE} attribute on each section and component (a lowercase slug, unique in its page, \
+                 the same on every page that shares the element). It saves the preview as a new version; send all the files again, \
+                 with the same ids, when you change it."
+            ),
+            input_schema: design_artifact::artifact_input_schema(),
+        }
+    }
+
+    fn group(&self) -> &'static str {
+        GROUP
+    }
+
+    fn keywords(&self) -> &'static [&'static str] {
+        &["design", "preview", "mockup"]
+    }
+
+    async fn execute(&self, conn: &mut PoolConnection<Postgres>, session_id: Uuid, agent_session_id: Uuid, user_id: Uuid, input: Value) -> Result<ToolOutcome, String> {
+        let artifact = DesignArtifact::parse(&input)?;
+        let unsaved = |e: sqlx::Error| {
+            tracing::error!(error = %e, "design preview: save failed");
+            "the preview couldn't be saved right now".to_string()
+        };
+        let directions = design_directions::latest(&mut **conn, session_id).await.map_err(unsaved)?;
+        known_direction(directions.as_ref().map(|(_, _, set)| set), &artifact.manifest.direction_id)?;
+        let before = design_artifact::latest_of_direction(&mut **conn, session_id, &artifact.manifest.direction_id).await.map_err(unsaved)?;
+        let missing = before.map(|(_, earlier)| artifact.manifest.missing_since(&earlier)).unwrap_or_default();
+        let directions_version = directions.map(|(version, _, _)| version);
+        let version = design_artifact::save(&mut **conn, session_id, agent_session_id, user_id, directions_version, &artifact).await.map_err(unsaved)?;
+
+        let request = PublishRequest { user_id, session_id, version, title: &artifact.manifest.title, files: &artifact.files };
+        let mut published = static_publish::publish(self.publisher.as_ref(), &request).await;
+        if let Ok(at) = &published {
+            if let Err(e) = static_publish::record(&mut **conn, session_id, version, at).await {
+                tracing::error!(error = %e, "design preview: its address couldn't be kept");
+                published = Err("its address couldn't be kept".to_string());
+            }
+        }
+        Ok(ToolOutcome::text(saved_message(version, &artifact.manifest, &missing, &published)))
+    }
+}
+
 /// Sora's own tools.
-pub fn own_tools(mcp: &SharedMcpOps) -> Vec<Box<dyn Tool>> {
-    vec![Box::new(ProposeDirections), Box::new(ListConnectedTools { mcp: mcp.clone() }), Box::new(UseConnectedTool { mcp: mcp.clone() })]
+pub fn own_tools(mcp: &SharedMcpOps, publisher: &SharedStaticPublisher) -> Vec<Box<dyn Tool>> {
+    vec![
+        Box::new(ProposeDirections),
+        Box::new(SavePreview { publisher: publisher.clone() }),
+        Box::new(ListConnectedTools { mcp: mcp.clone() }),
+        Box::new(UseConnectedTool { mcp: mcp.clone() }),
+    ]
 }
 
 #[cfg(test)]
@@ -212,6 +317,52 @@ pub(crate) mod tests {
         let tool = ProposeDirections.definition();
         assert_eq!(tool.name, PROPOSE_DIRECTIONS);
         assert_eq!(tool.input_schema, nomi_agent_core::design_directions::directions_input_schema());
+    }
+
+    fn manifest() -> nomi_agent_core::design_artifact::Manifest {
+        let html = "<html><head><meta name=\"viewport\" content=\"width=device-width\"><title>Home</title></head><body><h1 data-design-id=\"hero\">Hi</h1></body></html>";
+        nomi_agent_core::design_artifact::DesignArtifact::parse(&json!({"direction_id": "editorial", "title": "First pass", "files": [{"path": "index.html", "content": html}]}))
+            .unwrap()
+            .manifest
+    }
+
+    #[test]
+    fn a_saved_preview_without_an_address_tells_sora_not_to_promise_a_link() {
+        let said = saved_message(2, &manifest(), &[], &Err(nomi_agent_core::static_publish::NOT_SET_UP.to_string()));
+        assert!(said.starts_with("Preview saved as version 2 of direction editorial: 1 page, 1 element id."), "{said}");
+        assert!(said.contains("It has no address yet (publishing previews isn't set up)"));
+        assert!(said.contains("never give a link"));
+    }
+
+    #[test]
+    fn a_published_preview_tells_sora_its_address() {
+        let published = nomi_agent_core::static_publish::Published { provider: "fake".into(), url: "https://previews.example/a".into() };
+        let said = saved_message(1, &manifest(), &[], &Ok(published));
+        assert!(said.contains("It is published at https://previews.example/a: give the person exactly that link."), "{said}");
+        assert!(!said.contains("no address"));
+    }
+
+    #[test]
+    fn ids_that_went_missing_are_pointed_out() {
+        let said = saved_message(3, &manifest(), &["menu-list".to_string(), "footer".to_string()], &Err("down".into()));
+        assert!(said.contains("These ids from the last version of this direction are gone: menu-list, footer."), "{said}");
+        assert!(said.contains("keep an element's id"));
+    }
+
+    #[test]
+    fn a_preview_is_of_a_direction_that_was_proposed() {
+        let set = DesignDirections::parse(&two_directions()).unwrap();
+        assert_eq!(known_direction(Some(&set), "swiss"), Ok(()));
+        assert_eq!(known_direction(Some(&set), "brutalist").unwrap_err(), "there is no direction \"brutalist\": the directions are editorial, swiss");
+        assert_eq!(known_direction(None, "swiss").unwrap_err(), "propose directions with propose_directions first, then build the one the person picks");
+    }
+
+    #[test]
+    fn the_preview_tool_takes_the_artifact_schema() {
+        let tool = SavePreview { publisher: std::sync::Arc::new(nomi_agent_core::static_publish::NoStaticPublisher) }.definition();
+        assert_eq!(tool.name, SAVE_PREVIEW);
+        assert_eq!(tool.input_schema, nomi_agent_core::design_artifact::artifact_input_schema());
+        assert!(tool.description.contains("data-design-id"));
     }
 
     #[tokio::test]

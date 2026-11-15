@@ -97,3 +97,131 @@ async fn proposing_saves_a_version_shows_a_choice_and_refuses_a_set_that_is_not_
     let context = sora.domain_context(&mut conn, None, session_id, user_id, &[]).await.unwrap();
     assert!(context.contains("# Design brief (version 1)") && context.contains("# Design directions (version 1)"));
 }
+
+/// A publisher that answers as a test wants and remembers what it was given.
+struct FakePublisher {
+    answer: Result<String, String>,
+    published: std::sync::Mutex<Vec<(i32, Vec<String>)>>,
+}
+
+impl FakePublisher {
+    fn answering(answer: Result<&str, &str>) -> std::sync::Arc<Self> {
+        std::sync::Arc::new(Self { answer: answer.map(str::to_string).map_err(str::to_string), published: Default::default() })
+    }
+}
+
+#[async_trait::async_trait]
+impl nomi_agent_core::static_publish::StaticPublisher for FakePublisher {
+    async fn publish(&self, request: &nomi_agent_core::static_publish::PublishRequest<'_>) -> Result<nomi_agent_core::static_publish::Published, String> {
+        self.published.lock().unwrap().push((request.version, request.files.iter().map(|f| f.path.clone()).collect()));
+        self.answer.clone().map(|url| nomi_agent_core::static_publish::Published { provider: "fake".into(), url })
+    }
+}
+
+async fn chat(pool: &PgPool) -> (Uuid, Uuid) {
+    let org_id: Uuid = sqlx::query_scalar("INSERT INTO organizations (name) VALUES ('Acme') RETURNING id").fetch_one(pool).await.unwrap();
+    let session_id: Uuid = sqlx::query_scalar("INSERT INTO sessions (org_id, channel, chat_id) VALUES ($1, 'telegram', $2) RETURNING id")
+        .bind(org_id)
+        .bind(Uuid::new_v4().to_string())
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    let user_id: Uuid = sqlx::query_scalar("INSERT INTO users DEFAULT VALUES RETURNING id").fetch_one(pool).await.unwrap();
+    (session_id, user_id)
+}
+
+fn directions() -> serde_json::Value {
+    let direction = |id: &str, name: &str, accent: &str, font: &str| {
+        json!({
+            "id": id, "name": name, "summary": "What it looks like.", "rationale": "Why it fits.", "trade_offs": ["What it costs"],
+            "palette": [{"name": "Paper", "hex": "#F6EFE4"}, {"name": "Accent", "hex": accent}],
+            "typography": {"heading": font, "body": "Inter"}, "layout": "One long page."
+        })
+    };
+    json!({"directions": [direction("editorial", "Editorial", "#B5532A", "Fraunces"), direction("swiss", "Swiss utility", "#1F4FFF", "Helvetica")]})
+}
+
+fn preview(direction: &str, body: &str) -> serde_json::Value {
+    let html = format!("<html><head><meta name=\"viewport\" content=\"width=device-width\"><title>Home</title></head><body>{body}</body></html>");
+    json!({"direction_id": direction, "title": "A pass", "files": [{"path": "index.html", "content": html}, {"path": "styles.css", "content": "h1 { margin: 0 }"}]})
+}
+
+const HERO_AND_MENU: &str = "<h1 data-design-id=\"hero\">Hi</h1><ul data-design-id=\"menu-list\"></ul>";
+const HERO_ONLY: &str = "<h1 data-design-id=\"hero\">Hello</h1>";
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_preview_is_of_a_direction_sora_proposed(pool: PgPool) {
+    let (session_id, user_id) = chat(&pool).await;
+    let mut conn = pool.acquire().await.unwrap();
+    let sora = DesignAgent::new();
+    let early = sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "save_preview", preview("editorial", HERO_ONLY)).await;
+    assert!(early.unwrap_err().starts_with("propose directions with propose_directions first"));
+
+    sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "propose_directions", directions()).await.unwrap();
+    let unknown = sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "save_preview", preview("brutalist", HERO_ONLY)).await;
+    assert_eq!(unknown.unwrap_err(), "there is no direction \"brutalist\": the directions are editorial, swiss");
+    let broken = sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "save_preview", preview("editorial", "<h1>No ids</h1>")).await;
+    assert!(broken.unwrap_err().starts_with("index.html has no data-design-id attributes"));
+    assert_eq!(nomi_agent_core::design_artifact::latest(&mut conn, session_id).await.unwrap(), None, "nothing refused was saved");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn previews_are_saved_as_versions_even_when_nothing_publishes_them(pool: PgPool) {
+    let (session_id, user_id) = chat(&pool).await;
+    let mut conn = pool.acquire().await.unwrap();
+    let sora = DesignAgent::new();
+    sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "propose_directions", directions()).await.unwrap();
+
+    let first = sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "save_preview", preview("editorial", HERO_AND_MENU)).await.unwrap();
+    assert!(first.display_text.starts_with("Preview saved as version 1 of direction editorial: 1 page, 2 element ids."), "{}", first.display_text);
+    assert!(first.display_text.contains("It has no address yet"));
+    assert!(first.block.is_none(), "there is nothing to open yet");
+
+    let second = sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "save_preview", preview("editorial", HERO_ONLY)).await.unwrap();
+    assert!(second.display_text.starts_with("Preview saved as version 2"));
+    assert!(second.display_text.contains("gone: menu-list."), "{}", second.display_text);
+
+    let other = sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "save_preview", preview("swiss", HERO_ONLY)).await.unwrap();
+    assert!(!other.display_text.contains("gone:"), "another direction's ids aren't compared");
+
+    let (version, manifest) = nomi_agent_core::design_artifact::latest(&mut conn, session_id).await.unwrap().expect("a preview");
+    assert_eq!((version, manifest.direction_id.as_str()), (3, "swiss"));
+    let directions_version: Option<i32> = sqlx::query_scalar("SELECT directions_version FROM design_artifacts WHERE session_id = $1 AND version = 1").bind(session_id).fetch_one(&mut *conn).await.unwrap();
+    assert_eq!(directions_version, Some(1));
+    assert_eq!(nomi_agent_core::static_publish::latest(&mut conn, session_id, 1).await.unwrap(), None);
+
+    let context = sora.domain_context(&mut conn, None, session_id, user_id, &[]).await.expect("context");
+    assert!(context.contains("# Design preview (version 3, direction: swiss)") && context.contains("Not published"));
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_publisher_gets_the_files_and_its_address_is_kept(pool: PgPool) {
+    let (session_id, user_id) = chat(&pool).await;
+    let mut conn = pool.acquire().await.unwrap();
+    let publisher = FakePublisher::answering(Ok("https://previews.example/roti"));
+    let sora = DesignAgent::new().with_static_publisher(publisher.clone());
+    sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "propose_directions", directions()).await.unwrap();
+
+    let saved = sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "save_preview", preview("editorial", HERO_ONLY)).await.unwrap();
+    assert!(saved.display_text.contains("It is published at https://previews.example/roti"), "{}", saved.display_text);
+    assert_eq!(*publisher.published.lock().unwrap(), [(1, vec!["index.html".to_string(), "styles.css".to_string()])]);
+    let kept = nomi_agent_core::static_publish::latest(&mut conn, session_id, 1).await.unwrap().expect("its address");
+    assert_eq!((kept.provider.as_str(), kept.url.as_str()), ("fake", "https://previews.example/roti"));
+    let context = sora.domain_context(&mut conn, None, session_id, user_id, &[]).await.expect("context");
+    assert!(context.contains("Published at: https://previews.example/roti"));
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_publisher_that_fails_or_answers_badly_doesnt_lose_the_preview(pool: PgPool) {
+    let (session_id, user_id) = chat(&pool).await;
+    let mut conn = pool.acquire().await.unwrap();
+    for (answer, said) in [(Err("the service is down"), "(the service is down)"), (Ok("http://previews.example/roti"), "(fake gave an address that can't be used)")] {
+        let sora = DesignAgent::new().with_static_publisher(FakePublisher::answering(answer));
+        sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "propose_directions", directions()).await.unwrap();
+        let saved = sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "save_preview", preview("editorial", HERO_ONLY)).await.unwrap();
+        assert!(saved.display_text.contains("It has no address yet") && saved.display_text.contains(said), "{}", saved.display_text);
+        assert!(!saved.display_text.contains("previews.example"), "a refused address is never passed on");
+    }
+    assert_eq!(nomi_agent_core::design_artifact::latest(&mut conn, session_id).await.unwrap().map(|(version, _)| version), Some(2));
+    assert_eq!(nomi_agent_core::static_publish::latest(&mut conn, session_id, 2).await.unwrap(), None);
+}

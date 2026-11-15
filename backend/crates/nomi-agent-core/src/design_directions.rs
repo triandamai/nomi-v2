@@ -76,7 +76,7 @@ fn clipped(text: &str) -> String {
 }
 
 /// `text` as a slug: lowercase letters and digits, everything else a single dash.
-fn slug(text: &str) -> String {
+pub(crate) fn slug(text: &str) -> String {
     let mut out = String::new();
     for c in text.to_lowercase().chars() {
         if c.is_ascii_alphanumeric() {
