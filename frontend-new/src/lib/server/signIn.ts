@@ -15,8 +15,14 @@ export type Verification = {
 
 export type TokenPair = { access_token: string; refresh_token: string };
 
-/** The sign-in waiting on the code page: kept server-side only, for 15 minutes. */
-export type PendingSignIn = { challengeId: string; email: string; isNew: boolean; redirectTo: string };
+/** What the code buys: the tokens, and whether the code just made the account. */
+export type Verified = TokenPair & { is_new?: boolean };
+
+/**
+ * The sign-in waiting on the code page: kept server-side only, for 15 minutes. `from` is the form
+ * it started on, for "change" to go back to (a new account made on the register form otherwise).
+ */
+export type PendingSignIn = { challengeId: string; email: string; isNew: boolean; redirectTo: string; from?: 'sign-in' | 'register' };
 
 const PENDING_COOKIE = 'pending_sign_in';
 

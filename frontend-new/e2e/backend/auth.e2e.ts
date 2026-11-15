@@ -20,7 +20,7 @@ async function signedInAs(context: BrowserContext): Promise<string | null> {
 	return response.ok ? ((await response.json()) as { sub: string }).sub : null;
 }
 
-async function signInWithPassword(page: Page, account: Account, path = '/sign-in') {
+async function signInWithPassword(page: Page, account: Account, path = '/sign-in?with=password') {
 	await page.goto(path, { waitUntil: 'networkidle' });
 	await page.getByLabel('Email').fill(account.email);
 	await page.getByLabel('Password').fill(account.password);
@@ -35,6 +35,51 @@ async function typeCode(page: Page, email: string, subject: RegExp, after: numbe
 	await page.keyboard.type(code);
 	return code;
 }
+
+test.describe('sign in or create with the email alone', () => {
+	test('a new address: the code makes the account, then a name', async ({ page, context }) => {
+		const email = newEmail('start');
+		await page.goto('/sign-in', { waitUntil: 'networkidle' });
+		await expect(page.getByRole('heading', { name: 'Sign in or create an account' })).toBeVisible();
+		await expect(page.getByLabel('Password')).toHaveCount(0);
+		await expect(page.getByText('We’ll email a 6-digit code. No password to remember.')).toBeVisible();
+		await page.getByLabel('Email').fill(email);
+		const started = Date.now();
+		await page.getByRole('button', { name: 'Continue with email' }).click();
+
+		await expect(page).toHaveURL(/\/verify$/);
+		await expect(page.getByText('New to Nomi? After the code you’ll pick a name and meet the crew.', { exact: false })).toBeVisible();
+		await typeCode(page, email, /code|confirm/i, started);
+		await expect(page).toHaveURL(/\/first-run$/);
+		await expect(page.getByRole('textbox', { name: 'Your name' })).toBeVisible();
+		expect(await signedInAs(context)).not.toBeNull();
+	});
+
+	test('an address with an account signs in with the code alone', async ({ page, context }) => {
+		const account = await createAccount();
+		await page.goto('/sign-in?redirect_to=%2Fchats', { waitUntil: 'networkidle' });
+		await page.getByLabel('Email').fill(account.email);
+		const started = Date.now();
+		await page.getByRole('button', { name: 'Continue with email' }).click();
+		await expect(page).toHaveURL(/\/verify$/);
+		await typeCode(page, account.email, /sign-in code/i, started);
+		await expect(page).toHaveURL(/\/chats$/);
+		expect(await signedInAs(context)).not.toBeNull();
+	});
+
+	test('a mistyped address is said on its field; the password form keeps what was typed', async ({ page }) => {
+		await page.goto('/sign-in', { waitUntil: 'networkidle' });
+		await page.getByLabel('Email').fill('ana');
+		await page.getByRole('button', { name: 'Continue with email' }).click();
+		await expect(page.getByText('That doesn’t look like an email address.')).toBeVisible();
+		await page.getByLabel('Email').fill('ana@nomi.test');
+		await page.getByRole('link', { name: 'Use a password instead' }).click();
+		await expect(page.getByRole('heading', { name: 'Sign in to Nomi' })).toBeVisible();
+		await expect(page.getByLabel('Email')).toHaveValue('ana@nomi.test');
+		await page.getByRole('link', { name: 'Email me a code instead' }).click();
+		await expect(page.getByRole('heading', { name: 'Sign in or create an account' })).toBeVisible();
+	});
+});
 
 test.describe('create an account', () => {
 	test('register, the emailed code, a name, and in', async ({ page, context }) => {
@@ -93,7 +138,7 @@ test.describe('sign in', () => {
 	test('the password, then the code, and on to where the person was going', async ({ page, context }) => {
 		const account = await createAccount();
 		const started = Date.now();
-		await signInWithPassword(page, account, '/sign-in?redirect_to=%2Ffirst-run');
+		await signInWithPassword(page, account, '/sign-in?with=password&redirect_to=%2Ffirst-run');
 		await typeCode(page, account.email, /sign-in code/i, started);
 		await expect(page).toHaveURL(/\/first-run$/);
 		await expect(page.getByRole('heading', { name: 'What should we call you?' })).toBeVisible();
@@ -101,7 +146,7 @@ test.describe('sign in', () => {
 	});
 
 	test('an empty or mistyped email, and an empty password, are said on their fields', async ({ page }) => {
-		await page.goto('/sign-in', { waitUntil: 'networkidle' });
+		await page.goto('/sign-in?with=password', { waitUntil: 'networkidle' });
 		await page.getByRole('button', { name: 'Sign in' }).click();
 		await expect(page.getByText('Enter your email address.')).toBeVisible();
 		await expect(page.getByText('Enter your password.')).toBeVisible();
@@ -112,13 +157,13 @@ test.describe('sign in', () => {
 
 	test('a wrong password says so on the password, keeping the email', async ({ page }) => {
 		const account = await createAccount();
-		await page.goto('/sign-in', { waitUntil: 'networkidle' });
+		await page.goto('/sign-in?with=password', { waitUntil: 'networkidle' });
 		await page.getByLabel('Email').fill(account.email);
 		await page.getByLabel('Password').fill('not-the-password');
 		await page.getByRole('button', { name: 'Sign in' }).click();
 		await expect(page.getByText('That email and password don’t match. Check both, or reset your password.')).toBeVisible();
 		await expect(page.getByLabel('Email')).toHaveValue(account.email);
-		await expect(page).toHaveURL(/\/sign-in$/);
+		await expect(page).toHaveURL(/\/sign-in\?with=password$/);
 	});
 
 	test('a wrong code says how many tries are left; five lock it, and a reload says it has ended', async ({ page }) => {
@@ -171,7 +216,7 @@ test.describe('sign in', () => {
 			});
 			expect(response.status).toBe(200);
 		}
-		await page.goto('/sign-in', { waitUntil: 'networkidle' });
+		await page.goto('/sign-in?with=password', { waitUntil: 'networkidle' });
 		await page.getByLabel('Email').fill(account.email);
 		await page.getByLabel('Password').fill(account.password);
 		await page.getByRole('button', { name: 'Sign in' }).click();
@@ -181,7 +226,7 @@ test.describe('sign in', () => {
 
 	test('change goes back to the form', async ({ page }) => {
 		const account = await createAccount();
-		await signInWithPassword(page, account, '/sign-in?redirect_to=%2Ffirst-run');
+		await signInWithPassword(page, account, '/sign-in?with=password&redirect_to=%2Ffirst-run');
 		await page.getByRole('button', { name: /Change the email/ }).click();
 		await expect(page).toHaveURL(/\/sign-in\?redirect_to=%2Ffirst-run$/);
 	});
@@ -197,7 +242,7 @@ test.describe('sign in', () => {
 	test('the language switch shows the screens in Indonesian', async ({ page }) => {
 		await page.goto('/sign-in', { waitUntil: 'networkidle' });
 		await page.getByRole('combobox', { name: 'Language' }).selectOption('id');
-		await expect(page.getByRole('heading', { name: 'Masuk ke Nomi' })).toBeVisible();
+		await expect(page.getByRole('heading', { name: 'Masuk atau buat akun' })).toBeVisible();
 		await expect(page.locator('html')).toHaveAttribute('lang', 'id');
 	});
 });
@@ -205,7 +250,7 @@ test.describe('sign in', () => {
 test.describe('forgot password', () => {
 	test('the emailed link, a new password, and signing in with it', async ({ page, context }) => {
 		const account = await createAccount();
-		await page.goto('/sign-in', { waitUntil: 'networkidle' });
+		await page.goto('/sign-in?with=password', { waitUntil: 'networkidle' });
 		await page.getByRole('link', { name: 'Forgot password?' }).click();
 		// The sign-in page has an Email field too: wait for the new page before typing.
 		await expect(page.getByRole('heading', { name: 'Reset your password' })).toBeVisible();
@@ -291,9 +336,9 @@ test.describe('invites', () => {
 		await page.goto(`/invite/${code}`, { waitUntil: 'networkidle' });
 		await page.getByRole('link', { name: 'I have an account' }).click();
 		const started = Date.now();
+		// The email alone: the code signs the account in.
 		await page.getByLabel('Email').fill(guest.email);
-		await page.getByLabel('Password').fill(guest.password);
-		await page.getByRole('button', { name: 'Sign in' }).click();
+		await page.getByRole('button', { name: 'Continue with email' }).click();
 		await typeCode(page, guest.email, /sign-in code/i, started);
 
 		await expect(page).toHaveURL(new RegExp(`/invite/${code}$`));

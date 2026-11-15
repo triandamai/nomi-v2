@@ -57,4 +57,39 @@ describe('Settings › General', () => {
 		expect(await result).toEqual({ emails: { email_account: false, email_promos: true } });
 		expect(api.calls[0].body).toEqual({ email_account: false, email_promos: true });
 	});
+
+	describe('the password, changed while signed in', () => {
+		it('checks the new one is long enough and typed twice alike before asking the backend', async () => {
+			for (const [form, field, message] of [
+				[{ current: 'old-horse-1', next: 'short', confirm: 'short' }, 'next', 'Use at least 8 characters.'],
+				[{ current: 'old-horse-1', next: 'brand-new-horse', confirm: 'brand-new-hors' }, 'confirm', 'The two passwords don’t match.'],
+			] as const) {
+				const { api, result } = run('password', form);
+				expect(await result).toMatchObject({ status: 400, data: { field, message } });
+				expect(api.calls).toEqual([]);
+			}
+		});
+
+		it('changes it with the current one, or sets a first one without', async () => {
+			const changed = run('password', { current: 'old-horse-1', next: 'brand-new-horse', confirm: 'brand-new-horse' });
+			expect(await changed.result).toEqual({ password: 'changed' });
+			expect(changed.api.calls[0]).toMatchObject({ url: 'http://api.test/api/auth/password', method: 'PUT', body: { current_password: 'old-horse-1', new_password: 'brand-new-horse' } });
+			const set = run('password', { next: 'brand-new-horse', confirm: 'brand-new-horse' });
+			expect(await set.result).toEqual({ password: 'set' });
+			expect(set.api.calls[0]).toMatchObject({ body: { new_password: 'brand-new-horse' } });
+			expect(set.api.calls[0].body).not.toHaveProperty('current_password');
+		});
+
+		it('says the backend’s refusals on the field they’re about', async () => {
+			expect(await run('password', { current: 'nope', next: 'brand-new-horse', confirm: 'brand-new-horse' }, () => json({ error: 'wrong_password' }, 403)).result).toMatchObject({
+				status: 403,
+				data: { field: 'current', message: 'That isn’t your current password.' },
+			});
+			expect(await run('password', { current: 'old', next: 'brand-new-horse', confirm: 'brand-new-horse' }, () => json({ error: 'too_short' }, 400)).result).toMatchObject({
+				status: 400,
+				data: { field: 'next', message: 'Use at least 8 characters.' },
+			});
+			expect(await run('password', { next: 'brand-new-horse', confirm: 'brand-new-horse' }, () => json({ error: 'failed' }, 500)).result).toMatchObject({ status: 500, data: { message: expect.any(String) } });
+		});
+	});
 });

@@ -14,6 +14,9 @@
 	import type { Theme } from '$lib/theme';
 	import { toasts } from '$lib/ds/overlays/toasts.svelte';
 	import Button from '$lib/ds/actions/Button.svelte';
+	import AuthLink from '$lib/ds/auth/AuthLink.svelte';
+	import TextField from '$lib/ds/inputs/TextField.svelte';
+	import Dialog from '$lib/ds/overlays/Dialog.svelte';
 	import Segmented from '$lib/ds/inputs/Segmented.svelte';
 	import Select from '$lib/ds/inputs/Select.svelte';
 	import Toggle from '$lib/ds/inputs/Toggle.svelte';
@@ -117,6 +120,28 @@
 		await invalidate('app:general');
 	}
 
+	// The password, set or changed here (the pen's row leads nowhere): a dialog with the current
+	// one when there is one, the new one twice, and the emailed reset for a forgotten one.
+	let passwordOpen = $state(false);
+	let passwords = $state({ current: '', next: '', confirm: '' });
+	let passwordError = $state<{ field?: string; message: string }>();
+	let savingPassword = $state(false);
+	function openPassword() {
+		passwords = { current: '', next: '', confirm: '' };
+		passwordError = undefined;
+		passwordOpen = true;
+	}
+	async function savePassword() {
+		savingPassword = true;
+		const result = await pageAction('/settings/general', 'password', data.methods.password ? passwords : { next: passwords.next, confirm: passwords.confirm });
+		savingPassword = false;
+		if (!result.ok) return void (passwordError = result.message ? { field: result.field, message: result.message } : undefined);
+		passwordOpen = false;
+		toasts.show({ kind: 'success', title: result.data.password === 'set' ? m.general_password_was_set() : m.general_password_changed() });
+		await invalidate('app:general');
+	}
+	const fieldError = (field: string) => (passwordError?.field === field ? passwordError.message : undefined);
+
 	const others = $derived((data.devices ?? []).filter((device) => !device.current).length);
 	const resetHref = $derived(`/forgot-password?email=${encodeURIComponent(data.email)}`);
 
@@ -157,7 +182,7 @@
 				{/if}
 				<SettingRow title={m.general_password()} description={data.methods.password ? m.general_password_set() : m.general_password_none()}>
 					{#snippet control()}
-						<Button label={data.methods.password ? m.general_password_change() : m.general_password_add()} variant="secondary" href={resetHref} iconEnd={ArrowUpRight} />
+						<Button label={data.methods.password ? m.general_password_change() : m.general_password_add()} variant="secondary" onclick={openPassword} />
 					{/snippet}
 				</SettingRow>
 				<SettingNote text={m.general_google_note()} />
@@ -237,3 +262,33 @@
 		</aside>
 	</div>
 </div>
+
+<Dialog
+	bind:open={passwordOpen}
+	title={data.methods.password ? m.general_password_change_title() : m.general_password_set_title()}
+	description={data.methods.password ? m.general_password_change_body() : m.general_password_set_body()}
+>
+	<form
+		class="flex flex-col gap-4 pt-2"
+		onsubmit={(event) => {
+			event.preventDefault();
+			void savePassword();
+		}}
+	>
+		<!-- For the browser's password manager: whose password this is. -->
+		<input type="email" name="username" autocomplete="username" value={data.email} hidden readonly />
+		{#if data.methods.password}
+			<TextField label={m.general_password_current()} type="password" name="current" autocomplete="current-password" bind:value={passwords.current} error={fieldError('current')} required />
+		{/if}
+		<TextField label={m.general_password_new()} type="password" name="next" autocomplete="new-password" helper={m.register_password_help()} bind:value={passwords.next} error={fieldError('next')} required />
+		<TextField label={m.general_password_confirm()} type="password" name="confirm" autocomplete="new-password" bind:value={passwords.confirm} error={fieldError('confirm')} required />
+		{#if passwordError && !passwordError.field}<p role="alert" class="text-caption text-danger">{passwordError.message}</p>{/if}
+		<!-- Enter saves, as the dialog's own button does. -->
+		<button type="submit" hidden aria-hidden="true" tabindex="-1"></button>
+		{#if data.methods.password}<span class="flex"><AuthLink label={m.general_password_forgot()} href={resetHref} quiet /></span>{/if}
+	</form>
+	{#snippet actions()}
+		<Button variant="secondary" label={m.action_cancel()} onclick={() => (passwordOpen = false)} />
+		<Button variant="inverse" label={m.general_password_save()} loading={savingPassword} onclick={savePassword} />
+	{/snippet}
+</Dialog>

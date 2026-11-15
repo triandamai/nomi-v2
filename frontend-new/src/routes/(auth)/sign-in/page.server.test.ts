@@ -6,13 +6,62 @@ vi.mock('$env/dynamic/private', () => ({ env: { API_URL: 'http://api.test' } }))
 const { actions, load } = await import('./+page.server');
 
 const verification = { challenge_id: 'c1', purpose: 'login', email: 'a**@gmail.com', expires_in: 600, resend_in: 60, sends_left: 5 };
-const signIn = (form: Record<string, string>, answer: Parameters<typeof fakeBackend>[0], url = 'http://localhost/sign-in') => {
+const send = (form: Record<string, string>, answer: Parameters<typeof fakeBackend>[0], url = 'http://localhost/sign-in') => {
 	const api = fakeBackend(answer);
 	const event = fakeEvent({ url, form, fetch: api.fetch });
 	return { api, event, run: () => actions.default(event as never) };
 };
+/** The password form ("Use a password instead"). */
+const signIn = (form: Record<string, string>, answer: Parameters<typeof fakeBackend>[0], url?: string) => send({ method: 'password', ...form }, answer, url);
+/** The pen's one step: the email alone, then the code. */
+const start = (form: Record<string, string>, answer: Parameters<typeof fakeBackend>[0], url?: string) => send(form, answer, url);
 
-describe('sign in: the form', () => {
+describe('sign in or create: the email alone', () => {
+	const registering = { ...verification, purpose: 'register', email: 'n**@nomi.test' };
+
+	it('asks for an email that looks like one before calling the backend', async () => {
+		for (const [email, problem] of [
+			['', 'email_required'],
+			['ana', 'email_invalid'],
+		] as const) {
+			const { api, run } = start({ email }, () => json({}));
+			expect(await run()).toMatchObject({ status: 400, data: { email, method: 'code', fields: { email: problem }, alert: null } });
+			expect(api.calls).toEqual([]);
+		}
+	});
+
+	it('emails a code to an address with an account, then goes on to it', async () => {
+		const { api, event, run } = start({ email: ' Ana@Gmail.com ' }, () => json({ verification }), 'http://localhost/sign-in?redirect_to=%2Fchat%2F7');
+		expect(await thrown(run)).toMatchObject({ status: 303, location: '/verify' });
+		expect(api.calls[0]).toMatchObject({ url: 'http://api.test/api/auth/start', method: 'POST', body: { email: 'Ana@Gmail.com', language: 'en' } });
+		expect(JSON.parse(event.jar.get('pending_sign_in')!)).toEqual({ challengeId: 'c1', email: 'a••@gmail.com', isNew: false, redirectTo: '/chat/7', from: 'sign-in' });
+		expect(event.jar.get('access_token')).toBeUndefined();
+	});
+
+	it('sets a new address up: its code makes the account', async () => {
+		const { event, run } = start({ email: 'new@nomi.test' }, () => json({ verification: registering }));
+		expect(await thrown(run)).toMatchObject({ status: 303, location: '/verify' });
+		expect(JSON.parse(event.jar.get('pending_sign_in')!)).toMatchObject({ email: 'n••@nomi.test', isNew: true, redirectTo: '/', from: 'sign-in' });
+	});
+
+	it('says the backend’s refusals: a bad address on the field, the rest above the form', async () => {
+		expect(await start({ email: 'ana@example.com' }, () => json({ error: 'invalid_email' }, 400)).run()).toMatchObject({
+			status: 400,
+			data: { method: 'code', fields: { email: 'email_invalid' }, alert: null },
+		});
+		expect(await start({ email: 'ana@example.com' }, () => json({ error: 'too_many_codes' }, 429)).run()).toMatchObject({
+			status: 429,
+			data: { alert: { kind: 'too_many_codes', status: 429, code: 'too_many_codes' } },
+		});
+		expect(await start({ email: 'ana@example.com' }, () => json({ error: 'email_failed' }, 502)).run()).toMatchObject({
+			status: 502,
+			data: { alert: { kind: 'code_email_failed', status: 502 } },
+		});
+		expect(await start({ email: 'ana@example.com' }, () => 'unreachable').run()).toMatchObject({ status: 503, data: { alert: { kind: 'unreachable' } } });
+	});
+});
+
+describe('sign in: the password', () => {
 	it('asks for an email that looks like one, and a password, before calling the backend', async () => {
 		for (const [form, fields] of [
 			[{ email: '', password: 'x' }, { email: 'email_required' }],
@@ -21,7 +70,7 @@ describe('sign in: the form', () => {
 			[{ email: '', password: '' }, { email: 'email_required', password: 'password_required' }],
 		] as const) {
 			const { api, run } = signIn(form, () => json({}));
-			expect(await run()).toMatchObject({ status: 400, data: { email: form.email, fields, alert: null } });
+			expect(await run()).toMatchObject({ status: 400, data: { email: form.email, method: 'password', fields, alert: null } });
 			expect(api.calls).toEqual([]);
 		}
 	});
@@ -51,7 +100,7 @@ describe('sign in: the form', () => {
 	it('goes on to the code with the right password, remembering where the person was going', async () => {
 		const { event, run } = signIn({ email: 'ana@gmail.com', password: 'pw' }, () => json({ verification }), 'http://localhost/sign-in?redirect_to=%2Fchat%2F7');
 		expect(await thrown(run)).toMatchObject({ status: 303, location: '/verify' });
-		expect(JSON.parse(event.jar.get('pending_sign_in')!)).toEqual({ challengeId: 'c1', email: 'a••@gmail.com', isNew: false, redirectTo: '/chat/7' });
+		expect(JSON.parse(event.jar.get('pending_sign_in')!)).toEqual({ challengeId: 'c1', email: 'a••@gmail.com', isNew: false, redirectTo: '/chat/7', from: 'sign-in' });
 		expect(event.jar.get('access_token')).toBeUndefined();
 	});
 
@@ -84,6 +133,12 @@ describe('sign in: the page', () => {
 		expect(await page('http://localhost/sign-in?google_error=conflict')).toMatchObject({ googleError: 'conflict', passwordChanged: false });
 		expect(await page('http://localhost/sign-in?google_error=whatever')).toMatchObject({ googleError: 'failed' });
 		expect(await page('http://localhost/sign-in?reset=1')).toMatchObject({ googleError: null, passwordChanged: true });
+	});
+
+	it('starts with the email alone; the password form is the way it says', async () => {
+		expect(await page('http://localhost/sign-in')).toMatchObject({ method: 'code' });
+		expect(await page('http://localhost/sign-in?with=password')).toMatchObject({ method: 'password' });
+		expect(await page('http://localhost/sign-in?reset=1')).toMatchObject({ method: 'password' });
 	});
 
 	it('keeps where the person is going and the email they came with', async () => {

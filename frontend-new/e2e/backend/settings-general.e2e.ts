@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
+import { BACKEND_URL } from './support/env';
 import { api, createAccount, signInAs } from './support/accounts';
 
 // Settings › General against the real backend (App / Settings / General m7lvY1): each change
-// saves as it's made (theme, time zone, emails, language), the password goes through the emailed
-// reset, and other devices are signed out.
+// saves as it's made (theme, time zone, emails, language), the password is changed in place (the
+// emailed reset for a forgotten one), and other devices are signed out.
 
 type Preferences = { theme: string; timezone: string; language: string; has_stored_timezone: boolean };
 const preferences = async (account: Parameters<typeof api>[0]) => (await (await api(account, '/api/preferences')).json()) as Preferences;
@@ -17,7 +18,6 @@ test('general settings save as they’re changed', async ({ page, context }) => 
 	await expect(page).toHaveURL(/\/settings\/general$/);
 	await expect(page.getByRole('banner').getByText('changes save automatically')).toBeVisible();
 	await expect(page.getByText(`${account.email.slice(0, 2)}•`)).toBeVisible();
-	await expect(page.getByRole('link', { name: 'Change' })).toHaveAttribute('href', `/forgot-password?email=${encodeURIComponent(account.email)}`);
 
 	// Theme: on the page at once, and kept.
 	await page.getByRole('radio', { name: 'Light' }).click();
@@ -56,3 +56,36 @@ test('the other devices are signed out, this one stays', async ({ page, context 
 	await expect(page.getByText(/iPhone 15/)).toBeHidden();
 	await expect(page.getByRole('heading', { level: 1, name: 'General' })).toBeVisible();
 });
+
+test('the password changes in place: the current one first, then the new one twice', async ({ page, context }) => {
+	const account = await createAccount();
+	await signInAs(context, account);
+	await page.goto('/settings/general', { waitUntil: 'networkidle' });
+	await page.getByRole('button', { name: 'Change', exact: true }).click();
+	const dialog = page.getByRole('dialog', { name: 'Change your password' });
+	await expect(dialog.getByText('Your other devices stay signed in.')).toBeVisible();
+	await expect(dialog.getByRole('link', { name: 'Forgot it? Reset it by email' })).toHaveAttribute('href', `/forgot-password?email=${encodeURIComponent(account.email)}`);
+
+	await dialog.getByLabel('Current password').fill('not-my-password');
+	await dialog.getByLabel('New password', { exact: true }).fill('brand-new-horse');
+	await dialog.getByLabel('Confirm new password').fill('brand-new-hors');
+	await dialog.getByRole('button', { name: 'Save password' }).click();
+	await expect(dialog.getByText('The two passwords don’t match.')).toBeVisible();
+	await dialog.getByLabel('Confirm new password').fill('brand-new-horse');
+	await dialog.getByRole('button', { name: 'Save password' }).click();
+	await expect(dialog.getByText('That isn’t your current password.')).toBeVisible();
+
+	await dialog.getByLabel('Current password').fill(account.password);
+	await dialog.getByLabel('Current password').press('Enter');
+	await expect(page.getByText('Password changed. Your other devices stay signed in.')).toBeVisible();
+	await expect(dialog).toHaveCount(0);
+
+	// The new one is the one that works now; this device is still signed in.
+	const login = (password: string) =>
+		fetch(`${BACKEND_URL}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: account.email, password }) });
+	expect((await login(account.password)).status).toBe(401);
+	expect((await login('brand-new-horse')).status).toBe(200);
+	await page.reload();
+	await expect(page).toHaveURL(/\/settings\/general$/);
+});
+

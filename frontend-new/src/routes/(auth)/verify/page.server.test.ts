@@ -56,6 +56,16 @@ describe('entering the code', () => {
 		expect(await thrown(() => actions.verify(event as never))).toMatchObject({ status: 303, location: '/first-run?redirect_to=%2Finvite%2FXk29' });
 	});
 
+	it('takes an account the code just made to its first run, as the backend says', async () => {
+		const made = (call: { url: string }) => (call.url.endsWith('/verify') ? json({ access_token: 'a1', refresh_token: 'r1', is_new: true }) : json({}));
+		expect(await thrown(() => actions.verify(on(made, { form: { code: '048917' } }).event as never))).toMatchObject({ status: 303, location: '/first-run?redirect_to=%2Fchat%2F7' });
+		// The register form made the account before the code, so the backend says it isn't new.
+		const registered = (call: { url: string }) => (call.url.endsWith('/verify') ? json({ access_token: 'a1', refresh_token: 'r1', is_new: false }) : json({}));
+		const { event } = on(registered, { form: { code: '048917' }, pending: pending({ isNew: true, redirectTo: '/' }) });
+		expect(await thrown(() => actions.verify(event as never))).toMatchObject({ status: 303, location: '/first-run' });
+		expect(event.jar.get('access_token')).toBe('a1');
+	});
+
 	it('wants all six digits before asking the backend', async () => {
 		const { api, event } = on(tokens, { form: { code: '0489' } });
 		expect(await actions.verify(event as never)).toMatchObject({ status: 400, data: { problem: 'incomplete' } });
@@ -100,5 +110,8 @@ describe('changing the email', () => {
 		expect(signIn.event.jar.has('pending_sign_in')).toBe(false);
 		const register = on(() => json({}), { pending: pending({ isNew: true, redirectTo: '/' }) });
 		expect(await thrown(() => actions.cancel(register.event as never))).toMatchObject({ status: 303, location: '/register' });
+		// A new address that started from the email alone goes back to that form.
+		const started = on(() => json({}), { pending: pending({ isNew: true, redirectTo: '/', from: 'sign-in' }) });
+		expect(await thrown(() => actions.cancel(started.event as never))).toMatchObject({ status: 303, location: '/sign-in' });
 	});
 });

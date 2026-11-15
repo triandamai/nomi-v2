@@ -120,12 +120,14 @@ Found while planning the working v2 (sign in, chat and build against the real AP
   - `POST /api/auth/verify` now also returns `is_new`. A new account has no password (`password_login` off), its email confirmed, and a personal workspace ("{name}'s space", `is_personal`), or the invite's workspace.
   - Password `login` and `register` work as before. Migration `0109_email_code_sign_in.sql`.
   - `frontend/`: the login page has "Email me a code instead"; `/verify` finishes it and sends new accounts to first run.
+  - v2: `/sign-in` starts with the email alone; "Use a password instead" keeps the password form.
 
 ### Change the password while signed in — done
 - **Needed by:** *Settings / General*: "Password · Not set. Add one to sign in without Google".
 - **Built:** `PUT /api/auth/password {current_password?, new_password}` → 204. `current_password` is required when a password is set (403 `wrong_password`; 400 `too_short` under 8 characters). Setting one turns password sign-in on; other devices stay signed in.
   - The emailed reset now turns password sign-in on too.
   - `frontend/`: Account › Sign-in methods has a set/change password form.
+  - v2: Settings › General's password row opens a dialog to set or change it.
 
 ### Switch the active workspace — done
 - **Needed by:** *Workspace switcher* (`pKiO2`) and the account menu.

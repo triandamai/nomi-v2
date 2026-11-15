@@ -4,7 +4,7 @@ import type { CodeProblem } from '$lib/auth/problems';
 import { withRedirect } from '$lib/auth/redirects';
 import { readApiError } from '$lib/server/apiError';
 import { callAuth, rememberMethod } from '$lib/server/authFlow';
-import { clearPendingSignIn, completeSignIn, getPendingSignIn, type TokenPair, type Verification } from '$lib/server/signIn';
+import { clearPendingSignIn, completeSignIn, getPendingSignIn, type Verification, type Verified } from '$lib/server/signIn';
 import type { Actions, PageServerLoad } from './$types';
 
 // Enter code: the emailed code finishes a sign-in or a new account. The sign-in waiting for it is
@@ -48,10 +48,14 @@ export const actions: Actions = {
 		if (!response) return failure(503, { problem: 'unreachable' });
 		if (response.ok) {
 			clearPendingSignIn(event.cookies);
-			await completeSignIn(event, (await response.json()) as TokenPair, pending.isNew);
+			const { is_new, ...tokens } = (await response.json()) as Verified;
+			// New when the code just made the account (the email alone), or when the register form
+			// made it before the code (the backend's is_new is false then: the account already was).
+			const isNew = pending.isNew || is_new === true;
+			await completeSignIn(event, tokens, isNew);
 			rememberMethod(event.cookies, 'email');
 			// A new account names itself first (First run), then goes where it was going.
-			redirect(303, pending.isNew ? withRedirect('/first-run', pending.redirectTo) : pending.redirectTo || '/');
+			redirect(303, isNew ? withRedirect('/first-run', pending.redirectTo) : pending.redirectTo || '/');
 		}
 		const error = await readApiError(response);
 		if (error.code === 'wrong_code') return failure(400, { problem: 'wrong_code', attemptsLeft: error.attemptsLeft ?? 0 });
@@ -81,6 +85,7 @@ export const actions: Actions = {
 	cancel: async ({ cookies }) => {
 		const pending = getPendingSignIn(cookies);
 		clearPendingSignIn(cookies);
-		redirect(303, withRedirect(pending?.isNew ? '/register' : '/sign-in', pending?.redirectTo));
+		const from = pending?.from ?? (pending?.isNew ? 'register' : 'sign-in');
+		redirect(303, withRedirect(`/${from}`, pending?.redirectTo));
 	},
 };
