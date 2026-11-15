@@ -9,7 +9,7 @@ export const load: PageServerLoad = async ({ cookies, fetch, params }) => {
 	const offer = (await plansResponse.json()) as PlansForUser;
 	const plan = offer.plans.find((p) => p.id === params.planId);
 	// Only a plan that's for sale, shown, and not the one they're already on.
-	if (!plan || !plan.is_active || plan.price_amount <= 0 || plan.id === offer.current_plan_id) throw redirect(303, '/billing');
+	if (!plan || !plan.is_active || !plan.price_idr || plan.id === offer.current_plan_id) throw redirect(303, '/billing');
 
 	const terms = termsResponse.ok ? ((await termsResponse.json()) as BillingTerm[]).filter((t) => t.is_active).toSorted((a, b) => a.sort_order - b.sort_order || a.months - b.months) : [];
 	// What each term costs with no code, so the cards show real prices before anything is chosen.

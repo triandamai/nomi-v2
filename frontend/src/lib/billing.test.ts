@@ -33,7 +33,7 @@ describe('formatMoney', () => {
 });
 
 describe('prices', () => {
-	const plan = { price_amount: 100_000, promo_price_amount: 49_000, promo_ends_at: '2026-12-31T00:00:00Z' };
+	const plan = { price_idr: 100_000, promo_price_idr: 49_000, promo_ends_at: '2026-12-31T00:00:00Z' };
 	const before = new Date('2026-11-01T00:00:00Z');
 	const after = new Date('2027-01-01T00:00:00Z');
 
@@ -45,8 +45,8 @@ describe('prices', () => {
 	it('goes back to the list price when the promo has ended or is no cheaper', () => {
 		expect(promoPriceLive(plan, after)).toBe(false);
 		expect(currentMonthlyPrice(plan, after)).toBe(100_000);
-		expect(promoPriceLive({ ...plan, promo_price_amount: 100_000 }, before)).toBe(false);
-		expect(promoPriceLive({ ...plan, promo_price_amount: null }, before)).toBe(false);
+		expect(promoPriceLive({ ...plan, promo_price_idr: 100_000 }, before)).toBe(false);
+		expect(promoPriceLive({ ...plan, promo_price_idr: null }, before)).toBe(false);
 	});
 
 	it('runs a promo with no end date', () => {
@@ -60,9 +60,9 @@ describe('prices', () => {
 });
 
 describe('plansForSale', () => {
-	const plan = (id: string, over: Partial<Plan> = {}) => ({ id, is_active: true, price_amount: 50_000, ...over }) as Plan;
+	const plan = (id: string, over: Partial<Plan> = {}) => ({ id, is_active: true, price_idr: 50_000, ...over }) as Plan;
 	it('lists priced, shown plans other than the current one', () => {
-		const offer = { current_plan_id: 'a', plans: [plan('a'), plan('b'), plan('c', { price_amount: 0 }), plan('d', { is_active: false })] };
+		const offer = { current_plan_id: 'a', plans: [plan('a'), plan('b'), plan('c', { price_idr: null }), plan('d', { is_active: false })] };
 		expect(plansForSale(offer).map((p) => p.id)).toEqual(['b']);
 	});
 });

@@ -3,7 +3,7 @@
 	import { getLocale } from '$lib/paraglide/runtime';
 	import { GRADIENT_STOPS, GRADIENT_TONES, TONE_ACCENT, type GradientTone } from '$lib/components/m3/shapes';
 	import { formatTokens } from '$lib/usage';
-	import { DEFAULT_CURRENCY, formatMoney, promoPriceLive } from '$lib/billing';
+	import { CURRENCY, formatMoney, promoPriceLive } from '$lib/billing';
 	import type { Plan } from '$lib/types';
 	import type { Snippet } from 'svelte';
 
@@ -25,9 +25,9 @@
 	const promoRunning = $derived(!plan.promo_ends_at || new Date(plan.promo_ends_at) > new Date());
 	const promoLive = $derived((Boolean(plan.promo_label || plan.promo_price_label) && promoRunning) || promoPriceLive(plan));
 	// A plan with a price shows it formatted; one without falls back to the free-text label.
-	const priced = $derived(plan.price_amount > 0);
+	const priced = $derived((plan.price_idr ?? 0) > 0);
 	const promoAmountLive = $derived(promoPriceLive(plan));
-	const money = (amount: number) => formatMoney(amount, plan.currency || DEFAULT_CURRENCY, getLocale());
+	const money = (amount: number) => formatMoney(amount, CURRENCY, getLocale());
 	const promoEnds = $derived(
 		plan.promo_ends_at ? new Intl.DateTimeFormat(getLocale(), { day: 'numeric', month: 'long' }).format(new Date(plan.promo_ends_at)) : null,
 	);
@@ -44,10 +44,10 @@
 		<p class="plan__price">
 			{#if priced}
 				{#if promoAmountLive}
-					<span class="plan__price-now">{m.plan_price_per_month({ price: money(plan.promo_price_amount ?? 0) })}</span>
-					<s class="plan__price-was">{money(plan.price_amount)}</s>
+					<span class="plan__price-now">{m.plan_price_per_month({ price: money(plan.promo_price_idr ?? 0) })}</span>
+					<s class="plan__price-was">{money(plan.price_idr ?? 0)}</s>
 				{:else}
-					<span class="plan__price-now">{m.plan_price_per_month({ price: money(plan.price_amount) })}</span>
+					<span class="plan__price-now">{m.plan_price_per_month({ price: money(plan.price_idr ?? 0) })}</span>
 				{/if}
 			{:else if promoLive && plan.promo_price_label}
 				<span class="plan__price-now">{plan.promo_price_label}</span>

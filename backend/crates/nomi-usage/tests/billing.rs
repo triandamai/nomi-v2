@@ -15,7 +15,7 @@ async fn person(pool: &PgPool) -> Uuid {
 }
 
 fn plan_input(slug: &str, extra: serde_json::Value) -> PlanInput {
-    let mut base = serde_json::json!({ "slug": slug, "name": slug, "monthly_tokens": 100, "price_amount": PRICE });
+    let mut base = serde_json::json!({ "slug": slug, "name": slug, "monthly_tokens": 100, "price_idr": PRICE });
     base.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
     serde_json::from_value::<PlanInput>(base).unwrap().validate().unwrap()
 }
@@ -60,11 +60,11 @@ async fn a_quote_applies_the_term_and_the_promo(pool: PgPool) {
     let q = quote(&pool, user, &plan, 6, None).await.unwrap();
     assert_eq!((q.base_amount, q.term_discount, q.amount, q.currency.as_str()), (300_000, 30_000, 270_000, "IDR"));
 
-    let promo = plans::create_plan(&pool, &plan_input("promo", serde_json::json!({ "promo_price_amount": 40_000, "promo_ends_at": Utc::now() + Duration::days(1) }))).await.unwrap();
+    let promo = plans::create_plan(&pool, &plan_input("promo", serde_json::json!({ "promo_price_idr": 40_000, "promo_ends_at": Utc::now() + Duration::days(1) }))).await.unwrap();
     let q = quote(&pool, user, &promo, 12, None).await.unwrap();
     assert_eq!((q.promo_discount, q.term_discount, q.amount), (120_000, 96_000, 384_000));
 
-    let over = plans::create_plan(&pool, &plan_input("over", serde_json::json!({ "promo_price_amount": 40_000, "promo_ends_at": Utc::now() - Duration::days(1) }))).await.unwrap();
+    let over = plans::create_plan(&pool, &plan_input("over", serde_json::json!({ "promo_price_idr": 40_000, "promo_ends_at": Utc::now() - Duration::days(1) }))).await.unwrap();
     assert_eq!(quote(&pool, user, &over, 1, None).await.unwrap().promo_discount, 0);
 }
 

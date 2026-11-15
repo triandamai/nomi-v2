@@ -7,7 +7,7 @@
 	import Button from '$lib/components/m3/Button.svelte';
 	import TextField from '$lib/components/m3/TextField.svelte';
 	import IconClose from '$lib/components/icons/IconClose.svelte';
-	import { DEFAULT_CURRENCY, buildSummaryLines, currentMonthlyPrice, formatMoney, perMonth, planLimitLines, promoPriceLive, type SummaryLineKind, termLabel } from '$lib/billing';
+	import { CURRENCY, buildSummaryLines, currentMonthlyPrice, formatMoney, perMonth, planLimitLines, promoPriceLive, type SummaryLineKind, termLabel } from '$lib/billing';
 	import { formatTokens } from '$lib/usage';
 	import type { BillingQuote } from '$lib/types';
 	import type { PageData } from './$types';
@@ -15,7 +15,7 @@
 	let { data }: { data: PageData } = $props();
 
 	const plan = $derived(data.plan);
-	const currency = $derived(plan.currency || DEFAULT_CURRENCY);
+	const currency = CURRENCY;
 	const money = (amount: number) => formatMoney(amount, currency, getLocale());
 
 	let months = $state<number>(0);
@@ -152,7 +152,7 @@
 					{#if plan.description}<p class="muted">{plan.description}</p>{/if}
 					<p class="price">
 						<span class="price__now">{m.plan_price_per_month({ price: money(monthly) })}</span>
-						{#if hasPromo}<s class="price__was">{money(plan.price_amount)}</s>{/if}
+						{#if hasPromo}<s class="price__was">{money(plan.price_idr ?? 0)}</s>{/if}
 					</p>
 					<p class="tokens">{m.plan_tokens_month({ tokens: formatTokens(plan.monthly_tokens) })}</p>
 					{#if plan.features.length > 0}

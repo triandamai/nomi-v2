@@ -57,7 +57,7 @@ pub async fn list_for_user(State(state): State<AppState>, AuthClaims(claims): Au
         if plan.promo_ends_at.is_some_and(|end| end <= Utc::now()) {
             plan.promo_label = None;
             plan.promo_price_label = None;
-            plan.promo_price_amount = None;
+            plan.promo_price_idr = None;
         }
     }
     let waitlist = sqlx::query_scalar("SELECT plan_id FROM plan_waitlist WHERE user_id = $1 ORDER BY created_at")
@@ -340,10 +340,8 @@ mod tests {
             sandbox_size: None,
             all_models: true,
             model_ids: vec![],
-            price_amount: 0,
-            currency: "IDR".into(),
-            promo_price_amount: None,
             price_idr: None,
+            promo_price_idr: None,
         }
     }
 

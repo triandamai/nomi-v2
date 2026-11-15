@@ -612,12 +612,14 @@ pub async fn quote(pool: &PgPool, user_id: Uuid, plan_id: Uuid, months: i32, cod
         }
     }
 
-    let b = price(plan.price_amount, plan.active_promo_price(now), months, i64::from(term.discount_percent), coupon_discount, referral_percent);
+    // for_sale() above means it has a price.
+    let monthly_price = plan.price_idr.unwrap_or_default();
+    let b = price(monthly_price, plan.active_promo_price(now), months, i64::from(term.discount_percent), coupon_discount, referral_percent);
     Ok(Quote {
         plan_id,
         term_months: months,
-        currency: plan.currency,
-        monthly_price: plan.price_amount,
+        currency: plans::CURRENCY.to_string(),
+        monthly_price,
         base_amount: b.base_amount,
         promo_discount: b.promo_discount,
         term_discount: b.term_discount,
@@ -1019,7 +1021,7 @@ pub async fn renewal_candidates(pool: &PgPool, now: DateTime<Utc>, cfg: &Billing
     sqlx::query_as(
         "SELECT s.user_id, s.plan_id, p.name AS plan_name, s.term_months, s.paid_until, s.auto_renew \
          FROM user_subscriptions s JOIN plans p ON p.id = s.plan_id \
-         WHERE s.paid_until IS NOT NULL AND s.term_months IS NOT NULL AND NOT p.is_default AND p.is_active AND p.price_amount > 0 \
+         WHERE s.paid_until IS NOT NULL AND s.term_months IS NOT NULL AND NOT p.is_default AND p.is_active AND p.price_idr > 0 \
            AND s.paid_until <= $1 + make_interval(days => $2) AND s.paid_until + make_interval(days => $3) > $1 \
          ORDER BY s.paid_until",
     )

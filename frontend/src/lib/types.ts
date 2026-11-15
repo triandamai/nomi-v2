@@ -1017,11 +1017,8 @@ export interface Plan {
 	promo_label: string | null;
 	promo_price_label: string | null;
 	promo_ends_at: string | null;
-	/** Per month, whole currency units; 0 is not for sale. */
-	price_amount: number;
-	currency: string;
 	/** Per month while the promo runs; null has none. */
-	promo_price_amount: number | null;
+	promo_price_idr: number | null;
 	is_default: boolean;
 	is_active: boolean;
 	sort_order: number;

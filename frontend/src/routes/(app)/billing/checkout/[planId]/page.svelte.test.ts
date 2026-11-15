@@ -6,7 +6,7 @@ import Checkout from './+page.svelte';
 const goto = vi.fn();
 vi.mock('$app/navigation', () => ({ goto: (...args: unknown[]) => goto(...args), invalidateAll: async () => {} }));
 
-const plan = { id: 'pro-id', slug: 'pro', name: 'Pro', description: 'More of everything', monthly_tokens: 5_000_000, price_label: '', features: ['Projects', 'Voice'], card_tone: 'violet', promo_label: null, promo_price_label: null, promo_ends_at: null, price_amount: 100_000, currency: 'IDR', promo_price_amount: null, is_default: false, is_active: true, sort_order: 2, max_projects: 10, max_orgs: null, max_org_members: 5, max_custom_crew: 1, max_storage_mb: 2048, custom_domain: true, sandbox_size: null, all_models: true, model_ids: [] };
+const plan = { id: 'pro-id', slug: 'pro', name: 'Pro', description: 'More of everything', monthly_tokens: 5_000_000, price_label: '', features: ['Projects', 'Voice'], card_tone: 'violet', promo_label: null, promo_price_label: null, promo_ends_at: null, price_idr: 100_000, promo_price_idr: null, is_default: false, is_active: true, sort_order: 2, max_projects: 10, max_orgs: null, max_org_members: 5, max_custom_crew: 1, max_storage_mb: 2048, custom_domain: true, sandbox_size: null, all_models: true, model_ids: [] };
 const quote = (months: number, discount: number, over: Record<string, unknown> = {}) => {
 	const base = 100_000 * months;
 	return { plan_id: 'pro-id', term_months: months, currency: 'IDR', monthly_price: 100_000, base_amount: base, promo_discount: 0, term_discount: discount, coupon_discount: 0, referral_discount: 0, amount: base - discount, coupon_code: null, referral_code: null, ...over };

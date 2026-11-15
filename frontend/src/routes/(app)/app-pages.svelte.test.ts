@@ -11,8 +11,8 @@ import Account from './account/+page.svelte';
 import Connections from './connections/+page.svelte';
 import More from './more/+page.svelte';
 
-const plan = { id: 'pro', slug: 'pro', name: 'Pro', description: 'More of everything', monthly_tokens: 5_000_000, price_label: 'Rp 99k', features: ['Projects', 'Voice'], card_tone: 'violet', promo_label: 'Launch', promo_price_label: 'Rp 49k', promo_ends_at: '2026-12-31T00:00:00Z', price_amount: 99_000, currency: 'IDR', promo_price_amount: 49_000, is_default: false, is_active: true, sort_order: 2 };
-const free = { ...plan, id: 'free', slug: 'free', name: 'Free', monthly_tokens: 100_000, price_label: 'Free', features: [], promo_label: null, promo_price_label: null, promo_ends_at: null, price_amount: 0, promo_price_amount: null, is_default: true, sort_order: 1 };
+const plan = { id: 'pro', slug: 'pro', name: 'Pro', description: 'More of everything', monthly_tokens: 5_000_000, price_label: 'Rp 99k', features: ['Projects', 'Voice'], card_tone: 'violet', promo_label: 'Launch', promo_price_label: 'Rp 49k', promo_ends_at: '2026-12-31T00:00:00Z', price_idr: 99_000, promo_price_idr: 49_000, is_default: false, is_active: true, sort_order: 2 };
+const free = { ...plan, id: 'free', slug: 'free', name: 'Free', monthly_tokens: 100_000, price_label: 'Free', features: [], promo_label: null, promo_price_label: null, promo_ends_at: null, price_idr: null, promo_price_idr: null, is_default: true, sort_order: 1 };
 
 const page = (component: unknown, data: Record<string, unknown>, form: unknown = null) =>
 	render(component as never, { data: data as never, form: form as never, params: {} as never });

@@ -166,7 +166,7 @@ async fn admin(router: &axum::Router, pool: &PgPool) -> String {
 }
 
 async fn paid_plan(pool: &PgPool) -> PlanRow {
-    let input: PlanInput = serde_json::from_value(json!({ "slug": "plus", "name": "Plus", "monthly_tokens": 100, "price_amount": PRICE })).unwrap();
+    let input: PlanInput = serde_json::from_value(json!({ "slug": "plus", "name": "Plus", "monthly_tokens": 100, "price_idr": PRICE })).unwrap();
     plans::create_plan(pool, &input.validate().unwrap()).await.unwrap()
 }
 
@@ -449,7 +449,7 @@ async fn plans_carry_prices_and_referral_and_auto_renew_work(pool: PgPool) {
     let router = build_router(test_state(pool.clone()));
     let plan = paid_plan(&pool).await;
     let ended: PlanInput = serde_json::from_value(
-        json!({ "slug": "old-promo", "name": "Old promo", "monthly_tokens": 100, "price_amount": PRICE, "promo_price_amount": 1000, "promo_ends_at": Utc::now() - Duration::days(1) }),
+        json!({ "slug": "old-promo", "name": "Old promo", "monthly_tokens": 100, "price_idr": PRICE, "promo_price_idr": 1000, "promo_ends_at": Utc::now() - Duration::days(1) }),
     )
     .unwrap();
     plans::create_plan(&pool, &ended.validate().unwrap()).await.unwrap();
@@ -458,8 +458,8 @@ async fn plans_carry_prices_and_referral_and_auto_renew_work(pool: PgPool) {
 
     let (_, listed) = call(&router, "GET", "/api/plans", Value::Null, &ana).await;
     let find = |slug: &str| listed["plans"].as_array().unwrap().iter().find(|p| p["slug"] == slug).unwrap().clone();
-    assert_eq!((find("plus")["price_amount"].as_i64(), find("plus")["currency"].as_str(), find("plus")["promo_price_amount"].clone()), (Some(PRICE), Some("IDR"), Value::Null));
-    assert_eq!(find("old-promo")["promo_price_amount"], Value::Null, "an ended promo is dropped");
+    assert_eq!((find("plus")["price_idr"].as_i64(), find("plus")["promo_price_idr"].clone()), (Some(PRICE), Value::Null));
+    assert_eq!(find("old-promo")["promo_price_idr"], Value::Null, "an ended promo is dropped");
 
     let (_, referral) = call(&router, "GET", "/api/billing/referral", Value::Null, &ana).await;
     let code = referral["code"].as_str().unwrap().to_string();

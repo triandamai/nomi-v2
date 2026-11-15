@@ -4,8 +4,8 @@ import { formatStorage } from '$lib/storage';
 import { m } from '$lib/paraglide/messages';
 import type { BillingQuote, PaymentStatus, Plan, PlansForUser } from '$lib/types';
 
-/** The currency a plan is priced in unless the backend says otherwise. */
-export const DEFAULT_CURRENCY = 'IDR';
+/** The currency every plan is sold in (a plan's price is `price_idr`). */
+export const CURRENCY = 'IDR';
 
 /** Currencies that are priced in whole units, whatever the platform's own locale data says. */
 const WHOLE_UNIT_CURRENCIES = new Set(['IDR', 'JPY', 'KRW', 'VND']);
@@ -22,19 +22,19 @@ export function formatMoney(amount: number, currency: string, locale: string): s
 }
 
 /** Whether the plan's promo price applies right now. */
-export function promoPriceLive(plan: Pick<Plan, 'price_amount' | 'promo_price_amount' | 'promo_ends_at'>, now: Date = new Date()): boolean {
-	if (typeof plan.promo_price_amount !== 'number' || plan.promo_price_amount >= plan.price_amount) return false;
+export function promoPriceLive(plan: Pick<Plan, 'price_idr' | 'promo_price_idr' | 'promo_ends_at'>, now: Date = new Date()): boolean {
+	if (typeof plan.promo_price_idr !== 'number' || plan.promo_price_idr >= (plan.price_idr ?? 0)) return false;
 	return !plan.promo_ends_at || new Date(plan.promo_ends_at) > now;
 }
 
 /** The price a person pays per month today: the promo's while it runs, else the list price. */
-export function currentMonthlyPrice(plan: Pick<Plan, 'price_amount' | 'promo_price_amount' | 'promo_ends_at'>, now: Date = new Date()): number {
-	return promoPriceLive(plan, now) ? (plan.promo_price_amount as number) : plan.price_amount;
+export function currentMonthlyPrice(plan: Pick<Plan, 'price_idr' | 'promo_price_idr' | 'promo_ends_at'>, now: Date = new Date()): number {
+	return promoPriceLive(plan, now) ? (plan.promo_price_idr as number) : (plan.price_idr ?? 0);
 }
 
 /** Plans someone can choose in the upgrade sheet: priced, shown, and not the one they're on. */
 export function plansForSale(offer: Pick<PlansForUser, 'plans' | 'current_plan_id'>): Plan[] {
-	return offer.plans.filter((plan) => plan.is_active && plan.price_amount > 0 && plan.id !== offer.current_plan_id);
+	return offer.plans.filter((plan) => plan.is_active && (plan.price_idr ?? 0) > 0 && plan.id !== offer.current_plan_id);
 }
 
 /** Whole units per month for a total over `months`. */

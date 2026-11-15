@@ -34,36 +34,31 @@ pub struct PlanRow {
     /// When false, only the models in `model_ids` are included.
     pub all_models: bool,
     pub model_ids: Vec<Uuid>,
-    /// Price per month in whole currency units; 0 means it can't be bought.
-    pub price_amount: i64,
-    pub currency: String,
-    /// A cheaper monthly price, while `promo_ends_at` is in the future (or unset).
-    pub promo_price_amount: Option<i64>,
     /// What a month on it costs, in rupiah, when it can be bought; None: people join its waitlist.
     pub price_idr: Option<i64>,
+    /// A cheaper monthly price in rupiah, while `promo_ends_at` is in the future (or unset).
+    pub promo_price_idr: Option<i64>,
 }
 
 impl PlanRow {
     /// The promo's monthly price while it is on: set, and not past its end date.
     pub fn active_promo_price(&self, now: DateTime<Utc>) -> Option<i64> {
-        self.promo_price_amount.filter(|_| self.promo_ends_at.is_none_or(|end| end > now))
+        self.promo_price_idr.filter(|_| self.promo_ends_at.is_none_or(|end| end > now))
     }
 
-    /// Whether people can pay for it: listed, and with a price.
+    /// Whether people can pay for it: listed, and with a price (no price: its waitlist instead).
     pub fn for_sale(&self) -> bool {
-        self.is_active && self.price_amount > 0
+        self.is_active && self.price_idr.is_some_and(|p| p > 0)
     }
 }
 
-/// The currency a plan is priced in unless an admin picks another.
-pub const DEFAULT_CURRENCY: &str = "IDR";
-/// Length of an ISO 4217 currency code.
-const CURRENCY_CODE_LEN: usize = 3;
+/// The currency every plan is sold in.
+pub const CURRENCY: &str = "IDR";
 
 const PLAN_COLUMNS: &str = "id, slug, name, description, monthly_tokens, price_label, features, card_tone, promo_label, \
      promo_price_label, promo_ends_at, is_default, is_active, sort_order, max_projects, max_orgs, max_org_members, \
      max_custom_crew, max_storage_mb, custom_domain, sandbox_size, all_models, \
-     price_amount, currency, promo_price_amount, price_idr, \
+     price_idr, promo_price_idr, \
      ARRAY(SELECT model_id FROM plan_models WHERE plan_id = plans.id ORDER BY model_id) AS model_ids";
 
 /// What an admin fills in for a plan.
@@ -105,19 +100,11 @@ pub struct PlanInput {
     pub all_models: bool,
     #[serde(default)]
     pub model_ids: Vec<Uuid>,
-    #[serde(default)]
-    pub price_amount: i64,
-    #[serde(default = "default_currency")]
-    pub currency: String,
-    #[serde(default)]
-    pub promo_price_amount: Option<i64>,
     /// None (or left out): not sold yet.
     #[serde(default)]
     pub price_idr: Option<i64>,
-}
-
-fn default_currency() -> String {
-    DEFAULT_CURRENCY.to_string()
+    #[serde(default)]
+    pub promo_price_idr: Option<i64>,
 }
 
 fn default_tone() -> String {
@@ -162,11 +149,7 @@ impl PlanInput {
         if self.sandbox_size.as_deref().is_some_and(|s| nomi_sandbox::Size::parse(s).is_none()) {
             return Err("unknown sandbox size");
         }
-        self.currency = self.currency.trim().to_ascii_uppercase();
-        if self.currency.len() != CURRENCY_CODE_LEN || !self.currency.chars().all(|c| c.is_ascii_uppercase()) {
-            return Err("currency must be a 3-letter code such as IDR");
-        }
-        if self.price_amount < 0 || negative(self.promo_price_amount) {
+        if negative(self.promo_price_idr) {
             return Err("prices can't be negative");
         }
         self.model_ids.sort();
@@ -209,8 +192,8 @@ pub async fn create_plan(pool: &PgPool, input: &PlanInput) -> Result<PlanRow, sq
         "INSERT INTO plans (slug, name, description, monthly_tokens, price_label, features, card_tone, promo_label, \
                             promo_price_label, promo_ends_at, is_active, sort_order, max_projects, max_orgs, max_org_members, \
                             max_custom_crew, max_storage_mb, custom_domain, sandbox_size, all_models, \
-                            price_amount, currency, promo_price_amount, price_idr) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24) RETURNING id",
+                            price_idr, promo_price_idr) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22) RETURNING id",
     )
     .bind(&input.slug)
     .bind(&input.name)
@@ -232,10 +215,8 @@ pub async fn create_plan(pool: &PgPool, input: &PlanInput) -> Result<PlanRow, sq
     .bind(input.custom_domain)
     .bind(&input.sandbox_size)
     .bind(input.all_models)
-    .bind(input.price_amount)
-    .bind(&input.currency)
-    .bind(input.promo_price_amount)
     .bind(input.price_idr)
+    .bind(input.promo_price_idr)
     .fetch_one(&mut *tx)
     .await?;
     save_models(&mut tx, id, &input.model_ids).await?;
@@ -250,7 +231,7 @@ pub async fn update_plan(pool: &PgPool, id: Uuid, input: &PlanInput) -> Result<O
              card_tone = $8, promo_label = $9, promo_price_label = $10, promo_ends_at = $11, \
              is_active = $12 OR is_default, sort_order = $13, max_projects = $14, max_orgs = $15, max_org_members = $16, \
              max_custom_crew = $17, max_storage_mb = $18, custom_domain = $19, sandbox_size = $20, all_models = $21, \
-             price_amount = $22, currency = $23, promo_price_amount = $24, price_idr = $25, updated_at = now() \
+             price_idr = $22, promo_price_idr = $23, updated_at = now() \
          WHERE id = $1",
     )
     .bind(id)
@@ -274,10 +255,8 @@ pub async fn update_plan(pool: &PgPool, id: Uuid, input: &PlanInput) -> Result<O
     .bind(input.custom_domain)
     .bind(&input.sandbox_size)
     .bind(input.all_models)
-    .bind(input.price_amount)
-    .bind(&input.currency)
-    .bind(input.promo_price_amount)
     .bind(input.price_idr)
+    .bind(input.promo_price_idr)
     .execute(&mut *tx)
     .await?
     .rows_affected();
@@ -523,10 +502,8 @@ mod tests {
             sandbox_size: None,
             all_models: true,
             model_ids: vec![],
-            price_amount: 0,
-            currency: "idr ".into(),
-            promo_price_amount: None,
             price_idr: None,
+            promo_price_idr: None,
         }
     }
 
@@ -544,10 +521,7 @@ mod tests {
         assert!(PlanInput { sandbox_size: Some("huge".into()), ..input() }.validate().is_err());
         assert_eq!(PlanInput { sandbox_size: Some(" Small ".into()), ..input() }.validate().unwrap().sandbox_size.as_deref(), Some("small"));
         assert_eq!(PlanInput { sandbox_size: Some(" ".into()), ..input() }.validate().unwrap().sandbox_size, None);
-        assert_eq!(ok.currency, "IDR");
-        assert!(PlanInput { currency: "RUPIAH".into(), ..input() }.validate().is_err());
-        assert!(PlanInput { price_amount: -1, ..input() }.validate().is_err());
-        assert!(PlanInput { promo_price_amount: Some(-1), ..input() }.validate().is_err());
+        assert!(PlanInput { promo_price_idr: Some(-1), ..input() }.validate().is_err());
         assert!(PlanInput { price_idr: Some(0), ..input() }.validate().is_err());
     }
 }

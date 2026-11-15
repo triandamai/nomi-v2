@@ -1,11 +1,9 @@
--- Paid plans: a price per month on each plan, the terms (months paid up front) with their
--- discounts, coupons, referral codes, and the payments (Xendit invoices) that activate a plan.
+-- Paid plans: the terms (months paid up front) with their discounts, coupons, referral codes, and
+-- the payments (Xendit invoices) that activate a plan. A plan's monthly price is plans.price_idr
+-- (0128; NULL: not sold yet, so people join its waitlist).
 ALTER TABLE plans
-    -- Whole currency units per month. A plan at 0 can't be bought.
-    ADD COLUMN price_amount       BIGINT NOT NULL DEFAULT 0 CHECK (price_amount >= 0),
-    ADD COLUMN currency           TEXT   NOT NULL DEFAULT 'IDR',
-    -- A cheaper monthly price while promo_ends_at is in the future (or unset: no end).
-    ADD COLUMN promo_price_amount BIGINT CHECK (promo_price_amount IS NULL OR promo_price_amount >= 0);
+    -- A cheaper monthly price in rupiah while promo_ends_at is in the future (or unset: no end).
+    ADD COLUMN promo_price_idr BIGINT CHECK (promo_price_idr IS NULL OR promo_price_idr >= 0);
 
 CREATE TABLE billing_terms (
     id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),

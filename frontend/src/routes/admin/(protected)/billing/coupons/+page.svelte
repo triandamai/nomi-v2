@@ -14,7 +14,7 @@
 	import ListToolbar from '$lib/components/ListToolbar.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import IconPlus from '$lib/components/icons/IconPlus.svelte';
-	import { DEFAULT_CURRENCY, formatMoney } from '$lib/billing';
+	import { CURRENCY, formatMoney } from '$lib/billing';
 	import { toISODate } from '$lib/dates';
 	import { searchItems } from '$lib/listView';
 	import { can } from '$lib/permissions';
@@ -45,7 +45,7 @@
 
 	const kindOptions = $derived([
 		{ value: 'percent', label: m.billing_admin_coupon_percent() },
-		{ value: 'amount', label: m.billing_admin_coupon_amount({ currency: DEFAULT_CURRENCY }) },
+		{ value: 'amount', label: m.billing_admin_coupon_amount({ currency: CURRENCY }) },
 	]);
 
 	function load(coupon: AdminCoupon | null) {
@@ -69,7 +69,7 @@
 		planIds = on ? [...planIds, id] : planIds.filter((x) => x !== id);
 	}
 
-	const discountText = (c: AdminCoupon) => (c.discount_kind === 'percent' ? `${c.discount_value}%` : formatMoney(c.discount_value, DEFAULT_CURRENCY, getLocale()));
+	const discountText = (c: AdminCoupon) => (c.discount_kind === 'percent' ? `${c.discount_value}%` : formatMoney(c.discount_value, CURRENCY, getLocale()));
 	const dateText = (iso: string) => new Intl.DateTimeFormat(getLocale(), { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(iso));
 	function validity(c: AdminCoupon): string {
 		if (c.starts_at && c.ends_at) return m.billing_admin_coupon_valid_range({ from: dateText(c.starts_at), to: dateText(c.ends_at) });
