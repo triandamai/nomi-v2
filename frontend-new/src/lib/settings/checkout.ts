@@ -18,6 +18,15 @@ export function planChoice(
 	return ctx.checkoutAvailable ? 'buy' : 'closed';
 }
 
+/**
+ * How much more room a plan gives than theirs ("10×", the pen's Pro card, where a plan without a
+ * price shows its room in the price's place); null when it isn't more or theirs isn't known.
+ */
+export function roomOf(tokens: number, theirs: number | null): string | null {
+	if (!theirs || tokens <= theirs) return null;
+	return `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 }).format(tokens / theirs)}×`;
+}
+
 /** How a payment is told on the page, and whether its payment page can be opened again (only while it waits). */
 export function paymentOutcome(payment: { status: string; invoice_url: string | null }): { kind: 'success' | 'info' | 'warning' | 'error'; open: boolean } {
 	const safe = (() => {

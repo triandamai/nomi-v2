@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { paymentOutcome, planChoice } from './checkout';
+import { paymentOutcome, planChoice, roomOf } from './checkout';
 
 const plan = (over: Partial<Parameters<typeof planChoice>[0]> = {}) => ({ id: 'pro', is_default: false, monthly_tokens: 10_000_000, price_idr: 99_000, ...over });
 const ctx = (over: Partial<Parameters<typeof planChoice>[1]> = {}) => ({ currentId: 'free', currentTokens: 1_000_000, waitlist: [], checkoutAvailable: true, ...over });
@@ -19,6 +19,16 @@ describe('what a plan offers the person', () => {
 	it('offers nothing for a smaller plan, or the free one', () => {
 		expect(planChoice(plan({ monthly_tokens: 500_000 }), ctx())).toBe('none');
 		expect(planChoice(plan({ is_default: true, price_idr: null, id: 'basic' }), ctx())).toBe('none');
+	});
+});
+
+describe('how much more room a plan without a price gives', () => {
+	it('is its allowance against theirs, as the pen’s “10×”, or nothing when it isn’t more', () => {
+		expect(roomOf(10_000_000, 1_000_000)).toBe('10×');
+		expect(roomOf(2_500_000, 1_000_000)).toBe('2.5×');
+		expect(roomOf(1_000_000, 1_000_000)).toBeNull();
+		expect(roomOf(10_000_000, null)).toBeNull();
+		expect(roomOf(10_000_000, 0)).toBeNull();
 	});
 });
 

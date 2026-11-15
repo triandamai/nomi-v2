@@ -2581,5 +2581,6 @@
 	"payment_open": "Open the payment page",
 	"payment_expired": "The payment page for {plan} expired. Nothing was charged.",
 	"payment_failed": "The payment for {plan} didn’t go through. Nothing was charged.",
-	"payment_cancelled": "You cancelled the payment for {plan}. Nothing was charged."
+	"payment_cancelled": "You cancelled the payment for {plan}. Nothing was charged.",
+	"plan_room_note": "the room · price shown before you pay"
 }

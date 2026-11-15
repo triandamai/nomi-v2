@@ -25,7 +25,7 @@
 	import Notice from '$lib/ds/admin/Notice.svelte';
 	import Icon from '$lib/ds/foundations/Icon.svelte';
 	import { pageAction } from '$lib/pageAction';
-	import { paymentOutcome, planChoice } from '$lib/settings/checkout';
+	import { paymentOutcome, planChoice, roomOf } from '$lib/settings/checkout';
 
 	// Settings › Plan & usage (App / Settings / Plan & usage C0og49): the plan the person is on and
 	// the billing facts beside it, a month of usage (its figures, a bar a day, by model), the plans
@@ -205,7 +205,10 @@
 						{#each plans as plan (plan.id)}
 							{@const theirs = plan.id === data.plans?.current_plan_id}
 							{@const choice = planChoice(plan.price_idr === undefined ? { ...plan, price_idr: null } : { ...plan, price_idr: plan.price_idr }, { ...offers, currentTokens: current?.monthly_tokens ?? null, waitlist: [...offers.waitlist, ...joined] })}
-							{@const option = { name: plan.name, tag: theirs ? { label: m.plan_current(), kind: 'go' as const } : choice === 'waitlist' || choice === 'waiting' ? { label: m.plan_coming_soon(), kind: 'neutral' as const } : plan.promo_label ? { label: plan.promo_label, kind: 'neutral' as const } : undefined, price: plan.promo_price_label ?? plan.price_label, per: m.plan_per_month(), description: plan.description, features: plan.features, raised: !theirs && current !== undefined && plan.monthly_tokens > current.monthly_tokens }}
+							{@const soon = choice === 'waitlist' || choice === 'waiting'}
+							{@const room = soon ? roomOf(plan.monthly_tokens, current?.monthly_tokens ?? null) : null}
+							<!-- A plan without a price shows its room in the price's place, as the pen's Pro card ("10×"). -->
+							{@const option = { name: plan.name, tag: theirs ? { label: m.plan_current(), kind: 'go' as const } : room ? { label: m.plan_coming_soon(), kind: 'neutral' as const } : plan.promo_label ? { label: plan.promo_label, kind: 'neutral' as const } : undefined, price: room ?? plan.promo_price_label ?? plan.price_label, per: room ? m.plan_room_note() : m.plan_per_month(), description: plan.description, features: plan.features, raised: !theirs && current !== undefined && plan.monthly_tokens > current.monthly_tokens }}
 							{#if choice === 'buy' || choice === 'closed' || choice === 'waitlist' || choice === 'waiting'}
 								<PlanOption {...option}>
 									{#snippet footer()}

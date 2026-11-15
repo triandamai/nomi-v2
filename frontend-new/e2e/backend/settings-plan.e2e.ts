@@ -56,6 +56,8 @@ test('a plan without a price offers its waitlist, and joining it stays joined', 
 	// Pro has no price on a fresh Nomi: people join its waitlist (the pen's "Join the waitlist").
 	const pro = page.getByRole('article', { name: 'Pro' });
 	await expect(pro.getByText('Coming soon')).toBeVisible();
+	// No price yet: the price's place says how much more room it gives (the pen's "10×").
+	await expect(pro.getByText('10×')).toBeVisible();
 	await pro.getByRole('button', { name: 'Join the waitlist' }).click();
 	await expect(pro.getByText('You’re on the waitlist')).toBeVisible();
 	await page.reload({ waitUntil: 'networkidle' });
