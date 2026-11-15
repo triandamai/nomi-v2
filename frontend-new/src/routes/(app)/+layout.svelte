@@ -13,6 +13,7 @@
 	import { setClock } from '$lib/clock';
 	import { tabId } from '$lib/device';
 	import { connectActivity } from '$lib/live/activity';
+	import { signedOutTarget } from '$lib/live/leaving';
 	import { settledRefresh } from '$lib/live/settle';
 	import { SHORTCUT_KEYS, isTyping, shortcutFor } from '$lib/shortcuts';
 	import { VERSION_LABEL } from '$lib/version';
@@ -360,7 +361,7 @@
 				},
 				async signedOutHere() {
 					await fetch('/sign-out', { method: 'POST' }).catch(() => null);
-					location.assign('/sign-in');
+					location.assign(signedOutTarget());
 				},
 				lost(code) {
 					if (code === 4401) sessionOver = true;
