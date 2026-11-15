@@ -170,6 +170,19 @@ pub async fn check_new_project_in(conn: &mut PgConnection, user_id: Uuid) -> Che
     Ok(verdict(within(Some(limit), used), LimitHit::Projects { limit }))
 }
 
+/// How many crew members of their own (`POST /api/agents`) `user_id` has.
+pub async fn custom_crew_count(conn: &mut PgConnection, user_id: Uuid) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar("SELECT count(*) FROM dynamic_agents WHERE owner_user_id = $1").bind(user_id).fetch_one(conn).await
+}
+
+/// One more crew member of their own for `user_id`, on a connection already in hand (the
+/// transaction that adds it).
+pub async fn check_new_crew_member(conn: &mut PgConnection, user_id: Uuid) -> Check {
+    let Some(limit) = plans::subscription_in(&mut *conn, user_id).await?.plan.max_custom_crew else { return Ok(Ok(())) };
+    let used = custom_crew_count(&mut *conn, user_id).await?;
+    Ok(verdict(within(Some(limit), used), LimitHit::CustomCrew { limit }))
+}
+
 pub async fn check_new_org(pool: &PgPool, user_id: Uuid) -> Check {
     let Some(limit) = for_user(pool, user_id).await?.max_orgs else { return Ok(Ok(())) };
     Ok(verdict(within(Some(limit), org_count(pool, user_id).await?), LimitHit::Orgs { limit }))
