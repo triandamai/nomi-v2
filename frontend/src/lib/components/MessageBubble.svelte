@@ -302,7 +302,7 @@
 	{#if message.sender !== 'user'}
 		<div class="message__avatar">
 			{#if !chained}
-				<AgentShape agent={message.agent_display_name} size={36} face />
+				<AgentShape agent={message.agent_display_name} size={36} face live />
 			{/if}
 		</div>
 	{/if}

@@ -38,7 +38,7 @@
 
 <nav aria-label={label} class="flex h-full w-62 shrink-0 flex-col gap-3.5 border-r border-border bg-bg py-4 pr-2.75 pl-3">
 	<a href={homeHref} class="flex items-center gap-2 rounded-sm px-2 py-1 outline-offset-1">
-		<Mascot agent="nomi" size={20} />
+		<Mascot agent="nomi" size={20} live />
 		<span class="text-body font-semibold tracking-wordmark text-text">nomi</span>
 		<span class="rounded-xs border border-border-strong px-1.25 py-px font-mono text-label tracking-label text-text-2 uppercase">{mark}</span>
 	</a>

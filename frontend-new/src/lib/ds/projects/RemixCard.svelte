@@ -34,7 +34,7 @@
 			<p class="flex min-w-0 items-center gap-2">
 				{#if crew.length}
 					<span class="flex shrink-0">
-						{#each crew as agent, index (agent)}<span class={['inline-flex', index > 0 && '-ml-1.5']}><Mascot {agent} size={20} /></span>{/each}
+						{#each crew as agent, index (agent)}<span class={['inline-flex', index > 0 && '-ml-1.5']}><Mascot {agent} size={20} live /></span>{/each}
 					</span>
 				{/if}
 				<span class="truncate font-mono text-label text-text-3">{maker}</span>

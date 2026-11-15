@@ -7,7 +7,7 @@
 </script>
 
 <span class="inline-flex items-center gap-2">
-	<Mascot {agent} size={20} />
+	<Mascot {agent} size={20} live />
 	<span class="text-ui font-medium text-text">{name}</span>
 	{#if meta}<span class="font-mono text-label text-text-3">{meta}</span>{/if}
 </span>

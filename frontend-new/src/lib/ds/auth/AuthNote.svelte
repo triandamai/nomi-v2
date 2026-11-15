@@ -9,6 +9,6 @@
 </script>
 
 <p role={announce ? 'status' : undefined} class="flex w-full items-center gap-2.5 rounded-sm bg-accent-bg px-3 py-2.5">
-	<Mascot agent="nomi" size={20} />
+	<Mascot agent="nomi" size={20} live />
 	<span class="min-w-0 flex-1 text-caption text-text">{text}</span>
 </p>

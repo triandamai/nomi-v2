@@ -13,5 +13,5 @@
 	class={['inline-flex shrink-0 items-center justify-center', size === 32 ? 'size-8 rounded-inner' : 'size-6.5 rounded-agenda']}
 	style="background: var(--crew-{agent}-bg)"
 >
-	<Mascot {agent} size={20} />
+	<Mascot {agent} size={20} live />
 </span>

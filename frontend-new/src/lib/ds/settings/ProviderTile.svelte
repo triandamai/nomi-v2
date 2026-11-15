@@ -16,5 +16,5 @@
 		size === 32 ? 'size-8 rounded-sm bg-surface-2 text-ui' : 'size-5 rounded-xs bg-surface text-label outline -outline-offset-1 outline-border',
 	]}
 >
-	{#if mascot}<Mascot agent={mascot} size={20} />{:else}{name.charAt(0).toUpperCase()}{/if}
+	{#if mascot}<Mascot agent={mascot} size={20} live />{:else}{name.charAt(0).toUpperCase()}{/if}
 </span>

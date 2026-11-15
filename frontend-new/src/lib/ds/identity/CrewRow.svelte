@@ -8,7 +8,7 @@
 </script>
 
 {#snippet body()}
-	<Mascot {agent} size={32} />
+	<Mascot {agent} size={32} live />
 	<span class="flex min-w-0 flex-1 flex-col gap-0.5">
 		<span class="text-ui font-medium text-text">{name}</span>
 		<span class="text-caption leading-cozy text-text-3">{role}</span>

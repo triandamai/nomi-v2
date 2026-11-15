@@ -179,7 +179,7 @@
 				<p class="md-body-large money__lede">{m.money_lede()}</p>
 			</div>
 			<div class="money__actions">
-				<AgentShape agent="money" size={64} class="money__mark" />
+				<AgentShape agent="money" size={64} face class="money__mark" />
 				<Button variant="tonal" size="m" onclick={() => openBudget()}>{m.money_set_budget()}</Button>
 				<Button variant="gradient" size="m" onclick={() => openTransaction()}>
 					<IconPlus size={20} />
@@ -212,7 +212,7 @@
 
 			{#if money.transaction_count === 0}
 				<section class="empty">
-					<AgentShape agent="money" size={96} />
+					<AgentShape agent="money" size={96} face />
 					<div>
 						<h2 class="md-headline-small">{m.money_empty_title({ month: period })}</h2>
 						<p class="md-body-large empty__body">{m.money_empty_body()}</p>
@@ -463,7 +463,7 @@
 <BottomSheet bind:open={expenseOpen}>
 	<form method="POST" action="?/addTransaction" class="sheet" use:enhance={sheetSubmit(() => (expenseOpen = false), kind === 'income' ? m.money_income_added() : m.money_expense_added())}>
 		<div class="sheet__head">
-			<AgentShape agent="money" size={36} />
+			<AgentShape agent="money" size={36} face />
 			<h2 class="md-headline-small-emphasized sheet__title">{kind === 'income' ? m.money_add_income_title() : m.money_add_expense_title()}</h2>
 		</div>
 		<input type="hidden" name="kind" value={kind} />
@@ -567,7 +567,7 @@
 <BottomSheet bind:open={periodOpen}>
 	<form method="POST" action="?/setPeriod" class="sheet" use:enhance={sheetSubmit(() => (periodOpen = false), m.money_period_saved())}>
 		<div class="sheet__head">
-			<AgentShape agent="money" size={36} />
+			<AgentShape agent="money" size={36} face />
 			<h2 class="md-headline-small-emphasized sheet__title">{m.money_period_title()}</h2>
 		</div>
 		<p class="items__hint">{m.money_period_hint()}</p>
@@ -589,7 +589,7 @@
 <BottomSheet bind:open={budgetOpen}>
 	<form method="POST" action="?/setBudget" class="sheet" use:enhance={sheetSubmit(() => (budgetOpen = false), m.money_budget_saved())}>
 		<div class="sheet__head">
-			<AgentShape agent="money" size={36} />
+			<AgentShape agent="money" size={36} face />
 			<h2 class="md-headline-small-emphasized sheet__title">{m.money_monthly_budget()}</h2>
 		</div>
 		<TextField id="budget-category" name="category" label={m.common_category()} bind:value={budgetCategory} required maxlength={40} list="money-categories" />

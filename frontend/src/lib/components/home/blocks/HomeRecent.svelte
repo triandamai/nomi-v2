@@ -25,7 +25,7 @@
 				<li>
 					<a class="recent__card" href={href(session)} data-sveltekit-reload={session.project_id ? true : undefined}>
 						<span class="recent__top">
-							<AgentShape size={28} working={session.agent_active} />
+							<AgentShape size={28} face working={session.agent_active} />
 							<span class="nomi-meta">{session.agent_active ? m.home_working() : timeAgo(session.updated_at)}</span>
 						</span>
 						<span class="recent__name">{session.title ?? m.nav_new_chat()}</span>
@@ -39,7 +39,7 @@
 			{#each shown as session (session.id)}
 				<li>
 					<a class="recent__row" href={href(session)} data-sveltekit-reload={session.project_id ? true : undefined}>
-						<AgentShape size={32} working={session.agent_active} />
+						<AgentShape size={32} face working={session.agent_active} />
 						<span class="recent__text">
 							<span class="recent__name">{session.title ?? m.nav_new_chat()}</span>
 							<span class="recent__line">{session.last_message?.content ?? m.session_no_messages()}</span>

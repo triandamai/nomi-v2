@@ -34,7 +34,7 @@
 		<header class="flex items-center gap-2 px-2 py-2 md:hidden">
 			<IconButton onclick={() => (mobileNavOpen = true)} aria-label={m.nav_open_menu()}><IconMenu /></IconButton>
 			<a href="/admin" class="mobile-brand">
-				<AgentShape size={28} face />
+				<AgentShape size={28} face live />
 				<span class="mobile-brand__word">nomi</span>
 				<span class="mobile-brand__tag">{m.admin_tag()}</span>
 			</a>

@@ -79,10 +79,10 @@ describe('Colour section', () => {
 	});
 });
 
-const CREW_IDS = ['nomi', 'koda', 'dana', 'kala', 'rena', 'tara', 'maya', 'raga', 'personality', 'supervisor'];
+const CREW_IDS = ['nomi', 'koda', 'dana', 'kala', 'rena', 'tara', 'maya', 'raga', 'personality', 'supervisor', 'iris'];
 
 describe('Crew colour section', () => {
-	it('gives each of the ten agents a card in its own background, all in one row', async () => {
+	it('gives each of the eleven agents a card in its own background, all in one row', async () => {
 		await page.viewport(1512, 900);
 		const { container } = await render(CrewColourSection);
 		const cards = [...container.querySelectorAll<HTMLElement>('[data-crew]')];

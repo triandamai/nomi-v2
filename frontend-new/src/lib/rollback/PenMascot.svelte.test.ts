@@ -9,9 +9,10 @@ import { tokenColor } from '$lib/ds/test-utils';
 // own geometry at 96, 32 or 20px.
 
 describe('PenMascot (the pen mascots, kept to roll back to)', () => {
-	it('has one for each of the ten crew members', () => {
-		expect(CREW.map((member) => member.id)).toEqual(['nomi', 'koda', 'dana', 'kala', 'rena', 'tara', 'maya', 'raga', 'personality', 'supervisor']);
+	it('has one for each of the eleven crew members', () => {
+		expect(CREW.map((member) => member.id)).toEqual(['nomi', 'koda', 'dana', 'kala', 'rena', 'tara', 'maya', 'raga', 'personality', 'supervisor', 'iris']);
 		expect(CREW.find((member) => member.id === 'personality')?.name).toBe('Personality');
+		expect(CREW.find((member) => member.id === 'iris')?.name).toBe('Iris');
 	});
 
 	it('draws each member in their own crew colour with two eyes', async () => {

@@ -173,7 +173,7 @@
 								tall
 								onchange={(key) => choose('setDefault', { key })}
 							>
-								{#snippet lead()}<Mascot agent="nomi" size={20} />{/snippet}
+								{#snippet lead()}<Mascot agent="nomi" size={20} live />{/snippet}
 							</Select>
 						</span>
 					{/snippet}
@@ -183,7 +183,7 @@
 						{#snippet control()}
 							<span class="flex w-70 max-w-full">
 								<Select label={m.models_coding()} options={codingChoices(data.models!)} bind:value={codingDefault} mono tall onchange={(value) => choose('setCoding', { value })}>
-									{#snippet lead()}<Mascot agent="koda" size={20} />{/snippet}
+									{#snippet lead()}<Mascot agent="koda" size={20} live />{/snippet}
 								</Select>
 							</span>
 						{/snippet}

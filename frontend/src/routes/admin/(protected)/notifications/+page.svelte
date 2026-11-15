@@ -64,7 +64,7 @@
 	<aside class="preview" aria-label={m.broadcast_preview()}>
 		<p class="field__label">{m.broadcast_preview()}</p>
 		<div class="preview__item">
-			<AgentShape agent="reminders" size={40} />
+			<AgentShape agent="reminders" size={40} face />
 			<span class="preview__text">
 				<span class="preview__kind">{m.notif_kind_promo()}</span>
 				<span class="preview__title">{title || m.broadcast_title()}</span>

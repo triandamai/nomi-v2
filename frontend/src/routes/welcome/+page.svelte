@@ -164,7 +164,7 @@
 			{:else}
 				{@const working = live && busy && i === count - 1}
 				<li class="bubble bubble--agent">
-					<AgentShape agent={line.from} size={28} face {working} />
+					<AgentShape agent={line.from} size={28} face {working} live />
 					<span class="bubble__body">
 						<span class="bubble__name">{crewName(line.from)}</span>
 						<span>{working && line.busy ? line.busy() : line.text()}</span>
@@ -237,7 +237,7 @@
 					<div class="chat__play">
 						{@render lines(current.chat, shown, true)}
 						<p class="chat__result" class:chat__result--on={finished} aria-hidden={!finished}>
-							<AgentShape agent={current.resultAgent} size={20} />
+							<AgentShape agent={current.resultAgent} size={20} face />
 							<span>{current.result()}</span>
 						</p>
 					</div>

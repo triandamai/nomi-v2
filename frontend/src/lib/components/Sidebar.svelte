@@ -58,7 +58,7 @@
 		<NavDrawer {userEmail} {profile} {usage} {savedPins} {recents} oncollapse={toggleCollapsed} />
 	{:else}
 		<nav class="rail" aria-label={m.nav_main()}>
-			<a href="/" class="rail__brand" aria-label={m.nav_nomi_home()}><Mascot agent="nomi" size={32} /></a>
+			<a href="/" class="rail__brand" aria-label={m.nav_nomi_home()}><Mascot agent="nomi" size={32} live /></a>
 			<Tooltip label={m.nav_new_chat()}>
 				{#snippet children(props)}
 					<a href="/chat/new" class="rail__new" aria-label={m.nav_new_chat()} {...props}><Icon icon={Plus} size={20} /></a>

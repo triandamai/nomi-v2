@@ -89,7 +89,7 @@
 			<div class="ticker">
 				{#key activityIndex}
 					<div class="ticker__card" in:fly={{ y: 24, duration: 520, easing: backOut }} out:fly={{ y: -16, duration: 220 }}>
-						<AgentShape agent={current.agent} size={36} working />
+						<AgentShape agent={current.agent} size={36} face working />
 						<span class="ticker__text">
 							<span class="ticker__name">{current.name}</span>
 							<span class="ticker__what">{current.text}</span>

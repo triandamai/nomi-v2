@@ -260,7 +260,7 @@
 					<td>{row.user_label}</td>
 					<td>
 						<span class="agent">
-							<AgentShape agent={row.agent_type} size={28} working={row.current_phase !== 'waiting'} />
+							<AgentShape agent={row.agent_type} size={28} face working={row.current_phase !== 'waiting'} />
 							{row.agent_display_name}
 						</span>
 					</td>
@@ -279,7 +279,7 @@
 						onclick={() => openDrillDown(row)}
 					>
 						{#snippet leading()}
-							<AgentShape agent={row.agent_type} size={36} working={row.current_phase !== 'waiting'} />
+							<AgentShape agent={row.agent_type} size={36} face working={row.current_phase !== 'waiting'} />
 						{/snippet}
 						{#snippet trailing()}
 							<span class="mono">{row.channel}</span>
@@ -299,7 +299,7 @@
 		<ol class="feed">
 			{#each feed as item (item.id)}
 				<li class="feed__row">
-					<AgentShape agent={item.agent_type ?? item.agent_display_name ?? 'nomi'} size={22} />
+					<AgentShape agent={item.agent_type ?? item.agent_display_name ?? 'nomi'} size={22} face />
 					<span class="feed__text">{feedLine(item)}</span>
 					<time class="feed__time" datetime={item.created_at}>{new Date(item.created_at).toLocaleTimeString(getLocale())}</time>
 				</li>

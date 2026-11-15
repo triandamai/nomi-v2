@@ -953,7 +953,7 @@
 {#if data.project}
 	{@const project = data.project}
 	<header class="topbar" bind:this={topbar}>
-		<a class="topbar__brand" href="/projects" aria-label={m.pj_all_projects()} title={m.pj_all_projects()}><AgentShape size={28} face /></a>
+		<a class="topbar__brand" href="/projects" aria-label={m.pj_all_projects()} title={m.pj_all_projects()}><AgentShape size={28} face live /></a>
 		<div class="topbar__titles">
 			<h1 class="topbar__name">{project.name}<span class="topbar__status" data-status={project.status}>{PROJECT_STATUS[project.status]()}</span></h1>
 			<p class="topbar__meta">
