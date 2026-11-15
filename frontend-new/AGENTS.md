@@ -359,8 +359,13 @@ The app shell (App / Home `Vr4nn`, the account menu `LkJLt`, the workspace switc
 leaves out what v2 or the backend can't do yet, rather than draw it dead:
 
 - The sidebar's LIFE › Money group: Money isn't part of v2 yet.
-- The top bar's search ("Search chats, memory, files ⌘K"): the backend has no search to call
-  (BACKEND_TODO.md). ⌘K stays New chat's, as the sidebar shows.
+- The top bar's search ("Search chats, memory, files ⌘K") is in Home's top bar and the app's list
+  pages' (`QuickSearch`): the person's chats, memory and project files, found as they type, in
+  groups, each opening where it lives (a file in its project's code view). The pen draws no
+  results: they float under the field in the menu's style. The pen marks both the search and the
+  sidebar's New chat ⌘K: ⌘K is search's (it reaches the field from any page, by way of Home where
+  the page has none), as the old app's was, and New chat is ⌘⇧O. On a phone the field is left out
+  of the bar.
 - The sidebar's collapse button: the shell has no collapsed layout yet.
 - The account menu's "Help & docs" (Nomi has no help site to open) and What's new's "new" dot
   (there are no release notes to be new); What's new shows the version, as drawn.

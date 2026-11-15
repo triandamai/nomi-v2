@@ -165,8 +165,9 @@
 	});
 
 	// Opened from a card's menu or the detail panel on Projects (Card menu M9O0iU: "Share, Export,
-	// Settings and Take down open the same dialogs the workspace uses"): `?open=` says which, then
-	// the address is tidied so a reload doesn't open it again.
+	// Settings and Take down open the same dialogs the workspace uses"), or from search on a file
+	// (`?open=code&file=`): `?open=` says which, then the address is tidied so a reload doesn't
+	// open it again.
 	onMount(() => {
 		const open = page.url.searchParams.get('open');
 		if (!open) return;
@@ -174,8 +175,18 @@
 		else if (open === 'export') void openExport();
 		else if (open === 'share' && liveUrl) sharing = true;
 		else if (open === 'takedown' && liveUrl) openDialog('takedown');
+		else if (open === 'code') {
+			// A file found by search: the code view, on it when it's the project's.
+			const file = page.url.searchParams.get('file');
+			view = 'code';
+			if (file && project.files.some((one) => one.path === file)) {
+				codeText = null;
+				codePath = file;
+			}
+		}
 		const url = new URL(page.url);
 		url.searchParams.delete('open');
+		url.searchParams.delete('file');
 		void goto(url, { replaceState: true, noScroll: true, keepFocus: true });
 	});
 

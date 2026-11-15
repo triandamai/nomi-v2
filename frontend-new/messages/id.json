@@ -2695,5 +2695,13 @@
 	"database_edit_cell": "Edit {column} di baris {row}",
 	"database_edit_failed": "Baris tidak bisa disimpan",
 	"database_saved": "Tersimpan",
-	"database_editing_note": "Mengedit {table} di database {database}. Enter menyimpan sel; Esc mengembalikannya."
+	"database_editing_note": "Mengedit {table} di database {database}. Enter menyimpan sel; Esc mengembalikannya.",
+	"search_field": "Cari chat, memori, file",
+	"search_group_chat": "Chat",
+	"search_group_memory": "Memori",
+	"search_group_file": "File",
+	"search_empty": "Tidak ada yang cocok dengan “{query}”",
+	"search_searching": "Mencari…",
+	"search_failed": "Pencarian tidak menjawab. Coba lagi sebentar lagi.",
+	"search_shortcut": "Cari"
 }
