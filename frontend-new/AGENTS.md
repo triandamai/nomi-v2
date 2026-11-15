@@ -419,7 +419,13 @@ that exist, so it never links to a page that isn't there. On Profile (`U9Gnrg`):
 On General (`m7lvY1`), every row is one the backend can keep; the rest are left out rather than
 drawn dead:
 
-- Changing the email and Delete account are still to come. Formats and "Show tokens under
+- The email row's Change and the Delete account row's Delete open dialogs the pen doesn't draw,
+  from the design system's Dialog, fields and the code boxes. Change: the new address, then the
+  code sent to it (nothing changes until it goes in; a used-up code starts over). Delete says what
+  goes and asks for the password, or an emailed code ("Email me a code instead", the only way for
+  an account without a password); a workspace only they own with others in it is named, linked to
+  its page, to hand over first. Closed, this device is signed out and sign in says so. The pen's
+  "Export first in Data & privacy" is left out (v2 has no such page). Formats and "Show tokens under
   replies" are left out: the backend keeps both, but nothing in v2 formats by region or shows tokens
   under replies yet, so the rows would do nothing. Crew updates has nothing to keep it, and Reduce
   motion is left out because the app follows the device's own setting.

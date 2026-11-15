@@ -202,6 +202,7 @@ Found while building Settings › Profile (2026-11-12).
   - `frontend/`: Account has Change email (with the code step), Formats and the chat rows (the composer follows Enter sends), and Delete account with a confirmation and the password or an emailed code.
   - **Still open:** the old frontend shows no tokens under replies, so `show_reply_tokens` is kept but nothing reads it there; a closed account's live apps aren't taken down.
   - v2: General's Chat group has "New chats start with" (Home's To) and "Enter sends" (every composer). Formats and tokens under replies wait for v2 to follow them.
+  - v2: General's Email row changes the address with the code; Delete account closes it with the password or an emailed code, naming workspaces to hand over.
   - **Still open (backend):** the turn's routing doesn't read `default_agent`, so a chat started elsewhere (a phone app, the API) still starts with Nomi.
 
 Found while building Settings › General (2026-11-12).

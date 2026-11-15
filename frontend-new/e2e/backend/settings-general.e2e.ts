@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
 import { BACKEND_URL } from './support/env';
 import { api, createAccount, signInAs } from './support/accounts';
+import { codeFor } from './support/mailpit';
 
 // Settings › General against the real backend (App / Settings / General m7lvY1): each change
 // saves as it's made (theme, time zone, emails, language), the password is changed in place (the
@@ -61,7 +62,7 @@ test('the password changes in place: the current one first, then the new one twi
 	const account = await createAccount();
 	await signInAs(context, account);
 	await page.goto('/settings/general', { waitUntil: 'networkidle' });
-	await page.getByRole('button', { name: 'Change', exact: true }).click();
+	await page.getByRole('button', { name: 'Change your password' }).click();
 	const dialog = page.getByRole('dialog', { name: 'Change your password' });
 	await expect(dialog.getByText('Your other devices stay signed in.')).toBeVisible();
 	await expect(dialog.getByRole('link', { name: 'Forgot it? Reset it by email' })).toHaveAttribute('href', `/forgot-password?email=${encodeURIComponent(account.email)}`);
@@ -128,3 +129,59 @@ test('who new chats start with and Enter sends reach Home; reminder pushes and q
 	await expect(field).toHaveValue('Two\n');
 	await expect(page).toHaveURL(/\/$/);
 });
+
+const login = (email: string, password: string) =>
+	fetch(`${BACKEND_URL}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, password }) });
+
+test('the email changes with a code sent to the new address', async ({ page, context }) => {
+	const account = await createAccount();
+	const other = await createAccount();
+	await signInAs(context, account);
+	await page.goto('/settings/general', { waitUntil: 'networkidle' });
+	await page.getByRole('button', { name: 'Change your email' }).click();
+	const dialog = page.getByRole('dialog', { name: 'Change your email' });
+	await dialog.getByLabel('New email').fill(other.email);
+	await dialog.getByRole('button', { name: 'Send code' }).click();
+	await expect(dialog.getByText('There’s already an account with this email. Sign in instead.')).toBeVisible();
+
+	const next = `moved-${Date.now()}@nomi.test`;
+	await dialog.getByLabel('New email').fill(next);
+	const started = Date.now();
+	await dialog.getByRole('button', { name: 'Send code' }).click();
+	const coded = page.getByRole('dialog', { name: 'Check your new email' });
+	await expect(coded.getByText(/We sent a 6-digit code to m•+@nomi\.test/)).toBeVisible();
+	const code = await codeFor(next, /new email/i, { after: started - 1000 });
+	await coded.getByRole('textbox', { name: 'Digit 1 of 6' }).click();
+	await page.keyboard.type(code);
+	await expect(page.getByText(`Your email is now ${next}. Sign in with it from now on.`)).toBeVisible();
+	expect((await login(next, account.password)).status).toBe(200);
+	expect((await login(account.email, account.password)).status).toBe(401);
+});
+
+test('deleting the account: a workspace with others in it first, then the password closes it', async ({ page, context }) => {
+	const account = await createAccount();
+	const teammate = await createAccount();
+	const org = ((await (await api(account, '/api/orgs')).json()) as { orgs: { id: string; name: string }[] }).orgs[0];
+	const invite = (await (await api(account, `/api/orgs/${org.id}/invites`, { method: 'POST', body: JSON.stringify({ email: teammate.email }) })).json()) as { code: string };
+	expect((await api(teammate, `/api/invites/${invite.code}/accept`, { method: 'POST' })).ok).toBe(true);
+
+	await signInAs(context, account);
+	await page.goto('/settings/general', { waitUntil: 'networkidle' });
+	await page.getByRole('button', { name: 'Delete', exact: true }).click();
+	const dialog = page.getByRole('dialog', { name: 'Delete your account?' });
+	await dialog.getByLabel('Password').fill('not-my-password');
+	await dialog.getByRole('button', { name: 'Delete account' }).click();
+	// The workspace is checked first, so a refused delete can be tried again.
+	await expect(dialog.getByRole('alert')).toContainText('First hand these workspaces to someone else');
+	await expect(dialog.getByRole('link', { name: org.name })).toHaveAttribute('href', `/settings/workspaces/${org.id}`);
+
+	expect((await api(account, `/api/orgs/${org.id}/members/${(await (await api(teammate, '/api/whoami')).json() as { sub: string }).sub}`, { method: 'DELETE' })).ok).toBe(true);
+	await dialog.getByRole('button', { name: 'Delete account' }).click();
+	await expect(dialog.getByText('That isn’t your current password.')).toBeVisible();
+	await dialog.getByLabel('Password').fill(account.password);
+	await dialog.getByRole('button', { name: 'Delete account' }).click();
+	await expect(page).toHaveURL(/\/sign-in\?closed=1$/);
+	await expect(page.getByText('Your account is closed, and every device was signed out.')).toBeVisible();
+	expect((await login(account.email, account.password)).status).toBe(401);
+});
+

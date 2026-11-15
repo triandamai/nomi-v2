@@ -31,6 +31,8 @@ export const load: PageServerLoad = async ({ url, cookies, locals, fetch }) => {
 		googleError: googleErrorFrom(url.searchParams.get('google_error')),
 		lastUsed: lastMethod(cookies),
 		passwordChanged,
+		// Back from closing the account (Settings › General).
+		accountClosed: url.searchParams.get('closed') === '1',
 		email: url.searchParams.get('email') ?? '',
 		redirectTo: goingTo(url),
 	};

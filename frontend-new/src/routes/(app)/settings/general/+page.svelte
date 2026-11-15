@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { ArrowUpRight, Inbox, LogOut } from '@lucide/svelte';
+	import { deserialize } from '$app/forms';
+	import { leaveTo } from '$lib/live/leaving';
 	import { goto, invalidate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { m } from '$lib/paraglide/messages';
@@ -18,6 +20,7 @@
 	import { toasts } from '$lib/ds/overlays/toasts.svelte';
 	import Button from '$lib/ds/actions/Button.svelte';
 	import AuthLink from '$lib/ds/auth/AuthLink.svelte';
+	import CodeInput from '$lib/ds/auth/CodeInput.svelte';
 	import TextField from '$lib/ds/inputs/TextField.svelte';
 	import Dialog from '$lib/ds/overlays/Dialog.svelte';
 	import Segmented from '$lib/ds/inputs/Segmented.svelte';
@@ -32,8 +35,7 @@
 
 	// Settings › General (App / Settings / General m7lvY1): the page's groups down a column (880,
 	// 28 apart) beside On this page; every change saves as it's made and goes back if it can't.
-	// Left out (AGENTS.md §9): changing the email and Delete account (still to come), Formats and
-	// tokens under replies (the backend keeps them; nothing in v2 follows them yet), Reduce motion
+	// Left out (AGENTS.md §9): Formats and tokens under replies (the backend keeps them; nothing in v2 follows them yet), Reduce motion
 	// (the device's own setting rules) and Crew updates (nothing to keep it).
 	let { data } = $props();
 
@@ -189,6 +191,118 @@
 	}
 	const fieldError = (field: string) => (passwordError?.field === field ? passwordError.message : undefined);
 
+	type Sent = { challengeId: string; email: string; minutes: number };
+	type Problem = { field?: string; message: string; ended?: boolean };
+	const problemOf = (result: { ok: false; message: string; field?: string }): Problem | undefined => (result.message ? { field: result.field, message: result.message } : undefined);
+
+	// Changing the email (the pen's Change, whose dialog it doesn't draw): the new address, then the
+	// code sent to it. Nothing changes until the code goes in.
+	let emailOpen = $state(false);
+	let newEmail = $state('');
+	let emailSent = $state<Sent | null>(null);
+	let emailCode = $state('');
+	let emailProblem = $state<Problem>();
+	let emailBusy = $state(false);
+	function openEmail() {
+		newEmail = '';
+		emailSent = null;
+		emailCode = '';
+		emailProblem = undefined;
+		emailOpen = true;
+	}
+	async function sendEmailCode() {
+		emailBusy = true;
+		const result = await pageAction('/settings/general', 'emailStart', { email: newEmail });
+		emailBusy = false;
+		if (!result.ok) return void (emailProblem = problemOf(result));
+		emailProblem = undefined;
+		emailCode = '';
+		emailSent = result.data.code as Sent;
+	}
+	async function confirmEmail(code = emailCode) {
+		if (!emailSent || emailBusy) return;
+		emailBusy = true;
+		const result = await pageActionWithData('emailVerify', { challenge_id: emailSent.challengeId, code });
+		emailBusy = false;
+		if (!result.ok) {
+			emailProblem = result.problem;
+			emailCode = '';
+			return;
+		}
+		emailOpen = false;
+		toasts.show({ kind: 'success', title: m.general_email_changed({ email: String(result.data.email) }) });
+		await invalidate('app:general');
+	}
+
+	// Deleting the account: with the password, or a code emailed to its address (an account made
+	// with a code or Google has no password). A workspace only they own, with others in it, is
+	// named, to hand over first.
+	let deleteOpen = $state(false);
+	let deleteWith = $state<'password' | 'code'>('password');
+	let deletePassword = $state('');
+	let deleteSent = $state<Sent | null>(null);
+	let deleteCode = $state('');
+	let deleteProblem = $state<Problem>();
+	let soleOwner = $state<{ id: string; name: string }[]>([]);
+	let deleteBusy = $state(false);
+	function openDelete() {
+		deleteWith = data.methods.password ? 'password' : 'code';
+		deletePassword = '';
+		deleteSent = null;
+		deleteCode = '';
+		deleteProblem = undefined;
+		soleOwner = [];
+		deleteOpen = true;
+	}
+	async function sendDeleteCode() {
+		deleteBusy = true;
+		const result = await pageAction('/settings/general', 'deleteCode');
+		deleteBusy = false;
+		if (!result.ok) return void (deleteProblem = problemOf(result));
+		deleteProblem = undefined;
+		deleteCode = '';
+		deleteSent = result.data.code as Sent;
+	}
+	async function closeAccount(code = deleteCode) {
+		if (deleteBusy) return;
+		if (deleteWith === 'code' && !deleteSent) return void sendDeleteCode();
+		deleteBusy = true;
+		const fields: Record<string, string> = deleteWith === 'password' ? { password: deletePassword } : { challenge_id: deleteSent!.challengeId, code };
+		// Closing signs every device out, this one too: the feed's sign-out may come first.
+		leaveTo('/sign-in?closed=1');
+		const result = await pageActionWithData('deleteAccount', fields);
+		deleteBusy = false;
+		// Closed: the action signed this device out and is on its way to sign in. Keep where to go
+		// set: the feed's own sign-out may still be finishing, and it must land on the same page.
+		if (result.ok || result.left) return;
+		leaveTo(null);
+		soleOwner = result.soleOwner ?? [];
+		deleteProblem = result.problem;
+		deleteCode = '';
+	}
+
+	/** A page action whose refusal carries more than a message (an ended code, the workspaces to hand over). */
+	async function pageActionWithData(
+		name: string,
+		fields: Record<string, string>,
+	): Promise<{ ok: true; data: Record<string, unknown> } | { ok: false; left?: true; problem?: Problem; soleOwner?: { id: string; name: string }[] }> {
+		const body = new FormData();
+		for (const [key, value] of Object.entries(fields)) body.set(key, value);
+		const response = await fetch(`/settings/general?/${name}`, { method: 'POST', body, headers: { 'x-sveltekit-action': 'true' } }).catch(() => null);
+		const result = response ? await response.text().then(deserialize).catch(() => null) : null;
+		if (result?.type === 'success') return { ok: true, data: result.data ?? {} };
+		if (result?.type === 'redirect') {
+			// Signed out (closing the account): a full load, so nothing of the app stays in memory.
+			location.assign(result.location);
+			return { ok: false, left: true };
+		}
+		if (result?.type === 'failure') {
+			const said = (result.data ?? {}) as { message?: string; field?: string; ended?: boolean; soleOwner?: { id: string; name: string }[] };
+			return { ok: false, soleOwner: said.soleOwner, problem: said.message ? { field: said.field, message: said.message, ended: said.ended } : undefined };
+		}
+		return { ok: false, problem: { message: m.action_failed() } };
+	}
+
 	const others = $derived((data.devices ?? []).filter((device) => !device.current).length);
 	const resetHref = $derived(`/forgot-password?email=${encodeURIComponent(data.email)}`);
 
@@ -214,7 +328,9 @@
 			</header>
 
 			<SettingsGroup id="account" title={m.general_account()} description={m.general_account_body()}>
-				<SettingRow title={m.general_email()} description={maskEmail(data.email)} mono />
+				<SettingRow title={m.general_email()} description={maskEmail(data.email)} mono>
+					{#snippet control()}<Button label={m.general_password_change()} aria-label={m.general_email_change_title()} variant="secondary" onclick={openEmail} />{/snippet}
+				</SettingRow>
 				{#if data.methods.configured || data.methods.google_email}
 					<SettingRow title={m.general_google()} description={data.methods.google_email ? m.general_google_linked({ email: data.methods.google_email }) : m.general_google_off()}>
 						{#snippet control()}
@@ -229,7 +345,12 @@
 				{/if}
 				<SettingRow title={m.general_password()} description={data.methods.password ? m.general_password_set() : m.general_password_none()}>
 					{#snippet control()}
-						<Button label={data.methods.password ? m.general_password_change() : m.general_password_add()} variant="secondary" onclick={openPassword} />
+						<Button
+							label={data.methods.password ? m.general_password_change() : m.general_password_add()}
+							aria-label={data.methods.password ? m.general_password_change_title() : undefined}
+							variant="secondary"
+							onclick={openPassword}
+						/>
 					{/snippet}
 				</SettingRow>
 				<SettingNote text={m.general_google_note()} />
@@ -334,6 +455,9 @@
 				{:else}
 					<SettingNote text={m.general_devices_unloaded()} />
 				{/if}
+				<SettingRow title={m.general_delete()} description={m.general_delete_body()}>
+					{#snippet control()}<Button label={m.general_delete_button()} variant="danger" onclick={openDelete} />{/snippet}
+				</SettingRow>
 			</SettingsGroup>
 		</div>
 
@@ -374,3 +498,87 @@
 		<Button variant="inverse" label={m.general_password_save()} loading={savingPassword} onclick={savePassword} />
 	{/snippet}
 </Dialog>
+
+<Dialog
+	bind:open={emailOpen}
+	title={emailSent ? m.general_email_code_title() : m.general_email_change_title()}
+	description={emailSent ? m.verify_sub({ email: emailSent.email, minutes: emailSent.minutes }) : m.general_email_change_body()}
+>
+	{#if emailSent}
+		<div class="flex flex-col gap-3 pt-2">
+			<CodeInput bind:value={emailCode} invalid={emailProblem?.field === 'code'} disabled={emailBusy || !!emailProblem?.ended} autofocus oncomplete={(code) => confirmEmail(code)} />
+			{#if emailProblem}<p role="alert" class="text-caption text-danger">{emailProblem.message}</p>{/if}
+			<span class="flex"><AuthLink label={m.general_email_other()} onclick={() => ((emailSent = null), (emailProblem = undefined))} /></span>
+		</div>
+	{:else}
+		<form
+			class="flex flex-col gap-4 pt-2"
+			onsubmit={(event) => {
+				event.preventDefault();
+				void sendEmailCode();
+			}}
+		>
+			<TextField label={m.general_email_new()} type="email" name="email" autocomplete="email" bind:value={newEmail} error={emailProblem?.field === 'email' ? emailProblem.message : undefined} required />
+			{#if emailProblem && !emailProblem.field}<p role="alert" class="text-caption text-danger">{emailProblem.message}</p>{/if}
+		</form>
+	{/if}
+	{#snippet actions()}
+		<Button variant="secondary" label={m.action_cancel()} onclick={() => (emailOpen = false)} />
+		{#if emailSent}
+			<Button variant="inverse" label={emailProblem?.ended ? m.verify_start_over() : m.general_email_confirm()} loading={emailBusy} onclick={() => (emailProblem?.ended ? ((emailSent = null), (emailProblem = undefined)) : confirmEmail())} />
+		{:else}
+			<Button variant="inverse" label={m.general_email_send()} loading={emailBusy} onclick={sendEmailCode} />
+		{/if}
+	{/snippet}
+</Dialog>
+
+<Dialog bind:open={deleteOpen} title={m.general_delete_title()} description={m.general_delete_what()}>
+	<form
+		class="flex flex-col gap-4 pt-2"
+		onsubmit={(event) => {
+			event.preventDefault();
+			void closeAccount();
+		}}
+	>
+		{#if soleOwner.length}
+			<div role="alert" class="flex flex-col gap-1.5 rounded-sm bg-danger-bg px-3 py-2.5 text-caption text-text">
+				<p>{m.general_delete_sole_owner()}</p>
+				<ul class="flex flex-col gap-1">
+					{#each soleOwner as org (org.id)}<li><a class="text-text underline underline-offset-2" href="/settings/workspaces/{org.id}">{org.name}</a></li>{/each}
+				</ul>
+			</div>
+		{/if}
+		{#if deleteWith === 'password'}
+			<input type="email" name="username" autocomplete="username" value={data.email} hidden readonly />
+			<TextField
+				label={m.auth_password()}
+				type="password"
+				name="password"
+				autocomplete="current-password"
+				helper={m.general_delete_password_hint()}
+				bind:value={deletePassword}
+				error={deleteProblem?.field === 'password' ? deleteProblem.message : undefined}
+				required
+			/>
+			<span class="flex"><AuthLink label={m.general_delete_use_code()} onclick={() => ((deleteWith = 'code'), (deleteProblem = undefined))} /></span>
+		{:else if deleteSent}
+			<p class="text-caption text-text-2">{m.general_delete_code_sent({ email: deleteSent.email, minutes: deleteSent.minutes })}</p>
+			<CodeInput bind:value={deleteCode} invalid={deleteProblem?.field === 'code'} disabled={deleteBusy || !!deleteProblem?.ended} />
+			{#if data.methods.password}<span class="flex"><AuthLink label={m.general_delete_use_password()} onclick={() => ((deleteWith = 'password'), (deleteProblem = undefined))} /></span>{/if}
+		{:else}
+			<p class="text-caption text-text-2">{m.general_delete_code_hint({ email: maskEmail(data.email) })}</p>
+			{#if data.methods.password}<span class="flex"><AuthLink label={m.general_delete_use_password()} onclick={() => ((deleteWith = 'password'), (deleteProblem = undefined))} /></span>{/if}
+		{/if}
+		{#if deleteProblem && deleteProblem.field !== 'password'}<p role="alert" class="text-caption text-danger">{deleteProblem.message}</p>{/if}
+		<button type="submit" hidden aria-hidden="true" tabindex="-1"></button>
+	</form>
+	{#snippet actions()}
+		<Button variant="secondary" label={m.action_cancel()} onclick={() => (deleteOpen = false)} />
+		{#if deleteWith === 'code' && (!deleteSent || deleteProblem?.ended)}
+			<Button variant="inverse" label={m.general_email_send()} loading={deleteBusy} onclick={sendDeleteCode} />
+		{:else}
+			<Button variant="danger" label={m.general_delete_confirm()} loading={deleteBusy} onclick={() => closeAccount()} />
+		{/if}
+	{/snippet}
+</Dialog>
+
