@@ -39,7 +39,6 @@ pub mod scheduler_worker;
 pub mod shipyard;
 pub mod sign_in_codes;
 pub mod user_events;
-mod tool_catalog_adapters;
 pub mod worker;
 
 /// The one place a new agent gets wired in. Adding an agent: implement `SubAgent` in its
@@ -66,13 +65,22 @@ pub fn build_agent_registry(pool: &sqlx::PgPool, project_storage: nomi_storage::
     ])
 }
 
-/// The one place a new grantable tool gets wired into `ToolCatalog`: implement (or reuse) a
-/// free function in the owning agent crate, add its `CatalogTool` adapter to
-/// `tool_catalog_adapters`, and add one entry here.
+/// The one place a crate's grantable tools get wired into `ToolCatalog`: implement
+/// `nomi_agent_core::Tool` for the tool in its own agent crate, list it in that crate's
+/// `catalog_tools`, and (for a new crate) add its `catalog_tools` here. Two tools with one name
+/// stop the server at startup.
 pub fn build_tool_catalog(project_storage: nomi_storage::ProjectStore) -> std::sync::Arc<nomi_agent_core::ToolCatalog> {
-    let mut entries = tool_catalog_adapters::non_coding_entries();
-    entries.extend(tool_catalog_adapters::coding_entries(project_storage));
-    std::sync::Arc::new(nomi_agent_core::ToolCatalog::new(entries))
+    let tools = [
+        nomi_agent_money::catalog_tools(),
+        nomi_agent_personality::catalog_tools(),
+        nomi_agent_planning::catalog_tools(),
+        nomi_agent_supervisor::catalog_tools(),
+        nomi_agent_reminders::catalog_tools(),
+        nomi_agent_coding::catalog_tools(project_storage),
+        nomi_agent_health::catalog_tools(&nomi_agent_health::HealthAgent::from_env()),
+        nomi_agent_workspace::catalog_tools(&nomi_agent_workspace::WorkspaceAgent::from_env()),
+    ];
+    std::sync::Arc::new(nomi_agent_core::ToolCatalog::from_tools(tools.into_iter().flatten().collect()))
 }
 
 /// The HTTP client for model, embedding and other provider calls. No overall timeout (a long

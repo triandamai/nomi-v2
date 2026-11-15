@@ -56,5 +56,5 @@ pub use locale::{user_locale, Locale};
 pub use notification::{LogOnlyDelivery, NotificationDelivery};
 pub use registry::AgentRegistry;
 pub use subagent::SubAgent;
-pub use tool_catalog::{CatalogTool, ToolCatalog};
+pub use tool_catalog::{find_tool, tool_definitions, Tool, ToolCatalog, ToolInfo};
 pub use views::{View, SHOW_TOOL_NAME};
