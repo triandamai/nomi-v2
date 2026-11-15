@@ -22,8 +22,13 @@ test('renders each sheet from a nested path, styled and with the fonts', async (
 test('hydrates: the sheet links, the theme and the controls work', async ({ page }) => {
 	await page.goto(at('design-system/nomi.html?theme=light'));
 	await expect(page.locator('[data-theme="light"]').first()).toBeAttached();
-	await page.getByRole('switch', { name: 'Daily digest' }).click();
-	await expect(page.getByRole('switch', { name: 'Daily digest' })).toHaveAttribute('aria-checked', 'true');
+	// A click before the page has hydrated does nothing (the docs are one bundle, parsed whole at
+	// start, which a busy CI runner can take seconds over): click until it takes, then it's on.
+	const digest = page.getByRole('switch', { name: 'Daily digest' });
+	await expect(async () => {
+		if ((await digest.getAttribute('aria-checked')) !== 'true') await digest.click();
+		await expect(digest).toHaveAttribute('aria-checked', 'true', { timeout: 1_000 });
+	}).toPass({ timeout: 30_000 });
 	await page.getByRole('link', { name: 'Chat responses' }).click();
 	await expect(page).toHaveURL(/\/shared\/nomi-ds\/design-system\/chat\.html$/);
 	await expect(page.getByRole('heading', { level: 1, name: 'Everything Nomi can put in a reply' })).toBeVisible();
