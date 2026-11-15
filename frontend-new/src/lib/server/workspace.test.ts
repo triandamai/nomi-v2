@@ -227,4 +227,18 @@ describe('a project’s workspace on the server', () => {
 		expect(await workspace.addOwnDomain(refused.event, 'p1', 'x.id')).toEqual({ ok: false, status: 409, message: 'the app must be live first' });
 		expect(await workspace.loadOwnDomains(refused.event, 'p1')).toBeNull();
 	});
+	it('edits a row by its primary key, saying the database’s reason when it refuses', async () => {
+		const { backend, event } = eventWith(() => json({ row: { id: 7, status: 'picked up' } }));
+		expect(await workspace.editRow(event, 'p1', 'development', { schema: 'public', name: 'orders' }, { id: 7 }, { status: 'picked up' })).toEqual({ ok: true, row: { id: 7, status: 'picked up' } });
+		expect(backend.calls[0]).toMatchObject({ method: 'PATCH', url: 'http://api.test/api/projects/p1/database/tables/public/orders/rows', body: { key: { id: 7 }, changes: { status: 'picked up' }, source: 'development' } });
+		const refused = eventWith(() => new Response('invalid input syntax for type integer: "abc"', { status: 422 }));
+		expect(await workspace.editRow(refused.event, 'p1', 'production', { schema: 'public', name: 'orders' }, { id: 7 }, { total: 'abc' })).toEqual({ ok: false, status: 422, message: 'invalid input syntax for type integer: "abc"' });
+	});
+
+	it('reads a dump of the database as it streams', async () => {
+		const { backend, event } = eventWith(() => new Response('-- dump', { headers: { 'content-type': 'application/sql', 'content-disposition': 'attachment; filename="warung-development-2026-11-15.sql"' } }));
+		const response = await workspace.databaseDump(event, 'p1', 'development');
+		expect([response.status, await response.text()]).toEqual([200, '-- dump']);
+		expect(backend.calls[0].url).toBe('http://api.test/api/projects/p1/database/dump?source=development');
+	});
 });

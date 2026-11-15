@@ -312,6 +312,31 @@
 		if (sheet === 'database' && canRead) void loadDatabase(dbSource, dbTable);
 	});
 	const rowsLabel = (count: number) => (count < 0 ? m.database_rows_unknown() : count === 1 ? m.database_row_one() : m.database_rows({ count }));
+	// Edit rows and Download dump: a browsed table's cells edit in place, the row found by its
+	// primary key (a table without one can't be edited here); the dump is the database shown.
+	let editingRows = $state(false);
+	const browsed = $derived(database && !('error' in database) && database.rows && database.table ? { table: database.table, rows: database.rows } : null);
+	const dbKey = $derived(browsed?.table.primary_key?.length ? browsed.table.primary_key : null);
+	async function saveCell(row: number, column: number, value: string): Promise<boolean> {
+		if (!browsed || !dbKey) return false;
+		const { table, rows: shown } = browsed;
+		const raw = shown.rows[row];
+		const key = Object.fromEntries(dbKey.map((name) => [name, raw[shown.columns.indexOf(name)]]));
+		const response = await fetch(`/projects/${project.id}/database/rows`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ source: dbSource, schema: table.schema, table: table.name, key, changes: { [shown.columns[column]]: value } }),
+		}).catch(() => null);
+		const body = response ? ((await response.json().catch(() => null)) as { row?: Record<string, unknown>; error?: string } | null) : null;
+		if (!response?.ok || !body?.row) {
+			toasts.show({ kind: 'error', title: m.database_edit_failed(), detail: body?.error || undefined });
+			return false;
+		}
+		const kept = body.row;
+		shown.rows[row] = shown.columns.map((name, at) => (name in kept ? kept[name] : raw[at]));
+		toasts.show({ kind: 'success', title: m.database_saved() });
+		return true;
+	}
 
 	// Settings (steps 12, 15–17): transfer to another workspace, take the live app down, delete.
 	let dialog = $state<'transfer' | 'takedown' | 'delete' | null>(null);
@@ -998,6 +1023,7 @@
 								onchange={(value) => {
 									dbSource = value as typeof dbSource;
 									dbTable = null;
+									editingRows = false;
 								}}
 							/>
 						</div>
@@ -1017,17 +1043,42 @@
 									name={table.name}
 									rows={rowsLabel(table.rows_estimate)}
 									selected={database.table?.name === table.name && database.table?.schema === table.schema}
-									onclick={() => (dbTable = `${table.schema}.${table.name}`)}
+									onclick={() => {
+									dbTable = `${table.schema}.${table.name}`;
+									editingRows = false;
+								}}
 								/>
 							{/each}
 						</div>
 						{#if database.rows && database.table}
-							<RowsGrid label={database.table.name} columns={database.rows.columns} rows={database.rows.rows.map((row) => row.map(cellText))} />
+							{@const columns = database.rows.columns}
+							{@const raw = database.rows.rows}
+							<RowsGrid
+								label={database.table.name}
+								{columns}
+								rows={raw.map((row) => row.map(cellText))}
+								edit={editingRows && dbKey
+									? {
+											locked: dbKey.map((name) => columns.indexOf(name)),
+											initial: (row, column) => (raw[row][column] === null || raw[row][column] === undefined ? '' : typeof raw[row][column] === 'object' ? JSON.stringify(raw[row][column]) : String(raw[row][column])),
+											onsave: saveCell,
+											cellLabel: (row, column) => m.database_edit_cell({ column: columns[column], row: row + 1 }),
+										}
+									: undefined}
+							/>
 							<p class="font-mono text-label text-text-3">{database.rows.truncated ? m.database_showing_first({ count: database.rows.rows.length }) : rowsLabel(database.rows.rows.length)}</p>
 						{/if}
 						<p class="flex items-center gap-2.5 rounded-sm bg-surface-2 px-3 py-2.5 text-ui text-text-2">
-							<span class="inline-flex shrink-0"><Icon icon={Lock} size={14} /></span>{m.database_read_only()}
+							<span class="inline-flex shrink-0"><Icon icon={Lock} size={14} /></span>{editingRows && browsed
+								? m.database_editing_note({ table: browsed.table.name, database: dbSource === 'production' ? m.database_production() : m.database_development() })
+								: browsed && !dbKey
+									? m.database_no_key()
+									: m.database_read_only_edit()}
 						</p>
+						<div class="flex flex-wrap gap-2">
+							<Button variant="secondary" label={editingRows ? m.database_done_editing() : m.database_edit_rows()} disabled={!dbKey} onclick={() => (editingRows = !editingRows)} />
+							<Button variant="secondary" iconStart={Download} label={m.database_download_dump()} href={`/projects/${project.id}/database/dump?source=${dbSource}`} />
+						</div>
 					{/if}
 				</WorkspaceSheet>
 			</div>

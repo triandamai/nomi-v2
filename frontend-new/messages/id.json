@@ -2686,5 +2686,14 @@
 	"domain_add_field": "Domainmu",
 	"domain_add": "Tambah domain",
 	"domain_add_live_first": "Terbitkan aplikasinya dulu: domainmu diarahkan ke alamat live-nya.",
-	"domain_primary_tag": "utama"
+	"domain_primary_tag": "utama",
+	"database_read_only_edit": "Hanya baca di sini. Untuk mengubah kolom, minta Koda di chat; untuk membetulkan baris, pakai Edit baris.",
+	"database_no_key": "Tabel ini tidak punya primary key, jadi barisnya tidak bisa diedit di sini. Minta Koda di chat untuk menambahkannya.",
+	"database_edit_rows": "Edit baris",
+	"database_done_editing": "Selesai",
+	"database_download_dump": "Unduh dump",
+	"database_edit_cell": "Edit {column} di baris {row}",
+	"database_edit_failed": "Baris tidak bisa disimpan",
+	"database_saved": "Tersimpan",
+	"database_editing_note": "Mengedit {table} di database {database}. Enter menyimpan sel; Esc mengembalikannya."
 }
