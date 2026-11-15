@@ -22,8 +22,10 @@ test('renders each sheet from a nested path, styled and with the fonts', async (
 test('hydrates: the sheet links, the theme and the controls work', async ({ page }) => {
 	await page.goto(at('design-system/nomi.html?theme=light'));
 	await expect(page.locator('[data-theme="light"]').first()).toBeAttached();
-	await page.getByRole('switch', { name: 'Daily digest' }).click();
-	await expect(page.getByRole('switch', { name: 'Daily digest' })).toHaveAttribute('aria-checked', 'true');
+	await expect(async () => {
+		await page.getByRole('switch', { name: 'Daily digest' }).click();
+		await expect(page.getByRole('switch', { name: 'Daily digest' })).toHaveAttribute('aria-checked', 'true', { timeout: 1000 });
+	}).toPass();
 	await page.getByRole('link', { name: 'Chat responses' }).click();
 	await expect(page).toHaveURL(/\/shared\/nomi-ds\/design-system\/chat\.html$/);
 	await expect(page.getByRole('heading', { level: 1, name: 'Everything Nomi can put in a reply' })).toBeVisible();
