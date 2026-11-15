@@ -308,9 +308,25 @@ export type PlanOffer = {
 	is_default: boolean;
 	is_active: boolean;
 	sort_order: number;
+	/** A month's price in rupiah when it can be bought; null: people join its waitlist. */
+	price_idr?: number | null;
+	promo_price_idr?: number | null;
 };
 
-export type PlansForUser = { plans: PlanOffer[]; current_plan_id: string; monthly_tokens: number; custom_quota: boolean; override_until: string | null };
+export type PlansForUser = {
+	plans: PlanOffer[];
+	current_plan_id: string;
+	monthly_tokens: number;
+	custom_quota: boolean;
+	override_until: string | null;
+	/** The plans the person asked to be told about. */
+	waitlist?: string[];
+	/** Whether a plan with a price can be bought here (false while no payment gateway is set up). */
+	checkout_available?: boolean;
+};
+
+/** A payment of the person's (`GET /api/billing/payments/:id`): pending, paid, expired, failed or cancelled. */
+export type PaymentResult = { id: string; status: string; plan_name: string; amount: number; currency: string; invoice_url: string | null; period_end: string | null };
 
 /** One of the person's own provider keys (`GET /api/llm/connections`). */
 export type OwnConnection = { id: string; provider_id: string; label: string; auth_type: string; kind: string; base_url: string | null; api_key_masked: string | null; created_at: string };
