@@ -38,7 +38,7 @@
 	import type { DatabaseView } from '$lib/server/workspace';
 	import Icon from '$lib/ds/foundations/Icon.svelte';
 	import Segmented from '$lib/ds/inputs/Segmented.svelte';
-	import { monitorStats, resourceRows, trafficBars } from '$lib/projects/monitor';
+	import { monitorStats, resourceRows, siteStats, sourceRows, trafficBars } from '$lib/projects/monitor';
 	import type { Monitoring } from '$lib/server/workspace';
 	import type { MetricsRange } from '$lib/adapters/api';
 	import SubdomainField, { type SubdomainCheck } from '$lib/ds/projects/SubdomainField.svelte';
@@ -290,6 +290,10 @@
 	const site = $derived(project.stack === 'static');
 	const traffic = $derived(monitoring?.metrics ? trafficBars(monitoring.metrics.buckets, time.timeZone, site ? 'visitors' : 'requests') : null);
 	const resources = $derived(monitoring?.usage ? resourceRows(monitoring.usage) : null);
+	// A site's own: forms sent, uptime, and where its visits come from (the script a publish puts in
+	// its pages reports them).
+	const siteNumbers = $derived(monitoring?.metrics ? siteStats(monitoring.metrics, now) : null);
+	const sources = $derived(sourceRows(monitoring?.metrics?.sources));
 	const RANGE_NOTE: Record<MetricsRange, () => string> = { '1h': m.monitor_last_hour, '24h': m.monitor_today, '7d': m.monitor_week };
 	const trafficLabel = $derived(site ? m.monitor_visits_traffic({ range: RANGE_NOTE[range]() }) : m.monitor_traffic({ range: RANGE_NOTE[range]() }));
 
@@ -1107,9 +1111,9 @@
 							<div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
 								{#if site}
 									<MonitorStat label={m.monitor_visits()} value={stats?.visitors} note={RANGE_NOTE[range]()} notMeasured={m.monitor_not_measured()} />
+									<MonitorStat label={m.monitor_form_sends()} value={siteNumbers?.formSends} note={siteNumbers?.formShare ? m.monitor_form_share({ share: siteNumbers.formShare }) : undefined} notMeasured={m.monitor_not_measured()} />
 									<MonitorStat label="P95" value={stats?.p95} note={m.monitor_page_load()} notMeasured={m.monitor_not_measured()} />
-									<MonitorStat label={m.monitor_requests()} value={stats?.requests} note={RANGE_NOTE[range]()} notMeasured={m.monitor_not_measured()} />
-									<MonitorStat label={m.monitor_errors()} value={stats?.errors} note={stats?.errorShare ? m.monitor_error_share({ share: stats.errorShare }) : undefined} notMeasured={m.monitor_not_measured()} />
+									<MonitorStat label={m.monitor_uptime()} value={siteNumbers?.uptime} note={siteNumbers?.uptimeFor ? m.monitor_uptime_for({ time: siteNumbers.uptimeFor }) : undefined} notMeasured={m.monitor_not_measured()} />
 								{:else}
 									<MonitorStat label={m.monitor_requests()} value={stats?.requests} note={RANGE_NOTE[range]()} notMeasured={m.monitor_not_measured()} />
 									<MonitorStat label={m.monitor_errors()} value={stats?.errors} note={stats?.errorShare ? m.monitor_error_share({ share: stats.errorShare }) : undefined} notMeasured={m.monitor_not_measured()} />
@@ -1126,6 +1130,19 @@
 									<TrafficBars label={trafficLabel} bars={traffic.bars} axis={[traffic.bars[0].at, traffic.bars[traffic.bars.length - 1].at]} />
 								</section>
 							{/if}
+							{#if site}
+								<!-- The pen's site Monitor puts where visits come from in Resources' place, its rows wearing the resources' icons (pasted): each wears the globe. -->
+								<section class="flex flex-col gap-2">
+									<h3 class="font-mono text-label tracking-label text-text-3 uppercase">{m.monitor_sources()}</h3>
+									{#if sources?.length}
+										<div class="flex flex-col">
+											{#each sources as source (source.name)}<ResourceRow icon={Globe} name={source.name} value={source.value} />{/each}
+										</div>
+									{:else}
+										<p class="text-ui text-text-3">{m.monitor_sources_none()}</p>
+									{/if}
+								</section>
+							{:else}
 							<section class="flex flex-col gap-2">
 								<h3 class="font-mono text-label tracking-label text-text-3 uppercase">{m.monitor_resources()}</h3>
 								{#if resources?.memory}
@@ -1138,6 +1155,7 @@
 									<p class="text-ui text-text-3">{m.monitor_not_measured()}</p>
 								{/if}
 							</section>
+							{/if}
 							<section class="flex flex-col gap-0.5">
 								<h3 class="font-mono text-label tracking-label text-text-3 uppercase">{m.monitor_log()}</h3>
 								{#if monitoring?.logs?.length}
