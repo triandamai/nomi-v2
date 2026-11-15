@@ -1,5 +1,17 @@
 <script lang="ts">
-	import { agentLook, GRADIENT_STOPS, shapePath, type GradientTone, type ShapeMotion, type ShapeName } from './shapes';
+	import { untrack } from 'svelte';
+	import type { AvatarMotion } from 'open-bot-avatar';
+	import type { MountedAvatar } from 'open-bot-avatar/dom';
+	import {
+		agentLook,
+		GRADIENT_STOPS,
+		liveDefinition,
+		shapePath,
+		TONE_BODY,
+		type GradientTone,
+		type ShapeMotion,
+		type ShapeName,
+	} from './shapes';
 
 	let {
 		agent,
@@ -11,6 +23,8 @@
 		face = false,
 		label,
 		paint,
+		live = face && size >= 32,
+		mood,
 		class: extraClass = '',
 	}: {
 		/** agent_type or display name — picks the shape + gradient (see agentLook). */
@@ -28,6 +42,10 @@
 		label?: string;
 		/** Gradient stops (any CSS colour, var() included) in place of the tone's own. */
 		paint?: string[];
+		/** When face is shown and size >= 32, renders an interactive open-bot-avatar character. */
+		live?: boolean;
+		/** Overrides avatar mood ('idle' | 'thinking' | 'happy'). Defaults to thinking when working, else idle. */
+		mood?: AvatarMotion;
 		class?: string;
 	} = $props();
 
@@ -37,38 +55,105 @@
 	const resolvedTone = $derived(tone ?? look.tone);
 	const resolvedMotion = $derived(motion ?? look.motion);
 	const stops = $derived(paint ?? GRADIENT_STOPS[resolvedTone]);
+
+	let host = $state<HTMLSpanElement>();
+	let avatar = $state<MountedAvatar>();
+	let hovered = $state(false);
+
+	const effectiveMood = $derived<AvatarMotion>(
+		mood ?? (working ? 'thinking' : hovered ? 'happy' : 'idle'),
+	);
+
+	$effect(() => {
+		if (!live || !host) return;
+		const el = host;
+		const definition = liveDefinition(resolvedShape, agent ?? resolvedShape);
+		const color = TONE_BODY[resolvedTone];
+		let mounted: MountedAvatar | undefined;
+		let gone = false;
+
+		import('open-bot-avatar/dom').then(({ mountAvatar }) => {
+			if (gone) return;
+			mounted = mountAvatar(el, {
+				definition,
+				color,
+				eyeColor: '#062019',
+				followPointer: true,
+				mood: untrack(() => effectiveMood),
+				label: '',
+			});
+			avatar = mounted;
+		});
+
+		return () => {
+			gone = true;
+			mounted?.destroy();
+			avatar = undefined;
+		};
+	});
+
+	$effect(() => {
+		avatar?.update({ mood: effectiveMood });
+	});
 </script>
 
-<svg
-	width={size}
-	height={size}
-	viewBox="0 0 48 48"
-	class="agent-shape {extraClass}"
-	class:agent-shape--working={working}
-	data-motion={resolvedMotion}
-	role={label ? 'img' : undefined}
-	aria-label={label}
-	aria-hidden={label ? undefined : 'true'}
->
-	<defs>
-		<linearGradient id="{uid}-g" x1="0" y1="0" x2="1" y2="1">
-			{#each stops as stop, i (i)}
-				<stop offset={stops.length === 1 ? 0 : i / (stops.length - 1)} style="stop-color: {stop}" />
-			{/each}
-		</linearGradient>
-	</defs>
-	<path d={shapePath(resolvedShape)} fill="url(#{uid}-g)" />
-	{#if face}
-		<circle cx="19" cy="22" r="2.6" fill="var(--nomi-on-gradient-glow)" />
-		<circle cx="29" cy="22" r="2.6" fill="var(--nomi-on-gradient-glow)" />
-	{/if}
-</svg>
+{#snippet flat()}
+	<svg
+		width={size}
+		height={size}
+		viewBox="0 0 48 48"
+		class="agent-shape {extraClass}"
+		class:agent-shape--working={working}
+		data-motion={resolvedMotion}
+		role={label && !live ? 'img' : undefined}
+		aria-label={live ? undefined : label}
+		aria-hidden={label && !live ? undefined : 'true'}
+	>
+		<defs>
+			<linearGradient id="{uid}-g" x1="0" y1="0" x2="1" y2="1">
+				{#each stops as stop, i (i)}
+					<stop offset={stops.length === 1 ? 0 : i / (stops.length - 1)} style="stop-color: {stop}" />
+				{/each}
+			</linearGradient>
+		</defs>
+		<path d={shapePath(resolvedShape)} fill="url(#{uid}-g)" />
+		{#if face}
+			<circle cx="19" cy="22" r="2.6" fill="var(--nomi-on-gradient-glow)" />
+			<circle cx="29" cy="22" r="2.6" fill="var(--nomi-on-gradient-glow)" />
+		{/if}
+	</svg>
+{/snippet}
+
+{#if live}
+	<span
+		class="agent-shape-host relative inline-block shrink-0 {extraClass}"
+		style:width="{size}px"
+		style:height="{size}px"
+		role={label ? 'img' : undefined}
+		aria-label={label}
+		aria-hidden={label ? undefined : 'true'}
+		data-shape={resolvedShape}
+		data-live={avatar ? 'mounted' : 'pending'}
+		data-mood={effectiveMood}
+		onpointerenter={() => (hovered = true)}
+		onpointerleave={() => (hovered = false)}
+	>
+		{#if !avatar}{@render flat()}{/if}
+		<span bind:this={host} class="absolute inset-0" aria-hidden="true"></span>
+	</span>
+{:else}
+	{@render flat()}
+{/if}
 
 <style>
 	.agent-shape {
 		flex: none;
 		display: block;
 		transform-origin: 50% 50%;
+	}
+	.agent-shape-host {
+		display: inline-block;
+		vertical-align: middle;
 	}
 	/* Each motion is a spatial animation on the expressive spring curve; colour never animates. */
 	.agent-shape--working[data-motion='spin'] {
