@@ -38,6 +38,17 @@ pub(crate) fn shipyard_error(e: ShipyardError) -> ApiError {
         // Busy (a publish is running, the name is taken) is a conflict; anything else Shipyard
         // refused (a bad manifest, a missing secret, a plan or billing limit) can't be done as asked.
         ShipyardError::Rejected { status: 409, message, .. } => (StatusCode::CONFLICT, message),
+        ShipyardError::Rejected { status: 413, message, .. } => {
+            tracing::warn!(%message, "Shipyard rejected payload as too large");
+            (
+                StatusCode::PAYLOAD_TOO_LARGE,
+                if message.is_empty() || message == "Payload Too Large" {
+                    "The project files are too large to publish. Remove large media or data files and try again.".to_string()
+                } else {
+                    format!("The project files are too large to publish: {message}")
+                },
+            )
+        }
         ShipyardError::Rejected { message, .. } => (StatusCode::UNPROCESSABLE_ENTITY, message),
         ShipyardError::NotFound(message) => (StatusCode::NOT_FOUND, message),
         ShipyardError::Unauthorized(message) => {

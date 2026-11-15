@@ -43,6 +43,8 @@ pub struct CrewMember {
     pub is_own: bool,
     /// Nomi itself, which can't be switched off.
     pub is_default: bool,
+    /// Its tools by name: a built-in member's own, or the ones a dynamic member was given.
+    pub tools: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -138,7 +140,7 @@ pub async fn list_crew(
         let mut conn = state.pool.acquire().await.map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to list agents"))?;
         nomi_agent_core::user_locale(&mut conn, claims.sub).await
     };
-    let registry = crate::build_agent_registry(&state.pool, state.project_storage.clone());
+    let registry = crate::build_agent_registry(&state.pool, state.project_storage.clone(), state.tool_catalog.clone());
     let mut agents: Vec<CrewMember> = registry
         .agents()
         .iter()
@@ -157,6 +159,7 @@ pub async fn list_crew(
                 enabled: true,
                 is_own: false,
                 is_default: agent.is_default(),
+                tools: agent.tools().into_iter().map(|t| t.name).collect(),
             }
         })
         .collect();
@@ -166,8 +169,8 @@ pub async fn list_crew(
         agents.insert(0, nomi);
     }
 
-    let dynamic: Vec<(Uuid, String, String, String, String, String, bool)> = sqlx::query_as(
-        "SELECT id, name, intent_description, shape, tone, motion, owner_user_id IS NOT NULL FROM dynamic_agents \
+    let dynamic: Vec<(Uuid, String, String, String, String, String, bool, Vec<String>)> = sqlx::query_as(
+        "SELECT id, name, intent_description, shape, tone, motion, owner_user_id IS NOT NULL, granted_tools FROM dynamic_agents \
          WHERE is_active = true AND (owner_user_id IS NULL OR owner_user_id = $1) ORDER BY created_at",
     )
     .bind(claims.sub)
@@ -177,7 +180,7 @@ pub async fn list_crew(
         tracing::error!(error = %e, "failed to list dynamic agents for the crew");
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to list agents")
     })?;
-    agents.extend(dynamic.into_iter().map(|(id, name, description, shape, tone, motion, is_own)| CrewMember {
+    agents.extend(dynamic.into_iter().map(|(id, name, description, shape, tone, motion, is_own, tools)| CrewMember {
         agent_type: id.to_string(),
         name,
         role: first_sentence(&description),
@@ -190,6 +193,7 @@ pub async fn list_crew(
         enabled: true,
         is_own,
         is_default: false,
+        tools,
     }));
 
     let default_type = registry.default_agent().agent_type().into_owned();

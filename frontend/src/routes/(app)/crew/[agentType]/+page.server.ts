@@ -1,6 +1,7 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
-import { levelsFromForm, SOUL_MAX_CHARS } from '$lib/crewSettings';
+import { levelsFromForm, SOUL_MAX_CHARS, toolsFromForm, TOOLS_SET_FIELD } from '$lib/crewSettings';
+import { catalogFrom } from '$lib/toolPicker';
 import type { CrewActivityItem, CrewPermission, CrewSoul, CrewSoulVersion } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -11,12 +12,13 @@ export const load: PageServerLoad = async ({ cookies, fetch, params, parent }) =
 		const response = await apiFetch(fetch, cookies, path);
 		return response.ok ? ((await response.json()) as T) : null;
 	};
-	const [{ crew }, permissions, soul, versions, activity] = await Promise.all([
+	const [{ crew }, permissions, soul, versions, activity, catalog] = await Promise.all([
 		parent(),
 		read<CrewPermission[]>(`${base}/permissions`),
 		read<CrewSoul>(`${base}/soul`),
 		read<{ versions: CrewSoulVersion[] }>(`${base}/soul/versions`),
 		read<{ items: CrewActivityItem[] }>(`${base}/activity`),
+		read<unknown>('/api/tools/catalog'),
 	]);
 	const member = crew.find((m) => m.agent_type === params.agentType);
 	if (!member || permissions === null) throw error(404, 'Not found');
@@ -26,6 +28,7 @@ export const load: PageServerLoad = async ({ cookies, fetch, params, parent }) =
 		soul: soul ?? { text: '', version: 0 },
 		versions: versions?.versions ?? [],
 		activity: activity?.items ?? [],
+		catalog: catalogFrom(catalog),
 	};
 };
 
@@ -40,6 +43,16 @@ export const actions: Actions = {
 		if (!response.ok) return fail(response.status, { failed: 'enabled' as const });
 		return { saved: 'enabled' as const };
 	},
+	/** Sets the tools of a member the person made. */
+	tools: async ({ request, cookies, fetch, params }) => {
+		const tools = toolsFromForm(await request.formData());
+		const response = await apiFetch(fetch, cookies, `/api/agents/${encodeURIComponent(params.agentType)}`, {
+			method: 'PUT',
+			body: JSON.stringify({ tools }),
+		});
+		if (!response.ok) return fail(response.status, { failed: 'tools' as const });
+		return { saved: 'tools' as const };
+	},
 	permissions: async ({ request, cookies, fetch, params }) => {
 		const levels = levelsFromForm(await request.formData());
 		const response = await apiFetch(fetch, cookies, `/api/agents/${encodeURIComponent(params.agentType)}/permissions`, {
@@ -50,13 +63,17 @@ export const actions: Actions = {
 		return { saved: 'permissions' as const };
 	},
 	soul: async ({ request, cookies, fetch, params }) => {
-		const text = String((await request.formData()).get('text') ?? '');
+		const data = await request.formData();
+		const text = String(data.get('text') ?? '');
 		if (text.trim().length > SOUL_MAX_CHARS) return fail(400, { failed: 'soul' as const });
-		const response = await apiFetch(fetch, cookies, `/api/agents/${encodeURIComponent(params.agentType)}/soul`, {
-			method: 'PUT',
-			body: JSON.stringify({ text }),
-		});
+		const base = `/api/agents/${encodeURIComponent(params.agentType)}`;
+		const response = await apiFetch(fetch, cookies, `${base}/soul`, { method: 'PUT', body: JSON.stringify({ text }) });
 		if (!response.ok) return fail(response.status, { failed: 'soul' as const });
+		// A tool mentioned in the soul joined the member's tools in the same form: they save together.
+		if (data.has(TOOLS_SET_FIELD)) {
+			const tools = await apiFetch(fetch, cookies, base, { method: 'PUT', body: JSON.stringify({ tools: toolsFromForm(data) }) });
+			if (!tools.ok) return fail(tools.status, { failed: 'tools' as const });
+		}
 		return { saved: 'soul' as const };
 	},
 	/** Puts an earlier soul.md version back in use. */

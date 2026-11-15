@@ -10,6 +10,8 @@ export const NAME_MAX_CHARS = 40;
 export const ROLE_MAX_CHARS = 200;
 
 const LEVEL_FIELD = 'level:';
+/** A hidden field that marks a form as carrying the `tools` list, even an empty one. */
+export const TOOLS_SET_FIELD = 'tools_set';
 
 /** The form field a tool's level is posted in. */
 export function levelField(key: string): string {
@@ -32,6 +34,7 @@ export interface NewMemberBody {
 	name?: string;
 	role?: string;
 	soul?: string;
+	tools?: string[];
 }
 
 /** The New member form as the POST body, or which field is missing or too long. A template fills
@@ -50,6 +53,9 @@ export function newMemberFromForm(data: FormData): { body: NewMemberBody } | { i
 	if (name) body.name = name;
 	if (role) body.role = role;
 	if (soul) body.soul = soul;
+	// The form always says whether it carries the tools field, so an emptied list is sent as empty
+	// (and not mistaken for "keep the template's").
+	if (data.has(TOOLS_SET_FIELD)) body.tools = toolsFromForm(data);
 	return { body };
 }
 
@@ -62,4 +68,10 @@ export function toolLabel(name: string): string {
 /** Whether an Activity line went wrong (a failed task or a tool error). */
 export function activityFailed(item: CrewActivityItem): boolean {
 	return item.status === 'failed' || item.status === 'error';
+}
+
+/** The tool names in a form's repeated `tools` field, once each, in order. */
+export function toolsFromForm(data: FormData, field = 'tools'): string[] {
+	const names = data.getAll(field).map((value) => String(value).trim());
+	return [...new Set(names.filter(Boolean))];
 }

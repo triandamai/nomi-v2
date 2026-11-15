@@ -10,6 +10,7 @@ nomi-embedding = { path = "../nomi-embedding" }
 nomi-realtime = { path = "../nomi-realtime" }
 nomi-storage = { path = "../nomi-storage" }
 nomi-attachments = { path = "../nomi-attachments" }
+nomi-usage = { path = "../nomi-usage" }
 base64 = "0.22"
 async-trait = "0.1"
 sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json", "migrate", "macros"] }
@@ -24,6 +25,7 @@ tracing = "0.1.44"
 nomi-settings = { path = "../nomi-settings" }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 regex = "1"
+sha2 = "0.10"
 tokio = { version = "1", features = ["net", "time", "rt"] }
 
 [features]

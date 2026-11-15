@@ -59,6 +59,7 @@ fn http_client() -> reqwest::Client {
     CLIENT.get_or_init(reqwest::Client::new).clone()
 }
 
+#[derive(Clone)]
 pub struct HealthAgent {
     http: reqwest::Client,
     key: [u8; 32],
@@ -266,51 +267,7 @@ impl SubAgent for HealthAgent {
     }
 
     fn tools(&self) -> Vec<ToolDefinition> {
-        vec![
-            tool("hevy_workouts", "The person's Hevy workouts, newest first, 10 a page, with exercises and sets.",
-                json!({"type": "object", "properties": {"page": {"type": "integer", "description": "1 for the newest."}}})),
-            tool("hevy_workout", "One Hevy workout in full.", json!({"type": "object", "properties": {"workout_id": {"type": "string"}}, "required": ["workout_id"]})),
-            tool("hevy_workout_count", "How many workouts the person has logged in Hevy.", json!({"type": "object", "properties": {}})),
-            tool("hevy_workout_changes", "Workouts added, changed or deleted in Hevy since a time (ISO 8601).",
-                json!({"type": "object", "properties": {"since": {"type": "string"}, "page": {"type": "integer"}}, "required": ["since"]})),
-            tool("hevy_log_workout", "Log a finished workout in Hevy.", workout_schema(false)),
-            tool("hevy_update_workout", "Replace a Hevy workout with this version (read it first and send it back whole).", workout_schema(true)),
-            tool("hevy_routines", "The person's Hevy routines (workout plans), 10 a page.",
-                json!({"type": "object", "properties": {"page": {"type": "integer"}}})),
-            tool("hevy_routine", "One Hevy routine in full.", json!({"type": "object", "properties": {"routine_id": {"type": "string"}}, "required": ["routine_id"]})),
-            tool("hevy_create_routine", "Create a routine (a workout plan) in Hevy.", routine_schema(false)),
-            tool("hevy_update_routine", "Replace a Hevy routine with this version (read it first and send it back whole).", routine_schema(true)),
-            tool("hevy_routine_folders", "The person's Hevy routine folders.", json!({"type": "object", "properties": {"page": {"type": "integer"}}})),
-            tool("hevy_create_routine_folder", "Create a routine folder in Hevy.",
-                json!({"type": "object", "properties": {"title": {"type": "string"}}, "required": ["title"]})),
-            tool("hevy_find_exercises", "Find exercises (Hevy exercise templates, built-in and custom) by name and/or muscle group. Returns their ids.",
-                json!({"type": "object", "properties": {
-                    "query": {"type": "string", "description": "Part of the name, e.g. \"bench\" or \"squat\"."},
-                    "muscle_group": {"type": "string", "description": "e.g. chest, quadriceps, lats, shoulders, biceps, hamstrings, glutes, abdominals, cardio."},
-                    "custom_only": {"type": "boolean"}
-                }})),
-            tool("hevy_create_exercise", "Create a custom exercise in Hevy.",
-                json!({"type": "object", "properties": {
-                    "title": {"type": "string"},
-                    "exercise_type": {"type": "string", "enum": ["weight_reps", "reps_only", "bodyweight_reps", "bodyweight_assisted_reps", "duration", "weight_duration", "distance_duration", "short_distance_weight"]},
-                    "equipment_category": {"type": "string", "enum": ["none", "barbell", "dumbbell", "kettlebell", "machine", "plate", "resistance_band", "suspension", "other"]},
-                    "muscle_group": {"type": "string", "enum": ["abdominals", "shoulders", "biceps", "triceps", "forearms", "quadriceps", "hamstrings", "calves", "glutes", "abductors", "adductors", "lats", "upper_back", "traps", "lower_back", "chest", "cardio", "neck", "full_body", "other"]},
-                    "other_muscles": {"type": "array", "items": {"type": "string"}}
-                }, "required": ["title", "exercise_type", "equipment_category", "muscle_group"]})),
-            tool("hevy_exercise_history", "Every logged set of one exercise (for progress), optionally between two dates (ISO 8601).",
-                json!({"type": "object", "properties": {"exercise_template_id": {"type": "string"}, "start_date": {"type": "string"}, "end_date": {"type": "string"}}, "required": ["exercise_template_id"]})),
-            tool("hevy_body_measurements", "The person's body measurements in Hevy (weight, body fat, sizes), newest first, 10 a page.",
-                json!({"type": "object", "properties": {"page": {"type": "integer"}}})),
-            tool("hevy_log_body_measurement", "Log body measurements for a day in Hevy (an existing day is updated, keeping what isn't given).",
-                json!({"type": "object", "properties": {
-                    "date": {"type": "string", "description": "YYYY-MM-DD"},
-                    "weight_kg": {"type": "number"}, "lean_mass_kg": {"type": "number"}, "fat_percent": {"type": "number"},
-                    "neck_cm": {"type": "number"}, "shoulder_cm": {"type": "number"}, "chest_cm": {"type": "number"},
-                    "left_bicep_cm": {"type": "number"}, "right_bicep_cm": {"type": "number"}, "left_forearm_cm": {"type": "number"}, "right_forearm_cm": {"type": "number"},
-                    "abdomen": {"type": "number"}, "waist": {"type": "number"}, "hips": {"type": "number"},
-                    "left_thigh": {"type": "number"}, "right_thigh": {"type": "number"}, "left_calf": {"type": "number"}, "right_calf": {"type": "number"}
-                }, "required": ["date"]})),
-        ]
+        tool_definitions()
     }
 
     async fn execute_tool(
@@ -322,6 +279,13 @@ impl SubAgent for HealthAgent {
         name: &str,
         input: Value,
     ) -> Result<ToolOutcome, String> {
+        self.run(conn, user_id, name, input).await
+    }
+}
+
+impl HealthAgent {
+    /// Runs Hevy tool `name` in `user_id`'s own Hevy account.
+    async fn run(&self, conn: &mut PoolConnection<Postgres>, user_id: Uuid, name: &str, input: Value) -> Result<ToolOutcome, String> {
         let api_key = connection::api_key(conn, &self.key, user_id, connection::HEVY).await.map_err(|e| format!("couldn't load the Hevy connection: {e}"))?;
         let Some(api_key) = api_key else {
             return Ok(connect_card("not_connected", "The person hasn't connected Hevy. A card to connect it is shown to them."));
@@ -347,6 +311,111 @@ impl SubAgent for HealthAgent {
             Err(e) => Err(e.to_string()),
         }
     }
+}
+
+/// Extra search words for each Hevy tool.
+fn keywords_for(name: &str) -> &'static [&'static str] {
+    match name {
+        "hevy_workouts" => &["fitness", "gym", "training", "history"],
+        "hevy_workout" => &["fitness", "gym", "session"],
+        "hevy_workout_count" => &["fitness", "gym", "total"],
+        "hevy_workout_changes" => &["fitness", "sync", "updates"],
+        "hevy_log_workout" => &["fitness", "gym", "exercise", "record"],
+        "hevy_update_workout" => &["fitness", "gym", "edit"],
+        "hevy_routines" => &["fitness", "plan", "program"],
+        "hevy_routine" => &["fitness", "plan", "program"],
+        "hevy_create_routine" => &["fitness", "plan", "program"],
+        "hevy_update_routine" => &["fitness", "plan", "edit"],
+        "hevy_routine_folders" => &["fitness", "plan", "folders"],
+        "hevy_create_routine_folder" => &["fitness", "plan", "folder"],
+        "hevy_find_exercises" => &["fitness", "gym", "exercise", "muscle"],
+        "hevy_create_exercise" => &["fitness", "exercise", "custom"],
+        "hevy_exercise_history" => &["fitness", "progress", "lift", "sets"],
+        "hevy_body_measurements" => &["fitness", "weight", "body fat", "body"],
+        "hevy_log_body_measurement" => &["fitness", "weight", "body fat", "body"],
+        _ => &[],
+    }
+}
+
+/// One Hevy tool, run through `agent`'s Hevy access.
+pub struct HealthTool {
+    definition: ToolDefinition,
+    agent: std::sync::Arc<HealthAgent>,
+}
+
+#[async_trait]
+impl nomi_agent_core::Tool for HealthTool {
+    fn definition(&self) -> ToolDefinition {
+        self.definition.clone()
+    }
+    fn group(&self) -> &'static str {
+        HEALTH_AGENT_TYPE
+    }
+    fn keywords(&self) -> &'static [&'static str] {
+        keywords_for(&self.definition.name)
+    }
+    async fn execute(&self, conn: &mut PoolConnection<Postgres>, _session_id: Uuid, _agent_session_id: Uuid, user_id: Uuid, input: Value) -> Result<ToolOutcome, String> {
+        self.agent.run(conn, user_id, &self.definition.name, input).await
+    }
+}
+
+/// Every Hevy tool, run through `agent`'s HTTP client, key and Hevy address. All of them run for
+/// any agent: each works in the asking person's own Hevy account.
+pub fn catalog_tools(agent: &HealthAgent) -> Vec<Box<dyn nomi_agent_core::Tool>> {
+    let agent = std::sync::Arc::new(agent.clone());
+    tool_definitions()
+        .into_iter()
+        .map(|definition| Box::new(HealthTool { definition, agent: agent.clone() }) as Box<dyn nomi_agent_core::Tool>)
+        .collect()
+}
+
+/// Every Hevy tool, in the order Raga is offered them.
+fn tool_definitions() -> Vec<ToolDefinition> {
+    vec![
+        tool("hevy_workouts", "The person's Hevy workouts, newest first, 10 a page, with exercises and sets.",
+            json!({"type": "object", "properties": {"page": {"type": "integer", "description": "1 for the newest."}}})),
+        tool("hevy_workout", "One Hevy workout in full.", json!({"type": "object", "properties": {"workout_id": {"type": "string"}}, "required": ["workout_id"]})),
+        tool("hevy_workout_count", "How many workouts the person has logged in Hevy.", json!({"type": "object", "properties": {}})),
+        tool("hevy_workout_changes", "Workouts added, changed or deleted in Hevy since a time (ISO 8601).",
+            json!({"type": "object", "properties": {"since": {"type": "string"}, "page": {"type": "integer"}}, "required": ["since"]})),
+        tool("hevy_log_workout", "Log a finished workout in Hevy.", workout_schema(false)),
+        tool("hevy_update_workout", "Replace a Hevy workout with this version (read it first and send it back whole).", workout_schema(true)),
+        tool("hevy_routines", "The person's Hevy routines (workout plans), 10 a page.",
+            json!({"type": "object", "properties": {"page": {"type": "integer"}}})),
+        tool("hevy_routine", "One Hevy routine in full.", json!({"type": "object", "properties": {"routine_id": {"type": "string"}}, "required": ["routine_id"]})),
+        tool("hevy_create_routine", "Create a routine (a workout plan) in Hevy.", routine_schema(false)),
+        tool("hevy_update_routine", "Replace a Hevy routine with this version (read it first and send it back whole).", routine_schema(true)),
+        tool("hevy_routine_folders", "The person's Hevy routine folders.", json!({"type": "object", "properties": {"page": {"type": "integer"}}})),
+        tool("hevy_create_routine_folder", "Create a routine folder in Hevy.",
+            json!({"type": "object", "properties": {"title": {"type": "string"}}, "required": ["title"]})),
+        tool("hevy_find_exercises", "Find exercises (Hevy exercise templates, built-in and custom) by name and/or muscle group. Returns their ids.",
+            json!({"type": "object", "properties": {
+                "query": {"type": "string", "description": "Part of the name, e.g. \"bench\" or \"squat\"."},
+                "muscle_group": {"type": "string", "description": "e.g. chest, quadriceps, lats, shoulders, biceps, hamstrings, glutes, abdominals, cardio."},
+                "custom_only": {"type": "boolean"}
+            }})),
+        tool("hevy_create_exercise", "Create a custom exercise in Hevy.",
+            json!({"type": "object", "properties": {
+                "title": {"type": "string"},
+                "exercise_type": {"type": "string", "enum": ["weight_reps", "reps_only", "bodyweight_reps", "bodyweight_assisted_reps", "duration", "weight_duration", "distance_duration", "short_distance_weight"]},
+                "equipment_category": {"type": "string", "enum": ["none", "barbell", "dumbbell", "kettlebell", "machine", "plate", "resistance_band", "suspension", "other"]},
+                "muscle_group": {"type": "string", "enum": ["abdominals", "shoulders", "biceps", "triceps", "forearms", "quadriceps", "hamstrings", "calves", "glutes", "abductors", "adductors", "lats", "upper_back", "traps", "lower_back", "chest", "cardio", "neck", "full_body", "other"]},
+                "other_muscles": {"type": "array", "items": {"type": "string"}}
+            }, "required": ["title", "exercise_type", "equipment_category", "muscle_group"]})),
+        tool("hevy_exercise_history", "Every logged set of one exercise (for progress), optionally between two dates (ISO 8601).",
+            json!({"type": "object", "properties": {"exercise_template_id": {"type": "string"}, "start_date": {"type": "string"}, "end_date": {"type": "string"}}, "required": ["exercise_template_id"]})),
+        tool("hevy_body_measurements", "The person's body measurements in Hevy (weight, body fat, sizes), newest first, 10 a page.",
+            json!({"type": "object", "properties": {"page": {"type": "integer"}}})),
+        tool("hevy_log_body_measurement", "Log body measurements for a day in Hevy (an existing day is updated, keeping what isn't given).",
+            json!({"type": "object", "properties": {
+                "date": {"type": "string", "description": "YYYY-MM-DD"},
+                "weight_kg": {"type": "number"}, "lean_mass_kg": {"type": "number"}, "fat_percent": {"type": "number"},
+                "neck_cm": {"type": "number"}, "shoulder_cm": {"type": "number"}, "chest_cm": {"type": "number"},
+                "left_bicep_cm": {"type": "number"}, "right_bicep_cm": {"type": "number"}, "left_forearm_cm": {"type": "number"}, "right_forearm_cm": {"type": "number"},
+                "abdomen": {"type": "number"}, "waist": {"type": "number"}, "hips": {"type": "number"},
+                "left_thigh": {"type": "number"}, "right_thigh": {"type": "number"}, "left_calf": {"type": "number"}, "right_calf": {"type": "number"}
+            }, "required": ["date"]})),
+    ]
 }
 
 /// Runs one Hevy tool. A workout or routine it saves goes in `saved` (with the card's heading),

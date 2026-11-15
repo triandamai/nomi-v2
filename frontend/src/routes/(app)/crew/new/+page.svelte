@@ -1,13 +1,36 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { enhance } from '$app/forms';
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
 	import TextField from '$lib/components/m3/TextField.svelte';
-	import { NAME_MAX_CHARS, ROLE_MAX_CHARS, SOUL_MAX_CHARS } from '$lib/crewSettings';
+	import SoulEditor from '$lib/components/tools/SoulEditor.svelte';
+	import ToolPicker from '$lib/components/tools/ToolPicker.svelte';
+	import { NAME_MAX_CHARS, ROLE_MAX_CHARS, SOUL_MAX_CHARS, TOOLS_SET_FIELD } from '$lib/crewSettings';
+	import { addTool } from '$lib/toolPicker';
+	import type { CrewTemplate } from '$lib/types';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
+
+	// The form's fields live here so a template can fill them (the person then adjusts and adds it);
+	// after a failed save the server hands back what was typed.
+	let name = $state(untrack(() => form?.name ?? ''));
+	let role = $state(untrack(() => form?.role ?? ''));
+	let soul = $state(untrack(() => form?.soul ?? ''));
+	let template = $state(untrack(() => form?.template ?? ''));
+	let tools = $state<string[]>(untrack(() => [...(form?.tools ?? [])]));
+	let blank: HTMLElement | undefined = $state();
+
+	function useTemplate(chosen: CrewTemplate) {
+		name = chosen.name;
+		role = chosen.role;
+		soul = chosen.soul;
+		template = chosen.key;
+		tools = [...chosen.tools];
+		blank?.scrollIntoView({ block: 'start' });
+	}
 
 	const errorText = $derived.by(() => {
 		if (form && 'invalid' in form) {
@@ -31,32 +54,32 @@
 			<section aria-labelledby="templates-title">
 				<h2 id="templates-title" class="new-page__section">{m.crewnew_templates()}</h2>
 				<ul class="templates">
-					{#each data.templates as template (template.key)}
+					{#each data.templates as item (item.key)}
 						<li class="template">
-							<AgentShape agent={template.key} size={40} />
+							<AgentShape agent={item.key} size={40} />
 							<div class="template__text">
-								<span class="template__name">{template.name}</span>
-								<span class="template__role">{template.role}</span>
+								<span class="template__name">{item.name}</span>
+								<span class="template__role">{item.role}</span>
 							</div>
-							<form method="POST" use:enhance>
-								<input type="hidden" name="template" value={template.key} />
-								<Button variant="tonal" size="s" type="submit">{m.crewnew_use_template()}</Button>
-							</form>
+							<Button variant="tonal" size="s" type="button" onclick={() => useTemplate(item)}>{m.crewnew_use_template()}</Button>
 						</li>
 					{/each}
 				</ul>
 			</section>
 		{/if}
 
-		<section class="blank" aria-labelledby="blank-title">
+		<section class="blank" aria-labelledby="blank-title" bind:this={blank}>
 			<h2 id="blank-title" class="new-page__section">{m.crewnew_blank()}</h2>
 			<form method="POST" use:enhance class="blank__form">
-				<TextField label={m.crewnew_name()} name="name" value={form?.name ?? ''} maxlength={NAME_MAX_CHARS} required error={!!form && 'invalid' in form && form.invalid === 'name'} />
-				<TextField label={m.crewnew_role()} name="role" value={form?.role ?? ''} maxlength={ROLE_MAX_CHARS} required error={!!form && 'invalid' in form && form.invalid === 'role'} />
-				<label class="blank__soul">
+				<input type="hidden" name="template" value={template} />
+				<input type="hidden" name={TOOLS_SET_FIELD} value="1" />
+				<TextField label={m.crewnew_name()} name="name" bind:value={name} maxlength={NAME_MAX_CHARS} required error={!!form && 'invalid' in form && form.invalid === 'name'} />
+				<TextField label={m.crewnew_role()} name="role" bind:value={role} maxlength={ROLE_MAX_CHARS} required error={!!form && 'invalid' in form && form.invalid === 'role'} />
+				<div class="blank__soul">
 					<span>{m.crewnew_soul()}</span>
-					<textarea name="soul" rows="6" maxlength={SOUL_MAX_CHARS} value={form?.soul ?? ''}></textarea>
-				</label>
+					<SoulEditor bind:value={soul} name="soul" label={m.crewnew_soul()} maxlength={SOUL_MAX_CHARS} crew={data.crew} tools={data.catalog} ontoolmention={(tool) => (tools = addTool(tools, tool))} />
+				</div>
+				<ToolPicker label={m.crewnew_tools()} options={data.catalog} bind:selected={tools} name="tools" />
 				<div class="blank__actions">
 					<Button variant="filled" size="s" type="submit">{m.crewnew_create()}</Button>
 				</div>
@@ -158,22 +181,6 @@
 		gap: 6px;
 		color: var(--md-sys-color-on-surface-variant);
 		font-size: 0.875rem;
-	}
-	.blank__soul textarea {
-		box-sizing: border-box;
-		width: 100%;
-		padding: 12px;
-		border: 1px solid var(--md-sys-color-outline-variant);
-		border-radius: var(--md-sys-shape-corner-medium);
-		background: var(--md-sys-color-surface-container-low);
-		color: var(--md-sys-color-on-surface);
-		font-family: var(--md-ref-typeface-mono);
-		font-size: 0.8125rem;
-		resize: vertical;
-	}
-	.blank__soul textarea:focus-visible {
-		outline: 2px solid var(--md-sys-color-primary);
-		outline-offset: 1px;
 	}
 	.blank__actions {
 		display: flex;

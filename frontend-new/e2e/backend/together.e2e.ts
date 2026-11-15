@@ -78,4 +78,8 @@ test('a teammate’s message in the project chat carries her name, her colour an
 	await expect(hers.getByText('Sari Wulandari')).toBeVisible();
 	await expect(hers.getByText(/^to /)).toBeVisible();
 	await expect(hers.getByText('SW')).toBeVisible();
+
+	// One she sends while Mario watches arrives live, and is hers too (not shown as his own).
+	expect((await api(sari, `/api/sessions/${session}/messages`, { method: 'POST', body: JSON.stringify({ text: 'Dan minuman dingin' }) })).ok).toBe(true);
+	await expect(chat.getByRole('article').filter({ hasText: 'Dan minuman dingin' }).getByText('Sari Wulandari')).toBeVisible();
 });

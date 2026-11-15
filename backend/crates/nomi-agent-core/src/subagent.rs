@@ -187,6 +187,12 @@ pub trait SubAgent: Send + Sync {
         false
     }
 
+    /// When true, run_agent_turn gives this agent `create_agent`: adding a member to the person's
+    /// own crew, with tools from the catalog. Only Nomi and the supervisor make members.
+    fn creates_crew_members(&self) -> bool {
+        false
+    }
+
     /// Gives the agent private record storage (save/list/update/delete_record; see
     /// `crate::records`): for agents without tables of their own. Every dynamic agent has it.
     fn uses_records(&self) -> bool {

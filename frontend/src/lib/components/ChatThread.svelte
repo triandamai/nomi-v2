@@ -25,6 +25,7 @@
 	import { agentTypeFallbackLabel, commandActivity, delegationStatusLabel, retryActivity, sanitizeError, stepLabel, toolActivityLabel } from '$lib/agentLabels';
 	import { buildCrew, type CrewRosterMember } from '$lib/crew';
 	import { crewId } from '$lib/crewId';
+	import { crewMentionOptions } from '$lib/mentions';
 	import IconMenu from '$lib/components/icons/IconMenu.svelte';
 	import type { MentionOption } from '$lib/components/ds/chat/mention';
 	import Banner from '$lib/components/ds/chat/Banner.svelte';
@@ -801,9 +802,7 @@
 		}),
 	);
 	// "@" in the composer offers the crew by the names the server routes on (nomi_agent_core::mention).
-	const mentionOptions = $derived<MentionOption[]>(
-		((page.data.crew ?? []) as CrewRosterMember[]).map((member) => ({ kind: 'crew', agent: crewId(member.agent_type), name: member.name, role: member.role })),
-	);
+	const mentionOptions = $derived<MentionOption[]>(crewMentionOptions((page.data.crew ?? []) as CrewRosterMember[]));
 	const involvedCrew = $derived(crew.filter((m) => m.involved));
 	const workingCrew = $derived(crew.filter((m) => m.working));
 

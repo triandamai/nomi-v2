@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { filterMentions, insertMention, mentionAt, MAX_MENTION_OPTIONS } from './mentions';
+import { crewMentionOptions, type MentionChoice, type ToolMentionOption, filterMentions, insertMention, mentionAt, toolMentionOptions, MAX_MENTION_OPTIONS } from './mentions';
+import type { CrewRosterMember } from './crew';
 import type { MentionOption } from '$lib/components/ds/chat/mention';
 
 const crew: MentionOption[] = [
@@ -34,9 +35,39 @@ describe('filterMentions', () => {
 	});
 });
 
+const tools: ToolMentionOption[] = [
+	{ kind: 'tool', name: 'list_files', group: 'Coding', description: 'List project files', keywords: ['browse'] },
+	{ kind: 'tool', name: 'read_file', group: 'Coding', description: 'Read a project file' },
+];
+
+describe('filterMentions with tools', () => {
+	it('lists crew before tools whatever their order in, so the highlight follows what is shown', () => {
+		expect(filterMentions<MentionChoice>([...tools, ...crew], 'k').map((o) => o.name)).toEqual(['Kala', 'Koda']);
+		expect(filterMentions<MentionChoice>([...tools, ...crew], 'a').map((o) => o.name)).toEqual(['Dana', 'Kala', 'Koda', 'read_file']);
+	});
+
+	it('finds a tool by its keywords, after name matches', () => {
+		expect(filterMentions(tools, 'browse').map((o) => o.name)).toEqual(['list_files']);
+		expect(filterMentions(crew, 'browse')).toEqual([]);
+	});
+});
+
+describe('mention option builders', () => {
+	it('maps the roster to crew options', () => {
+		const roster = [{ agent_type: 'money', name: 'Dana', role: 'Money' }] as CrewRosterMember[];
+		expect(crewMentionOptions(roster)).toEqual([{ kind: 'crew', agent: 'dana', name: 'Dana', role: 'Money' }]);
+	});
+
+	it('maps the catalog to tool options with the shown description', () => {
+		const [option] = toolMentionOptions([{ name: 'brand_new_tool', description: 'API text', group: 'X', keywords: ['k'] }]);
+		expect(option).toEqual({ kind: 'tool', name: 'brand_new_tool', group: 'X', description: 'API text', keywords: ['k'] });
+	});
+});
+
 describe('insertMention', () => {
 	it('swaps the query for the name and a space, caret after it', () => {
 		expect(insertMention('ask @Ko now', 4, 7, 'Koda')).toEqual({ text: 'ask @Koda now', caret: 10 });
 		expect(insertMention('@d', 0, 2, 'Dana')).toEqual({ text: '@Dana ', caret: 6 });
+		expect(insertMention('use @read', 4, 9, 'read_file')).toEqual({ text: 'use @read_file ', caret: 15 });
 	});
 });

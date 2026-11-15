@@ -32,6 +32,9 @@ const SYSTEM_PROMPT: &str = "You are Kala, the member of Nomi's crew who keeps r
      You only keep reminders; for work an agent should do later (\"every Monday, summarize my \
      spending\"), say that Nomi can schedule it. When you're done, call complete_task.";
 
+/// Most upcoming reminders `show_reminders` lists.
+const UPCOMING_LIMIT: i64 = 25;
+
 const TOOL_NAMES: [&str; 5] = ["add_reminder", "show_reminders", "edit_reminder", "complete_reminder", "remove_reminder"];
 
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
@@ -424,6 +427,87 @@ async fn edit(conn: &mut PgConnection, user_id: Uuid, input: &Value, tz: chrono_
     Ok(format!("Updated: {title}, {}.", due_at.format("%a %-d %b %H:%M")))
 }
 
+/// Runs one of Kala's tools, `name`, for `user_id` in chat `session_id`.
+async fn run_tool(conn: &mut PoolConnection<Postgres>, session_id: Uuid, user_id: Uuid, name: &str, input: Value) -> Result<nomi_agent_core::ToolOutcome, String> {
+    let tz = user_timezone(conn, user_id).await;
+    let text = match name {
+        "add_reminder" => {
+            let due_at = parse_due_at(input.get("due_at").and_then(|v| v.as_str()).ok_or("due_at is required")?, tz)?;
+            let reminder = add(
+                conn,
+                user_id,
+                session_id,
+                NewReminder {
+                    title: input.get("title").and_then(|v| v.as_str()).unwrap_or_default(),
+                    notes: input.get("notes").and_then(|v| v.as_str()),
+                    due_at,
+                    recurrence: input.get("recurrence").and_then(|v| v.as_str()),
+                },
+                "agent",
+            )
+            .await?;
+            format!("Reminder set: {}", describe(&reminder, tz))
+        }
+        "show_reminders" => {
+            let upcoming = list(conn, user_id, &["active"], UPCOMING_LIMIT).await.map_err(|e| e.to_string())?;
+            if upcoming.is_empty() {
+                "No upcoming reminders.".to_string()
+            } else {
+                upcoming.iter().map(|r| describe(r, tz)).collect::<Vec<_>>().join("\n")
+            }
+        }
+        "edit_reminder" => edit(conn, user_id, &input, tz).await?,
+        "complete_reminder" | "remove_reminder" => {
+            let status = if name == "complete_reminder" { "done" } else { "cancelled" };
+            if !set_status(conn, user_id, reminder_id(&input)?, status).await.map_err(|e| e.to_string())? {
+                return Err("no open reminder with that id".to_string());
+            }
+            if status == "done" { "Ticked off.".to_string() } else { "Removed.".to_string() }
+        }
+        other => return Err(format!("unknown tool: {other}")),
+    };
+    Ok(nomi_agent_core::ToolOutcome::text(text))
+}
+
+/// Extra search words for each of Kala's tools.
+fn keywords_for(name: &str) -> &'static [&'static str] {
+    match name {
+        "add_reminder" => &["remind", "alarm", "schedule", "todo"],
+        "show_reminders" => &["list", "upcoming", "remind", "alarm"],
+        "edit_reminder" => &["change", "reschedule", "remind"],
+        "complete_reminder" => &["done", "tick", "finish", "remind"],
+        "remove_reminder" => &["cancel", "delete", "remind"],
+        _ => &[],
+    }
+}
+
+/// One of Kala's tools.
+pub struct ReminderTool {
+    definition: ToolDefinition,
+}
+
+#[async_trait]
+impl nomi_agent_core::Tool for ReminderTool {
+    fn definition(&self) -> ToolDefinition {
+        self.definition.clone()
+    }
+    fn group(&self) -> &'static str {
+        REMINDERS_AGENT_TYPE
+    }
+    fn keywords(&self) -> &'static [&'static str] {
+        keywords_for(&self.definition.name)
+    }
+    async fn execute(&self, conn: &mut PoolConnection<Postgres>, session_id: Uuid, _agent_session_id: Uuid, user_id: Uuid, input: Value) -> Result<nomi_agent_core::ToolOutcome, String> {
+        run_tool(conn, session_id, user_id, &self.definition.name, input).await
+    }
+}
+
+/// Every reminders tool, in the order Kala is offered them. All of them run for any agent: they
+/// only touch the user's own reminders, posted back into the chat they were set in.
+pub fn catalog_tools() -> Vec<Box<dyn nomi_agent_core::Tool>> {
+    tool_definitions().into_iter().map(|definition| Box::new(ReminderTool { definition }) as Box<dyn nomi_agent_core::Tool>).collect()
+}
+
 pub struct RemindersAgent;
 
 #[async_trait]
@@ -446,56 +530,21 @@ impl SubAgent for RemindersAgent {
     }
 
     fn tools(&self) -> Vec<ToolDefinition> {
-        tool_definitions()
+        nomi_agent_core::tool_definitions(&catalog_tools())
     }
 
     async fn execute_tool(
         &self,
         conn: &mut PoolConnection<Postgres>,
         session_id: Uuid,
-        _agent_session_id: Uuid,
+        agent_session_id: Uuid,
         user_id: Uuid,
         name: &str,
         input: Value,
     ) -> Result<nomi_agent_core::ToolOutcome, String> {
-        let tz = user_timezone(conn, user_id).await;
-        let text = match name {
-            "add_reminder" => {
-                let due_at = parse_due_at(input.get("due_at").and_then(|v| v.as_str()).ok_or("due_at is required")?, tz)?;
-                let reminder = add(
-                    conn,
-                    user_id,
-                    session_id,
-                    NewReminder {
-                        title: input.get("title").and_then(|v| v.as_str()).unwrap_or_default(),
-                        notes: input.get("notes").and_then(|v| v.as_str()),
-                        due_at,
-                        recurrence: input.get("recurrence").and_then(|v| v.as_str()),
-                    },
-                    "agent",
-                )
-                .await?;
-                format!("Reminder set: {}", describe(&reminder, tz))
-            }
-            "show_reminders" => {
-                let upcoming = list(conn, user_id, &["active"], 25).await.map_err(|e| e.to_string())?;
-                if upcoming.is_empty() {
-                    "No upcoming reminders.".to_string()
-                } else {
-                    upcoming.iter().map(|r| describe(r, tz)).collect::<Vec<_>>().join("\n")
-                }
-            }
-            "edit_reminder" => edit(conn, user_id, &input, tz).await?,
-            "complete_reminder" | "remove_reminder" => {
-                let status = if name == "complete_reminder" { "done" } else { "cancelled" };
-                if !set_status(conn, user_id, reminder_id(&input)?, status).await.map_err(|e| e.to_string())? {
-                    return Err("no open reminder with that id".to_string());
-                }
-                if status == "done" { "Ticked off.".to_string() } else { "Removed.".to_string() }
-            }
-            other => return Err(format!("unknown tool: {other}")),
-        };
-        Ok(nomi_agent_core::ToolOutcome::text(text))
+        let tools = catalog_tools();
+        let tool = nomi_agent_core::find_tool(&tools, name).ok_or_else(|| format!("unknown tool: {name}"))?;
+        tool.execute(conn, session_id, agent_session_id, user_id, input).await
     }
 
     fn intent_label(&self) -> Cow<'static, str> {

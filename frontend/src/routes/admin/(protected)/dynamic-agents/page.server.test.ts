@@ -29,6 +29,16 @@ describe('dynamic-agents page.server', () => {
 		expect(data).toMatchObject({ agents: [agentData] });
 	});
 
+	it('load also reads the tool catalog for the picker, and copes without it', async () => {
+		const cookies = cookieJar({ access_token: 'valid' });
+		const tools = [{ name: 'read_file', description: 'Read', group: 'Coding', keywords: [] }];
+		vi.stubGlobal('fetch', vi.fn(async (url: string) => (String(url).includes('/api/tools/catalog') ? json({ tools }) : json([agentData]))));
+		expect(await load(event({ cookies }))).toMatchObject({ agents: [agentData], catalog: tools });
+
+		vi.stubGlobal('fetch', vi.fn(async (url: string) => (String(url).includes('/api/tools/catalog') ? json({}, 500) : json([agentData]))));
+		expect(await load(event({ cookies }))).toMatchObject({ catalog: [] });
+	});
+
 	it('create validates fields and posts to API', async () => {
 		const cookies = cookieJar({ access_token: 'valid' });
 		const bad = await actions.create(event({ cookies, form: { name: '' } }));
