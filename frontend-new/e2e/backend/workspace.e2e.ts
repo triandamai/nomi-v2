@@ -105,6 +105,10 @@ test('Deployments, Domain, Monitor and Database say what can’t be done yet, an
 	await tools.getByRole('button', { name: 'Domain' }).click();
 	await expect(page.getByText('No address yet')).toBeVisible();
 	await expect(page.getByRole('button', { name: 'Change address' })).toHaveCount(0);
+	// A domain of one's own waits for the app to be live: its records point at the live address.
+	await expect(page.getByRole('heading', { name: 'Use your own domain' })).toBeVisible();
+	await expect(page.getByText('Publish the app first: your domain points at its live address.')).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Add domain' })).toHaveCount(0);
 	await tools.getByRole('button', { name: 'Domain' }).click();
 	await expect(page.getByText('No address yet')).toHaveCount(0);
 

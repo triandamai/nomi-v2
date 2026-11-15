@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
-	import { Activity, ArrowDownUp, Cpu, Database, Download, Globe, History, Hourglass, KeyRound, Link, Lock, MemoryStick, MonitorX, Power, Rocket, Settings, UserMinus, Users } from '@lucide/svelte';
+	import { Activity, ArrowDownUp, Cpu, Database, Download, Globe, History, Hourglass, KeyRound, Link, Lock, MemoryStick, MonitorX, Power, RefreshCw, Rocket, Settings, Trash2, UserMinus, Users } from '@lucide/svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { pageAction } from '$lib/pageAction';
 	import { clock as appClock } from '$lib/clock';
@@ -30,6 +30,8 @@
 	import { ago } from '$lib/adapters/time';
 	import { maskAddress } from '$lib/settings/connections';
 	import TextField from '$lib/ds/inputs/TextField.svelte';
+	import DnsRecords from '$lib/ds/projects/DnsRecords.svelte';
+	import { domainView } from '$lib/projects/domains';
 	import Search from '$lib/ds/inputs/Search.svelte';
 	import type { TransferTarget } from '$lib/server/workspace';
 	import { cellText } from '$lib/projects/database';
@@ -240,6 +242,29 @@
 		renaming = false;
 		toasts.show({ kind: 'success', title: m.domain_changed() });
 		await invalidate('app:workspace-project');
+	}
+
+	// A domain of the person's own (Screen / Domain J2hPJ, Domain connected Dd60u): its address
+	// beside the app's, the records to set at the registrar, Check now, Make primary once every
+	// record is found, and Remove (asked first). Anyone on the project sees and checks them; the
+	// project's admins add, make primary and remove. The app has to be live first.
+	const ownDomains = $derived(data.ownDomains ?? []);
+	let newDomain = $state('');
+	let domainBusy = $state<string | null>(null);
+	let domainError = $state<string | null>(null);
+	let removingDomain = $state<string | null>(null);
+	async function domainAction(name: 'domainAdd' | 'domainCheck' | 'domainPrimary' | 'domainRemove', hostname: string, done?: string): Promise<boolean> {
+		domainBusy = `${name}:${hostname}`;
+		domainError = null;
+		const result = await pageAction(`/projects/${project.id}`, name, { hostname });
+		domainBusy = null;
+		if (!result.ok) {
+			domainError = result.message || m.action_failed();
+			return false;
+		}
+		if (done) toasts.show({ kind: 'success', title: done });
+		await invalidate('app:workspace-project');
+		return true;
 	}
 
 	// Monitor (step 10): the live app's numbers, looked at again every 30 seconds while it's open.
@@ -1085,7 +1110,30 @@
 							<p class="font-mono text-label tracking-label text-text-3 uppercase">{m.domain_addresses()}</p>
 							<AddressRow address={address.hostname} href={address.url ?? undefined} state={liveUrl ? { label: m.deploy_state_live(), tone: 'live' } : undefined} />
 							{#if address.pending_hostname}<AddressRow address={address.pending_hostname} state={{ label: m.domain_next_publish(), tone: 'waiting' }} strong />{/if}
+							{#each ownDomains as own (own.hostname)}
+								{@const shown = domainView(own, time.timeZone)}
+								<AddressRow address={own.hostname} href={shown.state.tone === 'live' ? `https://${own.hostname}` : undefined} state={shown.state} strong />
+							{/each}
 						</div>
+						{#each ownDomains as own (own.hostname)}
+							{@const shown = domainView(own, time.timeZone)}
+							<section aria-label={own.hostname} class="flex flex-col gap-4">
+								{#if ownDomains.length > 1}<p class="font-mono text-ui text-text">{own.hostname}{#if own.primary} · {m.domain_primary_tag()}{/if}</p>{/if}
+								<DnsRecords
+									records={shown.records}
+									checked={shown.checked}
+									labels={{ heading: m.domain_registrar(), type: m.domain_col_type(), name: m.domain_col_name(), value: m.domain_col_value(), status: m.domain_col_status(), found: m.domain_found(), waiting: m.domain_waiting(), copy: m.domain_copy_value() }}
+								/>
+								<p class="text-ui text-text-3">{shown.note}</p>
+								<div class="flex flex-wrap gap-2">
+									<Button variant="secondary" label={m.domain_check_now()} iconEnd={RefreshCw} loading={domainBusy === `domainCheck:${own.hostname}`} onclick={() => void domainAction('domainCheck', own.hostname)} />
+									{#if address.can_edit && shown.canMakePrimary}
+										<Button variant="secondary" label={m.domain_make_primary()} loading={domainBusy === `domainPrimary:${own.hostname}`} onclick={() => void domainAction('domainPrimary', own.hostname, m.domain_primary_done({ hostname: own.hostname }))} />
+									{/if}
+									{#if address.can_edit}<Button variant="ghost" iconStart={Trash2} label={m.domain_remove()} onclick={() => (removingDomain = own.hostname)} />{/if}
+								</div>
+							</section>
+						{/each}
 						{#if renaming}
 							<div class="flex flex-col gap-3">
 								<SubdomainField
@@ -1109,6 +1157,27 @@
 							<div><Button variant="secondary" label={m.domain_change()} onclick={startRenaming} /></div>
 						{/if}
 					{/if}
+					{#if address.can_edit}
+						<section aria-labelledby="own-domain-title" class="flex flex-col gap-3 border-t border-border pt-4">
+							<header class="flex flex-col gap-0.5">
+								<h3 id="own-domain-title" class="text-ui font-medium text-text">{m.domain_add_title()}</h3>
+								<p class="text-caption text-text-3">{liveUrl ? m.domain_add_body() : m.domain_add_live_first()}</p>
+							</header>
+							{#if liveUrl}
+								<form
+									class="flex items-end gap-2"
+									onsubmit={async (event) => {
+										event.preventDefault();
+										if (await domainAction('domainAdd', newDomain.trim().toLowerCase())) newDomain = '';
+									}}
+								>
+									<div class="min-w-0 flex-1"><TextField label={m.domain_add_field()} bind:value={newDomain} placeholder="warungkopi.id" mono name="hostname" autocomplete="off" /></div>
+									<Button type="submit" variant="inverse" label={m.domain_add()} loading={domainBusy?.startsWith('domainAdd:') ?? false} disabled={!newDomain.trim()} />
+								</form>
+							{/if}
+						</section>
+					{/if}
+					{#if domainError}<p role="alert" class="text-caption text-danger">{domainError}</p>{/if}
 				</WorkspaceSheet>
 			</div>
 		{/if}
@@ -1200,6 +1269,21 @@
 	{#snippet actions()}
 		<Button variant="ghost" label={m.action_cancel()} onclick={() => (dialog = null)} />
 		<Button variant="inverse" label={m.transfer_send()} loading={acting} disabled={!target || confirmName.trim() !== project.name} onclick={() => act('transfer', { to: target ?? '', name: confirmName.trim() })} />
+	{/snippet}
+</ProjectDialog>
+
+<ProjectDialog open={removingDomain !== null} title={m.domain_remove_title({ hostname: removingDomain ?? '' })} description={m.domain_remove_body()} width={460} onclose={() => (removingDomain = null)}>
+	{#snippet actions()}
+		<Button variant="ghost" label={m.action_cancel()} onclick={() => (removingDomain = null)} />
+		<Button
+			variant="danger"
+			label={m.domain_remove()}
+			loading={domainBusy?.startsWith('domainRemove:') ?? false}
+			onclick={async () => {
+				const hostname = removingDomain ?? '';
+				if (await domainAction('domainRemove', hostname, m.domain_removed({ hostname }))) removingDomain = null;
+			}}
+		/>
 	{/snippet}
 </ProjectDialog>
 
