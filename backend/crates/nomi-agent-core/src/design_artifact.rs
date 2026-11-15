@@ -24,6 +24,8 @@ pub const MAX_PATH_CHARS: usize = 120;
 pub const MAX_LABEL_CHARS: usize = 120;
 /// The most elements one preview's manifest lists.
 pub const MAX_ELEMENTS: usize = 300;
+/// The characters in a version's preview token.
+pub const PREVIEW_TOKEN_CHARS: usize = 64;
 /// The file kinds a preview holds, each with what it is served as.
 const KINDS: [(&str, &str); 4] =
     [("html", "text/html; charset=utf-8"), ("css", "text/css; charset=utf-8"), ("js", "text/javascript; charset=utf-8"), ("svg", "image/svg+xml")];
@@ -363,6 +365,47 @@ pub async fn files(conn: &mut PgConnection, session_id: Uuid, version: i32) -> R
     .fetch_all(conn)
     .await?;
     Ok(rows.into_iter().map(|(path, content)| ArtifactFile { path, content }).collect())
+}
+
+/// One stored version, as the Design Studio lists it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StoredVersion {
+    pub version: i32,
+    pub manifest: Manifest,
+    /// The unguessable name its files are served under (see `file_by_token`).
+    pub preview_token: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    /// Where it was published last, when it was.
+    pub published_url: Option<String>,
+}
+
+/// Every version of the chat's previews, oldest first.
+pub async fn list(conn: &mut PgConnection, session_id: Uuid) -> Result<Vec<StoredVersion>, sqlx::Error> {
+    let rows: Vec<(i32, sqlx::types::Json<Manifest>, String, chrono::DateTime<chrono::Utc>, Option<String>)> = sqlx::query_as(
+        "SELECT a.version, a.manifest, a.preview_token, a.created_at, \
+                (SELECT p.url FROM design_artifact_publications p WHERE p.artifact_id = a.id ORDER BY p.created_at DESC, p.id DESC LIMIT 1) \
+         FROM design_artifacts a WHERE a.session_id = $1 ORDER BY a.version",
+    )
+    .bind(session_id)
+    .fetch_all(conn)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|(version, manifest, preview_token, created_at, published_url)| StoredVersion { version, manifest: manifest.0, preview_token, created_at, published_url })
+        .collect())
+}
+
+/// One file of the version named by `token`: what it is served as, and its content. The token
+/// is the whole permission, so nothing else about the asker is checked.
+pub async fn file_by_token(conn: &mut PgConnection, token: &str, path: &str) -> Result<Option<(String, String)>, sqlx::Error> {
+    sqlx::query_as(
+        "SELECT f.content_type, f.content FROM design_artifact_files f JOIN design_artifacts a ON a.id = f.artifact_id \
+         WHERE a.preview_token = $1 AND f.path = $2",
+    )
+    .bind(token)
+    .bind(path)
+    .fetch_optional(conn)
+    .await
 }
 
 /// One file of one version: what it is served as, and its content.

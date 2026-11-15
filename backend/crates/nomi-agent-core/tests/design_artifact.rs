@@ -82,3 +82,30 @@ async fn deleting_the_chat_takes_its_previews_with_it(pool: PgPool) {
     let left: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM design_artifact_files").fetch_one(&mut *conn).await.unwrap();
     assert_eq!(left, 0);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn versions_are_listed_oldest_first_each_with_its_own_unguessable_name(pool: PgPool) {
+    let (session_id, user_id) = chat(&pool).await;
+    let (other_chat, _) = chat(&pool).await;
+    let mut conn = pool.acquire().await.unwrap();
+    assert!(design_artifact::list(&mut conn, session_id).await.unwrap().is_empty());
+    design_artifact::save(&mut conn, session_id, Uuid::new_v4(), user_id, None, &preview("editorial", "Fresh at six")).await.unwrap();
+    design_artifact::save(&mut conn, session_id, Uuid::new_v4(), user_id, None, &preview("swiss", "Bread, daily")).await.unwrap();
+    design_artifact::save(&mut conn, other_chat, Uuid::new_v4(), user_id, None, &preview("editorial", "Elsewhere")).await.unwrap();
+    static_publish::record(&mut conn, session_id, 2, &Published { provider: "fake".into(), url: "https://previews.example/b".into() }).await.unwrap();
+
+    let listed = design_artifact::list(&mut conn, session_id).await.unwrap();
+    assert_eq!(listed.iter().map(|v| (v.version, v.manifest.direction_id.as_str())).collect::<Vec<_>>(), [(1, "editorial"), (2, "swiss")]);
+    assert_eq!(listed.iter().map(|v| v.published_url.as_deref()).collect::<Vec<_>>(), [None, Some("https://previews.example/b")]);
+    for stored in &listed {
+        assert_eq!(stored.preview_token.len(), design_artifact::PREVIEW_TOKEN_CHARS);
+        assert!(stored.preview_token.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+    assert_ne!(listed[0].preview_token, listed[1].preview_token);
+
+    let (content_type, content) = design_artifact::file_by_token(&mut conn, &listed[1].preview_token, "index.html").await.unwrap().expect("the page");
+    assert_eq!(content_type, "text/html; charset=utf-8");
+    assert!(content.contains("Bread, daily"));
+    assert_eq!(design_artifact::file_by_token(&mut conn, &listed[1].preview_token, "nope.css").await.unwrap(), None);
+    assert_eq!(design_artifact::file_by_token(&mut conn, "0".repeat(design_artifact::PREVIEW_TOKEN_CHARS).as_str(), "index.html").await.unwrap(), None);
+}

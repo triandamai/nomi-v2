@@ -175,9 +175,14 @@ fn counted(count: usize, one: &str) -> String {
     format!("{count} {one}{plural}")
 }
 
+/// Where a version of the chat's previews opens in the Design Studio: a path inside Nomi.
+pub fn studio_link(session_id: Uuid, version: i32) -> String {
+    format!("/chat/{session_id}/design?version={version}")
+}
+
 /// What Sora is told after a preview was saved: its version, the ids that went missing since
-/// the direction's last version, and its address or that it has none.
-pub fn saved_message(version: i32, manifest: &Manifest, missing: &[String], published: &Result<Published, String>) -> String {
+/// the direction's last version, its Design Studio link, and its published address when it has one.
+pub fn saved_message(session_id: Uuid, version: i32, manifest: &Manifest, missing: &[String], published: &Result<Published, String>) -> String {
     let mut said = format!(
         "Preview saved as version {version} of direction {}: {}, {}.",
         manifest.direction_id,
@@ -190,11 +195,13 @@ pub fn saved_message(version: i32, manifest: &Manifest, missing: &[String], publ
             missing.join(", ")
         ));
     }
+    said.push_str(&format!(
+        " The person can look at it in the Design Studio, at phone, tablet and desktop width: give them this link exactly as it is: [Open in Design Studio]({}).",
+        studio_link(session_id, version)
+    ));
     match published {
-        Ok(published) => said.push_str(&format!(" It is published at {}: give the person exactly that link.", published.url)),
-        Err(why) => said.push_str(&format!(
-            " It has no address yet ({why}), so the person can't open it: never give a link, and tell them in words what you built and what changed."
-        )),
+        Ok(published) => said.push_str(&format!(" It is also published at {}, a link they can pass on.", published.url)),
+        Err(why) => said.push_str(&format!(" It isn't published outside Nomi ({why}), so that is the only link: never give another.")),
     }
     said
 }
@@ -249,7 +256,7 @@ impl Tool for SavePreview {
                 published = Err("its address couldn't be kept".to_string());
             }
         }
-        Ok(ToolOutcome::text(saved_message(version, &artifact.manifest, &missing, &published)))
+        Ok(ToolOutcome::text(saved_message(session_id, version, &artifact.manifest, &missing, &published)))
     }
 }
 
@@ -327,26 +334,34 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn a_saved_preview_without_an_address_tells_sora_not_to_promise_a_link() {
-        let said = saved_message(2, &manifest(), &[], &Err(nomi_agent_core::static_publish::NOT_SET_UP.to_string()));
+    fn a_saved_preview_gives_sora_the_studio_link_and_no_other() {
+        let said = saved_message(Uuid::nil(), 2, &manifest(), &[], &Err(nomi_agent_core::static_publish::NOT_SET_UP.to_string()));
         assert!(said.starts_with("Preview saved as version 2 of direction editorial: 1 page, 1 element id."), "{said}");
-        assert!(said.contains("It has no address yet (publishing previews isn't set up)"));
-        assert!(said.contains("never give a link"));
+        assert!(said.contains("[Open in Design Studio](/chat/00000000-0000-0000-0000-000000000000/design?version=2)"), "{said}");
+        assert!(said.contains("It isn't published outside Nomi (publishing previews isn't set up)"));
+        assert!(said.contains("never give another"));
     }
 
     #[test]
     fn a_published_preview_tells_sora_its_address() {
         let published = nomi_agent_core::static_publish::Published { provider: "fake".into(), url: "https://previews.example/a".into() };
-        let said = saved_message(1, &manifest(), &[], &Ok(published));
-        assert!(said.contains("It is published at https://previews.example/a: give the person exactly that link."), "{said}");
-        assert!(!said.contains("no address"));
+        let said = saved_message(Uuid::nil(), 1, &manifest(), &[], &Ok(published));
+        assert!(said.contains("It is also published at https://previews.example/a"), "{said}");
+        assert!(said.contains("/design?version=1"));
+        assert!(!said.contains("isn't published"));
     }
 
     #[test]
     fn ids_that_went_missing_are_pointed_out() {
-        let said = saved_message(3, &manifest(), &["menu-list".to_string(), "footer".to_string()], &Err("down".into()));
+        let said = saved_message(Uuid::nil(), 3, &manifest(), &["menu-list".to_string(), "footer".to_string()], &Err("down".into()));
         assert!(said.contains("These ids from the last version of this direction are gone: menu-list, footer."), "{said}");
         assert!(said.contains("keep an element's id"));
+    }
+
+    #[test]
+    fn the_studio_link_is_inside_nomi_and_names_the_version() {
+        let session_id = Uuid::parse_str("0193309a-4f5b-7b00-8cb5-123456789abc").unwrap();
+        assert_eq!(studio_link(session_id, 4), "/chat/0193309a-4f5b-7b00-8cb5-123456789abc/design?version=4");
     }
 
     #[test]

@@ -44,12 +44,12 @@ pub const PREVIEW_INTRO: &str = "This is the preview you built last in this chat
      save_preview and keep the same data-design-id on each element that is still there, so feedback keeps pointing at it.";
 
 /// The chat's newest preview as Sora carries on from it: its pages, its ids and its address.
-pub fn preview_context(version: i32, manifest: &Manifest, published: Option<&Published>) -> String {
+pub fn preview_context(session_id: Uuid, version: i32, manifest: &Manifest, published: Option<&Published>) -> String {
     let address = match published {
         Some(published) => format!("Published at: {}", published.url),
-        None => "Not published: it has no address.".to_string(),
+        None => "Not published outside Nomi.".to_string(),
     };
-    format!("{PREVIEW_INTRO}\n\n{}\n{address}", manifest.to_markdown(version))
+    format!("{PREVIEW_INTRO}\n\n{}\nDesign Studio: {}\n{address}", manifest.to_markdown(version), tools::studio_link(session_id, version))
 }
 
 /// Sora. She is registered for everyone, and reachable only where the `design` setting is
@@ -145,7 +145,7 @@ impl SubAgent for DesignAgent {
         let preview = match design_artifact::latest(&mut **conn, session_id).await.ok().flatten() {
             Some((version, manifest)) => {
                 let published = static_publish::latest(&mut **conn, session_id, version).await.ok().flatten();
-                Some(preview_context(version, &manifest, published.as_ref()))
+                Some(preview_context(session_id, version, &manifest, published.as_ref()))
             }
             None => None,
         };
@@ -265,11 +265,12 @@ mod tests {
         let input = serde_json::json!({"direction_id": "editorial", "title": "First pass", "files": [{"path": "index.html", "content": html}]});
         let manifest = nomi_agent_core::design_artifact::DesignArtifact::parse(&input).unwrap().manifest;
         let published = nomi_agent_core::static_publish::Published { provider: "fake".into(), url: "https://previews.example/a".into() };
-        let context = preview_context(2, &manifest, Some(&published));
+        let context = preview_context(Uuid::nil(), 2, &manifest, Some(&published));
         assert!(context.starts_with(PREVIEW_INTRO));
         assert!(context.contains("# Design preview (version 2, direction: editorial)") && context.contains("- hero (element"));
         assert!(context.ends_with("Published at: https://previews.example/a"));
-        assert!(preview_context(2, &manifest, None).ends_with("Not published: it has no address."));
+        assert!(context.contains("Design Studio: /chat/00000000-0000-0000-0000-000000000000/design?version=2"));
+        assert!(preview_context(Uuid::nil(), 2, &manifest, None).ends_with("Not published outside Nomi."));
         assert!(PREVIEW_INTRO.contains("same data-design-id"));
     }
 
@@ -277,7 +278,7 @@ mod tests {
     fn sora_builds_previews_but_never_invents_a_link_or_the_apps_code() {
         let prompt = DesignAgent::new().system_prompt();
         assert!(prompt.contains("save_preview") && prompt.contains("data-design-id"));
-        assert!(prompt.contains("never invent a link"));
+        assert!(prompt.contains("Design Studio") && prompt.contains("never invent a link"));
         assert!(prompt.contains("never write the app's code"));
         assert!(!prompt.contains("in words for now"), "she builds previews now");
     }

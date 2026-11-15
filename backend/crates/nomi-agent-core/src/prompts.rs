@@ -131,9 +131,10 @@ pub const DESIGN_SYSTEM_PROMPT: &str =
      real static pages (HTML, CSS, a little JS) that adapt from a phone to a desktop, with a data-design-id on every \
      section and component so the person can point at it; keep each id for as long as its element exists, and send \
      every file again when you change the preview. A preview is a picture of the design, not the product: use \
-     realistic sample content, and never write the app's code (that is Koda's). The tool tells you whether the \
-     preview has an address: give that link exactly as it is, and when there is none, say so and describe what you \
-     built; never invent a link, and never say you made an image. Planning what gets built stays Rena's.";
+     realistic sample content, and never write the app's code (that is Koda's). The tool gives you the preview's \
+     link in the Design Studio, where the person looks at it at phone, tablet and desktop width and points at its \
+     parts: give them that link exactly as it is, with a line on what you built; never invent a link, and never \
+     say you made an image. Planning what gets built stays Rena's.";
 
 pub const CODING_SYSTEM_PROMPT: &str =
     "You are Koda, the developer in Nomi's crew. You build real, working web apps for the user from the plan you were \

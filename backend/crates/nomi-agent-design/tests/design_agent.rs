@@ -174,8 +174,8 @@ async fn previews_are_saved_as_versions_even_when_nothing_publishes_them(pool: P
 
     let first = sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "save_preview", preview("editorial", HERO_AND_MENU)).await.unwrap();
     assert!(first.display_text.starts_with("Preview saved as version 1 of direction editorial: 1 page, 2 element ids."), "{}", first.display_text);
-    assert!(first.display_text.contains("It has no address yet"));
-    assert!(first.block.is_none(), "there is nothing to open yet");
+    assert!(first.display_text.contains("It isn't published outside Nomi"));
+    assert!(first.display_text.contains(&format!("(/chat/{session_id}/design?version=1)")), "{}", first.display_text);
 
     let second = sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "save_preview", preview("editorial", HERO_ONLY)).await.unwrap();
     assert!(second.display_text.starts_with("Preview saved as version 2"));
@@ -191,7 +191,7 @@ async fn previews_are_saved_as_versions_even_when_nothing_publishes_them(pool: P
     assert_eq!(nomi_agent_core::static_publish::latest(&mut conn, session_id, 1).await.unwrap(), None);
 
     let context = sora.domain_context(&mut conn, None, session_id, user_id, &[]).await.expect("context");
-    assert!(context.contains("# Design preview (version 3, direction: swiss)") && context.contains("Not published"));
+    assert!(context.contains("# Design preview (version 3, direction: swiss)") && context.contains("Not published") && context.contains(&format!("/chat/{session_id}/design?version=3")));
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -203,7 +203,7 @@ async fn a_publisher_gets_the_files_and_its_address_is_kept(pool: PgPool) {
     sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "propose_directions", directions()).await.unwrap();
 
     let saved = sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "save_preview", preview("editorial", HERO_ONLY)).await.unwrap();
-    assert!(saved.display_text.contains("It is published at https://previews.example/roti"), "{}", saved.display_text);
+    assert!(saved.display_text.contains("It is also published at https://previews.example/roti"), "{}", saved.display_text);
     assert_eq!(*publisher.published.lock().unwrap(), [(1, vec!["index.html".to_string(), "styles.css".to_string()])]);
     let kept = nomi_agent_core::static_publish::latest(&mut conn, session_id, 1).await.unwrap().expect("its address");
     assert_eq!((kept.provider.as_str(), kept.url.as_str()), ("fake", "https://previews.example/roti"));
@@ -219,7 +219,7 @@ async fn a_publisher_that_fails_or_answers_badly_doesnt_lose_the_preview(pool: P
         let sora = DesignAgent::new().with_static_publisher(FakePublisher::answering(answer));
         sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "propose_directions", directions()).await.unwrap();
         let saved = sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "save_preview", preview("editorial", HERO_ONLY)).await.unwrap();
-        assert!(saved.display_text.contains("It has no address yet") && saved.display_text.contains(said), "{}", saved.display_text);
+        assert!(saved.display_text.contains("It isn't published outside Nomi") && saved.display_text.contains(said), "{}", saved.display_text);
         assert!(!saved.display_text.contains("previews.example"), "a refused address is never passed on");
     }
     assert_eq!(nomi_agent_core::design_artifact::latest(&mut conn, session_id).await.unwrap().map(|(version, _)| version), Some(2));

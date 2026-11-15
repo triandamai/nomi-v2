@@ -11,6 +11,9 @@ CREATE TABLE design_artifacts (
     directions_version  INT,
     version             INT NOT NULL,
     manifest            JSONB NOT NULL,
+    -- The unguessable name the version's files are served under to the Design Studio's sandboxed
+    -- frame, which sends no sign-in with its requests.
+    preview_token       TEXT NOT NULL UNIQUE DEFAULT replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', ''),
     created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (session_id, version)
 );
