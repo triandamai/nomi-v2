@@ -105,9 +105,9 @@
 		class="agent-shape {extraClass}"
 		class:agent-shape--working={working}
 		data-motion={resolvedMotion}
-		role={label && !live ? 'img' : undefined}
-		aria-label={live ? undefined : label}
-		aria-hidden={label && !live ? undefined : 'true'}
+		role={label ? 'img' : undefined}
+		aria-label={label}
+		aria-hidden={label ? undefined : 'true'}
 	>
 		<defs>
 			<linearGradient id="{uid}-g" x1="0" y1="0" x2="1" y2="1">

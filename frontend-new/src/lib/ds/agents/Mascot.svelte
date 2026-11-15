@@ -73,9 +73,9 @@
 		width={size}
 		height={size}
 		viewBox="0 0 {SHAPE_VIEW} {SHAPE_VIEW}"
-		role={label && !live ? 'img' : undefined}
-		aria-label={live ? undefined : label}
-		aria-hidden={label && !live ? undefined : 'true'}
+		role={label ? 'img' : undefined}
+		aria-label={label}
+		aria-hidden={label ? undefined : 'true'}
 		data-shape={look.shape}
 		class="shrink-0"
 	>

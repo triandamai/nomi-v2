@@ -4,7 +4,7 @@ export default [
 	{
 		file: 'agents/Mascot.svelte',
 		summary:
-			'A crew member\'s agent shape: their own outline in their own gradient, with the two-dot face, at 96, 32, 20 or 16px. At 96 and 32 it is live (open-bot-avatar): it gains volume, blinks, follows the pointer, cheers up on hover and plays a mood (idle, thinking, happy). Identity, not decoration: it appears only where that member speaks or works.',
+			'A crew member\'s agent shape: their own outline in their own gradient, with the two-dot face. At 96 and 32 it is live (open-bot-avatar) with volume, blinking, gaze tracking and moods.',
 		use: [
 			'20px beside a name: bylines, chips, suggestions, who is working (flat).',
 			'32px in lists of the crew (live).',
