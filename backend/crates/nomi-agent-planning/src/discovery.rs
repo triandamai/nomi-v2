@@ -213,7 +213,7 @@ mod tests {
 
     #[test]
     fn discovery_tells_rena_to_research_ask_little_and_keep_facts_apart() {
-        for said in ["save_design_brief", "read_web_page", "## Confirmed", "## From research", "## Recommended", "## Assumed", "## Open", "Already asked", "replaces step (1)"] {
+        for said in ["target_agent 'design'", "save_design_brief", "read_web_page", "## Confirmed", "## From research", "## Recommended", "## Assumed", "## Open", "Already asked", "replaces step (1)"] {
             assert!(PLANNING_DESIGN_DISCOVERY.contains(said), "discovery still says {said:?}");
         }
         for topic in ["audience", "brand", "competitors", "objectives", "features", "assets"] {

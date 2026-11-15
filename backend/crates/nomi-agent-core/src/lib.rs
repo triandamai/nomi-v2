@@ -10,6 +10,7 @@ pub mod crew;
 pub mod crew_talk;
 pub mod delegation;
 pub mod design_brief;
+pub mod design_directions;
 pub mod dynamic_agent;
 pub mod engine;
 pub mod error;

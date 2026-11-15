@@ -8,9 +8,12 @@ use sqlx::Postgres;
 use uuid::Uuid;
 
 use nomi_agent_core::mcp_ops::{format_listing, McpOps, SharedMcpOps, CARRY_ON};
-use nomi_agent_core::{Tool, ToolOutcome};
+use nomi_agent_core::design_brief;
+use nomi_agent_core::design_directions::{self, DesignDirections};
+use nomi_agent_core::{ContentBlock, Tool, ToolOutcome, View};
 use nomi_llm::ToolDefinition;
 
+pub const PROPOSE_DIRECTIONS: &str = "propose_directions";
 pub const LIST_CONNECTED_TOOLS: &str = "list_connected_tools";
 pub const USE_CONNECTED_TOOL: &str = "use_connected_tool";
 /// The tools' group in listings.
@@ -102,13 +105,61 @@ impl Tool for UseConnectedTool {
     }
 }
 
+/// What Sora is told after a set was saved and shown.
+pub fn proposed_message(version: i32, brief_version: Option<i32>, set: &DesignDirections) -> String {
+    let from = brief_version.map(|v| format!(", from design brief version {v}")).unwrap_or_default();
+    let names: Vec<String> = set.directions.iter().map(|d| format!("{} ({})", d.name, d.id)).collect();
+    format!(
+        "Directions saved as version {version}{from}: {}. The person now sees them as a choice with each one's reason and trade-offs: \
+         say in a sentence or two how they differ and which you'd pick, then wait for their answer.",
+        names.join(", ")
+    )
+}
+
+/// `propose_directions`: checks the set, saves it as the chat's next version and shows the
+/// person the choice.
+pub struct ProposeDirections;
+
+#[async_trait]
+impl Tool for ProposeDirections {
+    fn definition(&self) -> ToolDefinition {
+        ToolDefinition {
+            name: PROPOSE_DIRECTIONS.to_string(),
+            description: "Propose two to four clearly different design directions for the person to choose from, each with what \
+                          it looks like, why it fits the brief, its trade-offs, colours, fonts and layout. It saves them as a \
+                          new version and shows the person the choice. Call it again with the whole set (same ids for the \
+                          directions you keep) when they ask for changes."
+                .to_string(),
+            input_schema: design_directions::directions_input_schema(),
+        }
+    }
+
+    fn group(&self) -> &'static str {
+        GROUP
+    }
+
+    fn keywords(&self) -> &'static [&'static str] {
+        &["design", "directions", "look"]
+    }
+
+    async fn execute(&self, conn: &mut PoolConnection<Postgres>, session_id: Uuid, agent_session_id: Uuid, user_id: Uuid, input: Value) -> Result<ToolOutcome, String> {
+        let set = DesignDirections::parse(&input)?;
+        let brief_version = design_brief::latest(&mut **conn, session_id).await.ok().flatten().map(|(version, _)| version);
+        let version = design_directions::save(&mut **conn, session_id, agent_session_id, user_id, brief_version, &set).await.map_err(|e| {
+            tracing::error!(error = %e, "design directions: save failed");
+            "the directions couldn't be saved right now".to_string()
+        })?;
+        Ok(ToolOutcome { display_text: proposed_message(version, brief_version, &set), block: Some(ContentBlock::View(View::Decision(set.to_decision()))) })
+    }
+}
+
 /// Sora's own tools.
 pub fn own_tools(mcp: &SharedMcpOps) -> Vec<Box<dyn Tool>> {
-    vec![Box::new(ListConnectedTools { mcp: mcp.clone() }), Box::new(UseConnectedTool { mcp: mcp.clone() })]
+    vec![Box::new(ProposeDirections), Box::new(ListConnectedTools { mcp: mcp.clone() }), Box::new(UseConnectedTool { mcp: mcp.clone() })]
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use async_trait::async_trait;
     use nomi_agent_core::mcp_ops::{McpListing, McpOps, McpToolInfo, CARRY_ON, NOTHING_CONNECTED};
@@ -132,6 +183,35 @@ mod tests {
             self.called.lock().unwrap().push((server.to_string(), tool.to_string(), arguments));
             self.answer.clone().unwrap_or(Ok("done".to_string()))
         }
+    }
+
+    pub(crate) fn two_directions() -> Value {
+        let direction = |id: &str, name: &str, accent: &str, font: &str| {
+            json!({
+                "id": id, "name": name,
+                "summary": "What it looks like.", "rationale": "Why it fits.", "trade_offs": ["What it costs"],
+                "palette": [{"name": "Paper", "hex": "#F6EFE4"}, {"name": "Accent", "hex": accent}],
+                "typography": {"heading": font, "body": "Inter"},
+                "layout": "One long page."
+            })
+        };
+        json!({"directions": [direction("editorial", "Editorial", "#B5532A", "Fraunces"), direction("swiss", "Swiss utility", "#1F4FFF", "Helvetica")]})
+    }
+
+    #[test]
+    fn proposing_tells_sora_the_version_the_brief_it_came_from_and_to_wait() {
+        let set = DesignDirections::parse(&two_directions()).unwrap();
+        let said = proposed_message(3, Some(2), &set);
+        assert!(said.starts_with("Directions saved as version 3, from design brief version 2: Editorial (editorial), Swiss utility (swiss)."), "{said}");
+        assert!(said.contains("wait for their answer"));
+        assert!(proposed_message(1, None, &set).starts_with("Directions saved as version 1: Editorial"));
+    }
+
+    #[test]
+    fn the_propose_tool_takes_the_directions_schema() {
+        let tool = ProposeDirections.definition();
+        assert_eq!(tool.name, PROPOSE_DIRECTIONS);
+        assert_eq!(tool.input_schema, nomi_agent_core::design_directions::directions_input_schema());
     }
 
     #[tokio::test]

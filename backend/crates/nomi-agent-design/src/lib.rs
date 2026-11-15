@@ -13,6 +13,7 @@ use uuid::Uuid;
 use nomi_agent_core::crew::DESIGN_AGENT_TYPE;
 use nomi_agent_core::prompts::DESIGN_SYSTEM_PROMPT;
 use nomi_agent_core::design_brief::{self, DesignBrief};
+use nomi_agent_core::design_directions::{self, DesignDirections};
 use nomi_agent_core::mcp_ops::{NoMcpOps, SharedMcpOps};
 use nomi_agent_core::{find_tool, tool_definitions, SubAgent};
 use nomi_llm::ToolDefinition;
@@ -25,6 +26,15 @@ pub const BRIEF_INTRO: &str = "This is the design brief Rena saved for this chat
 /// The chat's brief as Sora starts from it.
 pub fn brief_context(version: i32, brief: &DesignBrief) -> String {
     format!("{BRIEF_INTRO}\n\n{}", brief.to_markdown(version))
+}
+
+/// What Sora is told before the directions she already proposed.
+pub const DIRECTIONS_INTRO: &str = "These are the directions you proposed last in this chat. When the person picks one or asks \
+     for changes, refine it and keep the same id; don't start over unless they ask.";
+
+/// The chat's newest directions as Sora carries on from them.
+pub fn directions_context(version: i32, set: &DesignDirections) -> String {
+    format!("{DIRECTIONS_INTRO}\n\n{}", set.to_markdown(version))
 }
 
 /// Sora. She is registered for everyone, and reachable only where the `design` setting is
@@ -61,7 +71,7 @@ impl SubAgent for DesignAgent {
         Cow::Borrowed(DESIGN_SYSTEM_PROMPT)
     }
 
-    /// The person's connected tools; the rest of what she uses (read_plan, ask_user, the web)
+    /// Proposing directions and the person's connected tools; the rest of what she uses (read_plan, ask_user, the web)
     /// is the engine's.
     fn tools(&self) -> Vec<ToolDefinition> {
         tool_definitions(&tools::own_tools(&self.mcp))
@@ -83,9 +93,10 @@ impl SubAgent for DesignAgent {
         }
     }
 
-    /// Looking at what is connected needs no OK; calling a connected tool does.
+    /// Proposing directions and looking at what is connected need no OK; calling a connected
+    /// tool does.
     fn tool_needs_approval(&self, tool_name: &str) -> bool {
-        tool_name != tools::LIST_CONNECTED_TOOLS
+        tool_name == tools::USE_CONNECTED_TOOL
     }
 
     fn describe_action(&self, tool_name: &str, input: &Value, _locale: nomi_agent_core::Locale) -> Option<String> {
@@ -96,7 +107,7 @@ impl SubAgent for DesignAgent {
         Some(format!("Use {} on {}", text("tool")?, text("server")?))
     }
 
-    /// The chat's newest design brief, when Rena saved one.
+    /// The chat's newest design brief, when Rena saved one, and the directions already proposed.
     async fn domain_context(
         &self,
         conn: &mut PoolConnection<Postgres>,
@@ -105,8 +116,11 @@ impl SubAgent for DesignAgent {
         _user_id: Uuid,
         _messages: &[nomi_llm::LlmMessage],
     ) -> Option<String> {
-        let (version, brief) = design_brief::latest(&mut **conn, session_id).await.ok().flatten()?;
-        Some(brief_context(version, &brief))
+        let brief = design_brief::latest(&mut **conn, session_id).await.ok().flatten().map(|(version, brief)| brief_context(version, &brief));
+        let directions =
+            design_directions::latest(&mut **conn, session_id).await.ok().flatten().map(|(version, _, set)| directions_context(version, &set));
+        let parts: Vec<String> = [brief, directions].into_iter().flatten().collect();
+        (!parts.is_empty()).then(|| parts.join("\n\n"))
     }
 
     fn intent_label(&self) -> Cow<'static, str> {
@@ -174,9 +188,9 @@ mod tests {
     }
 
     #[test]
-    fn soras_own_tools_are_the_persons_connected_tools() {
+    fn soras_own_tools_are_proposing_directions_and_the_persons_connected_tools() {
         let names: Vec<String> = DesignAgent::new().tools().into_iter().map(|t| t.name).collect();
-        assert_eq!(names, [tools::LIST_CONNECTED_TOOLS, tools::USE_CONNECTED_TOOL]);
+        assert_eq!(names, [tools::PROPOSE_DIRECTIONS, tools::LIST_CONNECTED_TOOLS, tools::USE_CONNECTED_TOOL]);
     }
 
     #[test]
@@ -184,6 +198,7 @@ mod tests {
         let sora = DesignAgent::new();
         assert!(!sora.tool_needs_approval(tools::LIST_CONNECTED_TOOLS));
         assert!(sora.tool_needs_approval(tools::USE_CONNECTED_TOOL));
+        assert!(!sora.tool_needs_approval(tools::PROPOSE_DIRECTIONS), "proposing only shows the person a choice");
         let action = sora.describe_action(tools::USE_CONNECTED_TOOL, &serde_json::json!({"server": "Refs", "tool": "search_references"}), nomi_agent_core::Locale::En);
         assert_eq!(action.as_deref(), Some("Use search_references on Refs"));
         assert_eq!(sora.describe_action(tools::LIST_CONNECTED_TOOLS, &serde_json::json!({}), nomi_agent_core::Locale::En), None);
@@ -205,9 +220,18 @@ mod tests {
     }
 
     #[test]
+    fn the_directions_already_proposed_are_put_in_front_of_sora_too() {
+        let set = nomi_agent_core::design_directions::DesignDirections::parse(&tools::tests::two_directions()).unwrap();
+        let context = directions_context(2, &set);
+        assert!(context.starts_with(DIRECTIONS_INTRO));
+        assert!(context.contains("# Design directions (version 2)") && context.contains("(id: editorial)"));
+        assert!(DIRECTIONS_INTRO.contains("same id"));
+    }
+
+    #[test]
     fn sora_is_told_to_carry_on_when_research_fails() {
         let prompt = DesignAgent::new().system_prompt();
-        for said in ["web_search", "read_web_page", "list_connected_tools", "use_connected_tool", "carry on"] {
+        for said in ["propose_directions", "web_search", "read_web_page", "list_connected_tools", "use_connected_tool", "carry on"] {
             assert!(prompt.contains(said), "her prompt still says {said:?}");
         }
     }
