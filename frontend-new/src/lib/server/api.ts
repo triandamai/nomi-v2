@@ -59,11 +59,12 @@ export async function authenticate(event: ApiEvent): Promise<void> {
 	event.locals.accessToken = canRefresh && needsRefresh(token) ? ((await refreshOnce(event)) ?? undefined) : token;
 }
 
-function withAuth(init: RequestInit | undefined, accessToken: string | undefined): RequestInit {
+function withAuth(init: RequestInit | undefined, accessToken: string | undefined, origin?: string): RequestInit {
 	return {
 		...init,
 		headers: {
 			'Content-Type': 'application/json',
+			...(origin ? { 'X-App-Origin': origin } : {}),
 			...(init?.headers ?? {}),
 			...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
 		},
@@ -77,7 +78,8 @@ function withAuth(init: RequestInit | undefined, accessToken: string | undefined
  */
 export async function apiFetch(event: ApiEvent, path: string, init?: RequestInit, options: { signedOut?: 'redirect' | 'return' } = {}): Promise<Response> {
 	const sentWith = event.locals.accessToken;
-	const response = await event.fetch(apiUrl(path), withAuth(init, sentWith));
+	const origin = (event as { url?: URL }).url?.origin;
+	const response = await event.fetch(apiUrl(path), withAuth(init, sentWith, origin));
 	if (response.status !== 401) return response;
 
 	// Another call in this request may have renewed it already.
@@ -87,5 +89,5 @@ export async function apiFetch(event: ApiEvent, path: string, init?: RequestInit
 		clearSession(event.cookies);
 		redirect(303, SIGN_IN_PATH);
 	}
-	return event.fetch(apiUrl(path), withAuth(init, renewed));
+	return event.fetch(apiUrl(path), withAuth(init, renewed, origin));
 }

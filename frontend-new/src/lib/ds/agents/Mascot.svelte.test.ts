@@ -3,7 +3,8 @@ import { render } from 'vitest-browser-svelte';
 import { page } from 'vitest/browser';
 import Mascot from './Mascot.svelte';
 import { CREW } from './crew';
-import { CREW_LOOKS, FACE_COLOR, TONE_STOPS, shapePath } from './shapes';
+import { validateAvatar } from 'open-bot-avatar';
+import { CREW_LOOKS, FACE_COLOR, TONE_STOPS, liveDefinition, shapePath } from './shapes';
 
 // Each crew member wears frontend's agent shape: their own outline in their own gradient, with the
 // two-dot face, at 96, 32, 20 or 16px.
@@ -17,7 +18,7 @@ describe('Mascot', () => {
 	it('draws each member in their own shape and gradient, with the two-dot face', async () => {
 		for (const member of CREW) {
 			const look = CREW_LOOKS[member.id];
-			const { container } = await render(Mascot, { agent: member.id });
+			const { container } = await render(Mascot, { agent: member.id, live: false });
 			const svg = container.querySelector('svg')!;
 			expect(svg.getAttribute('viewBox')).toBe('0 0 48 48');
 			const body = svg.querySelector('[data-part="body"]')!;
@@ -39,15 +40,15 @@ describe('Mascot', () => {
 	});
 
 	it('keeps each gradient to its own mascot when several are on a page', async () => {
-		const { container } = await render(Mascot, { agent: 'koda' });
-		const second = await render(Mascot, { agent: 'dana' });
+		const { container } = await render(Mascot, { agent: 'koda', live: false });
+		const second = await render(Mascot, { agent: 'dana', live: false });
 		const ids = [container, second.container].map((root) => root.querySelector('linearGradient')!.id);
 		expect(new Set(ids).size).toBe(2);
 	});
 
 	it('comes in the design’s sizes', async () => {
 		for (const size of [96, 32, 20, 16] as const) {
-			const { container } = await render(Mascot, { agent: 'koda', size });
+			const { container } = await render(Mascot, { agent: 'koda', size, live: false });
 			const svg = container.querySelector('svg')!;
 			expect([svg.getAttribute('width'), svg.getAttribute('height')]).toEqual([String(size), String(size)]);
 		}
@@ -58,5 +59,42 @@ describe('Mascot', () => {
 		expect(quiet.container.querySelector('svg')!.getAttribute('aria-hidden')).toBe('true');
 		await render(Mascot, { agent: 'dana', size: 32, label: 'Dana' });
 		await expect.element(page.getByRole('img', { name: 'Dana' })).toBeInTheDocument();
+	});
+
+	it('gives every member a valid open-bot-avatar definition of their own outline', () => {
+		for (const member of CREW) {
+			const result = validateAvatar(liveDefinition(member.id, member.name));
+			expect(result.ok ? [] : result.errors, member.id).toEqual([]);
+		}
+	});
+
+	it('comes to life at 96 and 32, and stays flat at 20 and 16', async () => {
+		const big = await render(Mascot, { agent: 'koda' });
+		const root = big.container.querySelector('[data-live]')!;
+		expect(root.getAttribute('data-shape')).toBe('cookie6');
+		await expect.poll(() => root.getAttribute('data-live')).toBe('mounted');
+		expect(root.querySelector('canvas, svg')).not.toBeNull();
+		const small = await render(Mascot, { agent: 'koda', size: 20 });
+		expect(small.container.querySelector('[data-live]')).toBeNull();
+		expect(small.container.querySelector('svg [data-part="body"]')).not.toBeNull();
+	});
+
+	it('plays its mood, and cheers up on hover when idle', async () => {
+		const { container, rerender } = await render(Mascot, { agent: 'nomi', size: 32 });
+		const root = container.querySelector('[data-live]') as HTMLElement;
+		expect(root.dataset.mood).toBe('idle');
+		root.dispatchEvent(new PointerEvent('pointerenter'));
+		await expect.poll(() => root.dataset.mood).toBe('happy');
+		root.dispatchEvent(new PointerEvent('pointerleave'));
+		await expect.poll(() => root.dataset.mood).toBe('idle');
+		await rerender({ mood: 'thinking' });
+		await expect.poll(() => root.dataset.mood).toBe('thinking');
+	});
+
+	it('keeps the live mascot decorative unless labelled', async () => {
+		const quiet = await render(Mascot, { agent: 'tara', size: 32 });
+		expect(quiet.container.querySelector('[data-live]')!.getAttribute('aria-hidden')).toBe('true');
+		await render(Mascot, { agent: 'tara', size: 96, label: 'Tara' });
+		await expect.element(page.getByRole('img', { name: 'Tara' })).toBeInTheDocument();
 	});
 });

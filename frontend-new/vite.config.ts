@@ -6,6 +6,7 @@ import { paraglideVitePlugin } from '@inlang/paraglide-js';
 import { playwright } from '@vitest/browser-playwright';
 import { defineConfig } from 'vitest/config';
 import { devWsProxy } from './vite-plugins/dev-ws-proxy.ts';
+import { docsOnlyRoutes } from './vite-plugins/docs-only-routes.ts';
 import { dsApi } from './src/lib/docs/api/plugin.ts';
 import { appVersion } from './app-version.js';
 
@@ -28,6 +29,7 @@ export default defineConfig({
 		},
 	},
 	plugins: [
+		...(galleryStatic ? [docsOnlyRoutes()] : []),
 		tailwindcss(),
 		// English and Indonesian. The person's saved language lives in the cookie; before sign-in,
 		// the browser's language decides.

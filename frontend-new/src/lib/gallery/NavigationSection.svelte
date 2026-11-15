@@ -37,7 +37,7 @@
 			<div class="flex flex-col items-start gap-2"><Avatar name="Mario Prasetyo" />{@render caption('Avatar / User')}</div>
 			<div class="flex flex-col items-start gap-2">
 				<!-- The pen draws the 20 and 32 only, under the caption it gives the whole set. -->
-				<span class="flex items-end gap-3"><Mascot agent="nomi" size={20} /><Mascot agent="nomi" size={32} /></span>
+				<span class="flex items-end gap-3"><Mascot agent="nomi" size={20} /><Mascot agent="nomi" size={32} live={false} /></span>
 				{@render caption('Mascot 20 / 32 / 96')}
 			</div>
 			<div class="flex flex-col items-start gap-2"><AgentByline agent="koda" name="Koda" meta="15:37 · 4m 12s" />{@render caption('Agent Byline')}</div>

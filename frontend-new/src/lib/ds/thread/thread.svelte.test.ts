@@ -4,6 +4,7 @@ import { page, userEvent } from 'vitest/browser';
 import { MessageSquare, RotateCcw } from '@lucide/svelte';
 import Prose from './Prose.svelte';
 import ChatComposer from './ChatComposer.svelte';
+import ChatComposerFixture from './ChatComposerFixture.svelte';
 import Starters from './Starters.svelte';
 import TodayStrip from './TodayStrip.svelte';
 import ChatTopBar from './ChatTopBar.svelte';
@@ -318,5 +319,20 @@ describe('ChatListRow', () => {
 		expect(onpin).toHaveBeenCalledOnce();
 		expect(ondelete).toHaveBeenCalledOnce();
 		expect(MessageSquare).toBeTruthy();
+	});
+});
+
+describe('Send, then Stop in its place', () => {
+	it('a double-click on Send sends once and doesn’t stop the reply it started', async () => {
+		const onsend = vi.fn();
+		const onstop = vi.fn();
+		await render(ChatComposerFixture, { onsend, onstop });
+		await userEvent.dblClick(page.getByRole('button', { name: 'Send' }));
+		expect(onsend).toHaveBeenCalledOnce();
+		expect(onstop).not.toHaveBeenCalled();
+		// A click of its own, a moment later, stops it.
+		await new Promise((resolve) => setTimeout(resolve, 600));
+		await page.getByRole('button', { name: 'Stop reply' }).last().click();
+		expect(onstop).toHaveBeenCalledOnce();
 	});
 });

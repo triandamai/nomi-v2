@@ -292,3 +292,29 @@ test('a published site’s visits and forms reach Nomi through this app, from th
 	]);
 	await visitor.dispose();
 });
+
+test('a double-click on Send sends the message once and lets Koda answer', async ({ page, context }) => {
+	const account = await createAccount();
+	await signInAs(context, account);
+	await page.goto('/projects', { waitUntil: 'networkidle' });
+	await page.getByRole('textbox', { name: 'Describe an app to build' }).fill('A one-page menu for Warung Kopi');
+	await page.getByRole('button', { name: 'Start building' }).dblclick();
+	await expect(page).toHaveURL(/\/projects\/[0-9a-f-]{36}$/);
+	expect(((await (await api(account, '/api/projects')).json()) as Projects).projects).toHaveLength(1);
+	const chat = page.getByRole('region', { name: 'Chat' });
+	await expect(chat.getByText(REPLY)).toHaveCount(1);
+
+	// Send turns into Stop under the pointer: the second click mustn't stop the reply.
+	const sent: string[] = [];
+	page.on('request', (request) => {
+		if (request.method() === 'POST' && request.url().endsWith('/api/messages')) sent.push((JSON.parse(request.postData() ?? '{}') as { text: string }).text);
+	});
+	const composer = chat.getByRole('textbox', { name: 'Message' });
+	await expect(async () => {
+		await composer.fill('Tambah jam buka');
+		await expect(chat.getByRole('button', { name: 'Send' })).toBeEnabled({ timeout: 1_000 });
+	}).toPass();
+	await chat.getByRole('button', { name: 'Send' }).dblclick();
+	await expect(chat.getByText(REPLY)).toHaveCount(2);
+	expect(sent).toEqual(['Tambah jam buka']);
+});
