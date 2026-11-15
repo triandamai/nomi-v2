@@ -5,7 +5,7 @@
 
 use std::fmt;
 
-use chrono::{DateTime, Duration, Months, Utc};
+use chrono::{DateTime, Duration, Months, SubsecRound, Utc};
 use nomi_settings::config::{self, Section};
 use serde::{Deserialize, Serialize};
 use sqlx::{PgConnection, PgPool};
@@ -28,6 +28,8 @@ pub const DEFAULT_INVOICE_HOURS: u32 = 24;
 const PERCENT_MAX: i64 = 100;
 /// Length of a referral code.
 pub const REFERRAL_CODE_LEN: usize = 8;
+/// Fractional-second digits a Postgres `timestamptz` keeps (microseconds).
+const DB_TIMESTAMP_DIGITS: u16 = 6;
 /// Tries at finding a referral code nobody has.
 const REFERRAL_CODE_ATTEMPTS: u32 = 10;
 const REFERRAL_ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -913,7 +915,8 @@ pub async fn activate(
     if payment.status == STATUS_PAID {
         return Ok(None);
     }
-    let now = Utc::now();
+    // Truncated to what Postgres stores, so the dates returned match the ones saved.
+    let now = Utc::now().trunc_subsecs(DB_TIMESTAMP_DIGITS);
     let current: Option<(Uuid, Option<DateTime<Utc>>, i32)> =
         sqlx::query_as("SELECT plan_id, paid_until, bonus_days FROM user_subscriptions WHERE user_id = $1 FOR UPDATE").bind(payment.user_id).fetch_optional(&mut *conn).await?;
     let (still_running, bonus_days) = match current {
