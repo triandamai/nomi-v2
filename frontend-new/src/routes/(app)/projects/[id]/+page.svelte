@@ -692,11 +692,14 @@
 					{#if button.state === 'publishing'}
 						<PublishButton state="publishing" elapsed={button.elapsed} />
 					{:else if mine}
-						<Button variant="secondary" iconStart={Hourglass} label={m.publish_asked()} aria-haspopup="dialog" onclick={() => (mineOpen = true)} />
+						<!-- On a phone the bar keeps the project's name: the button is its icon. -->
+						<span class="contents max-sm:hidden"><Button variant="secondary" iconStart={Hourglass} label={m.publish_asked()} aria-haspopup="dialog" onclick={() => (mineOpen = true)} /></span>
+						<span class="contents sm:hidden"><IconButton icon={Hourglass} label={m.publish_asked()} aria-haspopup="dialog" onclick={() => (mineOpen = true)} /></span>
 					{:else if button.state === 'idle'}
 						<PublishButton state="idle" />
 					{:else}
-						<Button iconStart={Rocket} label={m.publish_ask()} loading={asking} onclick={askPublish} />
+						<span class="contents max-sm:hidden"><Button iconStart={Rocket} label={m.publish_ask()} loading={asking} onclick={askPublish} /></span>
+						<span class="contents sm:hidden"><IconButton icon={Rocket} label={m.publish_ask()} disabled={asking} onclick={askPublish} /></span>
 					{/if}
 				{:else if button.state === 'ready'}
 					<PublishButton state="ready" count={button.count} onpublish={() => (confirming = true)} />
