@@ -590,8 +590,11 @@ steps; what isn't there yet is left out, not drawn dead:
   parsed log columns (method, path, status) aren't given: the log is the app's own lines.
 - Database (step 11) reads a project's tables and the first 50 rows of one, from the development
   database (or, once published, the live one), read only: the statement is built on the server
-  from a table the backend listed. The pen's Edit rows and Download dump have no backend (a dump,
-  row edits); the note says to ask Koda instead. The pen's "showing 5 of 7" says the rows shown.
+  from a table the backend listed. Edit rows (the pen draws only the button) turns each cell
+  outside the primary key into one that opens in place: Enter saves it through the backend (by the
+  row's key, cast to the column's type; the database's reason when it refuses), Esc puts it back.
+  A table without a primary key says why it can't be edited here. Download dump is the database
+  shown, as a `.sql` file the backend writes. The pen's "showing 5 of 7" says the rows shown.
 - Settings (steps 12, 15–17): Transfer, Take down and Delete, each through its dialog. Transfer goes
   to another workspace the person is in (the backend moves projects between workspaces, not to a
   person by email as the pen draws it), the project's name typed to confirm; Take down stops the

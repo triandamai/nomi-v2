@@ -470,7 +470,7 @@ export type ContainerUsage = {
 };
 
 /** A project's database table (`/database/tables`); the row count is Postgres' estimate, -1 before it's known. */
-export type DatabaseTable = { schema: string; name: string; rows_estimate: number };
+export type DatabaseTable = { schema: string; name: string; rows_estimate: number; /** Its primary key's columns; rows are edited by them. */ primary_key?: string[] };
 /** What reading the database answered (`/database/query`). */
 export type QueryResult = { columns: string[]; rows: unknown[][]; truncated: boolean; rows_affected: number | null; took_ms: number };
 

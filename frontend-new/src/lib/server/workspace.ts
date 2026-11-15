@@ -307,3 +307,31 @@ export const checkOwnDomain = (event: ApiEvent, id: string, hostname: string) =>
 /** The address the app answers at first (only once every record is found). */
 export const makeDomainPrimary = (event: ApiEvent, id: string, hostname: string) => send(event, `${domainPath(id, hostname)}/primary`, 'PUT');
 export const removeOwnDomain = (event: ApiEvent, id: string, hostname: string) => send(event, domainPath(id, hostname), 'DELETE');
+
+/**
+ * A row's new values, found by its primary key (the backend checks the table, the columns and the
+ * key against the catalog, and casts each value to its column's type); the database's own reason
+ * when it refuses.
+ */
+export async function editRow(
+	event: ApiEvent,
+	id: string,
+	source: 'development' | 'production',
+	table: { schema: string; name: string },
+	key: Record<string, unknown>,
+	changes: Record<string, unknown>,
+): Promise<{ ok: true; row: Record<string, unknown> } | { ok: false; status: number; message: string }> {
+	const path = `${at(id)}/database/tables/${encodeURIComponent(table.schema)}/${encodeURIComponent(table.name)}/rows`;
+	let response: Response;
+	try {
+		response = await apiFetch(event, path, { method: 'PATCH', body: JSON.stringify({ key, changes, source }) });
+	} catch (error) {
+		if (isRedirect(error)) throw error;
+		return { ok: false, status: 503, message: '' };
+	}
+	if (!response.ok) return { ok: false, status: response.status, message: (await response.text()).trim().slice(0, 300) };
+	return { ok: true, row: ((await response.json()) as { row: Record<string, unknown> }).row };
+}
+
+/** A dump of the database (a `.sql` file), as the backend streams it. */
+export const databaseDump = (event: ApiEvent, id: string, source: 'development' | 'production') => call(event, `${at(id)}/database/dump?source=${source}`);

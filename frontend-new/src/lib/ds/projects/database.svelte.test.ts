@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
-import { page } from 'vitest/browser';
+import { page, userEvent } from 'vitest/browser';
 import TableChip from './TableChip.svelte';
 import RowsGrid from './RowsGrid.svelte';
 import { tokenBackground, tokenColor } from '../test-utils';
@@ -37,5 +37,40 @@ describe('RowsGrid', () => {
 		expect([box(row).height, getComputedStyle(row).borderTopColor]).toEqual([32, tokenColor('nm-border')]);
 		expect(getComputedStyle(page.getByText('Pak Hadi').element()).fontFamily).toMatch(/Mono/);
 		await expect.element(page.getByRole('columnheader', { name: 'name' })).toBeVisible();
+	});
+
+	it('edits a cell in place: Enter saves, Esc puts it back, and the key’s cells stay as they are', async () => {
+		await page.viewport(1512, 862);
+		const onsave = vi.fn(async () => true);
+		await render(RowsGrid, {
+			label: 'orders',
+			columns: ['id', 'status'],
+			rows: [['0007', 'new']],
+			edit: { locked: [0], initial: () => 'new', onsave, cellLabel: (row: number, column: number) => `Edit ${['id', 'status'][column]} of row ${row + 1}` },
+		});
+		expect(page.getByRole('button', { name: 'Edit id of row 1' }).elements()).toHaveLength(0);
+		const cell = page.getByRole('button', { name: 'Edit status of row 1' });
+		await cell.click();
+		const field = page.getByRole('textbox', { name: 'Edit status of row 1' });
+		await expect.element(field).toHaveValue('new');
+		const row = page.getByRole('row', { name: /0007/ }).element();
+		expect(box(row).height).toBe(32);
+		await field.fill('picked up');
+		await userEvent.keyboard('{Escape}');
+		expect(onsave).not.toHaveBeenCalled();
+		await expect.element(page.getByRole('button', { name: 'Edit status of row 1' })).toBeVisible();
+		await page.getByRole('button', { name: 'Edit status of row 1' }).click();
+		await page.getByRole('textbox', { name: 'Edit status of row 1' }).fill('picked up');
+		await userEvent.keyboard('{Enter}');
+		expect(onsave).toHaveBeenCalledWith(0, 1, 'picked up');
+		await expect.element(page.getByRole('button', { name: 'Edit status of row 1' })).toBeVisible();
+	});
+
+	it('keeps the field open when the save is refused', async () => {
+		await render(RowsGrid, { label: 'orders', columns: ['id', 'total'], rows: [['1', '10']], edit: { locked: [0], initial: () => '10', onsave: async () => false, cellLabel: () => 'Edit total' } });
+		await page.getByRole('button', { name: 'Edit total' }).click();
+		await page.getByRole('textbox', { name: 'Edit total' }).fill('abc');
+		await userEvent.keyboard('{Enter}');
+		await expect.element(page.getByRole('textbox', { name: 'Edit total' })).toHaveValue('abc');
 	});
 });

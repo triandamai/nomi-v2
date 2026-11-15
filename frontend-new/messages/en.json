@@ -2686,5 +2686,14 @@
 	"domain_add_field": "Your domain",
 	"domain_add": "Add domain",
 	"domain_add_live_first": "Publish the app first: your domain points at its live address.",
-	"domain_primary_tag": "primary"
+	"domain_primary_tag": "primary",
+	"database_read_only_edit": "Read-only here. To change columns, ask Koda in the chat; to fix a row, use Edit rows.",
+	"database_no_key": "This table has no primary key, so its rows can’t be edited here. Ask Koda in the chat to add one.",
+	"database_edit_rows": "Edit rows",
+	"database_done_editing": "Done",
+	"database_download_dump": "Download dump",
+	"database_edit_cell": "Edit {column} of row {row}",
+	"database_edit_failed": "The row couldn’t be saved",
+	"database_saved": "Saved",
+	"database_editing_note": "Editing {table} in the {database} database. Enter saves a cell; Esc puts it back."
 }

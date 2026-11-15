@@ -66,6 +66,9 @@ test('asks wait in line in the project’s chat, and a teammate’s can go first
 	// Mario asks from the chat; Sari asks from hers: the line shows as the chat moves on.
 	await chat.getByRole('textbox').fill('Make the Pre-order button green');
 	await chat.getByRole('textbox').press('Enter');
+	// Mario's is in line before Sari asks: his is sent from the page, hers straight to the backend,
+	// and the line is in the order the asks arrive.
+	await expect(chat.getByRole('region', { name: '2 asks in line' })).toBeVisible();
 	expect((await api(sari, `/api/sessions/${session}/messages`, { method: 'POST', body: JSON.stringify({ text: 'Add a Makanan section with nasi uduk' }) })).ok).toBe(true);
 	const queue = chat.getByRole('region', { name: '3 asks in line' });
 	await expect(queue).toBeVisible();
