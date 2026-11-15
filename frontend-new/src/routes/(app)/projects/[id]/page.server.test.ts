@@ -13,6 +13,9 @@ const { sealPreview } = await import('$lib/server/previewGrant');
 const app = await import('./app/+page.server');
 const sandbox = await import('./sandbox/[action]/+server');
 const presence = await import('./presence/+server');
+const queue = await import('./queue/+server');
+const queueAsk = await import('./queue/[job]/+server');
+const requests = await import('./requests/+server');
 const bySession = await import('../session/[sessionId]/+page.server');
 
 const at = (answer: Parameters<typeof fakeBackend>[0], params: Record<string, string>) => {
@@ -186,5 +189,43 @@ describe('a project’s workspace', () => {
 		const here = at(() => json({ me: 'u-me', people: [] }), { id: 'p1' });
 		expect(await (await presence.GET(here.event as never)).json()).toEqual({ me: 'u-me', people: [] });
 		expect((await presence.GET(at(() => new Response('', { status: 404 }), { id: 'p1' }).event as never)).status).toBe(503);
+	});
+	it('passes on the asks in line, and lets one go first with the line as it is now or why not', async () => {
+		const line = { asks: [{ id: 'j1', text: 'Make it green', who: 'Mario', mine: true, state: 'running', created_at: '2026-11-14T02:14:00Z' }] };
+		const answer = (call: { url: string }) => (call.url.includes('/queue') ? json(line) : json({ id: 'p1', session_id: 's1' }));
+		expect(await (await queue.GET(at(answer, { id: 'p1' }).event as never)).json()).toEqual(line);
+		expect((await queue.GET(at(() => new Response('', { status: 404 }), { id: 'p1' }).event as never)).status).toBe(503);
+		const moved = at(answer, { id: 'p1', job: 'j1' });
+		expect(await (await queueAsk.POST(moved.event as never)).json()).toEqual(line);
+		expect(moved.api.calls[1]).toMatchObject({ method: 'POST', url: 'http://api.test/api/sessions/s1/queue/j1/first' });
+		const late = at((call) => (call.url.endsWith('/first') ? new Response('that ask isn’t waiting any more', { status: 409 }) : json({ id: 'p1', session_id: 's1' })), { id: 'p1', job: 'j1' });
+		const refused = await queueAsk.POST(late.event as never);
+		expect([refused.status, await refused.json()]).toEqual([409, { message: 'that ask isn’t waiting any more' }]);
+	});
+	it('passes on the requests to publish', async () => {
+		const rows = { requests: [{ id: 'r1', status: 'pending' }] };
+		expect(await (await requests.GET(at(() => json(rows), { id: 'p1' }).event as never)).json()).toEqual(rows);
+		expect((await requests.GET(at(() => new Response('', { status: 404 }), { id: 'p1' }).event as never)).status).toBe(503);
+	});
+	it('asks to publish, and answers a request, saying why not in the backend’s words', async () => {
+		const asked = at(() => json({ id: 'r1' }, 201), { id: 'p1' });
+		expect(await actions.ask(asked.event as never)).toEqual({ asked: true });
+		expect(asked.api.calls[0]).toMatchObject({ method: 'POST', url: 'http://api.test/api/projects/p1/deploy/requests', body: {} });
+		expect(await actions.ask(at(() => new Response('you’ve already asked; it’s waiting for an admin', { status: 409 }), { id: 'p1' }).event as never)).toMatchObject({
+			status: 409,
+			data: { message: 'you’ve already asked; it’s waiting for an admin' },
+		});
+		const form = (fields: Record<string, string>, answer: Parameters<typeof at>[0]) => {
+			const one = at(answer, { id: 'p1' });
+			return { one, event: { ...one.event, request: new Request('http://localhost/projects/p1', { method: 'POST', body: new URLSearchParams(fields) }) } };
+		};
+		const approve = form({ request: 'r1', action: 'approve' }, () => json({ id: 'r1', status: 'approved' }));
+		expect(await actions.answer(approve.event as never)).toEqual({ answered: 'approve' });
+		expect(approve.one.api.calls[0]).toMatchObject({ url: 'http://api.test/api/projects/p1/deploy/requests/r1', body: { action: 'approve' } });
+		const off = form({ request: 'r1', action: 'approve' }, () => new Response('publishing isn’t set up on this Nomi', { status: 503 }));
+		expect(await actions.answer(off.event as never)).toMatchObject({ status: 503, data: { message: 'publishing isn’t set up on this Nomi' } });
+		const odd = form({ request: 'r1', action: 'merge' }, () => json({}));
+		expect(await actions.answer(odd.event as never)).toMatchObject({ status: 400 });
+		expect(odd.one.api.calls).toEqual([]);
 	});
 });

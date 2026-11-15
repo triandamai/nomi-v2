@@ -83,4 +83,17 @@ describe('a project’s live link', () => {
 		live.stop();
 		vi.useRealTimers();
 	});
+
+	it('hands on what changed about publishing (a request asked or answered), and on (re)opening, since nothing missed is replayed', () => {
+		const { live, socket } = opened();
+		const heard: string[] = [];
+		const stop = live.onDeployChange((event) => heard.push(event));
+		socket.fire('message', { data: JSON.stringify({ kind: 'DeployChanged', event: 'publish_request.changed' }) });
+		socket.fire('message', { data: JSON.stringify({ kind: 'DeployChanged' }) });
+		socket.fire('message', { data: JSON.stringify({ kind: 'PresenceChanged', user_id: 'u-sari' }) });
+		stop();
+		socket.fire('message', { data: JSON.stringify({ kind: 'DeployChanged', event: 'publish.succeeded' }) });
+		expect(heard).toEqual(['publish_request.changed', '']);
+		live.stop();
+	});
 });
