@@ -160,3 +160,18 @@ export function annotationsOn(feedback: StudioFeedback[], preview: StudioPreview
 export function annotateMessage(items: Annotation[]) {
 	return { source: STUDIO_SOURCE, type: 'annotate' as const, items };
 }
+
+/** The designer in the crew, as a message addresses her. */
+const DESIGNER = 'Sora';
+
+/**
+ * The chat message that asks Sora for a new version: the person's words when they gave some,
+ * else a request for the feedback still waiting, by number. Null when there is nothing to ask.
+ */
+export function refineMessage(words: string, feedback: StudioFeedback[], fallback: (numbers: string) => string): string | null {
+	const said = words.trim();
+	if (said) return `@${DESIGNER} ${said}`;
+	const waiting = feedback.filter((f) => f.status === 'open').sort((a, b) => a.number - b.number);
+	if (waiting.length === 0) return null;
+	return `@${DESIGNER} ${fallback(waiting.map((f) => `#${f.number}`).join(', '))}`;
+}

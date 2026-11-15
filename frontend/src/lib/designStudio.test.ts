@@ -172,3 +172,21 @@ describe('designStudio feedback', () => {
 		for (const off of [{ x: 2, y: 0 }, { x: 'a', y: 0 }, null, undefined, { x: -1, y: 0.5 }]) expect(from(off)).toMatchObject({ selection: { point: null } });
 	});
 });
+
+import { refineMessage } from './designStudio';
+
+describe('designStudio refinement', () => {
+	const fallback = (numbers: string) => `Please act on feedback ${numbers}.`;
+
+	it('asks Sora by name, in the person’s words when they gave some', () => {
+		expect(refineMessage('  Only the hero for now ', [said(2)], fallback)).toBe('@Sora Only the hero for now');
+	});
+
+	it('asks for the open feedback by number when the person said nothing', () => {
+		expect(refineMessage('', [said(1, { status: 'resolved' }), said(2), said(5)], fallback)).toBe('@Sora Please act on feedback #2, #5.');
+	});
+
+	it('asks nothing when there is nothing to ask', () => {
+		expect(refineMessage(' ', [said(1, { status: 'resolved' })], fallback)).toBeNull();
+	});
+});

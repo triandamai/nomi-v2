@@ -177,4 +177,25 @@ describe('design studio page', () => {
 		expect(root.querySelector('[role="alert"]')?.textContent).toContain('there is a lot of feedback waiting already');
 		expect((root.querySelector('textarea') as HTMLTextAreaElement).value).toBe('One more');
 	});
+
+	it('asks Sora for a new version from the open feedback', async () => {
+		const fetched = vi.fn(async (_url: string, _init?: RequestInit) => new Response(JSON.stringify({ ok: true }), { status: 202 }));
+		vi.stubGlobal('fetch', fetched);
+		const root = studio([preview(1)], null, [said(1), said(3)]);
+		button(root, 'Feedback').click();
+		await settle();
+		button(root, 'Ask Sora for a new version').click();
+		await settle();
+		await settle();
+		expect(fetched.mock.calls[0][0]).toBe('/chat/s1/design/refine');
+		expect(JSON.parse(fetched.mock.calls[0][1]?.body as string)).toEqual({ text: '@Sora Please update the design for the feedback from the Design Studio that is still waiting: #1, #3.' });
+		expect(root.querySelector('[role="status"]')?.textContent).toContain('Sent to Sora');
+	});
+
+	it('has nothing to ask Sora for until there is feedback waiting', async () => {
+		const root = studio([preview(1)], null, [said(1, { status: 'resolved', resolved_in_version: 1 })]);
+		button(root, 'Feedback').click();
+		await settle();
+		expect(button(root, 'Ask Sora for a new version').disabled).toBe(true);
+	});
 });

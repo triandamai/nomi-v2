@@ -3639,5 +3639,14 @@
 	"studio_feedback_where_page": "Page {page}",
 	"studio_feedback_where_element": "{element} on {page}",
 	"studio_feedback_where_interaction": "How {target} behaves",
-	"studio_feedback_show": "Show feedback #{number} in the preview"
+	"studio_feedback_show": "Show feedback #{number} in the preview",
+	"studio_refine_title": "Ask Sora",
+	"studio_refine_label": "Anything to add? (optional)",
+	"studio_refine_placeholder": "Leave empty to ask for everything that is waiting",
+	"studio_refine_send": "Ask Sora for a new version",
+	"studio_refine_default": "Please update the design for the feedback from the Design Studio that is still waiting: {numbers}.",
+	"studio_refine_sent": "Sent to Sora. The new version shows up here when it is ready.",
+	"studio_refine_failed": "That could not be sent to Sora. Try again.",
+	"studio_refine_refresh": "Check for a new version",
+	"studio_refine_chat": "See it in the chat"
 }

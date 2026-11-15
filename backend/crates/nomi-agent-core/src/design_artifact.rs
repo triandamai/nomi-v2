@@ -293,7 +293,8 @@ pub fn artifact_input_schema() -> Value {
                     "properties": {"id": {"type": "string"}, "kind": {"type": "string", "enum": kinds}, "label": {"type": "string"}},
                     "required": ["id"]
                 }
-            }
+            },
+            "resolves": crate::design_feedback::resolves_schema()
         },
         "required": ["direction_id", "title", "files"]
     })

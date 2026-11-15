@@ -14,6 +14,8 @@ use crate::design_artifact::{ElementKind, Manifest};
 pub const MAX_BODY_CHARS: usize = 2000;
 /// The most feedback one chat may have waiting on Sora at a time.
 pub const MAX_OPEN_PER_CHAT: i64 = 200;
+/// The most characters in what a version says it did about a piece of feedback.
+pub const MAX_NOTE_CHARS: usize = 500;
 /// A pin's x and y run from one edge of what it is on to the other.
 const PIN_MIN: f64 = 0.0;
 const PIN_MAX: f64 = 1.0;
@@ -278,6 +280,86 @@ pub async fn open_count(conn: &mut PgConnection, session_id: Uuid) -> Result<i64
     sqlx::query_scalar("SELECT COUNT(*) FROM design_feedback WHERE session_id = $1 AND status = $2").bind(session_id).bind(Status::OPEN).fetch_one(conn).await
 }
 
+/// What a new version did about one piece of feedback.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Resolution {
+    /// The feedback's number in the chat.
+    pub number: i32,
+    pub note: String,
+}
+
+/// The schema of `resolves`, for the tool that saves a preview.
+pub fn resolves_schema() -> Value {
+    serde_json::json!({
+        "type": "array",
+        "description": "The open feedback this version dealt with: each one's number and, in a sentence, what you changed for it. Leave out feedback you didn't act on",
+        "items": {
+            "type": "object",
+            "properties": {"feedback": {"type": "integer", "description": "The feedback's number"}, "note": {"type": "string", "maxLength": MAX_NOTE_CHARS}},
+            "required": ["feedback", "note"]
+        }
+    })
+}
+
+/// The feedback a new version says it dealt with (`resolves`); none when it doesn't say.
+pub fn parse_resolutions(input: &Value) -> Result<Vec<Resolution>, String> {
+    let items = match input.get("resolves") {
+        None | Some(Value::Null) => return Ok(Vec::new()),
+        Some(Value::Array(items)) => items,
+        Some(_) => return Err("resolves must be a list".to_string()),
+    };
+    let mut resolutions: Vec<Resolution> = Vec::new();
+    for item in items {
+        let number = item.get("feedback").and_then(Value::as_i64).and_then(|n| i32::try_from(n).ok()).ok_or("each of resolves names a feedback number")?;
+        let note = text_of(item, "note").ok_or_else(|| format!("feedback #{number}: note says what you changed"))?;
+        if note.chars().count() > MAX_NOTE_CHARS {
+            return Err(format!("feedback #{number}: note is at most {MAX_NOTE_CHARS} characters"));
+        }
+        if resolutions.iter().any(|r| r.number == number) {
+            return Err(format!("feedback #{number} is in resolves twice"));
+        }
+        resolutions.push(Resolution { number, note: note.to_string() });
+    }
+    Ok(resolutions)
+}
+
+/// Whether every resolution is about feedback that is still waiting; the error says what is.
+pub fn check_open(resolutions: &[Resolution], feedback: &[Feedback]) -> Result<(), String> {
+    let open: Vec<i32> = feedback.iter().filter(|f| f.status == Status::Open).map(|f| f.number).collect();
+    match resolutions.iter().find(|r| !open.contains(&r.number)) {
+        None => Ok(()),
+        Some(stray) if open.is_empty() => Err(format!("feedback #{} isn't waiting: no feedback is open", stray.number)),
+        Some(stray) => {
+            let numbers: Vec<String> = open.iter().map(|n| format!("#{n}")).collect();
+            Err(format!("feedback #{} isn't waiting: the feedback still open is {}", stray.number, numbers.join(", ")))
+        }
+    }
+}
+
+/// Marks the feedback `version` dealt with, each with what the version did. What was said stays
+/// as it was; feedback already dealt with is left alone. Returns the numbers it marked.
+pub async fn resolve(conn: &mut PgConnection, session_id: Uuid, version: i32, resolutions: &[Resolution]) -> Result<Vec<i32>, sqlx::Error> {
+    let mut marked = Vec::new();
+    for resolution in resolutions {
+        let done = sqlx::query(
+            "UPDATE design_feedback SET status = $1, resolved_in_version = $2, resolution = $3, resolved_at = now() \
+             WHERE session_id = $4 AND number = $5 AND status = $6",
+        )
+        .bind(Status::RESOLVED)
+        .bind(version)
+        .bind(&resolution.note)
+        .bind(session_id)
+        .bind(resolution.number)
+        .bind(Status::OPEN)
+        .execute(&mut *conn)
+        .await?;
+        if done.rows_affected() > 0 {
+            marked.push(resolution.number);
+        }
+    }
+    Ok(marked)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -408,5 +490,37 @@ mod tests {
         assert_eq!((sent["number"].as_i64(), sent["level"].as_str(), sent["status"].as_str()), (Some(3), Some("interaction"), Some("open")));
         assert_eq!(sent["pin"], json!(null));
         assert_eq!(sent["resolved_in_version"], json!(null));
+    }
+
+    #[test]
+    fn a_version_names_the_feedback_it_dealt_with_and_what_it_did() {
+        let input = json!({"resolves": [{"feedback": 2, "note": "  Hero is half the height  "}, {"feedback": 3, "note": "Warmer paper colour"}]});
+        assert_eq!(
+            parse_resolutions(&input).unwrap(),
+            [Resolution { number: 2, note: "Hero is half the height".into() }, Resolution { number: 3, note: "Warmer paper colour".into() }]
+        );
+        assert_eq!(parse_resolutions(&json!({})).unwrap(), []);
+        assert_eq!(parse_resolutions(&json!({"resolves": null})).unwrap(), []);
+        for (input, error) in [
+            (json!({"resolves": "all"}), "resolves must be a list".to_string()),
+            (json!({"resolves": [{"note": "x"}]}), "each of resolves names a feedback number".to_string()),
+            (json!({"resolves": [{"feedback": 2}]}), "feedback #2: note says what you changed".to_string()),
+            (json!({"resolves": [{"feedback": 2, "note": "x".repeat(MAX_NOTE_CHARS + 1)}]}), format!("feedback #2: note is at most {MAX_NOTE_CHARS} characters")),
+            (json!({"resolves": [{"feedback": 2, "note": "a"}, {"feedback": 2, "note": "b"}]}), "feedback #2 is in resolves twice".to_string()),
+        ] {
+            assert_eq!(parse_resolutions(&input).unwrap_err(), error);
+        }
+    }
+
+    #[test]
+    fn only_feedback_still_waiting_can_be_dealt_with() {
+        let mut done = stored(1, parsed(json!({"level": "global", "body": "Warmer"})).unwrap());
+        done.status = Status::Resolved;
+        let all = [done, stored(2, parsed(json!({"level": "global", "body": "Bigger type"})).unwrap()), stored(4, parsed(json!({"level": "global", "body": "x"})).unwrap())];
+        let resolution = |number: i32| Resolution { number, note: "done".into() };
+        assert_eq!(check_open(&[resolution(2), resolution(4)], &all), Ok(()));
+        assert_eq!(check_open(&[], &all), Ok(()));
+        assert_eq!(check_open(&[resolution(1)], &all).unwrap_err(), "feedback #1 isn't waiting: the feedback still open is #2, #4");
+        assert_eq!(check_open(&[resolution(9)], &all[..1]).unwrap_err(), "feedback #9 isn't waiting: no feedback is open");
     }
 }

@@ -9,7 +9,8 @@ use sqlx::Postgres;
 use uuid::Uuid;
 
 use nomi_agent_core::mcp_ops::{format_listing, McpOps, SharedMcpOps, CARRY_ON};
-use nomi_agent_core::design_artifact::{self, DesignArtifact, Manifest, ID_ATTRIBUTE};
+use nomi_agent_core::design_artifact::{self, ArtifactFile, DesignArtifact, Manifest, ID_ATTRIBUTE};
+use nomi_agent_core::design_feedback::{self, Status};
 use nomi_agent_core::design_brief;
 use nomi_agent_core::static_publish::{self, PublishRequest, Published, SharedStaticPublisher};
 use nomi_agent_core::design_directions::{self, DesignDirections};
@@ -18,6 +19,7 @@ use nomi_llm::ToolDefinition;
 
 pub const PROPOSE_DIRECTIONS: &str = "propose_directions";
 pub const SAVE_PREVIEW: &str = "save_preview";
+pub const READ_PREVIEW: &str = "read_preview";
 pub const LIST_CONNECTED_TOOLS: &str = "list_connected_tools";
 pub const USE_CONNECTED_TOOL: &str = "use_connected_tool";
 /// The tools' group in listings.
@@ -206,6 +208,86 @@ pub fn saved_message(session_id: Uuid, version: i32, manifest: &Manifest, missin
     said
 }
 
+/// What Sora is told about the feedback a saved version dealt with, and what is still waiting.
+pub fn resolved_message(version: i32, resolved: &[i32], still_open: usize) -> String {
+    let waiting = match still_open {
+        1 => "1 piece of feedback is".to_string(),
+        many => format!("{many} pieces of feedback are"),
+    };
+    if resolved.is_empty() {
+        return if still_open == 0 { String::new() } else { format!(" {waiting} still waiting: name the ones a version deals with in resolves.") };
+    }
+    let numbers: Vec<String> = resolved.iter().map(|n| format!("#{n}")).collect();
+    let left = if still_open == 0 { "no feedback is waiting now".to_string() } else { format!("{waiting} still waiting") };
+    format!(" Feedback {} is marked as dealt with in version {version}; {left}.", numbers.join(", "))
+}
+
+/// A version's files as Sora reads them back: all of them under the version's manifest, or the one at `path`.
+pub fn read_message(version: i32, manifest: &Manifest, files: &[ArtifactFile], path: Option<&str>) -> Result<String, String> {
+    match path {
+        Some(path) => match files.iter().find(|f| f.path == path) {
+            Some(file) => Ok(format!("## {} (version {version})\n{}", file.path, file.content)),
+            None => {
+                let paths: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
+                Err(format!("version {version} has no file \"{path}\": its files are {}", paths.join(", ")))
+            }
+        },
+        None => {
+            let whole: Vec<String> = files.iter().map(|f| format!("## {}\n{}", f.path, f.content)).collect();
+            Ok(format!("{}\n\n{}", manifest.to_markdown(version), whole.join("\n\n")))
+        }
+    }
+}
+
+/// `read_preview`: the files of one of the chat's preview versions, to change from.
+pub struct ReadPreview;
+
+#[async_trait]
+impl Tool for ReadPreview {
+    fn definition(&self) -> ToolDefinition {
+        ToolDefinition {
+            name: READ_PREVIEW.to_string(),
+            description: "Read the files of a preview you built in this chat, as they were saved: the newest version unless you \
+                          name one, every file unless you name a path. Call it before changing a preview, so you change from \
+                          what is there instead of writing it again from memory."
+                .to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "version": {"type": "integer", "description": "The preview version; the newest when left out"},
+                    "path": {"type": "string", "description": "One file's path; every file when left out"}
+                }
+            }),
+        }
+    }
+
+    fn group(&self) -> &'static str {
+        GROUP
+    }
+
+    fn keywords(&self) -> &'static [&'static str] {
+        &["design", "preview", "files"]
+    }
+
+    async fn execute(&self, conn: &mut PoolConnection<Postgres>, session_id: Uuid, _agent_session_id: Uuid, _user_id: Uuid, input: Value) -> Result<ToolOutcome, String> {
+        let unread = |e: sqlx::Error| {
+            tracing::error!(error = %e, "design preview: read failed");
+            "the preview couldn't be read right now".to_string()
+        };
+        let asked = input.get("version").and_then(Value::as_i64).and_then(|v| i32::try_from(v).ok());
+        let (version, manifest) = match asked {
+            Some(version) => {
+                let manifest = design_artifact::version(&mut **conn, session_id, version).await.map_err(unread)?;
+                (version, manifest.ok_or_else(|| format!("this chat has no preview version {version}"))?)
+            }
+            None => design_artifact::latest(&mut **conn, session_id).await.map_err(unread)?.ok_or_else(|| format!("there is no preview in this chat yet: build one with {SAVE_PREVIEW}"))?,
+        };
+        let files = design_artifact::files(&mut **conn, session_id, version).await.map_err(unread)?;
+        let path = input.get("path").and_then(Value::as_str).map(str::trim).filter(|v| !v.is_empty());
+        read_message(version, &manifest, &files, path).map(ToolOutcome::text)
+    }
+}
+
 /// `save_preview`: checks the files, saves them as the chat's next preview version, and
 /// publishes it when a provider is set up. A preview that can't be published is still saved.
 pub struct SavePreview {
@@ -221,7 +303,7 @@ impl Tool for SavePreview {
                 "Build a preview of one proposed direction as static pages: every file whole (index.html, other pages, css, js, svg), \
                  responsive, with a {ID_ATTRIBUTE} attribute on each section and component (a lowercase slug, unique in its page, \
                  the same on every page that shares the element). It saves the preview as a new version; send all the files again, \
-                 with the same ids, when you change it."
+                 with the same ids, when you change it, and name in resolves the open feedback the new version dealt with."
             ),
             input_schema: design_artifact::artifact_input_schema(),
         }
@@ -237,6 +319,7 @@ impl Tool for SavePreview {
 
     async fn execute(&self, conn: &mut PoolConnection<Postgres>, session_id: Uuid, agent_session_id: Uuid, user_id: Uuid, input: Value) -> Result<ToolOutcome, String> {
         let artifact = DesignArtifact::parse(&input)?;
+        let resolutions = design_feedback::parse_resolutions(&input)?;
         let unsaved = |e: sqlx::Error| {
             tracing::error!(error = %e, "design preview: save failed");
             "the preview couldn't be saved right now".to_string()
@@ -245,6 +328,8 @@ impl Tool for SavePreview {
         known_direction(directions.as_ref().map(|(_, _, set)| set), &artifact.manifest.direction_id)?;
         let before = design_artifact::latest_of_direction(&mut **conn, session_id, &artifact.manifest.direction_id).await.map_err(unsaved)?;
         let missing = before.map(|(_, earlier)| artifact.manifest.missing_since(&earlier)).unwrap_or_default();
+        let feedback = design_feedback::list(&mut **conn, session_id).await.map_err(unsaved)?;
+        design_feedback::check_open(&resolutions, &feedback)?;
         let directions_version = directions.map(|(version, _, _)| version);
         let version = design_artifact::save(&mut **conn, session_id, agent_session_id, user_id, directions_version, &artifact).await.map_err(unsaved)?;
 
@@ -256,7 +341,14 @@ impl Tool for SavePreview {
                 published = Err("its address couldn't be kept".to_string());
             }
         }
-        Ok(ToolOutcome::text(saved_message(session_id, version, &artifact.manifest, &missing, &published)))
+        let resolved = design_feedback::resolve(&mut **conn, session_id, version, &resolutions).await.map_err(|e| {
+            tracing::error!(error = %e, "design preview: feedback couldn't be marked");
+            format!("version {version} is saved, but the feedback it dealt with couldn't be marked")
+        })?;
+        let still_open = feedback.iter().filter(|f| f.status == Status::Open && !resolved.contains(&f.number)).count();
+        let mut said = saved_message(session_id, version, &artifact.manifest, &missing, &published);
+        said.push_str(&resolved_message(version, &resolved, still_open));
+        Ok(ToolOutcome::text(said))
     }
 }
 
@@ -265,6 +357,7 @@ pub fn own_tools(mcp: &SharedMcpOps, publisher: &SharedStaticPublisher) -> Vec<B
     vec![
         Box::new(ProposeDirections),
         Box::new(SavePreview { publisher: publisher.clone() }),
+        Box::new(ReadPreview),
         Box::new(ListConnectedTools { mcp: mcp.clone() }),
         Box::new(UseConnectedTool { mcp: mcp.clone() }),
     ]
@@ -356,6 +449,40 @@ pub(crate) mod tests {
         let said = saved_message(Uuid::nil(), 3, &manifest(), &["menu-list".to_string(), "footer".to_string()], &Err("down".into()));
         assert!(said.contains("These ids from the last version of this direction are gone: menu-list, footer."), "{said}");
         assert!(said.contains("keep an element's id"));
+    }
+
+    #[test]
+    fn sora_reads_a_versions_files_whole_or_one_at_a_time() {
+        use nomi_agent_core::design_artifact::ArtifactFile;
+        let files = [ArtifactFile { path: "index.html".into(), content: "<h1>Hi</h1>".into() }, ArtifactFile { path: "styles.css".into(), content: "h1 { margin: 0 }".into() }];
+        let all = read_message(2, &manifest(), &files, None).unwrap();
+        assert!(all.starts_with("# Design preview (version 2, direction: editorial)"), "{all}");
+        assert!(all.contains("\n## index.html\n<h1>Hi</h1>\n") && all.ends_with("## styles.css\nh1 { margin: 0 }"), "{all}");
+        assert_eq!(read_message(2, &manifest(), &files, Some("styles.css")).unwrap(), "## styles.css (version 2)\nh1 { margin: 0 }");
+        assert_eq!(read_message(2, &manifest(), &files, Some("app.js")).unwrap_err(), "version 2 has no file \"app.js\": its files are index.html, styles.css");
+    }
+
+    #[test]
+    fn the_read_tool_asks_for_nothing_and_takes_a_version_and_a_path() {
+        let tool = ReadPreview.definition();
+        assert_eq!(tool.name, READ_PREVIEW);
+        assert_eq!(tool.input_schema["properties"].as_object().unwrap().keys().collect::<Vec<_>>(), ["path", "version"]);
+        assert!(tool.input_schema.get("required").is_none());
+    }
+
+    #[test]
+    fn a_version_that_dealt_with_feedback_says_which_and_what_is_left() {
+        assert_eq!(resolved_message(3, &[2, 4], 1), " Feedback #2, #4 is marked as dealt with in version 3; 1 piece of feedback is still waiting.");
+        assert_eq!(resolved_message(3, &[2], 0), " Feedback #2 is marked as dealt with in version 3; no feedback is waiting now.");
+        assert_eq!(resolved_message(3, &[], 2), " 2 pieces of feedback are still waiting: name the ones a version deals with in resolves.");
+        assert_eq!(resolved_message(3, &[], 0), "");
+    }
+
+    #[test]
+    fn the_preview_tool_lets_a_version_name_the_feedback_it_dealt_with() {
+        let schema = SavePreview { publisher: std::sync::Arc::new(nomi_agent_core::static_publish::NoStaticPublisher) }.definition().input_schema;
+        assert_eq!(schema["properties"]["resolves"]["items"]["required"], json!(["feedback", "note"]));
+        assert_eq!(schema["required"], json!(["direction_id", "title", "files"]), "resolves stays optional");
     }
 
     #[test]

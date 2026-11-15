@@ -232,7 +232,7 @@ mod tests {
     #[test]
     fn soras_own_tools_are_directions_previews_and_the_persons_connected_tools() {
         let names: Vec<String> = DesignAgent::new().tools().into_iter().map(|t| t.name).collect();
-        assert_eq!(names, [tools::PROPOSE_DIRECTIONS, tools::SAVE_PREVIEW, tools::LIST_CONNECTED_TOOLS, tools::USE_CONNECTED_TOOL]);
+        assert_eq!(names, [tools::PROPOSE_DIRECTIONS, tools::SAVE_PREVIEW, tools::READ_PREVIEW, tools::LIST_CONNECTED_TOOLS, tools::USE_CONNECTED_TOOL]);
     }
 
     #[test]
@@ -323,6 +323,16 @@ mod tests {
         assert!(prompt.contains("Design Studio") && prompt.contains("never invent a link"));
         assert!(prompt.contains("never write the app's code"));
         assert!(!prompt.contains("in words for now"), "she builds previews now");
+    }
+
+    #[test]
+    fn sora_refines_from_feedback_without_redoing_the_design() {
+        let sora = DesignAgent::new();
+        let prompt = sora.system_prompt();
+        for said in ["read_preview", "resolves", "only what the feedback asks", "never mark feedback you didn't act on"] {
+            assert!(prompt.contains(said), "her prompt says {said:?}");
+        }
+        assert!(!sora.tool_needs_approval(tools::READ_PREVIEW), "reading her own preview needs no OK");
     }
 
     #[test]

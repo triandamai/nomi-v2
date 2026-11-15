@@ -225,3 +225,48 @@ async fn a_publisher_that_fails_or_answers_badly_doesnt_lose_the_preview(pool: P
     assert_eq!(nomi_agent_core::design_artifact::latest(&mut conn, session_id).await.unwrap().map(|(version, _)| version), Some(2));
     assert_eq!(nomi_agent_core::static_publish::latest(&mut conn, session_id, 2).await.unwrap(), None);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn sora_reads_her_preview_back_and_a_new_version_marks_the_feedback_it_dealt_with(pool: PgPool) {
+    use nomi_agent_core::design_feedback::{self, NewFeedback, Status};
+    let (session_id, user_id) = chat(&pool).await;
+    let sora = DesignAgent::new();
+    let mut conn = pool.acquire().await.unwrap();
+    let nothing = sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "read_preview", json!({})).await.unwrap_err();
+    assert_eq!(nothing, "there is no preview in this chat yet: build one with save_preview");
+
+    sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "propose_directions", directions()).await.unwrap();
+    sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "save_preview", preview("editorial", HERO_ONLY)).await.unwrap();
+    let read = sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "read_preview", json!({})).await.unwrap().display_text;
+    assert!(read.starts_with("# Design preview (version 1, direction: editorial)") && read.contains("## index.html\n"), "{read}");
+    let missing = sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "read_preview", json!({"version": 7})).await.unwrap_err();
+    assert_eq!(missing, "this chat has no preview version 7");
+
+    let manifest = nomi_agent_core::design_artifact::version(&mut conn, session_id, 1).await.unwrap().unwrap();
+    for body in ["Make it shorter", "Warmer overall"] {
+        let new = NewFeedback::parse(1, &manifest, &json!({"level": "global", "body": body})).unwrap();
+        design_feedback::add(&mut conn, session_id, user_id, &new).await.unwrap();
+    }
+    let context = sora.domain_context(&mut conn, None, session_id, user_id, &[]).await.unwrap();
+    assert!(context.contains("- #1 (version 1, the whole design): Make it shorter") && context.contains("- #2 "), "{context}");
+
+    let mut stray = preview("editorial", HERO_ONLY);
+    stray["resolves"] = json!([{"feedback": 9, "note": "done"}]);
+    let refused = sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "save_preview", stray).await.unwrap_err();
+    assert_eq!(refused, "feedback #9 isn't waiting: the feedback still open is #1, #2");
+    assert_eq!(nomi_agent_core::design_artifact::latest(&mut conn, session_id).await.unwrap().unwrap().0, 1, "nothing was saved");
+
+    let mut refined = preview("editorial", HERO_ONLY);
+    refined["resolves"] = json!([{"feedback": 1, "note": "Hero is half the height"}]);
+    let saved = sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "save_preview", refined).await.unwrap().display_text;
+    assert!(saved.contains("Feedback #1 is marked as dealt with in version 2; 1 piece of feedback is still waiting."), "{saved}");
+
+    let kept = design_feedback::list(&mut conn, session_id).await.unwrap();
+    assert_eq!((kept[0].status, kept[0].resolved_in_version, kept[0].resolution.as_deref()), (Status::Resolved, Some(2), Some("Hero is half the height")));
+    assert_eq!(kept[0].body, "Make it shorter", "what was said is never changed");
+    assert!(kept[0].resolved_at.is_some());
+    assert_eq!((kept[1].status, kept[1].resolved_in_version), (Status::Open, None));
+    assert_eq!(design_feedback::open_count(&mut conn, session_id).await.unwrap(), 1);
+    let context = sora.domain_context(&mut conn, None, session_id, user_id, &[]).await.unwrap();
+    assert!(!context.contains("Make it shorter") && context.contains("Warmer overall"), "{context}");
+}

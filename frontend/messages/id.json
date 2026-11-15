@@ -3639,5 +3639,14 @@
 	"studio_feedback_where_page": "Halaman {page}",
 	"studio_feedback_where_element": "{element} di {page}",
 	"studio_feedback_where_interaction": "Cara kerja {target}",
-	"studio_feedback_show": "Tampilkan masukan #{number} di pratinjau"
+	"studio_feedback_show": "Tampilkan masukan #{number} di pratinjau",
+	"studio_refine_title": "Minta Sora",
+	"studio_refine_label": "Ada tambahan? (opsional)",
+	"studio_refine_placeholder": "Kosongkan untuk meminta semua yang masih menunggu",
+	"studio_refine_send": "Minta versi baru ke Sora",
+	"studio_refine_default": "Tolong perbarui desain untuk masukan dari Design Studio yang masih menunggu: {numbers}.",
+	"studio_refine_sent": "Terkirim ke Sora. Versi baru akan muncul di sini saat sudah siap.",
+	"studio_refine_failed": "Itu tidak bisa dikirim ke Sora. Coba lagi.",
+	"studio_refine_refresh": "Periksa versi baru",
+	"studio_refine_chat": "Lihat di obrolan"
 }

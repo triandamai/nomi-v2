@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { ArrowLeft, ExternalLink, Monitor, MousePointerClick, Smartphone, Tablet } from '@lucide/svelte';
+	import { invalidateAll } from '$app/navigation';
 	import { m } from '$lib/paraglide/messages';
 	import { getLocale } from '$lib/paraglide/runtime';
 	import { formatDate } from '$lib/dates';
@@ -15,6 +16,7 @@
 		pickVersion,
 		previewUrl,
 		readPreviewMessage,
+		refineMessage,
 		versionsNewestFirst,
 		type Device,
 		type FeedbackScope,
@@ -163,6 +165,40 @@
 		} finally {
 			sending = false;
 		}
+	}
+
+	// Asking Sora for a new version: a message in the chat, so the request and her answer are there.
+	let ask = $state('');
+	let asking = $state(false);
+	let asked = $state(false);
+	let askError = $state('');
+	const request = $derived(refineMessage(ask, feedback, (numbers) => m.studio_refine_default({ numbers })));
+
+	async function askSora(event: SubmitEvent) {
+		event.preventDefault();
+		if (!request || asking) return;
+		asking = true;
+		askError = '';
+		try {
+			const response = await fetch(`/chat/${data.sessionId}/design/refine`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: request }) });
+			if (!response.ok) {
+				askError = m.studio_refine_failed();
+				return;
+			}
+			asked = true;
+			ask = '';
+		} catch {
+			askError = m.studio_refine_failed();
+		} finally {
+			asking = false;
+		}
+	}
+
+	// A new version is saved by Sora in the chat; this loads what there is now.
+	async function refresh() {
+		await invalidateAll();
+		added = [];
+		pickedVersion = null;
 	}
 
 	// What a piece of feedback points at, in words.
@@ -336,6 +372,20 @@
 							{/each}
 						</ol>
 					{/if}
+
+					<h2 class="md-label-large studio__label">{m.studio_refine_title()}</h2>
+					<form class="studio__form" onsubmit={askSora}>
+						<label class="md-body-small studio__muted" for="studio-ask">{m.studio_refine_label()}</label>
+						<textarea id="studio-ask" class="studio__words md-body-medium" rows="2" maxlength={FEEDBACK_CHARS} placeholder={m.studio_refine_placeholder()} bind:value={ask}></textarea>
+						{#if askError}<p class="md-body-small studio__error" role="alert">{askError}</p>{/if}
+						<button type="submit" class="studio__send md-label-large" disabled={!request || asking}>{m.studio_refine_send()}</button>
+						{#if asked}
+							<p class="md-body-small studio__muted" role="status">
+								{m.studio_refine_sent()} <a href={`/chat/${data.sessionId}`}>{m.studio_refine_chat()}</a>
+							</p>
+							<button type="button" class="studio__clear md-label-large" onclick={refresh}>{m.studio_refine_refresh()}</button>
+						{/if}
+					</form>
 				{/if}
 
 				<h2 class="md-label-large studio__label">{m.studio_elements()}</h2>
