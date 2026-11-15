@@ -32,6 +32,11 @@ impl ToolSwitches {
         Self { off: off.into_iter().collect() }
     }
 
+    /// Switches with exactly `names` off.
+    pub fn with_off<'a>(names: impl IntoIterator<Item = &'a str>) -> Self {
+        Self { off: names.into_iter().map(str::to_string).collect() }
+    }
+
     pub fn allows(&self, name: &str) -> bool {
         REQUIRED_TOOLS.contains(&name) || !self.off.contains(name)
     }

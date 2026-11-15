@@ -47,9 +47,8 @@ pub mod worker;
 /// Every built-in agent. Rena and Koda publish projects, and Iris inspects them, through
 /// `project_ops::ServerProjectOps`; Rena makes Relay backends, and Koda works on them, through
 /// `relay_ops::ServerRelayOps`.
-/// The registry knows the tool catalog (`build_tool_catalog`), for `find_tools` and `create_agent`.
-pub fn build_agent_registry(pool: &sqlx::PgPool, project_storage: nomi_storage::ProjectStore) -> nomi_agent_core::AgentRegistry {
-    let catalog = build_tool_catalog(project_storage.clone());
+/// The registry shares the tool catalog (built once by `build_tool_catalog`, in `AppState.tool_catalog`), for `find_tools` and `create_agent`.
+pub fn build_agent_registry(pool: &sqlx::PgPool, project_storage: nomi_storage::ProjectStore, catalog: std::sync::Arc<nomi_agent_core::ToolCatalog>) -> nomi_agent_core::AgentRegistry {
     let project_ops = project_ops::ServerProjectOps::shared(pool.clone(), project_storage.clone());
     let relay_ops = relay_ops::ServerRelayOps::shared(pool.clone(), project_storage.clone());
     nomi_agent_core::AgentRegistry::new(vec![

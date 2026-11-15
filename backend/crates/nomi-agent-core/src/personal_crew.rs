@@ -12,6 +12,7 @@ use uuid::Uuid;
 
 use crate::prompts;
 use crate::tool_catalog::ToolCatalog;
+use crate::tools::ToolSwitches;
 
 /// What a member may do with one tool, for this person.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -402,13 +403,24 @@ impl From<sqlx::Error> for CreateMemberError {
     }
 }
 
-/// The first of `tools` the catalog doesn't have, as the error naming it.
-pub fn check_tool_names(catalog: &ToolCatalog, tools: &[String]) -> Result<(), String> {
+/// The first of `tools` the catalog doesn't have, or an admin switched off, as the error naming
+/// it. Only a save is held to this: a member already saved with a tool that is later switched off
+/// keeps the row, and the engine skips the tool at run time.
+pub fn check_tool_names(catalog: &ToolCatalog, switches: &ToolSwitches, tools: &[String]) -> Result<(), String> {
     let known = catalog.known_tool_names();
-    match tools.iter().find(|t| !known.contains(&t.as_str())) {
-        Some(tool) => Err(format!("unknown tool {tool}")),
+    if let Some(tool) = tools.iter().find(|t| !known.contains(&t.as_str())) {
+        return Err(format!("unknown tool {tool}"));
+    }
+    match tools.iter().find(|t| !switches.allows(t)) {
+        Some(tool) => Err(format!("the tool {tool} is switched off")),
         None => Ok(()),
     }
+}
+
+/// `tools` trimmed, without blanks, each name once, in the order given.
+pub fn dedupe_tool_names(tools: impl IntoIterator<Item = String>) -> Vec<String> {
+    let mut seen = HashSet::new();
+    tools.into_iter().map(|t| t.trim().to_string()).filter(|t| !t.is_empty() && seen.insert(t.clone())).collect()
 }
 
 /// The lengths a member's name, role and soul.md may have.
@@ -449,7 +461,8 @@ pub async fn create_member(
 ) -> Result<CreatedMember, CreateMemberError> {
     let NewMember { name, role, soul, tools, template_key, shape, tone, motion } = member;
     check_member_text(&name, &role, &soul).map_err(CreateMemberError::Invalid)?;
-    check_tool_names(catalog, &tools).map_err(CreateMemberError::Invalid)?;
+    let switches = ToolSwitches::load(conn).await;
+    check_tool_names(catalog, &switches, &tools).map_err(CreateMemberError::Invalid)?;
     if crew_names.iter().any(|n| n.eq_ignore_ascii_case(&name)) {
         return Err(taken(&name));
     }
@@ -559,8 +572,24 @@ mod tests {
     #[test]
     fn tool_names_are_checked_against_the_catalog() {
         let catalog = ToolCatalog::empty();
-        assert!(check_tool_names(&catalog, &[]).is_ok());
-        assert_eq!(check_tool_names(&catalog, &["made_up".to_string()]).unwrap_err(), "unknown tool made_up");
+        let switches = ToolSwitches::default();
+        assert!(check_tool_names(&catalog, &switches, &[]).is_ok());
+        assert_eq!(check_tool_names(&catalog, &switches, &["made_up".to_string()]).unwrap_err(), "unknown tool made_up");
+    }
+
+    #[test]
+    fn switched_off_tools_are_refused_at_save_time() {
+        let catalog = ToolCatalog::empty();
+        let switches = ToolSwitches::with_off(["made_up"]);
+        // Unknown wins over switched off; a required tool is never refused.
+        assert_eq!(check_tool_names(&catalog, &switches, &["made_up".to_string()]).unwrap_err(), "unknown tool made_up");
+        assert!(!switches.allows("made_up"));
+    }
+
+    #[test]
+    fn tool_names_are_deduped_in_order() {
+        let tools = ["b", " a ", "b", "", "a", "c"].map(String::from);
+        assert_eq!(dedupe_tool_names(tools), vec!["b", "a", "c"]);
     }
 
     #[test]

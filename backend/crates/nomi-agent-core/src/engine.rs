@@ -468,7 +468,7 @@ pub fn find_tools_tool_definition() -> ToolDefinition {
             "type": "object",
             "properties": {
                 "query": {"type": "string", "description": "A few words about the task or the tool you're looking for"},
-                "limit": {"type": "integer", "description": "How many tools at most (default 8, up to 20)"}
+                "limit": {"type": "integer", "description": format!("How many tools at most (default {}, up to {})", crate::tool_finder::FIND_TOOLS_DEFAULT_LIMIT, crate::tool_finder::FIND_TOOLS_MAX_LIMIT)}
             },
             "required": ["query"]
         }),
@@ -485,8 +485,8 @@ pub fn create_agent_tool_definition() -> ToolDefinition {
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {
-                "name": {"type": "string", "description": "A short name, unlike any crew member's (at most 40 characters)"},
-                "role": {"type": "string", "description": "Its job in one sentence (at most 200 characters)"},
+                "name": {"type": "string", "description": format!("A short name, unlike any crew member's (at most {} characters)", crate::personal_crew::NAME_MAX_CHARS)},
+                "role": {"type": "string", "description": format!("Its job in one sentence (at most {} characters)", crate::personal_crew::ROLE_MAX_CHARS)},
                 "soul": {"type": "string", "description": "Optional soul.md: who it is and how it works, in markdown"},
                 "tools": {"type": "array", "items": {"type": "string"}, "description": "Tool names from find_tools; may be empty"}
             },

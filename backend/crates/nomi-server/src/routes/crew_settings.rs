@@ -45,7 +45,7 @@ fn not_found() -> ApiError {
 /// The member `agent_type` names, when `user_id` has it in their crew: a built-in one, an admin's
 /// member for everyone, or one of their own.
 async fn member(state: &AppState, user_id: Uuid, agent_type: &str) -> Result<Member, ApiError> {
-    let registry = crate::build_agent_registry(&state.pool, state.project_storage.clone());
+    let registry = crate::build_agent_registry(&state.pool, state.project_storage.clone(), state.tool_catalog.clone());
     if let Some(agent) = registry.find(agent_type) {
         let mut tools = agent.tools();
         // The engine runs it for them, under the same permission levels as their own tools.
@@ -126,23 +126,29 @@ pub async fn update_member(
             format!("{} can't be switched off", member.name),
         ));
     }
-    if let Some(tools) = &req.tools {
-        if !member.is_own {
-            return Err(not_found());
-        }
-        personal_crew::check_tool_names(&state.tool_catalog, tools).map_err(bad)?;
+    if req.tools.is_some() && !member.is_own {
+        return Err(not_found());
     }
     let mut conn = state
         .pool
         .acquire()
         .await
         .map_err(internal("failed to update the member"))?;
+    let tools = match req.tools {
+        Some(tools) => {
+            let tools = personal_crew::dedupe_tool_names(tools);
+            let switches = nomi_agent_core::tools::ToolSwitches::load(&mut conn).await;
+            personal_crew::check_tool_names(&state.tool_catalog, &switches, &tools).map_err(bad)?;
+            Some(tools)
+        }
+        None => None,
+    };
     if let Some(enabled) = req.enabled {
         personal_crew::set_enabled(&mut conn, claims.sub, &member.agent_type, enabled)
             .await
             .map_err(internal("failed to switch the member"))?;
     }
-    let tools = match req.tools {
+    let tools = match tools {
         Some(tools) => {
             let id: Uuid = member.agent_type.parse().map_err(|_| not_found())?;
             let saved = personal_crew::set_member_tools(&mut conn, claims.sub, id, &tools)
@@ -527,7 +533,7 @@ pub async fn create_member(
     {
         return Err(bad("unknown look"));
     }
-    let registry = crate::build_agent_registry(&state.pool, state.project_storage.clone());
+    let registry = crate::build_agent_registry(&state.pool, state.project_storage.clone(), state.tool_catalog.clone());
     let crew_names: Vec<String> = registry
         .agents()
         .iter()

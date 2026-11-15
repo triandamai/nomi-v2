@@ -140,7 +140,7 @@ pub async fn list_crew(
         let mut conn = state.pool.acquire().await.map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to list agents"))?;
         nomi_agent_core::user_locale(&mut conn, claims.sub).await
     };
-    let registry = crate::build_agent_registry(&state.pool, state.project_storage.clone());
+    let registry = crate::build_agent_registry(&state.pool, state.project_storage.clone(), state.tool_catalog.clone());
     let mut agents: Vec<CrewMember> = registry
         .agents()
         .iter()

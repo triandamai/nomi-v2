@@ -240,7 +240,7 @@ pub async fn find_tools(
                 "name": info.name,
                 "description": info.description,
                 "group": info.group,
-                "granted": own.contains(&info.name),
+                "granted": switches.allows(&info.name) && own.contains(&info.name),
                 "carried_by": carriers.get(&info.name).cloned().unwrap_or_default(),
             })
         })
@@ -261,7 +261,7 @@ pub struct CreateAgentInput {
 /// `create_agent`'s `{name, role, soul?, tools}`.
 pub fn parse_create_agent_input(input: &Value) -> Result<CreateAgentInput, String> {
     let text = |key: &str| input.get(key).and_then(Value::as_str).map(|v| v.trim().to_string()).unwrap_or_default();
-    let tools = match input.get("tools") {
+    let tools: Vec<String> = match input.get("tools") {
         Some(Value::Array(items)) => items
             .iter()
             .map(|item| item.as_str().map(|s| s.trim().to_string()).ok_or("tools is a list of tool names"))
@@ -269,8 +269,7 @@ pub fn parse_create_agent_input(input: &Value) -> Result<CreateAgentInput, Strin
         None | Some(Value::Null) => return Err("tools is required: the tool names from find_tools (may be empty)".to_string()),
         Some(_) => return Err("tools is a list of tool names".to_string()),
     };
-    let mut seen = HashSet::new();
-    let tools = tools.into_iter().filter(|t| !t.is_empty() && seen.insert(t.clone())).collect();
+    let tools = personal_crew::dedupe_tool_names(tools);
     Ok(CreateAgentInput { name: text("name"), role: text("role"), soul: text("soul"), tools })
 }
 
