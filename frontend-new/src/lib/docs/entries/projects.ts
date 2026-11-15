@@ -286,6 +286,17 @@ export default [
 		related: ['projects/ProjectBar.svelte'],
 	},
 	{
+		file: 'projects/AsksInLine.svelte',
+		summary: 'The asks waiting for Koda in a shared project’s chat, one change at a time: who asked what, which one is running and which is next. A teammate’s ask waiting behind yours can go first.',
+		use: ['At the end of a project’s chat while more than one ask is waiting or running.'],
+		avoid: ['A line of one: the chat already shows what Koda is doing.', 'The old app’s screens: they use build/RequestQueue.'],
+		dos: ['Give each ask who and where in meta: “Sari Wulandari · next”.', 'Pass first only when moving it changes the order: a teammate’s ask waiting behind one of yours.'],
+		donts: ['Offer to move an ask that’s running or already next: Koda finishes one change before starting the next.'],
+		content: ['Asks are the person’s own words, their first line: “Make the Pre-order button green”.'],
+		accessibility: ['A region named by its title (“2 asks in line”); the asks are an ordered list, and the button names whose ask goes first.'],
+		related: ['build/RequestQueue.svelte', 'build/PublishRequest.svelte', 'build/PeerAvatar.svelte'],
+	},
+	{
 		file: 'projects/DeployRow.svelte',
 		summary: 'One publish of a project: its number, what it was and when, and whether it’s live, failed or can be rolled back to.',
 		use: ['The Deployments sheet in a project’s workspace.'],

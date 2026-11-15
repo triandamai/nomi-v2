@@ -333,3 +333,12 @@ Found while building the Landing page flow (2026-11-14).
   - `frontend/`: live message updates already read it; a teammate's message no longer chains onto the person's own.
 
 Found while building Invite & build together (2026-11-14).
+
+### When an ask started running, and what a change to publish holds
+- **Needed by:** *Flow / Build — Invite & build together* (TnwQT) step 9 ("Mario · running · 00:21") and step 10 (the event "Sari's ask built in the preview · 2 files · tests pass" and the request's "Makanan section · 2 files · built and tested in the preview").
+- **Why:** the line can't say how long the running ask has run, and a request to publish can't say which change it is, which files it touches or whether its tests passed.
+- **What exists today:** `GET /api/sessions/:id/queue` gives each ask's `created_at` (when it was asked), not when it started; `GET /api/projects/:id/deploy/requests` gives the note, who asked and when; the deploy overview counts the files waiting to go live (`unpublished_changes`) for the whole project, not per request; nothing records a turn's tests.
+- **Proposed contract:** `started_at` on a running ask in the queue; on a request, the ask (turn job or message) it follows and the files changed since the live deploy; and a chat event when Koda finishes an ask in the preview (`{ kind: "AskBuilt", job_id, files, tests: "passed" | "failed" | null }`).
+- **Until then:** a running ask says "running" without its time; a request's meta is its note, the project's waiting files (where publishing is set up) and when it was asked; the "built in the preview" event isn't drawn.
+
+Found while building Invite & build together, steps 9–10 (2026-11-15).

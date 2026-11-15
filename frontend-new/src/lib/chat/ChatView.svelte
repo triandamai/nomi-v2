@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount, tick, untrack } from 'svelte';
+	import { onMount, tick, untrack, type Snippet } from 'svelte';
 	import { ArrowUpRight, Cpu, Download, FilePlus2, Hourglass, KeyRound, LogIn, RotateCcw, Sparkles, Trash2, Unplug, Undo2 } from '@lucide/svelte';
 	import { goto, invalidate } from '$app/navigation';
 	import { page } from '$app/state';
@@ -64,8 +64,15 @@
 		/** Lines picked in the code view, quoted above the composer and sent ahead of the message. */
 		quote?: { file: string; range: string; snippet: string; text: string } | null;
 		onunquote?: () => void;
+		/**
+		 * The chat moved on: a message came in or was sent, a turn started, ended or was moved up. The
+		 * workspace reads its line of asks again (Invite & build together TnwQT, step 9).
+		 */
+		onactivity?: () => void;
+		/** What sits at the end of the thread, after the replies: the workspace's asks in line and requests to publish. */
+		after?: Snippet;
 	};
-	let { data, pane = false, quote = null, onunquote }: Props = $props();
+	let { data, pane = false, quote = null, onunquote, onactivity, after }: Props = $props();
 
 	const header = chatHeader();
 	const time = appClock();
@@ -192,9 +199,12 @@
 		messages = upsert(messages, result.data);
 	}
 
+	const ACTIVITY = new Set<ChatEvent['kind']>(['QueueChanged', 'MessageCreated', 'TurnCompleted', 'TurnFailed', 'ChatSettled']);
+
 	function onEvent(event: ChatEvent) {
 		const before = turn;
 		turn = applyChatEvent(turn, event, Date.now());
+		if (ACTIVITY.has(event.kind)) onactivity?.();
 		switch (event.kind) {
 			case 'TurnCompleted':
 				if (event.message_id !== NIL) {
@@ -230,6 +240,7 @@
 					// Nothing missed is replayed: what happened meanwhile comes with a reload.
 					if (resumed && !turn.end) turn = idleTurn();
 					void invalidate('chat:page');
+					onactivity?.();
 				},
 				event: onEvent,
 				lost(code) {
@@ -259,6 +270,7 @@
 		if (result.ok) {
 			pending = pending.filter((item) => item.key !== local.key);
 			messages = upsert(messages, { ...result.data.message, content_html: '' });
+			onactivity?.();
 			if (options.late) lateNotes = { ...lateNotes, [result.data.message.id]: m.sent_after_signin({ time: clock(new Date(), time.timeZone) }) };
 			if (result.data.stopped) {
 				// The supervisor answered on the spot: no turn is coming.
@@ -838,6 +850,8 @@
 					{/if}
 				</AgentReply>
 			{/if}
+
+			{@render after?.()}
 		</div>
 	</div>
 

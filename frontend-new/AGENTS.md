@@ -424,9 +424,12 @@ drawn dead:
 
 On Plan & usage (`C0og49`):
 
-- No way to join a plan or its waitlist ("Join Pro waitlist", "Join the waitlist"): there's no
-  checkout or waitlist to call (BACKEND_TODO.md); Compare plans says plans are changed by Nomi's
-  team for now. Billing leaves out the payment method, which the backend doesn't know.
+- A plan without a price shows "Coming soon" and "Join the waitlist" (the pen's Pro card), then
+  "You're on the waitlist". A plan above yours with a price has "Upgrade to {plan}": a month, paid on
+  the payment gateway's own page (the pen draws no checkout), with "Payments aren't open on this
+  Nomi yet" where no gateway is set up. Coming back from it (/billing?payment=…), the payment's
+  outcome leads the page: received, waiting (with the payment page again), expired, failed or
+  cancelled. Billing leaves out the payment method for now.
 - Spend is in dollars at list price, as the backend keeps it; the pen's "Rp 1.800 ≈ $0.11 · you
   paid Rp 0" needs an exchange rate and what was paid.
 - An own key's row shows its masked key only: the pen's "Balance empty" and "Use Nomi allowance"
@@ -636,6 +639,24 @@ steps; what isn't there yet is left out, not drawn dead:
   the running app. When two people's initials match, one face takes the name's first two letters
   (the faces are told apart by them). A teammate's message in the chat (step 6) wears their name and
   colour (by name: messages don't carry an id), with when and which crew member they asked.
+  While more than one ask is waiting or running in the chat, the line of asks (step 9) sits at the
+  end of the thread, read again whenever the chat moves on (a message, a turn starting, ending or
+  moved up), never on a timer. It's `projects/AsksInLine`, drawn as the twin `build/RequestQueue`
+  but for whose ask its button moves: a running ask can't wait and the next one is next already,
+  so the pen's "Do Sari's first" beside Mario's running ask would do nothing. The button shows only
+  for a teammate's ask waiting behind one of yours, and moves it up. A running ask says "running"
+  without its time (the queue doesn't say when it started: BACKEND_TODO.md).
+- Asking to publish (step 10): someone who can change the project but not publish it gets "Ask to
+  publish" where Publish would be (also where this Nomi has no Shipyard, so the admins still
+  hear), then "Asked to publish", which opens their request with Take it back. The pen draws no
+  note, so none is asked for. An admin sees each request as the pen's card at the end of the chat:
+  Publish approves it (publishing as the admin; where the publish can't start, the backend's
+  reason is said and the request stays open), Review in preview opens the preview. Decline, which
+  the pen doesn't draw, sits under the card, so a request never waits forever; the person who
+  asked hears whether it was published or declined. The card's meta is the note, the files
+  waiting to go live and when it was asked: the pen's "built and tested in the preview" and the
+  "Sari's ask built in the preview · 2 files · tests pass" event above it have nothing behind them
+  (BACKEND_TODO.md). On a phone the bar's ask is its icon, so the project's name keeps its room.
 - The chat pane is the project's chat itself (`ChatView`), as on its own page; its header's history
   and collapse buttons are left out, and it names Koda and Nomi as the crew building.
 - The chat is 520 wide as the flow draws it, dragged between 360 and 720 by the resize handle:

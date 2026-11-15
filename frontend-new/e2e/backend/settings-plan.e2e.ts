@@ -48,3 +48,28 @@ test('the plan, this month’s usage and the month before, and the export', asyn
 	expect(csv.split('\n')[0]).toBe('date,tokens,spend_usd');
 	expect(csv).toContain('deepseek-flash,nomi,3500,1,0.05');
 });
+
+test('a plan without a price offers its waitlist, and joining it stays joined', async ({ page, context }) => {
+	const account = await createAccount();
+	await signInAs(context, account);
+	await page.goto('/settings/plan', { waitUntil: 'networkidle' });
+	// Pro has no price on a fresh Nomi: people join its waitlist (the pen's "Join the waitlist").
+	const pro = page.getByRole('article', { name: 'Pro' });
+	await expect(pro.getByText('Coming soon')).toBeVisible();
+	// No price yet: the price's place says how much more room it gives (the pen's "10×").
+	await expect(pro.getByText('10×')).toBeVisible();
+	await pro.getByRole('button', { name: 'Join the waitlist' }).click();
+	await expect(pro.getByText('You’re on the waitlist')).toBeVisible();
+	await page.reload({ waitUntil: 'networkidle' });
+	await expect(page.getByRole('article', { name: 'Pro' }).getByText('You’re on the waitlist')).toBeVisible();
+	await expect(page.getByRole('article', { name: 'Free' }).getByRole('button')).toHaveCount(0);
+});
+
+test('coming back from the payment page with a payment that isn’t theirs shows nothing about it', async ({ page, context }) => {
+	const account = await createAccount();
+	await signInAs(context, account);
+	await page.goto('/billing?payment=00000000-0000-0000-0000-000000000000', { waitUntil: 'networkidle' });
+	await expect(page).toHaveURL(/\/settings\/plan\?payment=/);
+	await expect(page.getByRole('heading', { name: 'Plan & usage', level: 1 })).toBeVisible();
+	await expect(page.getByText(/Payment received|Waiting for your payment|didn’t go through|expired/)).toHaveCount(0);
+});
