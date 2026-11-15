@@ -58,7 +58,7 @@ pub fn dockerfile(stack: &str, files: &[(String, Vec<u8>)]) -> String {
         "sveltekit" => format!(
             "FROM node:22-alpine AS build\nWORKDIR /app\nCOPY package*.json ./\nRUN {install}\nCOPY . .\nRUN npm run build && npm prune --omit=dev\n\n\
              FROM node:22-alpine\nWORKDIR /app\nCOPY --from=build /app/build ./build\nCOPY --from=build /app/node_modules ./node_modules\nCOPY --from=build /app/package.json ./\n{drizzle}\
-             ENV NODE_ENV=production HOST=0.0.0.0 PORT={PORT} PROTOCOL_HEADER=x-forwarded-proto HOST_HEADER=x-forwarded-host\nEXPOSE {PORT}\nCMD [\"node\", \"build\"]\n"
+             ENV NODE_ENV=production HOST=0.0.0.0 PORT={PORT} PROTOCOL_HEADER=x-forwarded-proto HOST_HEADER=x-forwarded-host BODY_SIZE_LIMIT=Infinity\nEXPOSE {PORT}\nCMD [\"node\", \"build\"]\n"
         ),
         "astro" => format!(
             "FROM node:22-alpine AS build\nWORKDIR /app\nCOPY package*.json ./\nRUN {install}\nCOPY . .\nRUN npm run build && npm prune --omit=dev\n\n\
@@ -132,6 +132,7 @@ pub fn build(database: Database, secret_names: &[String]) -> Value {
     let mut env = serde_json::Map::new();
     env.insert("NODE_ENV".into(), json!("production"));
     env.insert("PORT".into(), json!(PORT.to_string()));
+    env.insert("BODY_SIZE_LIMIT".into(), json!("Infinity"));
     let mut volumes = Vec::new();
     match database {
         Database::Postgres => {
