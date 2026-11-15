@@ -201,9 +201,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/admin/settings/llm/connections/:id/models", post(provider_connections_routes::shared_models))
         .route("/api/agents", get(agents_routes::list_crew).post(crate::routes::crew_settings::create_member))
         .route("/api/agents/templates", get(crate::routes::crew_settings::templates))
+        .route("/api/tools/catalog", get(crate::routes::tool_catalog::catalog))
         .route(
             "/api/agents/:type",
-            put(crate::routes::crew_settings::set_enabled).delete(crate::routes::crew_settings::delete_member),
+            put(crate::routes::crew_settings::update_member).delete(crate::routes::crew_settings::delete_member),
         )
         .route(
             "/api/agents/:type/permissions",
