@@ -41,7 +41,7 @@
 					{#if step.meta}<span class="font-mono text-label text-text-3">{step.meta}</span>{/if}
 				</span>
 				<span class="inline-flex shrink-0 items-center gap-1.5">
-					<Mascot agent={step.owner.agent} size={20} live />
+					<Mascot agent={step.owner.agent} size={20} />
 					<span class="text-caption text-text-2">{step.owner.name}</span>
 				</span>
 			</li>

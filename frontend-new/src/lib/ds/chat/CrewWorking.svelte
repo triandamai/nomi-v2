@@ -13,7 +13,7 @@
 
 <div role="status" class="flex w-full flex-wrap items-center gap-2.5 rounded-sm py-1.5 pr-2 pl-3 outline -outline-offset-1 outline-border">
 	<span class="flex items-center -space-x-1.5">
-		{#each crew as agent (agent)}<Mascot {agent} size={20} live mood="thinking" />{/each}
+		{#each crew as agent (agent)}<Mascot {agent} size={20} />{/each}
 	</span>
 	<span class="min-w-0 flex-1 text-caption text-text">{crew.length === 1 ? m.crew_working_one() : m.crew_working({ count: String(crew.length) })}</span>
 	{#if onstop}<Button label={m.crew_stop_all()} variant="ghost-danger" iconStart={Square} onclick={onstop} />{/if}

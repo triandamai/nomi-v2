@@ -31,7 +31,7 @@
 	}}
 >
 	<header class="flex items-center gap-2.5 border-b border-border bg-surface px-3.5 pt-2.5 pb-2.25">
-		<Mascot {agent} size={20} live />
+		<Mascot {agent} size={20} />
 		<p class="min-w-0 flex-1 text-ui font-medium text-text">{title}</p>
 		{#if meta}<span class="font-mono text-label text-text-3">{meta}</span>{/if}
 	</header>

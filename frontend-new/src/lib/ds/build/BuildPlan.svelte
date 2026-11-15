@@ -32,7 +32,7 @@
 
 <section class="flex w-full flex-col overflow-hidden rounded-md bg-surface outline -outline-offset-1 outline-border">
 	<header class="flex items-center gap-2.5 border-b border-border px-4 pt-3.5 pb-3.25">
-		<Mascot agent="koda" size={20} live />
+		<Mascot agent="koda" size={20} />
 		<span class="text-ui font-medium text-text">Koda</span>
 		<span class="min-w-0 flex-1 font-mono text-label text-text-3">{m.build_plan_kind()}</span>
 	</header>

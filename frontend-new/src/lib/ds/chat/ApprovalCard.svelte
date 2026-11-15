@@ -65,7 +65,7 @@
 
 <section class={['flex w-full flex-col overflow-hidden rounded-md bg-bg outline -outline-offset-1', status === 'pending' || status === 'editing' ? 'outline-border-strong' : 'outline-border']}>
 	<header class="flex items-center gap-2.5 border-b border-border bg-surface px-3.5 pt-2.5 pb-2.25">
-		<Mascot {agent} size={20} live />
+		<Mascot {agent} size={20} />
 		<p id="{id}-title" class={['min-w-0 flex-1 text-ui font-medium', status === 'rejected' ? 'text-text-2' : 'text-text']}>{title}</p>
 		{#if status === 'pending'}<Tag kind="neutral" label={m.approval_needs_you()} />{/if}
 		{#if status === 'editing'}<Tag kind="neutral" label={m.approval_editing()} />{/if}

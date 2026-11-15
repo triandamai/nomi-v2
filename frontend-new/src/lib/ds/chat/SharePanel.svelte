@@ -65,7 +65,7 @@
 	/>
 	<figure class="flex flex-col gap-1.5 rounded-sm bg-bg p-3 outline -outline-offset-1 outline-border">
 		<figcaption class="flex items-center gap-1.5">
-			<Mascot agent={preview.agent} size={20} live />
+			<Mascot agent={preview.agent} size={20} />
 			<span class="text-caption font-medium text-text">{preview.name}</span>
 			<span class="font-mono text-label text-text-3">{preview.time}</span>
 		</figcaption>

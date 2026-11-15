@@ -37,7 +37,7 @@
 		{:else}
 			{#if owner}
 				<span class="inline-flex items-center gap-1.5">
-					<Mascot agent={owner.agent} size={20} live />
+					<Mascot agent={owner.agent} size={20} />
 					<span class="text-caption text-text-3">{owner.name}</span>
 				</span>
 			{/if}

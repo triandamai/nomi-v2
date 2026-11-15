@@ -30,7 +30,7 @@
 		onclick={() => onselect(option)}
 	>
 		{#if option.kind === 'crew'}
-			<Mascot agent={option.agent} size={20} live />
+			<Mascot agent={option.agent} size={20} />
 			<span class="text-ui text-text">{option.name}</span>
 			<span class="min-w-0 flex-1 truncate text-caption text-text-3">{option.role}</span>
 		{:else}

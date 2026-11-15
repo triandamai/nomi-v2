@@ -8,7 +8,7 @@
 </script>
 
 <p class="flex items-center gap-2">
-	<Mascot {agent} size={20} live />
+	<Mascot {agent} size={20} />
 	<span class="text-phone-sm font-semibold text-text">{name}</span>
 	{#if meta}<span class="font-mono text-label text-text-3">{meta}</span>{/if}
 </p>
