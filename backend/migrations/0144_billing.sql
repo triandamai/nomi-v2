@@ -83,10 +83,11 @@ CREATE UNIQUE INDEX payments_provider_invoice ON payments (provider_invoice_id) 
 -- The one-month checkouts of 0128 become payments like any other: a month, nothing off. Their
 -- gateway id was "nomi-plan-<id>", and the webhook still recognises that for the same id.
 INSERT INTO payments (id, user_id, plan_id, term_months, kind, base_amount, amount, currency, status, provider,
-                      provider_invoice_id, invoice_url, paid_at, period_start, period_end, payment_method,
+                      provider_invoice_id, invoice_url, expires_at, paid_at, period_start, period_end, payment_method,
                       created_at, updated_at)
 SELECT id, user_id, plan_id, 1, 'new', amount_idr, amount_idr, 'IDR', status, 'xendit',
-       invoice_id, invoice_url, paid_at,
+       -- Their invoices were open for a day.
+       invoice_id, invoice_url, created_at + interval '1 day', paid_at,
        CASE WHEN status = 'paid' THEN paid_at END,
        CASE WHEN status = 'paid' THEN paid_at + interval '1 month' END,
        payment_method, created_at, updated_at
