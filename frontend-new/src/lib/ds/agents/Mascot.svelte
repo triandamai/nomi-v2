@@ -107,7 +107,9 @@
 		onpointerenter={() => (hovered = true)}
 		onpointerleave={() => (hovered = false)}
 	>
-		{#if !avatar}{@render flat()}{/if}
+		<span class="sr-only opacity-0 pointer-events-none" aria-hidden="true">
+			{@render flat()}
+		</span>
 		<span bind:this={host} class="absolute inset-0" aria-hidden="true"></span>
 	</span>
 {:else}

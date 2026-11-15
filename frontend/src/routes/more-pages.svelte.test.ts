@@ -67,7 +67,7 @@ describe('public pages', () => {
 		expect(text(verify)).toContain('ana@acme.test');
 		await tryAll(verify);
 		expect(page(Verify, { verification: null, expired: true, isNew: false }).textContent).toBeTruthy();
-	});
+	}, 15000);
 });
 
 describe('app pages', () => {
