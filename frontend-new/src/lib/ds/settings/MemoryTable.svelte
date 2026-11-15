@@ -5,8 +5,8 @@
 
 	// App / Settings / Memory (hANTE) → Topic Table: the topics in an outlined table, its column names
 	// in mono capitals over a stroke, then each topic's row, and a quiet note at the foot about how
-	// strength works.
-	type Props = { columns: { topic: string; knows: string; strength: string; updated: string }; note: string; children: Snippet };
+	// strength works. `columns.learnedBy` adds the pen's Learned by column (96) before Strength.
+	type Props = { columns: { topic: string; knows: string; learnedBy?: string; strength: string; updated: string }; note: string; children: Snippet };
 	let { columns, note, children }: Props = $props();
 </script>
 
@@ -14,6 +14,7 @@
 	<div aria-hidden="true" class="hidden gap-4 border-b border-border px-3.5 pt-2 pb-1.75 font-mono text-label tracking-label text-text-3 uppercase md:flex">
 		<span class="w-30 shrink-0">{columns.topic}</span>
 		<span class="min-w-0 flex-1">{columns.knows}</span>
+		{#if columns.learnedBy}<span class="w-24 shrink-0">{columns.learnedBy}</span>{/if}
 		<span class="w-23 shrink-0">{columns.strength}</span>
 		<span class="w-14 shrink-0">{columns.updated}</span>
 		<span class="w-4 shrink-0"></span>

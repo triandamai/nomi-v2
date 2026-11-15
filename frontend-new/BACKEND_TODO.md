@@ -239,6 +239,7 @@ Found while building Settings › Models & providers (2026-11-13).
   - `GET|PUT /api/memory/profile` → `{ text, tokens, updated_at }`. Nothing kept a summary of the person before (personality is how Nomi talks), so it's new: every agent that uses memory reads it while `keep_profile` is on, the memory worker rewrites it about daily from the profile so far and the strongest memories (prompt in `prompts.rs`, so the person's own edits carry over), and PUT is the person's wording (`400 too_long` past the budget; empty clears it).
   - Each memory in `GET /api/memory` has `learned_by` (the agent type whose reply it came from; null for older ones).
   - `frontend/`: Memory has a "You" profile editor with its size, and Memory settings (the three switches, both budgets with a use bar); each memory says "Learned by Raga".
+  - v2: Memory & context has You (the profile, edited in place), Learned by on each topic and memory, and the Learning and Budget column.
 
 Found while building Settings › Memory & context (2026-11-13).
 

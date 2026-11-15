@@ -481,9 +481,18 @@ On Memory & context (`hANTE`):
 - Topics are the backend's kinds of memory (Preferences, People, Routines, Goals, Facts), not the
   pen's subjects (Communication, Money, Work); each opens to its memories, to correct, confirm or
   forget. Strength is five steps of a memory's weight.
-- Left out, with nothing to keep them (BACKEND_TODO.md): the "You" profile row, the Learned by
-  column, and the whole settings column (Learn from chats, Keep a profile, Search past chats, the
-  Memory and Profile budgets, Storage). The page is one column.
+- You is the profile every agent reads (`MemoryProfile`): its size against the profile budget
+  ("312 / 1,375 tok"), the person's initials, when it last changed, Edit in place (its size counted
+  as it's typed, Save refused past the budget) and Clear, with Undo. Empty, it says Nomi writes it
+  about daily; with Keep a profile off, that it's off.
+- Learned by is the member who learned most of a topic (the latest of a tie), a dash where none of
+  its memories says; each memory's line says who learned it too. The column is shown once any
+  memory says, and left off on a phone (each memory says it there).
+- The settings column (`MemorySettings`) is beside the topics from 1280 and under them below it:
+  Learning's three switches and the Memory and Profile budgets, each saved as it changes; a budget
+  only once it's in the backend's range, which the field says otherwise. Storage (Provider),
+  Context & compression, Import from another AI and Forget everything are left out: nothing in the
+  backend is behind them.
 - The search sits in the page's header, not the top bar. Export downloads the memories as JSON.
 - Telling Nomi to remember or forget starts a chat with it, where the crew keeps or drops it.
 

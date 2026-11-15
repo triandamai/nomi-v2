@@ -6,8 +6,9 @@
 	import { pageAction } from '$lib/pageAction';
 	import { startChat } from '$lib/chat/start';
 	import { dayMonth } from '$lib/settings/profile';
-	import { memoryCounts, memoryTopics, strength, type MemoryFilter, type StrengthName } from '$lib/settings/memory';
-	import type { MemoryItem } from '$lib/adapters/api';
+	import { memoryCounts, memoryTopics, strength, topLearner, type MemoryFilter, type StrengthName } from '$lib/settings/memory';
+	import type { MemoryItem, MemoryProfileData } from '$lib/adapters/api';
+	import { crewOf } from '$lib/adapters/shell';
 	import { toasts } from '$lib/ds/overlays/toasts.svelte';
 	import Search from '$lib/ds/inputs/Search.svelte';
 	import Segmented from '$lib/ds/inputs/Segmented.svelte';
@@ -17,13 +18,17 @@
 	import MemoryTable from '$lib/ds/settings/MemoryTable.svelte';
 	import MemoryTopicRow from '$lib/ds/settings/MemoryTopicRow.svelte';
 	import MemoryEntry from '$lib/ds/settings/MemoryEntry.svelte';
+	import MemoryProfile from '$lib/ds/settings/MemoryProfile.svelte';
+	import MemorySettings, { type MemorySettingsChange, type MemorySettingsValues } from '$lib/ds/settings/MemorySettings.svelte';
+	import SettingNote from '$lib/ds/settings/SettingNote.svelte';
 
 	// Settings › Memory & context (App / Settings / Memory hANTE): what the crew remembers, by topic
 	// (the backend's kinds), each opening to its memories to correct, confirm or forget; the Core
 	// and Fading views and a search; and the composer to tell Nomi something to remember or forget,
-	// which starts a chat with it. Left out (AGENTS.md §9, BACKEND_TODO.md): the profile row, who
-	// learned each topic, and the Learning, Budget and Storage settings, which the backend doesn't
-	// keep; the search sits on the page, not in the top bar.
+	// which starts a chat with it. Above the topics, the profile every agent reads (You), edited in
+	// place; each topic says who learned most of it, each memory who learned it. Beside them (under
+	// them below 1280), Learning and Budget. Left out (AGENTS.md §9): Storage, Context & compression,
+	// Import and Forget everything (nothing behind them); the search sits on the page, not the top bar.
 	let { data } = $props();
 
 	const PATH = '/settings/memory';
@@ -76,6 +81,60 @@
 		gone = gone.filter((id) => id !== memory.id);
 	}
 
+	// Who learned it: the built-in member's mascot and name, or a custom member's name.
+	function learner(type: string | null | undefined): { agent?: ReturnType<typeof crewOf>; name: string } | undefined {
+		if (!type) return undefined;
+		const agent = crewOf(type);
+		const name = data.crew.rows.find((row) => agent && row.agent === agent)?.name ?? type.charAt(0).toUpperCase() + type.slice(1).replaceAll('_', ' ');
+		return { agent, name };
+	}
+	const learnedAny = $derived(memories.some((memory) => memory.learned_by));
+	const metaOf = (memory: MemoryItem) => {
+		const used = memory.uses > 0 && memory.last_used_at ? m.memories_used({ count: memory.uses, date: date(memory.last_used_at) }) : m.memory_never_used();
+		const by = learner(memory.learned_by);
+		return by ? `${used} · ${m.memory_learned_by({ name: by.name })}` : used;
+	};
+
+	// Learning and Budget: switched at once, put back if saving fails.
+	let settings = $derived<MemorySettingsValues | null>(data.settings);
+	async function changeSettings(change: MemorySettingsChange) {
+		if (!settings) return;
+		const before = settings;
+		settings = { ...settings, ...change };
+		const fields = Object.fromEntries(Object.entries(change).map(([key, value]) => [key, String(value)]));
+		const result = await pageAction(PATH, 'settings', fields);
+		if (result.ok) return void (settings = result.data.settings as MemorySettingsValues);
+		settings = before;
+		toasts.show({ kind: 'error', title: m.memory_settings_saved_failed(), detail: result.message || undefined });
+	}
+
+	// The profile: saved in the person's words; clearing it offers Undo.
+	let profile = $derived<MemoryProfileData | null>(data.profile);
+	let profileBusy = $state(false);
+	let profileError = $state<string>();
+	const initials = $derived(
+		data.person.name
+			.split(/\s+/)
+			.filter(Boolean)
+			.slice(0, 2)
+			.map((word) => word[0]!.toUpperCase())
+			.join(''),
+	);
+	async function saveProfile(text: string, after?: () => void) {
+		profileBusy = true;
+		profileError = undefined;
+		const result = await pageAction(PATH, 'profile', { text });
+		profileBusy = false;
+		if (!result.ok) return void (profileError = result.message || m.action_failed());
+		profile = result.data.profile as MemoryProfileData;
+		after?.();
+		if (settings) settings = { ...settings, profile_used: profile.tokens };
+	}
+	function clearProfile() {
+		const before = profile?.text ?? '';
+		void saveProfile('', () => toasts.show({ kind: 'success', title: m.memory_profile_cleared(), action: { label: m.memory_undo(), onclick: () => void saveProfile(before) } }));
+	}
+
 	// Telling Nomi: a chat with it, where the crew keeps or drops the memory and says so.
 	let telling = $state(false);
 	async function tell(text: string) {
@@ -90,69 +149,127 @@
 
 <svelte:head><title>{m.settings_memory()} · {m.app_name()}</title></svelte:head>
 
-<div class="flex h-full flex-col">
-	<div class="min-h-0 flex-1 overflow-y-auto">
-		<div class="flex max-w-220 flex-col gap-4 px-4 pt-6 pb-4 lg:px-8">
-			<header class="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
-				<div class="flex max-w-165 min-w-0 flex-1 basis-80 flex-col gap-1.5">
-					<h1 class="text-display font-medium tracking-display text-text">{m.settings_memory()}</h1>
-					<p class="text-body text-text-2">{m.memory_intro()}</p>
-				</div>
-				<div class="w-60 max-w-full"><Search placeholder={m.memory_search()} bind:value={query} /></div>
-			</header>
+{#snippet memorySettings()}
+	{#if settings}
+		<MemorySettings
+			values={settings}
+			{language}
+			labels={{
+				learning: m.memory_learning(),
+				budget: m.memory_budget(),
+				learn: { title: m.memory_learn(), body: m.memory_learn_body() },
+				profile: { title: m.memory_keep_profile(), body: m.memory_keep_profile_body() },
+				search: { title: m.memory_search_chats(), body: m.memory_search_chats_body() },
+				memoryBudget: m.memory_budget_memory(),
+				profileBudget: m.memory_budget_profile(),
+				unit: 'tok',
+				used: (used, budget) => m.memory_budget_used({ used, budget }),
+				outOfRange: (min, max) => m.memory_budget_range({ min, max }),
+			}}
+			onchange={changeSettings}
+		/>
+	{:else}
+		<div class="px-5 py-3.5"><SettingNote text={m.memory_settings_unloaded()} /></div>
+	{/if}
+{/snippet}
 
-			<section aria-labelledby="topics-title" class="flex flex-col gap-2">
-				<div class="flex flex-wrap items-center justify-between gap-2">
-					<span id="topics-title"><SectionLabel label={m.memory_topics()} count={m.memory_topics_count({ topics: counts.topics, memories: counts.all })} /></span>
-					<Segmented
-						label={m.memory_filter()}
-						options={[
-							{ value: 'all', label: m.memory_filter_all(), count: counts.all },
-							{ value: 'core', label: m.memory_filter_core(), count: counts.core },
-							{ value: 'fading', label: m.memory_filter_fading(), count: counts.fading },
-						]}
-						value={filter}
-						onchange={(value) => (filter = value as MemoryFilter)}
+<div class="flex h-full">
+	<div class="flex min-w-0 flex-1 flex-col">
+		<div class="min-h-0 flex-1 overflow-y-auto">
+			<div class="flex max-w-220 flex-col gap-4 px-4 pt-6 pb-4 lg:px-8">
+				<header class="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+					<div class="flex max-w-165 min-w-0 flex-1 basis-80 flex-col gap-1.5">
+						<h1 class="text-display font-medium tracking-display text-text">{m.settings_memory()}</h1>
+						<p class="text-body text-text-2">{m.memory_intro()}</p>
+					</div>
+					<div class="w-60 max-w-full"><Search placeholder={m.memory_search()} bind:value={query} /></div>
+				</header>
+
+				{#if profile}
+					<MemoryProfile
+						labels={{
+							title: m.memory_profile(),
+							section: m.memory_you(),
+							edit: m.memory_profile_edit(),
+							clear: m.memory_profile_clear(),
+							save: m.memory_save(),
+							cancel: m.memory_cancel(),
+							field: m.memory_profile_field(),
+							empty: settings && !settings.keep_profile ? m.memory_profile_off() : m.memory_profile_empty(),
+							tooLong: m.memory_profile_too_long(),
+						}}
+						{initials}
+						text={profile.text}
+						updated={profile.updated_at ? m.memory_profile_updated({ date: date(profile.updated_at) }) : null}
+						count={m.memory_profile_size({ used: profile.tokens.toLocaleString(language === 'id' ? 'id-ID' : 'en-US'), budget: (settings?.profile_budget ?? 1000).toLocaleString(language === 'id' ? 'id-ID' : 'en-US') })}
+						budget={settings?.profile_budget ?? 1000}
+						busy={profileBusy}
+						error={profileError}
+						onsave={(text) => saveProfile(text, () => toasts.show({ kind: 'success', title: m.memory_profile_saved() }))}
+						onclear={clearProfile}
 					/>
-				</div>
-				{#if topics.length}
-					<MemoryTable columns={{ topic: m.memory_col_topic(), knows: m.memory_col_knows(), strength: m.memory_col_strength(), updated: m.memory_col_updated() }} note={m.memory_note()}>
-						{#each topics as topic (topic.kind)}
-							<MemoryTopicRow
-								name={(KINDS[topic.kind] ?? (() => topic.kind))()}
-								count={topic.memories.length === 1 ? m.memory_count_one() : m.memory_count({ count: topic.memories.length })}
-								summary={topic.summary}
-								strength={{ level: topic.strength.level, name: STRENGTHS[topic.strength.name]() }}
-								updated={date(topic.updated)}
-								fading={topic.fading}
-								bind:open={() => opened[topic.kind] ?? (!!query || filter !== 'all'), (open) => (opened = { ...opened, [topic.kind]: open })}
-							>
-								{#each topic.memories as memory (memory.id)}
-									<MemoryEntry
-										content={memory.content}
-										strength={named(memory.weight)}
-										meta={memory.uses > 0 && memory.last_used_at ? m.memories_used({ count: memory.uses, date: date(memory.last_used_at) }) : m.memory_never_used()}
-										check={memory.needs_check ? { question: m.memory_check(), confirm: m.memory_still_right() } : undefined}
-										labels={{ edit: m.memory_edit(), forget: m.memory_forget(), save: m.memory_save(), cancel: m.memory_cancel(), field: m.memory_field() }}
-										busy={busy === memory.id}
-										error={failed?.id === memory.id ? failed.message : undefined}
-										onsave={(content) => act(memory, 'edit', { content })}
-										onforget={() => act(memory, 'forget')}
-										onconfirm={() => act(memory, 'confirm')}
-									/>
-								{/each}
-							</MemoryTopicRow>
-						{/each}
-					</MemoryTable>
-				{:else if counts.all}
-					<p class="py-3 text-caption text-text-3">{m.memory_none_match()}</p>
-				{:else}
-					<EmptyState icon={Brain} title={m.memory_none_title()} body={m.memory_none_body()} />
 				{/if}
-			</section>
+
+				<section aria-labelledby="topics-title" class="flex flex-col gap-2">
+					<div class="flex flex-wrap items-center justify-between gap-2">
+						<span id="topics-title"><SectionLabel label={m.memory_topics()} count={m.memory_topics_count({ topics: counts.topics, memories: counts.all })} /></span>
+						<Segmented
+							label={m.memory_filter()}
+							options={[
+								{ value: 'all', label: m.memory_filter_all(), count: counts.all },
+								{ value: 'core', label: m.memory_filter_core(), count: counts.core },
+								{ value: 'fading', label: m.memory_filter_fading(), count: counts.fading },
+							]}
+							value={filter}
+							onchange={(value) => (filter = value as MemoryFilter)}
+						/>
+					</div>
+					{#if topics.length}
+						<MemoryTable
+							columns={{ topic: m.memory_col_topic(), knows: m.memory_col_knows(), ...(learnedAny && { learnedBy: m.memory_col_learned_by() }), strength: m.memory_col_strength(), updated: m.memory_col_updated() }}
+							note={m.memory_note()}
+						>
+							{#each topics as topic (topic.kind)}
+								<MemoryTopicRow
+									name={(KINDS[topic.kind] ?? (() => topic.kind))()}
+									count={topic.memories.length === 1 ? m.memory_count_one() : m.memory_count({ count: topic.memories.length })}
+									summary={topic.summary}
+									learnedBy={learnedAny ? (learner(topLearner(topic.memories)) ?? null) : undefined}
+									strength={{ level: topic.strength.level, name: STRENGTHS[topic.strength.name]() }}
+									updated={date(topic.updated)}
+									fading={topic.fading}
+									bind:open={() => opened[topic.kind] ?? (!!query || filter !== 'all'), (open) => (opened = { ...opened, [topic.kind]: open })}
+								>
+									{#each topic.memories as memory (memory.id)}
+										<MemoryEntry
+											content={memory.content}
+											strength={named(memory.weight)}
+											meta={metaOf(memory)}
+											check={memory.needs_check ? { question: m.memory_check(), confirm: m.memory_still_right() } : undefined}
+											labels={{ edit: m.memory_edit(), forget: m.memory_forget(), save: m.memory_save(), cancel: m.memory_cancel(), field: m.memory_field() }}
+											busy={busy === memory.id}
+											error={failed?.id === memory.id ? failed.message : undefined}
+											onsave={(content) => act(memory, 'edit', { content })}
+											onforget={() => act(memory, 'forget')}
+											onconfirm={() => act(memory, 'confirm')}
+										/>
+									{/each}
+								</MemoryTopicRow>
+							{/each}
+						</MemoryTable>
+					{:else if counts.all}
+						<p class="py-3 text-caption text-text-3">{m.memory_none_match()}</p>
+					{:else}
+						<EmptyState icon={Brain} title={m.memory_none_title()} body={m.memory_none_body()} />
+					{/if}
+				</section>
+
+				<div class="overflow-hidden rounded-md outline -outline-offset-1 outline-border xl:hidden">{@render memorySettings()}</div>
+			</div>
+		</div>
+		<div class="max-w-220 shrink-0 px-4 pt-2 pb-4 lg:px-8">
+			<ChatComposer placeholder={m.memory_tell()} busy={telling} hints onsend={tell} />
 		</div>
 	</div>
-	<div class="max-w-220 shrink-0 px-4 pt-2 pb-4 lg:px-8">
-		<ChatComposer placeholder={m.memory_tell()} busy={telling} hints onsend={tell} />
-	</div>
+	<aside aria-label={m.memory_settings_label()} class="hidden w-95 shrink-0 overflow-y-auto border-l border-border xl:block">{@render memorySettings()}</aside>
 </div>

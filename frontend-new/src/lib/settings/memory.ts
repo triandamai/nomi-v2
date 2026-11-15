@@ -48,3 +48,15 @@ export function memoryTopics(memories: MemoryItem[], filter: MemoryFilter, query
 export function memoryCounts(memories: MemoryItem[]): { all: number; core: number; fading: number; topics: number } {
 	return { all: memories.length, core: memories.filter(isCore).length, fading: memories.filter(isFading).length, topics: new Set(memories.map((memory) => memory.kind)).size };
 }
+
+/** Who learned most of a topic's memories (the latest of a tie); null when none of them says. */
+export function topLearner(memories: MemoryItem[]): string | null {
+	const tally = new Map<string, { count: number; latest: string }>();
+	for (const memory of memories) {
+		if (!memory.learned_by) continue;
+		const seen = tally.get(memory.learned_by) ?? { count: 0, latest: '' };
+		tally.set(memory.learned_by, { count: seen.count + 1, latest: memory.updated_at > seen.latest ? memory.updated_at : seen.latest });
+	}
+	return [...tally].sort(([, a], [, b]) => b.count - a.count || b.latest.localeCompare(a.latest))[0]?.[0] ?? null;
+}
+

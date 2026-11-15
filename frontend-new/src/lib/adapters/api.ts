@@ -382,7 +382,12 @@ export type MemoryItem = {
 	uses: number;
 	last_used_at: string | null;
 	needs_check: boolean;
+	/** The agent type whose reply it came from; null for older ones. */
+	learned_by?: string | null;
 };
+
+/** `GET /api/memory/profile`: the summary of the person every agent reads while it's kept. */
+export type MemoryProfileData = { text: string; tokens: number; updated_at: string | null };
 
 /** `GET /api/connections`: Google (the services granted) and Hevy, as connected now. */
 export type ConnectionsOverview = {

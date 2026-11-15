@@ -3,21 +3,26 @@
 	import { ChevronDown, ChevronRight } from '@lucide/svelte';
 	import Icon from '../foundations/Icon.svelte';
 	import StrengthBars from './StrengthBars.svelte';
+	import CrewMark from './CrewMark.svelte';
+	import type { CrewId } from '../agents/crew';
 
 	// App / Settings / Memory (hANTE) → Topic: one topic of what the crew remembers, [10,14], 16
 	// apart: its name and how many memories, what it knows in a line or two, its strength and when
-	// it last changed. A fading topic is quieter. It opens to its memories.
+	// it last changed. A fading topic is quieter. It opens to its memories. `learnedBy` is the pen's
+	// Learned By cell (96, 6 apart): the member who learned most of it, their mascot and name; null
+	// keeps the column with a quiet dash (nobody said). Left off on a phone, where each memory says it.
 	type Props = {
 		name: string;
 		count: string;
 		summary: string;
+		learnedBy?: { agent?: CrewId; name: string } | null;
 		strength: { level: 1 | 2 | 3 | 4 | 5; name: string };
 		updated: string;
 		fading?: boolean;
 		open?: boolean;
 		children?: Snippet;
 	};
-	let { name, count, summary, strength, updated, fading = false, open = $bindable(false), children }: Props = $props();
+	let { name, count, summary, learnedBy, strength, updated, fading = false, open = $bindable(false), children }: Props = $props();
 
 	const id = $props.id();
 </script>
@@ -35,6 +40,16 @@
 			<span class="font-mono text-label text-text-3">{count}</span>
 		</span>
 		<span class={['line-clamp-2 min-w-0 flex-1 text-caption', fading ? 'text-text-3' : 'text-text-2']}>{summary}</span>
+		{#if learnedBy !== undefined}
+			<span data-learned-by class="flex w-24 shrink-0 items-center gap-1.5 text-caption text-text-2 max-md:hidden">
+				{#if learnedBy}
+					<CrewMark agent={learnedBy.agent} initial={learnedBy.name.slice(0, 1)} />
+					<span class="truncate">{learnedBy.name}</span>
+				{:else}
+					<span class="text-text-3">—</span>
+				{/if}
+			</span>
+		{/if}
 		<span class="w-23 shrink-0"><StrengthBars level={strength.level} name={strength.name} /></span>
 		<span class="w-14 shrink-0 font-mono text-label text-text-3">{updated}</span>
 		<span class="inline-flex w-4 shrink-0 text-text-3"><Icon icon={open ? ChevronDown : ChevronRight} size={14} /></span>
