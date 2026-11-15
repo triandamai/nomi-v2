@@ -207,3 +207,31 @@ async fn a_domain_is_added_checked_made_primary_and_removed(pool: PgPool) {
         StatusCode::NOT_FOUND
     );
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_plan_without_custom_domains_cannot_add_one(pool: PgPool) {
+    let app = App::new(pool.clone());
+    let owner = app.person("owner@plan-domains.test").await;
+    let (project, _) = app.project(&owner, "Todo").await;
+    publish_live(&pool, project, "https://todo-plan.apps.nomi.test").await;
+    sqlx::query("UPDATE plans SET custom_domain = false WHERE is_default")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let (status, _) = app
+        .send(
+            "POST",
+            &format!("/api/projects/{project}/domains"),
+            &owner,
+            json!({"hostname": "shop.example.com"}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::PAYMENT_REQUIRED);
+    let added: i64 = sqlx::query_scalar("SELECT count(*) FROM project_domains WHERE project_id = $1")
+        .bind(project)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(added, 0);
+}

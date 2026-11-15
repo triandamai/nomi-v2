@@ -11,6 +11,7 @@ use uuid::Uuid;
 use nomi_auth::claims::Claims;
 use nomi_auth::extractor::AuthClaims;
 use nomi_i18n::Locale;
+use nomi_usage::entitlements::{self, Entitlements};
 use nomi_usage::plans::{self, ChangeRow, DeletePlan, PlanInput, PlanRow, SubscriptionChange};
 
 use crate::app::AppState;
@@ -56,6 +57,7 @@ pub async fn list_for_user(State(state): State<AppState>, AuthClaims(claims): Au
         if plan.promo_ends_at.is_some_and(|end| end <= Utc::now()) {
             plan.promo_label = None;
             plan.promo_price_label = None;
+            plan.promo_price_idr = None;
         }
     }
     let waitlist = sqlx::query_scalar("SELECT plan_id FROM plan_waitlist WHERE user_id = $1 ORDER BY created_at")
@@ -72,6 +74,34 @@ pub async fn list_for_user(State(state): State<AppState>, AuthClaims(claims): Au
         waitlist,
         checkout_available: crate::configuration::xendit_config().await.is_some(),
     }))
+}
+
+#[derive(Serialize)]
+pub struct EntitlementsForUser {
+    #[serde(flatten)]
+    pub entitlements: Entitlements,
+    pub usage: EntitlementUsage,
+}
+
+/// What they've used of the limits that count something.
+#[derive(Serialize)]
+pub struct EntitlementUsage {
+    pub projects: i64,
+    pub orgs: i64,
+    pub storage_mb: i64,
+}
+
+/// `GET /api/entitlements`: what their plan includes, and how much of it they've used.
+pub async fn entitlements_for_user(State(state): State<AppState>, AuthClaims(claims): AuthClaims) -> Result<Json<EntitlementsForUser>, ApiError> {
+    let entitlements = entitlements::for_user(&state.pool, claims.sub).await.map_err(internal)?;
+    let usage = EntitlementUsage {
+        projects: entitlements::project_count(&state.pool, claims.sub).await.map_err(internal)?,
+        orgs: entitlements::org_count(&state.pool, claims.sub).await.map_err(internal)?,
+        // Rounded up, so a few bytes never read as an empty account.
+        storage_mb: (entitlements::storage_bytes(&state.pool, claims.sub).await.map_err(internal)? + entitlements::BYTES_PER_MB - 1)
+            / entitlements::BYTES_PER_MB,
+    };
+    Ok(Json(EntitlementsForUser { entitlements, usage }))
 }
 
 #[derive(Serialize)]
@@ -301,12 +331,32 @@ mod tests {
             is_default: false,
             is_active: true,
             sort_order: 0,
+            max_projects: None,
+            max_orgs: None,
+            max_org_members: None,
+            max_custom_crew: None,
+            max_storage_mb: None,
+            custom_domain: true,
+            sandbox_size: None,
+            all_models: true,
+            model_ids: vec![],
             price_idr: None,
+            promo_price_idr: None,
         }
     }
 
     fn subscription(plan: PlanRow, monthly_tokens: i64) -> plans::Subscription {
-        plans::Subscription { plan, quota_override: None, override_until: None, note: None, monthly_tokens }
+        plans::Subscription {
+            plan,
+            quota_override: None,
+            override_until: None,
+            note: None,
+            monthly_tokens,
+            paid_until: None,
+            term_months: None,
+            auto_renew: true,
+            lapsed: false,
+        }
     }
 
     #[test]

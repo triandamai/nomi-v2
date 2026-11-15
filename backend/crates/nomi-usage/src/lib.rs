@@ -6,7 +6,9 @@
 //! API key count as usage but never as spend, and don't use up the plan's allowance.
 
 pub mod admin;
+pub mod billing;
 pub mod embedding;
+pub mod entitlements;
 pub mod plans;
 
 pub use embedding::MeteredEmbeddingProvider;

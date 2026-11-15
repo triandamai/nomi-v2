@@ -1017,9 +1017,26 @@ export interface Plan {
 	promo_label: string | null;
 	promo_price_label: string | null;
 	promo_ends_at: string | null;
+	/** Per month while the promo runs; null has none. */
+	promo_price_idr: number | null;
 	is_default: boolean;
 	is_active: boolean;
 	sort_order: number;
+	/** Limits per plan; null is unlimited. */
+	max_projects: number | null;
+	max_orgs: number | null;
+	max_org_members: number | null;
+	max_custom_crew: number | null;
+	/** Storage for project files, in MB. */
+	max_storage_mb: number | null;
+	/** A project may use a domain of its own (on its owner's plan). */
+	custom_domain: boolean;
+	/** null is the platform default. */
+	sandbox_size: 'small' | 'default' | 'large' | null;
+	/** All of Nomi's models; when false only `model_ids`. */
+	all_models: boolean;
+	/** Ids of the admin-listed models this plan may use. */
+	model_ids: string[];
 	/** A month on it in rupiah, when it can be bought; null: people join its waitlist. */
 	price_idr: number | null;
 }
@@ -1479,6 +1496,127 @@ export interface TransferOrgSummary {
 	owner_id: string | null;
 	owner_name: string | null;
 	my_role: string | null;
+}
+
+// ---- Paid subscriptions (billing) ----
+
+/** A length of time a plan can be paid for, with its discount (GET /api/billing/terms). */
+export interface BillingTerm {
+	id: string;
+	months: number;
+	discount_percent: number;
+	label: string;
+	is_active: boolean;
+	sort_order: number;
+}
+
+/** What someone would pay (POST /api/billing/quote). Amounts are whole currency units. */
+export interface BillingQuote {
+	plan_id: string;
+	term_months: number;
+	currency: string;
+	monthly_price: number;
+	base_amount: number;
+	promo_discount: number;
+	term_discount: number;
+	coupon_discount: number;
+	referral_discount: number;
+	amount: number;
+	coupon_code: string | null;
+	referral_code: string | null;
+}
+
+export type PaymentStatus = 'pending' | 'paid' | 'expired' | 'failed' | 'cancelled';
+
+/** One payment as the person's list shows it (GET /api/billing/payments). */
+export interface BillingPayment {
+	id: string;
+	plan_id: string;
+	plan_name: string;
+	term_months: number;
+	kind: 'new' | 'renewal';
+	base_amount: number;
+	term_discount: number;
+	promo_discount: number;
+	coupon_discount: number;
+	referral_discount: number;
+	amount: number;
+	currency: string;
+	status: PaymentStatus;
+	invoice_url: string | null;
+	expires_at: string | null;
+	paid_at: string | null;
+	period_start: string | null;
+	period_end: string | null;
+	payment_method: string | null;
+	created_at: string;
+}
+
+/** Someone's paid plan (GET /api/billing/subscription). */
+export interface BillingSubscription {
+	plan: Plan;
+	monthly_tokens: number;
+	paid_until: string | null;
+	term_months: number | null;
+	auto_renew: boolean;
+	lapsed: boolean;
+	bonus_days: number;
+	pending_renewal: BillingPayment | null;
+}
+
+/** Their referral code and what it earned (GET /api/billing/referral). */
+export interface ReferralInfo {
+	code: string;
+	referred_count: number;
+	rewarded_count: number;
+	referee_discount_percent: number;
+	referrer_bonus_days: number;
+}
+
+/** What their plan allows and what they use of it (GET /api/entitlements). */
+export interface Entitlements {
+	plan_name: string;
+	max_projects: number | null;
+	max_orgs: number | null;
+	max_org_members: number | null;
+	max_custom_crew: number | null;
+	max_storage_mb: number | null;
+	custom_domain: boolean;
+	sandbox_size: 'small' | 'default' | 'large' | null;
+	all_models: boolean;
+	model_ids: string[];
+	usage: { projects: number; orgs: number; storage_mb: number };
+}
+
+/** A coupon as Admin → Billing → Coupons lists it. */
+export interface AdminCoupon {
+	id: string;
+	code: string;
+	description: string | null;
+	discount_kind: 'percent' | 'amount';
+	discount_value: number;
+	max_redemptions: number | null;
+	per_user_limit: number;
+	starts_at: string | null;
+	ends_at: string | null;
+	/** Empty: any plan. */
+	plan_ids: string[];
+	min_months: number;
+	first_payment_only: boolean;
+	is_active: boolean;
+	redemptions: number;
+}
+
+/** The body for creating or updating a coupon. */
+export type CouponPayload = Omit<AdminCoupon, 'id' | 'redemptions'>;
+
+export type AdminBillingPayment = BillingPayment & { user_email: string | null };
+
+export interface AdminPaymentPage {
+	items: AdminBillingPayment[];
+	total: number;
+	page: number;
+	page_size: number;
 }
 
 /** What a crew member may do with one tool, for this person (GET /api/agents/:type/permissions). */

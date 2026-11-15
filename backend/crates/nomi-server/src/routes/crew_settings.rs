@@ -542,6 +542,11 @@ pub async fn create_member(
             format!("a crew keeps at most {MAX_OWN_MEMBERS} members of your own"),
         ));
     }
+    // The plan's own limit on members of one's own, under the hard cap above.
+    nomi_usage::entitlements::check_new_crew_member(&mut tx, claims.sub)
+        .await
+        .map_err(internal("failed to add the member"))?
+        .map_err(|hit| (StatusCode::PAYMENT_REQUIRED, hit.message()))?;
     let taken: bool = sqlx::query_scalar(
         "SELECT EXISTS (SELECT 1 FROM dynamic_agents WHERE lower(name) = lower($1) AND is_active AND (owner_user_id IS NULL OR owner_user_id = $2))",
     )

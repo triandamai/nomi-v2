@@ -1,15 +1,21 @@
 import { fail } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
-import type { Plan } from '$lib/types';
+import type { AdminLlmModel, Plan } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
 import { m } from '$lib/paraglide/messages';
+import { parseAmount, readPlanLimits } from './planLimits';
 
 export type AdminPlan = Plan & { subscribers: number };
 
 export const load: PageServerLoad = async ({ cookies, fetch }) => {
-	const response = await apiFetch(fetch, cookies, '/api/admin/plans');
+	const [response, modelsResponse] = await Promise.all([
+		apiFetch(fetch, cookies, '/api/admin/plans'),
+		apiFetch(fetch, cookies, '/api/admin/settings/llm/models'),
+	]);
 	const plans: AdminPlan[] = response.ok ? ((await response.json()) as AdminPlan[]) : [];
-	return { plans };
+	// The models a plan can be limited to; the picker is empty if the list can't load.
+	const models: AdminLlmModel[] = modelsResponse.ok ? ((await modelsResponse.json()) as AdminLlmModel[]) : [];
+	return { plans, models };
 };
 
 function readPlan(data: FormData) {
@@ -26,12 +32,14 @@ function readPlan(data: FormData) {
 		price_label: text('price_label'),
 		features: text('features').split('\n').map((f) => f.trim()).filter(Boolean),
 		card_tone: text('card_tone') || 'glow',
+		promo_price_idr: parseAmount(text('promo_price_idr')),
 		promo_label: text('promo_label') || null,
 		promo_price_label: text('promo_price_label') || null,
 		// The promo runs to the end of the chosen day.
 		promo_ends_at: ends ? new Date(`${ends}T23:59:59`).toISOString() : null,
 		is_active: data.get('is_active') === 'true',
 		sort_order: Number(text('sort_order')) || 0,
+		...readPlanLimits(data),
 		// Empty: not sold yet (people join its waitlist).
 		price_idr: Number(text('price_idr')) > 0 ? Math.round(Number(text('price_idr'))) : null,
 	};

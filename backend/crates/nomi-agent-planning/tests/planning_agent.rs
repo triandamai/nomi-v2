@@ -102,6 +102,24 @@ async fn unknown_tool_name_returns_an_error(pool: PgPool) {
     assert!(result.is_err());
 }
 
+#[sqlx::test(migrations = "../../migrations")]
+async fn create_project_is_refused_at_the_plans_project_limit(pool: PgPool) {
+    let (user_id, session_id) = seed_user_and_session(&pool).await;
+    sqlx::query("UPDATE plans SET max_projects = 0 WHERE is_default").execute(&pool).await.unwrap();
+    let agent = PlanningAgent::new();
+    let mut conn = pool.acquire().await.unwrap();
+
+    let refused = agent
+        .execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "create_project", serde_json::json!({"name": "Todo app"}))
+        .await
+        .err()
+        .expect("a project past the plan's limit is refused");
+
+    assert!(refused.contains("Upgrade your plan"), "{refused}");
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM projects WHERE user_id = $1").bind(user_id).fetch_one(&pool).await.unwrap();
+    assert_eq!(count, 0);
+}
+
 /// The project id in create_project's result ("Project ready (id <uuid>). ...").
 fn project_id_in(text: &str) -> Uuid {
     let after = text.split("(id ").nth(1).unwrap_or_else(|| panic!("no project id in {text:?}"));

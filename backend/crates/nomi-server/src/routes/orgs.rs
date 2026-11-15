@@ -30,6 +30,11 @@ const MAX_NAME_CHARS: usize = 80;
 /// Faces shown on a workspace's card.
 const MEMBER_AVATARS: i64 = 3;
 
+/// A plan limit as a 402 answer.
+fn limit_error(hit: nomi_usage::entitlements::LimitHit) -> ApiError {
+    (StatusCode::PAYMENT_REQUIRED, hit.static_message())
+}
+
 fn internal(context: &'static str) -> impl Fn(sqlx::Error) -> ApiError {
     move |e| {
         tracing::error!(error = %e, "{context}");
@@ -258,6 +263,10 @@ pub async fn create_org(
     Json(req): Json<NameRequest>,
 ) -> Result<(StatusCode, Json<OrgSummary>), ApiError> {
     let name = clean_name(&req.name)?;
+    nomi_usage::entitlements::check_new_org(&state.pool, claims.sub)
+        .await
+        .map_err(internal("failed to create organization"))?
+        .map_err(limit_error)?;
     let mut tx = state
         .pool
         .begin()
@@ -586,6 +595,10 @@ pub(crate) async fn send_invite(
     project: Option<(Uuid, &str)>,
 ) -> Result<PendingInvite, ApiError> {
     let claims_sub = inviter_id;
+    nomi_usage::entitlements::check_new_org_member(&state.pool, org_id)
+        .await
+        .map_err(internal("failed to invite"))?
+        .map_err(limit_error)?;
     let invitee = account_for(&state.pool, email).await?;
     if let Some(user_id) = invitee {
         if role_in(&state.pool, user_id, org_id).await?.is_some() {
@@ -1125,6 +1138,10 @@ pub async fn accept_invite(
         is_link,
         ..
     } = row;
+    nomi_usage::entitlements::check_accept_invite(&state.pool, org_id, &code)
+        .await
+        .map_err(internal("failed to accept invite"))?
+        .map_err(limit_error)?;
 
     let mut tx = state
         .pool

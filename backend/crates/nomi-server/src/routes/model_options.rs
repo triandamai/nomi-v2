@@ -21,11 +21,30 @@ use nomi_llm::catalog;
 use nomi_settings::model_choices::{self, ModelKey};
 use nomi_settings::provider_connections::{self as connections, ProviderConnectionRow, Scope};
 use nomi_settings::llm_models;
+use nomi_usage::entitlements::{self, Entitlements, LimitHit};
 
 type RouteError = (StatusCode, Json<Value>);
 
 fn error(status: StatusCode, code: &str) -> RouteError {
     (status, Json(json!({ "error": code })))
+}
+
+/// 402 for one of Nomi's models the person's plan doesn't include.
+fn model_locked() -> RouteError {
+    (StatusCode::PAYMENT_REQUIRED, Json(json!({ "error": "model_not_in_plan", "message": LimitHit::Model.message() })))
+}
+
+/// What the person's plan includes. A lookup that fails locks nothing, so a database hiccup
+/// never takes models away.
+async fn plan_entitlements(state: &AppState, user_id: Uuid) -> Option<Entitlements> {
+    entitlements::for_user(&state.pool, user_id)
+        .await
+        .map_err(|e| tracing::error!(%user_id, error = %e, "failed to load the plan's entitlements"))
+        .ok()
+}
+
+fn locked_by(plan: Option<&Entitlements>, model_id: Uuid) -> bool {
+    plan.is_some_and(|plan| !entitlements::model_allowed(plan, model_id))
 }
 
 fn server_error(what: &str, e: impl std::fmt::Display) -> RouteError {
@@ -43,6 +62,8 @@ pub struct ModelOption {
     model_id: String,
     free: bool,
     enabled: bool,
+    /// One of Nomi's models that the person's plan doesn't include: shown, but not pickable.
+    locked: bool,
     /// How much it reads (`context`, tokens), what it's good at (`capabilities`: fast,
     /// reasoning, vision, code) and whether it's one to start with (`recommended`).
     #[serde(flatten)]
@@ -143,10 +164,11 @@ fn connection_choice(connection: &ProviderConnectionRow, model_id: &str, label: 
 
 /// The person's default: their pick under Models, else Nomi's default model.
 async fn default_choice(state: &AppState, user_id: Uuid, shared: &HashMap<Uuid, ProviderConnectionRow>) -> Result<Option<ModelChoice>, RouteError> {
+    let plan = plan_entitlements(state, user_id).await;
     let selection = llm_models::get_user_llm_selection(&state.pool, user_id).await.map_err(|e| server_error("failed to load the selection", e))?;
     if let Some(row) = selection {
         if let Some(id) = row.admin_model_id {
-            if let Some(model) = llm_models::get_admin_llm_model(&state.pool, id).await.map_err(|e| server_error("failed to load a model", e))?.filter(|m| m.enabled) {
+            if let Some(model) = llm_models::get_admin_llm_model(&state.pool, id).await.map_err(|e| server_error("failed to load a model", e))?.filter(|m| m.enabled && !locked_by(plan.as_ref(), m.id)) {
                 return Ok(Some(admin_choice(&model, shared, false)));
             }
         } else if let (Some(connection_id), Some(model_id)) = (row.custom_connection_id, row.custom_model_id.as_deref()) {
@@ -179,6 +201,7 @@ pub async fn list_options(State(state): State<AppState>, AuthClaims(claims): Aut
     let user_id = claims.sub;
     let visibility = model_choices::model_visibility(&state.pool, user_id).await.map_err(|e| server_error("failed to load model visibility", e))?;
     let shared = shared_connections(&state).await?;
+    let plan = plan_entitlements(&state, user_id).await;
 
     // Nomi's models, under the provider each runs on, in the order admins added them.
     let mut groups: Vec<ModelGroup> = Vec::new();
@@ -201,6 +224,7 @@ pub async fn list_options(State(state): State<AppState>, AuthClaims(claims): Aut
             label: model.label.clone(),
             model_id: model.model_id.clone(),
             free: false,
+            locked: locked_by(plan.as_ref(), model.id),
             traits,
         };
         let id = format!("nomi:{provider_label}");
@@ -225,7 +249,8 @@ pub async fn list_options(State(state): State<AppState>, AuthClaims(claims): Aut
         let option = |model_id: &str, label: String, free: bool| {
             let key = ModelKey::Connection { connection_id: connection.id, model_id: model_id.to_string() }.to_string();
             let traits = catalog::traits(&connection.provider_id, model_id);
-            ModelOption { enabled: visibility.get(&key).copied().unwrap_or(false), key, label, model_id: model_id.to_string(), free, traits }
+            // Models on the person's own key are never locked by the plan.
+            ModelOption { enabled: visibility.get(&key).copied().unwrap_or(false), key, label, model_id: model_id.to_string(), free, locked: false, traits }
         };
         let (models, error) = match catalog::provider(&connection.provider_id).filter(|_| connection.auth_type != "custom_endpoint") {
             Some(provider) => (
@@ -290,9 +315,14 @@ async fn authorize(state: &AppState, user_id: Uuid, session_id: Uuid) -> Result<
 async fn chat_choice(state: &AppState, user_id: Uuid, session_id: Uuid) -> Result<Option<ModelChoice>, RouteError> {
     let shared = shared_connections(state).await?;
     let picked = model_choices::get_session_model(&state.pool, session_id).await.map_err(|e| server_error("failed to load the chat's model", e))?;
+    let plan = plan_entitlements(state, user_id).await;
     match picked {
         Some(model_choices::SessionModel { key: ModelKey::Admin(id), .. }) => {
-            if let Some(model) = llm_models::get_admin_llm_model(&state.pool, id).await.map_err(|e| server_error("failed to load a model", e))?.filter(|m| m.enabled) {
+            if let Some(model) = llm_models::get_admin_llm_model(&state.pool, id)
+                .await
+                .map_err(|e| server_error("failed to load a model", e))?
+                .filter(|m| m.enabled && !locked_by(plan.as_ref(), m.id))
+            {
                 return Ok(Some(admin_choice(&model, &shared, true)));
             }
         }
@@ -328,6 +358,9 @@ pub async fn set_chat_model(
     let key = ModelKey::parse(req.key.trim()).ok_or_else(|| error(StatusCode::BAD_REQUEST, "invalid_key"))?;
     let label = match &key {
         ModelKey::Admin(id) => {
+            if locked_by(plan_entitlements(&state, claims.sub).await.as_ref(), *id) {
+                return Err(model_locked());
+            }
             llm_models::get_admin_llm_model(&state.pool, *id)
                 .await
                 .map_err(|e| server_error("failed to load a model", e))?
@@ -354,6 +387,9 @@ pub async fn set_default_model(State(state): State<AppState>, AuthClaims(claims)
     let key = ModelKey::parse(req.key.trim()).ok_or_else(|| error(StatusCode::BAD_REQUEST, "invalid_key"))?;
     match &key {
         ModelKey::Admin(id) => {
+            if locked_by(plan_entitlements(&state, user_id).await.as_ref(), *id) {
+                return Err(model_locked());
+            }
             llm_models::get_admin_llm_model(&state.pool, *id)
                 .await
                 .map_err(|e| server_error("failed to load a model", e))?

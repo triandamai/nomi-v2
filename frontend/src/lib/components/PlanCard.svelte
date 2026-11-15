@@ -3,6 +3,7 @@
 	import { getLocale } from '$lib/paraglide/runtime';
 	import { GRADIENT_STOPS, GRADIENT_TONES, TONE_ACCENT, type GradientTone } from '$lib/components/m3/shapes';
 	import { formatTokens } from '$lib/usage';
+	import { CURRENCY, formatMoney, promoPriceLive } from '$lib/billing';
 	import type { Plan } from '$lib/types';
 	import type { Snippet } from 'svelte';
 
@@ -21,7 +22,12 @@
 
 	const tone = $derived<GradientTone>((GRADIENT_TONES as readonly string[]).includes(plan.card_tone) ? (plan.card_tone as GradientTone) : 'glow');
 	const band = $derived(`linear-gradient(110deg, ${GRADIENT_STOPS[tone].join(', ')})`);
-	const promoLive = $derived(Boolean(plan.promo_label || plan.promo_price_label) && (!plan.promo_ends_at || new Date(plan.promo_ends_at) > new Date()));
+	const promoRunning = $derived(!plan.promo_ends_at || new Date(plan.promo_ends_at) > new Date());
+	const promoLive = $derived((Boolean(plan.promo_label || plan.promo_price_label) && promoRunning) || promoPriceLive(plan));
+	// A plan with a price shows it formatted; one without falls back to the free-text label.
+	const priced = $derived((plan.price_idr ?? 0) > 0);
+	const promoAmountLive = $derived(promoPriceLive(plan));
+	const money = (amount: number) => formatMoney(amount, CURRENCY, getLocale());
 	const promoEnds = $derived(
 		plan.promo_ends_at ? new Intl.DateTimeFormat(getLocale(), { day: 'numeric', month: 'long' }).format(new Date(plan.promo_ends_at)) : null,
 	);
@@ -36,7 +42,14 @@
 		<h3 class="plan__name">{plan.name}</h3>
 		{#if plan.description}<p class="plan__description">{plan.description}</p>{/if}
 		<p class="plan__price">
-			{#if promoLive && plan.promo_price_label}
+			{#if priced}
+				{#if promoAmountLive}
+					<span class="plan__price-now">{m.plan_price_per_month({ price: money(plan.promo_price_idr ?? 0) })}</span>
+					<s class="plan__price-was">{money(plan.price_idr ?? 0)}</s>
+				{:else}
+					<span class="plan__price-now">{m.plan_price_per_month({ price: money(plan.price_idr ?? 0) })}</span>
+				{/if}
+			{:else if promoLive && plan.promo_price_label}
 				<span class="plan__price-now">{plan.promo_price_label}</span>
 				{#if plan.price_label}<s class="plan__price-was">{plan.price_label}</s>{/if}
 			{:else}

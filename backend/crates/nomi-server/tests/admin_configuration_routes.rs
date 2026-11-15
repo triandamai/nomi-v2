@@ -115,7 +115,7 @@ async fn a_manager_saves_a_section_and_secrets_never_come_back(pool: PgPool) {
     assert_eq!(field(smtp, "password")["set"], true);
     assert_eq!(field(smtp, "password")["env"], "SMTP_PASSWORD");
     assert!(!body.to_string().contains("hunter2"));
-    for name in ["attachments", "storage", "google", "smtp", "agent_loop"] {
+    for name in ["attachments", "storage", "google", "smtp", "agent_loop", "billing"] {
         section(&body, name);
     }
 }

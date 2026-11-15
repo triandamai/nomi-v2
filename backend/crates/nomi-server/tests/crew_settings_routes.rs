@@ -572,3 +572,57 @@ async fn admins_do_not_see_peoples_own_members(pool: PgPool) {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body.as_array().unwrap().len(), 0);
 }
+
+/// The plan's limit on members of one's own, in the tests below.
+const CREW_LIMIT: i32 = 1;
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn the_plan_limits_members_of_ones_own(pool: PgPool) {
+    sqlx::query("UPDATE plans SET max_custom_crew = $1 WHERE is_default")
+        .bind(CREW_LIMIT)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let router = build_router(test_state(pool.clone()));
+    let token = register(router.clone(), "crew-limit@example.com").await;
+
+    let (status, made) = request(
+        router.clone(),
+        "POST",
+        "/api/agents",
+        Some(&token),
+        Some(json!({ "name": "Penny", "role": "Keeps the budget" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{made}");
+    let (status, _) = request(
+        router.clone(),
+        "POST",
+        "/api/agents",
+        Some(&token),
+        Some(json!({ "name": "Otto", "role": "Plans trips" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::PAYMENT_REQUIRED);
+    let own: i64 = sqlx::query_scalar("SELECT count(*) FROM dynamic_agents WHERE owner_user_id = $1")
+        .bind(user_id(&pool, "crew-limit@example.com").await)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(own, i64::from(CREW_LIMIT));
+
+    // Unlimited again: the next one fits.
+    sqlx::query("UPDATE plans SET max_custom_crew = NULL WHERE is_default")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (status, _) = request(
+        router,
+        "POST",
+        "/api/agents",
+        Some(&token),
+        Some(json!({ "name": "Otto", "role": "Plans trips" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+}

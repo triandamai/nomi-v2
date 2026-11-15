@@ -39,6 +39,11 @@ impl Size {
             Size::Large => "large",
         }
     }
+
+    /// The size an API name stands for (the inverse of `as_api`).
+    pub fn parse(name: &str) -> Option<Size> {
+        [Size::Small, Size::Default, Size::Large].into_iter().find(|size| size.as_api() == name)
+    }
 }
 
 /// What to create a sandbox with.

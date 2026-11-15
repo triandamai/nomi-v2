@@ -11,8 +11,8 @@ import Account from './account/+page.svelte';
 import Connections from './connections/+page.svelte';
 import More from './more/+page.svelte';
 
-const plan = { id: 'pro', slug: 'pro', name: 'Pro', description: 'More of everything', monthly_tokens: 5_000_000, price_label: 'Rp 99k', features: ['Projects', 'Voice'], card_tone: 'violet', promo_label: 'Launch', promo_price_label: 'Rp 49k', promo_ends_at: '2026-12-31T00:00:00Z', is_default: false, is_active: true, sort_order: 2 };
-const free = { ...plan, id: 'free', slug: 'free', name: 'Free', monthly_tokens: 100_000, price_label: 'Free', features: [], promo_label: null, promo_price_label: null, promo_ends_at: null, is_default: true, sort_order: 1 };
+const plan = { id: 'pro', slug: 'pro', name: 'Pro', description: 'More of everything', monthly_tokens: 5_000_000, price_label: 'Rp 99k', features: ['Projects', 'Voice'], card_tone: 'violet', promo_label: 'Launch', promo_price_label: 'Rp 49k', promo_ends_at: '2026-12-31T00:00:00Z', price_idr: 99_000, promo_price_idr: 49_000, is_default: false, is_active: true, sort_order: 2 };
+const free = { ...plan, id: 'free', slug: 'free', name: 'Free', monthly_tokens: 100_000, price_label: 'Free', features: [], promo_label: null, promo_price_label: null, promo_ends_at: null, price_idr: null, promo_price_idr: null, is_default: true, sort_order: 1 };
 
 const page = (component: unknown, data: Record<string, unknown>, form: unknown = null) =>
 	render(component as never, { data: data as never, form: form as never, params: {} as never });
@@ -46,6 +46,43 @@ describe('billing', () => {
 		expect(text(root)).toContain('Pro');
 		await tryAll(root);
 		expect(page(Billing, { usage: null, plans: null }).textContent).toBeTruthy();
+	});
+
+	const payment = { id: 'pay1', plan_id: 'pro', plan_name: 'Pro', term_months: 6, kind: 'new', base_amount: 594_000, term_discount: 59_400, promo_discount: 0, coupon_discount: 0, referral_discount: 0, amount: 534_600, currency: 'IDR', status: 'paid', invoice_url: 'https://pay.test/inv/1', expires_at: null, paid_at: '2026-11-10T00:00:00Z', period_start: '2026-11-10T00:00:00Z', period_end: '2027-05-10T00:00:00Z', payment_method: 'QRIS', created_at: '2026-11-10T00:00:00Z' };
+	const subscription = { plan: plan, monthly_tokens: 5_000_000, paid_until: '2027-05-10T00:00:00Z', term_months: 6, auto_renew: true, lapsed: false, bonus_days: 30, pending_renewal: { ...payment, id: 'pay2', kind: 'renewal', status: 'pending' } };
+	const entitlements = { plan_name: 'Pro', max_projects: 3, max_orgs: null, max_org_members: 5, max_custom_crew: 1, max_storage_mb: 2048, custom_domain: true, sandbox_size: null, all_models: true, model_ids: [], usage: { projects: 2, orgs: 1, storage_mb: 512 } };
+	const referral = { code: 'ANA12345', referred_count: 3, rewarded_count: 1, referee_discount_percent: 10, referrer_bonus_days: 30 };
+	const paidPayments = [payment, { ...payment, id: 'pay2', kind: 'renewal', status: 'pending', created_at: '2026-11-12T00:00:00Z' }, { ...payment, id: 'pay3', status: 'expired', created_at: '2026-10-01T00:00:00Z' }];
+	const billing = (over: Record<string, unknown> = {}) => page(Billing, { usage: null, plans: null, subscription, entitlements, payments: paidPayments, referral, payment: null, ...over });
+
+	it('shows the plan, its limits, the payments and the invite code', async () => {
+		const root = billing();
+		const shown = text(root);
+		expect(shown).toContain('Your plan');
+		expect(shown).toContain('2 of 3');
+		expect(shown).toContain('Unlimited');
+		expect(shown).toContain('ANA12345');
+		expect(shown).toContain('Pay now');
+		await tryAll(root);
+	});
+
+	it('pages a long payments list', () => {
+		const many = Array.from({ length: 12 }, (_, i) => ({ ...payment, id: `p${i}`, created_at: `2026-10-${String(i + 10)}T00:00:00Z` }));
+		expect(billing({ payments: many }).querySelectorAll('.rows li').length).toBe(10);
+	});
+
+	it('says what became of the payment the person comes back from', () => {
+		expect(text(billing({ payment }))).toContain('Payment received');
+		const pending = text(billing({ payment: { ...payment, status: 'pending' } }));
+		expect(pending).toContain('confirming your payment');
+		expect(pending).toContain('Refresh');
+		const failed = billing({ payment: { ...payment, status: 'expired' } });
+		expect(text(failed)).toContain('Try again');
+		expect(failed.querySelector('a[href="/billing/checkout/pro"]')).not.toBeNull();
+	});
+
+	it('tells someone whose paid plan ended', () => {
+		expect(text(billing({ subscription: { ...subscription, lapsed: true, paid_until: null, pending_renewal: null } }))).toContain('has ended');
 	});
 });
 

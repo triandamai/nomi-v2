@@ -12,15 +12,18 @@
 	import Money from '$lib/components/Money.svelte';
 	import { monthLabel, niceScale, shiftMonth } from '$lib/money';
 	import { formatShare, formatTokens, formatTokensFull, formatUsd, usageShare } from '$lib/usage';
+	import PaymentBanner from '$lib/components/billing/PaymentBanner.svelte';
+	import PlanBlock from '$lib/components/billing/PlanBlock.svelte';
+	import LimitsBlock from '$lib/components/billing/LimitsBlock.svelte';
+	import PaymentsBlock from '$lib/components/billing/PaymentsBlock.svelte';
+	import ReferralBlock from '$lib/components/billing/ReferralBlock.svelte';
 	import { enhance } from '$app/forms';
 	import { formatIdr, planOffer, usdToIdr } from '$lib/planCheckout';
 	import type { ActionData, PageData } from './$types';
 
-	let { data, form }: { data: PageData; form: ActionData } = $props();
-
-	function checkoutError(code: string): string {
-		return code === 'payments_not_configured' ? m.billing_checkout_not_configured() : m.billing_checkout_failed();
-	}
+	let { data, form }: { data: PageData; form?: ActionData } = $props();
+	// A refusal from the switch or from Cancel shows beside the block it came from.
+	const errorFor = (action: 'autoRenew' | 'cancel') => (form && 'error' in form && form.action === action ? (form.error as string) : null);
 
 	const usage = $derived(data.usage);
 	const share = $derived(usage ? usageShare(usage.tokens_used, usage.plan.monthly_tokens) : 0);
@@ -92,6 +95,15 @@
 			</div>
 			<AgentShape agent="nomi" face size={64} class="billing__mark" />
 		</header>
+
+		{#if data.payment}<PaymentBanner payment={data.payment} />{/if}
+
+		{#if data.subscription || data.entitlements}
+			<div class="blocks">
+				{#if data.subscription}<PlanBlock subscription={data.subscription} error={errorFor('autoRenew')} />{/if}
+				{#if data.entitlements}<LimitsBlock entitlements={data.entitlements} />{/if}
+			</div>
+		{/if}
 
 		{#if !usage}
 			<p class="billing__notice" role="alert">{m.billing_load_failed()}</p>
@@ -262,11 +274,7 @@
 							<PlanCard {plan} current={plan.id === data.plans.current_plan_id}>
 								{#snippet actions()}
 									{#if offer === 'checkout'}
-										<!-- A plain post: the server sends the browser on to the payment page. -->
-										<form method="POST" action="?/checkout">
-											<input type="hidden" name="plan_id" value={plan.id} />
-											<Button variant="filled" size="m" type="submit">{m.billing_plan_checkout()}</Button>
-										</form>
+										<Button variant="filled" size="m" href="/billing/checkout/{plan.id}">{m.billing_choose()}</Button>
 									{:else if offer === 'waitlist'}
 										<form method="POST" action="?/waitlist" use:enhance>
 											<input type="hidden" name="plan_id" value={plan.id} />
@@ -275,9 +283,7 @@
 									{:else if offer === 'waitlisted'}
 										<span class="plan-chip">{m.billing_plan_waitlisted()}</span>
 									{/if}
-									{#if form?.planId === plan.id && form?.checkoutError}
-										<p class="billing__error" role="alert">{checkoutError(form.checkoutError)}</p>
-									{:else if form?.planId === plan.id && form?.waitlistError}
+									{#if form && 'waitlistError' in form && form.planId === plan.id}
 										<p class="billing__error" role="alert">{m.billing_waitlist_failed()}</p>
 									{/if}
 								{/snippet}
@@ -291,6 +297,11 @@
 				<p class="billing__note">{m.billing_note()}</p>
 			</section>
 		{/if}
+
+		{#if data.subscription || data.payments?.length}
+			<PaymentsBlock payments={data.payments ?? []} error={errorFor('cancel')} />
+		{/if}
+		{#if data.referral}<ReferralBlock referral={data.referral} />{/if}
 	</div>
 </div>
 
@@ -338,6 +349,12 @@
 	.billing__note {
 		font-size: 0.875rem;
 		max-width: 70ch;
+	}
+	.blocks {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+		gap: 14px;
+		align-items: start;
 	}
 	.billing__error {
 		margin: 8px 0 0;

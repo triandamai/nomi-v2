@@ -166,6 +166,24 @@ pub const XENDIT: SectionDef = SectionDef {
     ],
 };
 
+/// Paid plans: the referral reward, when renewal invoices go out and how long a lapsed plan is
+/// kept. All saved here only; unset, the server's defaults apply.
+pub const BILLING: SectionDef = SectionDef {
+    name: "billing",
+    fields: &[
+        // The discount, in percent, a referred person gets on their first payment.
+        saved_only("referee_discount_percent", Kind::Number),
+        // Days added to the referrer's plan when the person they referred pays.
+        saved_only("referrer_bonus_days", Kind::Number),
+        // How many days before the paid period ends the renewal invoice is issued.
+        saved_only("renewal_days_before", Kind::Number),
+        // Days a lapsed plan is kept before the person falls back to the default plan.
+        saved_only("grace_days", Kind::Number),
+        // How long an invoice can be paid, in hours.
+        saved_only("invoice_hours", Kind::Number),
+    ],
+};
+
 /// The server-side sandbox runtime (boat.dev). `enabled` is the kill switch: anything but "on"
 /// (including nothing saved) keeps every project on the in-browser WebContainer runtime.
 pub const SANDBOX: SectionDef = SectionDef {
@@ -192,7 +210,7 @@ pub const SANDBOX: SectionDef = SectionDef {
     ],
 };
 
-pub const SECTIONS: [&SectionDef; 10] = [&ATTACHMENTS, &STORAGE, &GOOGLE, &GITHUB, &SMTP, &AGENT_LOOP, &RELAY, &DOMAINS, &XENDIT, &SANDBOX];
+pub const SECTIONS: [&SectionDef; 11] = [&ATTACHMENTS, &STORAGE, &GOOGLE, &GITHUB, &SMTP, &AGENT_LOOP, &RELAY, &DOMAINS, &XENDIT, &BILLING, &SANDBOX];
 
 pub fn section_named(name: &str) -> Option<&'static SectionDef> {
     SECTIONS.into_iter().find(|s| s.name == name)

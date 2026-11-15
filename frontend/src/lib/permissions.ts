@@ -29,7 +29,7 @@ export interface AdminArea {
 export const ADMIN_AREAS: AdminArea[] = [
 	{ resource: 'dashboard', label: () => m.perm_dashboard(), description: () => m.perm_dashboard_desc(), paths: ['/admin/agents', '/admin/usage'] },
 	{ resource: 'user', label: () => m.admin_users(), description: () => m.perm_users_desc(), paths: ['/admin/users'] },
-	{ resource: 'plans', label: () => m.admin_plans(), description: () => m.perm_plans_desc(), paths: ['/admin/plans'] },
+	{ resource: 'plans', label: () => m.admin_plans(), description: () => m.perm_plans_desc(), paths: ['/admin/plans', '/admin/billing'] },
 	{ resource: 'notifications', label: () => m.admin_notifications(), description: () => m.perm_notifications_desc(), paths: ['/admin/notifications'] },
 	{ resource: 'models', label: () => m.admin_models(), description: () => m.perm_models_desc(), paths: ['/admin/settings/llm', '/admin/settings/providers', '/admin/settings/embedding'] },
 	{ resource: 'tools', label: () => m.admin_tools(), description: () => m.perm_tools_desc(), paths: ['/admin/tools'] },

@@ -215,7 +215,7 @@ pub async fn create_project(
     .bind(user_id)
     .fetch_optional(&mut **conn)
     .await
-    .map_err(|e| e.to_string())?;
+    .map_err(db_error)?;
 
     let runtime = nomi_settings::config::new_project_runtime(user_id).await;
     let project_id = match existing_id {
@@ -232,21 +232,27 @@ pub async fn create_project(
             .bind(runtime)
             .execute(&mut **conn)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(db_error)?;
             id
         }
-        None => sqlx::query_scalar(
-            "INSERT INTO projects (user_id, session_id, name, description, stack, runtime) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
-        )
-        .bind(user_id)
-        .bind(session_id)
-        .bind(name)
-        .bind(description)
-        .bind(stack)
-        .bind(runtime)
-        .fetch_one(&mut **conn)
-        .await
-        .map_err(|e| e.to_string())?,
+        None => {
+            // The agent relays this to the person as the reason no project was made.
+            if let Err(hit) = nomi_usage::entitlements::check_new_project_in(&mut **conn, user_id).await.map_err(db_error)? {
+                return Err(hit.message());
+            }
+            sqlx::query_scalar(
+                "INSERT INTO projects (user_id, session_id, name, description, stack, runtime) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
+            )
+            .bind(user_id)
+            .bind(session_id)
+            .bind(name)
+            .bind(description)
+            .bind(stack)
+            .bind(runtime)
+            .fetch_one(&mut **conn)
+            .await
+            .map_err(db_error)?
+        }
     };
 
     let backend_note = match backend {
@@ -257,6 +263,11 @@ pub async fn create_project(
     Ok(format!(
         "Project ready (id {project_id}). {backend_note}When you hand the build to the coding agent, start the task with 'Project {project_id}:'."
     ))
+}
+
+/// A database error as the text the agent reports back.
+fn db_error(e: sqlx::Error) -> String {
+    e.to_string()
 }
 
 /// Puts the project on `backend`, and says what came of it when that isn't simply what was
@@ -275,7 +286,7 @@ async fn choose_backend(
             .bind(project_id)
             .fetch_one(&mut **conn)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(db_error)?;
     if backend == current {
         return Ok(None);
     }
@@ -300,6 +311,6 @@ async fn choose_backend(
         .bind(project_id)
         .execute(&mut **conn)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(db_error)?;
     Ok(note)
 }
