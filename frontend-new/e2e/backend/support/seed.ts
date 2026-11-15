@@ -105,3 +105,13 @@ export async function seedPersonality(email: string, descriptions: string[]): Pr
 		await sql.end();
 	}
 }
+
+/** A project's state as Koda's build leaves it (`building` once files are written, `ready` when it reports done). */
+export async function setProjectStatus(id: string, status: 'planning' | 'building' | 'ready'): Promise<void> {
+	const sql = postgres(DATABASE_URL, { max: 1, onnotice: () => {} });
+	try {
+		await sql`UPDATE projects SET status = ${status} WHERE id = ${id}`;
+	} finally {
+		await sql.end();
+	}
+}

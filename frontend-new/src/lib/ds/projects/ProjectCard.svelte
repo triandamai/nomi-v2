@@ -26,6 +26,10 @@
 	// `selected` is the 2px text-2 stroke of the card the detail panel shows (the section's note).
 	// Renaming swaps the name for a 20 tall field (accent, 6 in) and the line for its keys. The card
 	// answers F2 (rename), ⌘/Ctrl D (duplicate) and ⌘/Ctrl E (export), as its menu says.
+	// With `onselect`, a click anywhere on the card that isn't a button or link selects it (Flow /
+	// Projects — Detail panel, step 1), and its name is the button that does so from the keyboard.
+	// `statusLabel` says what Koda is doing where the building card's own words don't fit: "Koda is
+	// changing it" (a live project), "Koda is deploying" (Act from the card, step 7).
 	// The description is cut short where the pen lets a long one run past its column (§9).
 	type Props = {
 		name: string;
@@ -33,6 +37,8 @@
 		/** The app tile's tint. */
 		tone: CrewId;
 		status: ProjectStatus;
+		/** In place of the status's own words ("Koda is changing it"). */
+		statusLabel?: string;
 		/** At the status line's end: the step ("3 of 6"), the deploy ("deploy #6") or the time ("00:22"). */
 		meta?: string;
 		/** The zone's second line: what Koda is doing, why it failed, what's missing. */
@@ -49,6 +55,8 @@
 		onaction?: () => void;
 		actions?: ProjectActions;
 		selected?: boolean;
+		/** Selects the card (shows it in the detail panel). */
+		onselect?: () => void;
 		renaming?: boolean;
 		onrename?: (name: string) => void;
 		oncancelrename?: () => void;
@@ -58,6 +66,7 @@
 		description,
 		tone,
 		status,
+		statusLabel,
 		meta,
 		detail,
 		url,
@@ -67,6 +76,7 @@
 		onaction,
 		actions,
 		selected = false,
+		onselect,
 		renaming = false,
 		onrename,
 		oncancelrename,
@@ -87,6 +97,7 @@
 	});
 
 	const label = $derived(
+		statusLabel ??
 		{
 			live: m.projects_status_live(),
 			building: m.projects_status_building(),
@@ -125,6 +136,13 @@
 		run();
 	}
 
+	// A click on the card itself, not on one of its controls, selects it.
+	function onclick(event: MouseEvent) {
+		if (!onselect || renaming) return;
+		if (event.target instanceof Element && event.target.closest('a, button, input, [role="menu"]')) return;
+		onselect();
+	}
+
 	function onfieldkey(event: KeyboardEvent) {
 		if (event.isComposing) return;
 		if (event.key === 'Enter') {
@@ -140,12 +158,14 @@
 	}
 </script>
 
-<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions, a11y_click_events_have_key_events -->
 <article
 	aria-label={name}
 	{onkeydown}
+	{onclick}
 	class={[
 		'flex h-48 w-96 max-w-full shrink-0 flex-col gap-3 rounded-md bg-surface p-4 outline',
+		onselect && 'cursor-pointer',
 		selected ? '-outline-offset-2 outline-2 outline-text-2' : '-outline-offset-1 outline-border-strong',
 	]}
 >
@@ -167,7 +187,13 @@
 				</span>
 				<span class="truncate font-mono text-label text-text-3">{m.projects_rename_hint()}</span>
 			{:else}
-				<h3 class="truncate text-ui font-medium text-text">{name}</h3>
+				<h3 class="truncate text-ui font-medium text-text">
+					{#if onselect}
+						<button type="button" aria-pressed={selected} onclick={onselect} class="block max-w-full cursor-pointer truncate rounded-xs text-left outline-offset-2">{name}</button>
+					{:else}
+						{name}
+					{/if}
+				</h3>
 				<p class="truncate text-caption text-text-3">{description}</p>
 			{/if}
 		</div>

@@ -47,6 +47,11 @@ describe('StopDialog (m7QPG7)', () => {
 		expect(onstop).toHaveBeenCalledOnce();
 	});
 
+	it('says the same without step counts where the build’s steps aren’t known', async () => {
+		await render(StopDialog, { inline: true, name: 'warung-kopi-menu', onstop: () => {} });
+		await expect.element(page.getByText(/What it built so far stays in the project and nothing is deployed\. Resume picks up from there\./)).toBeInTheDocument();
+	});
+
 	it('opens as a modal and Keep building closes it', async () => {
 		await render(StopDialog, { open: true, name: 'warung-kopi-menu', done: 3, next: 4, onstop: () => {} });
 		await expect.element(page.getByRole('dialog', { name: 'Stop building warung-kopi-menu?' })).toBeVisible();
@@ -76,6 +81,11 @@ describe('DeployDialog (A3CDJ)', () => {
 		await page.getByRole('button', { name: 'Deploy' }).click();
 		expect(ondeploy).toHaveBeenCalledOnce();
 	});
+
+	it('leaves Uses out where the plan’s allowance isn’t known', async () => {
+		await render(DeployDialog, { inline: true, name: 'budget-keluarga', files: 3, url: 'a new address on trian.space', data: 'none yet · add a database later', ondeploy: () => {} });
+		expect(page.getByRole('term').elements().map((term) => term.textContent)).toEqual(['URL', 'Data']);
+	});
 });
 
 describe('ProjectMoveDialog (dEQNS)', () => {
@@ -96,6 +106,12 @@ describe('ProjectMoveDialog (dEQNS)', () => {
 		await expect.element(page.getByRole('radio', { name: /Trian's space/ })).toHaveAttribute('aria-disabled', 'true');
 		await expect.element(page.getByText("The 5 members of Kopi Kita will see it and its 2 chats. Trian's space loses access.")).toBeInTheDocument();
 		await expect.element(page.getByText(/Trian owns this workspace, so Trian approves the move\./)).toBeInTheDocument();
+	});
+
+	it('says who gets the project where nobody approves the move', async () => {
+		const withOwner = workspaces.map((workspace) => (workspace.id === 'w3' ? { ...workspace, owner: 'Sari' } : workspace));
+		await render(ProjectMoveDialog, { inline: true, name: 'salah-daily-tracker', chats: 2, workspaces: withOwner, value: 'w3', onmove: () => {} });
+		await expect.element(page.getByText('The URL, deploys and data don’t change. Sari owns Kopi Kita, so the project becomes theirs.')).toBeInTheDocument();
 	});
 
 	it('moves to the chosen workspace; arrows choose', async () => {

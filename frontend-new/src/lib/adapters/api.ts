@@ -167,6 +167,12 @@ export type ProjectSummary = {
 	deploys_count?: number;
 	files_count?: number;
 	deploy_url?: string | null;
+	/** Questions and approvals in its chats still waiting on the person. */
+	waiting_on_you?: number;
+	/** How its last publish ended. */
+	last_deploy?: { status: 'ok' | 'failed'; at: string } | null;
+	/** Whether the live app is answering (down after a crash with no publish since); null when not live. */
+	live_status?: 'up' | 'down' | null;
 };
 /** `org_id` is the workspace shown, null until one is chosen; `base_domain` where apps go live. */
 export type ProjectList = { org_id: string | null; projects: ProjectSummary[]; base_domain?: string | null };

@@ -284,6 +284,24 @@ Found while building Settings › Workspace (2026-11-13).
 
 Found while building Projects (2026-11-14).
 
+### Projects: a card's progress, a build's allowance, moving with approval
+- **Needed by:** *Flow / Projects — Act from the card* (syolc) and *Card menu* (M9O0iU): "3 of 6" and "writing routes/menu/+page.svelte" on a building card, the Deploy dialog's "Uses · 1 build · 26 of 30 left in Oct", Stop on a deploying card, the failed card's "build error in src/lib/pdf.ts · #5 still live", and "Waiting on the owner" after Move.
+- **Why:** the list says a project is building, not how far along it is; publishes can't be cancelled; and a move happens at once, with the target workspace's owner taking the project.
+- **What exists today:** `GET /api/projects` (status, counts, `deploy_url`), `GET /api/sessions` (`agent_active`), `GET /api/projects/:id/deploy` (publishes, per project), `POST /api/projects/:id/transfer` (immediate).
+- **Proposed contract:** on each summary `build: { step, steps, doing } | null` and `last_deploy: { status, error, at, number }`; `DELETE /api/projects/:id/deploy/publishes/:id` (cancel a running one); the plan's build allowance in `GET /api/me/plan`; optionally `POST /api/projects/:id/transfer` creating a request the target's owner approves.
+- **Until then:** building cards say Koda is at it without a step, Deploy's dialog leaves Uses out, a deploying card has no Stop, failed deploys show in the toast and the workspace only, and Move moves at once (its note says whose it becomes).
+
+Found while building the Projects page's card actions (2026-11-15).
+
+### Import from GitHub: a person's repos, private ones, and what Koda found
+- **Needed by:** *Flow / Projects — Import from GitHub* (qJxWu): Connect GitHub (once), Pick a repo (the person's repos newest first, ones Nomi can't see with Grant access), Koda reads it, What Koda found (app, tests, data, secrets it couldn't find, what it will set up), Set up & deploy.
+- **Why:** people with an app already on GitHub can only bring it in as a public repo by name, and nothing says what Koda made of it before it's built.
+- **What exists today:** `POST /api/projects/:id/import/github` `{ repo, ref? }` downloads a *public* repo's zipball into an existing project (no token used); `GET /api/connections/github` says whether GitHub is connected; nothing lists repos.
+- **Proposed contract:** `GET /api/connections/github/repos?q=` → `{ repos: [{ full_name, private, language, updated_at, accessible }] }` with the connected token; `import/github` using the person's token for private repos; an import review `GET /api/projects/:id/import/review` → `{ stack, build, tests, database, secrets_missing: [name], plan: [step] }`.
+- **Until then:** Projects has no import; a project's code comes from Koda (or a zip through the old app).
+
+Found while building the Projects page's card actions (2026-11-15).
+
 ### A project's own domain (DNS) — done
 - **Built:** `GET|POST /api/projects/:id/domains` (`{hostname}` → 201), `POST /api/projects/:id/domains/:hostname/check`, `PUT …/:hostname/primary`, `DELETE …/:hostname` (204); migration `0140_project_domains.sql`.
   - A domain is `{ hostname, records: [{ type, name, value, status: "found" | "waiting" }], checked_at, verified_at, primary, https: "pending" | "issued", created_at }`. Records: a CNAME to the app's live address (a bare domain like `warung.co.id` gets A records to the same ingress's addresses instead) and a TXT `_nomi-verify.<hostname>` = `nomi-verify=<token>`. Looked up with hickory-resolver when added, on Check now, and every 5 minutes by the scheduler loop; the page hears `domain.*` on the project stream.

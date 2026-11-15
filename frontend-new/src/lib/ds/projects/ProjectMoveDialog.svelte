@@ -12,6 +12,8 @@
 		members: number;
 		/** Where the project is now: shown, not chosen. */
 		current?: boolean;
+		/** Who owns it, and so the project once it's moved there. */
+		owner?: string;
 	};
 </script>
 
@@ -26,7 +28,9 @@
 	// workspace. 440 wide. The workspaces as a radio group (44 rows, 8 in, a 24 tile, name over mono
 	// meta; the one it's in now in text-3 and not choosable; the chosen one filled, checked in
 	// accent), then what changes for whom on the page colour (12px lines at 1.4, 12px icons). Move
-	// project is the primary action: mint, as the pen draws it.
+	// project is the primary action: mint, as the pen draws it. Without `owner` (who approves, as
+	// the pen draws it) the second line says the chosen workspace's owner gets the project, as the
+	// backend moves it at once.
 	type Props = {
 		open?: boolean;
 		inline?: boolean;
@@ -34,7 +38,7 @@
 		/** Its chats, which move with it. */
 		chats: number;
 		/** Who owns the workspace it's in now, and approves the move. */
-		owner: string;
+		owner?: string;
 		workspaces: MoveTarget[];
 		value?: string;
 		onmove: (id: string) => void;
@@ -98,7 +102,7 @@
 			</p>
 			<p class="flex gap-2 text-caption leading-cozy text-text-3">
 				<span class="inline-flex shrink-0"><Icon icon={Globe} size={12} /></span>
-				<span>{m.projects_move_owner({ owner })}</span>
+				<span>{owner ? m.projects_move_owner({ owner }) : chosen.owner ? m.projects_move_new_owner({ owner: chosen.owner, workspace: chosen.name }) : m.projects_move_stays()}</span>
 			</p>
 		</div>
 	{/if}

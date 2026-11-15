@@ -40,7 +40,8 @@
 	import type { Monitoring } from '$lib/server/workspace';
 	import type { MetricsRange } from '$lib/adapters/api';
 	import SubdomainField, { type SubdomainCheck } from '$lib/ds/projects/SubdomainField.svelte';
-	import { invalidate } from '$app/navigation';
+	import { goto, invalidate } from '$app/navigation';
+	import { page } from '$app/state';
 	import CodeView from '$lib/ds/build/CodeView.svelte';
 	import { plainLines } from '$lib/ds/chat/code';
 	import { fileTree, firstFile, quoteLines } from '$lib/projects/code';
@@ -159,6 +160,21 @@
 			if (deploy && publishing(deploy)) void refresh();
 		}, 3000);
 		return () => clearInterval(tick);
+	});
+
+	// Opened from a card's menu or the detail panel on Projects (Card menu M9O0iU: "Share, Export,
+	// Settings and Take down open the same dialogs the workspace uses"): `?open=` says which, then
+	// the address is tidied so a reload doesn't open it again.
+	onMount(() => {
+		const open = page.url.searchParams.get('open');
+		if (!open) return;
+		if (open === 'settings') sheet = 'settings';
+		else if (open === 'export') void openExport();
+		else if (open === 'share' && liveUrl) sharing = true;
+		else if (open === 'takedown' && liveUrl) openDialog('takedown');
+		const url = new URL(page.url);
+		url.searchParams.delete('open');
+		void goto(url, { replaceState: true, noScroll: true, keepFocus: true });
 	});
 
 	let confirming = $state(false);

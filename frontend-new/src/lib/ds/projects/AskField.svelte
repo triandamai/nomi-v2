@@ -9,8 +9,14 @@
 	// apart): Koda and the question (13 at 1.4), then where it goes in mono and Send (the accent
 	// icon button, off until there's something to send). The stroke is accent while it holds a
 	// question or has focus. Enter sends, Shift+Enter starts a new line.
-	type Props = { project: string; value?: string; onask: (text: string) => void };
-	let { project, value = $bindable(''), onask }: Props = $props();
+	type Props = {
+		project: string;
+		value?: string;
+		/** Where the question goes, under it ("new chat in salah-daily-tracker"). */
+		hint?: string;
+		onask: (text: string) => void;
+	};
+	let { project, value = $bindable(''), hint, onask }: Props = $props();
 
 	const text = $derived(value.trim());
 
@@ -53,7 +59,7 @@
 		></textarea>
 	</div>
 	<div class="flex items-center justify-between gap-2">
-		<span class="truncate font-mono text-label text-text-3">{m.projects_ask_hint({ name: project })}</span>
+		<span class="truncate font-mono text-label text-text-3">{hint ?? m.projects_ask_hint({ name: project })}</span>
 		<IconButton icon={ArrowUp} label={m.composer_send()} variant="send" type="submit" disabled={!text} />
 	</div>
 </form>
