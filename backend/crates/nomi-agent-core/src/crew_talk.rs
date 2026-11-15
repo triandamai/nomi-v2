@@ -166,6 +166,9 @@ pub async fn ask(
     }
     let provider = provider.ok_or("the crew can't be asked right now: go on with what you know")?;
     let target = registry.find(target_type).ok_or_else(|| format!("{target_type} isn't a crew member you can ask"))?;
+    if !crate::personal_crew::is_enabled(conn, user_id, target_type).await {
+        return Err(crate::personal_crew::switched_off_result(&target.display_name()));
+    }
     let asker_name = asker.display_name();
     let target_name = target.display_name();
 

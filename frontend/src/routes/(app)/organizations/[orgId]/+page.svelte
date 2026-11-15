@@ -13,6 +13,7 @@
 	import IconMore from '$lib/components/icons/IconMore.svelte';
 	import IconCopy from '$lib/components/icons/IconCopy.svelte';
 	import IconClose from '$lib/components/icons/IconClose.svelte';
+	import { lastActive } from '$lib/orgs';
 	import type { OrgMember, OrgRole } from '$lib/types';
 	import type { ActionData, PageData } from './$types';
 
@@ -41,11 +42,15 @@
 	let status = $state('');
 
 	// A confirmation for removing someone or leaving.
-	let confirming = $state<{ kind: 'remove'; member: OrgMember } | { kind: 'leave' } | null>(null);
+	let confirming = $state<{ kind: 'remove'; member: OrgMember } | { kind: 'leave' } | { kind: 'delete' } | null>(null);
 	let confirmOpen = $state(false);
 
 	const error = $derived(form && 'error' in form ? (form.error as string) : null);
 	const inviteError = $derived(form && 'inviteError' in form ? (form.inviteError as string) : null);
+
+	$effect(() => {
+		if (form && 'resent' in form && typeof form.resent === 'string') status = m.org_invite_resent({ email: form.resent });
+	});
 
 	$effect(() => {
 		if (form && 'invited' in form && form.invited) {
@@ -89,6 +94,11 @@
 		confirmOpen = true;
 	}
 
+	function confirmDelete() {
+		confirming = { kind: 'delete' };
+		confirmOpen = true;
+	}
+
 	function confirmLeave() {
 		confirming = { kind: 'leave' };
 		confirmOpen = true;
@@ -124,6 +134,11 @@
 				<div class="head__text">
 					<h1 class="md-headline-medium head__title">{org.name}</h1>
 					<p class="head__meta">{ROLE[org.my_role]()} · {org.members.length === 1 ? m.org_pick_member() : m.org_pick_members({ count: org.members.length })}</p>
+					{#if org.created_at}
+						<p class="head__meta">
+							{org.created_by ? m.org_created_by({ name: org.created_by.name, date: date(org.created_at) }) : m.org_created_on({ date: date(org.created_at) })}
+						</p>
+					{/if}
 				</div>
 				{#if manager}
 					<Button variant="text" size="s" onclick={() => { name = org.name; renaming = true; }}>{m.org_rename()}</Button>
@@ -153,15 +168,35 @@
 					<Button type="submit" variant="filled" size="m" disabled={!email.trim()}>{m.org_invite_send()}</Button>
 				</form>
 
+				<form
+					method="POST"
+					action="?/link"
+					class="link"
+					use:enhance={() => async ({ result, update }) => {
+						await update({ reset: false });
+						if (result.type === 'success' && typeof result.data?.linkCode === 'string') await copyLink(result.data.linkCode);
+					}}
+				>
+					<input type="hidden" name="role" value={inviteRole} />
+					<Button type="submit" variant="text" size="s"><IconCopy size={18} />{m.org_invite_link_make()}</Button>
+					<span class="section-lede">{m.org_invite_link_hint({ role: ROLE[inviteRole]().toLowerCase() })}</span>
+				</form>
+
 				{#if org.invites.length > 0}
 					<h3 class="subhead">{m.org_invites_open()}</h3>
 					<ul class="rows">
 						{#each org.invites as invite (invite.code)}
 							<li class="invite-row">
 								<span class="invite-row__text">
-									<span class="invite-row__email">{invite.email}</span>
+									<span class="invite-row__email">{invite.link ? m.org_invite_link_row() : invite.email}</span>
 									<span class="invite-row__meta">{ROLE[invite.role]()} · {m.org_invite_expires({ date: date(invite.expires_at) })}</span>
 								</span>
+								{#if !invite.link}
+									<form method="POST" action="?/resend" use:enhance>
+										<input type="hidden" name="code" value={invite.code} />
+										<Button type="submit" variant="text" size="s">{m.org_invite_resend()}</Button>
+									</form>
+								{/if}
 								<IconButton type="button" aria-label={m.org_invite_copy()} title={m.org_invite_copy()} onclick={() => copyLink(invite.code)}>
 									<IconCopy size={20} />
 								</IconButton>
@@ -193,6 +228,9 @@
 								{#if member.user_id === org.me}<span class="member__you">{m.org_you()}</span>{/if}
 							</span>
 							{#if member.email}<span class="member__email">{member.email}</span>{/if}
+							<span class="member__email">
+								{m.org_pick_projects({ count: member.projects ?? 0 })}{#if lastActive(member.last_active_at)} · {lastActive(member.last_active_at)}{/if}
+							</span>
 						</span>
 						<span class="member__role">{ROLE[member.role]()}</span>
 						{#if roles.length > 0 || canRemove(member)}
@@ -221,12 +259,20 @@
 
 		<div class="leave">
 			<Button variant="outlined" size="s" onclick={confirmLeave}>{m.org_leave()}</Button>
+			{#if org.my_role === 'owner' && !org.is_personal}
+				<Button variant="outlined" size="s" onclick={confirmDelete}>{m.org_delete()}</Button>
+			{:else if !org.is_personal}
+				<span class="section-lede">{m.org_delete_only_owners()}</span>
+			{/if}
 		</div>
 	</div>
 </div>
 
-<Dialog bind:open={confirmOpen} headline={confirming?.kind === 'leave' ? m.org_leave() : m.org_remove()}>
-	{#if confirming?.kind === 'leave'}
+<Dialog bind:open={confirmOpen} headline={confirming?.kind === 'leave' ? m.org_leave() : confirming?.kind === 'delete' ? m.org_delete() : m.org_remove()}>
+	{#if confirming?.kind === 'delete'}
+		<p>{m.org_delete_confirm({ org: org.name })}</p>
+		<form id="confirm-form" method="POST" action="?/delete" use:enhance={closeConfirm}></form>
+	{:else if confirming?.kind === 'leave'}
 		<p>{m.org_leave_confirm({ org: org.name })}</p>
 		<form id="confirm-form" method="POST" action="?/leave" use:enhance={closeConfirm}></form>
 	{:else if confirming?.kind === 'remove'}
@@ -237,7 +283,9 @@
 	{/if}
 	{#snippet actions()}
 		<Button variant="text" type="button" onclick={() => (confirmOpen = false)}>{m.org_cancel()}</Button>
-		<Button variant="filled" type="submit" form="confirm-form">{confirming?.kind === 'leave' ? m.org_leave() : m.org_remove()}</Button>
+		<Button variant="filled" type="submit" form="confirm-form">
+			{confirming?.kind === 'leave' ? m.org_leave() : confirming?.kind === 'delete' ? m.org_delete() : m.org_remove()}
+		</Button>
 	{/snippet}
 </Dialog>
 
@@ -452,7 +500,17 @@
 	}
 	.leave {
 		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
 		justify-content: flex-start;
+		gap: 12px;
 		padding-top: 8px;
+	}
+	.link {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 8px;
+		margin-top: 8px;
 	}
 </style>

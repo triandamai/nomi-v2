@@ -29,6 +29,22 @@ pub fn project_file_key(project_id: Uuid, path: &str) -> String {
     format!("{project_id}/{path}")
 }
 
+/// Where every version's file bytes live in project storage, one folder per project.
+pub const VERSION_BLOBS_PREFIX: &str = "versions";
+/// The crew member whose replies make a project's versions (see `bump_files_version`).
+const VERSION_AGENT: &str = "coding";
+
+/// The storage key one kept file content lives at, by its SHA-256 (see `project_versions`).
+pub fn version_blob_key(project_id: Uuid, sha: &str) -> String {
+    format!("{VERSION_BLOBS_PREFIX}/{project_id}/{sha}")
+}
+
+/// The SHA-256 of a file's bytes, as lowercase hex.
+pub fn content_sha(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(bytes).iter().map(|b| format!("{b:02x}")).collect()
+}
+
 /// Rejects absolute paths, `..` segments and anything else that isn't a plain relative path.
 pub fn validate_path(path: &str) -> Result<(), String> {
     if path.is_empty()
@@ -143,22 +159,98 @@ pub(crate) async fn owned_project_id(conn: &mut PgConnection, user_id: Uuid, inp
 /// Marks the project's files as changed (the open preview picks it up). The version people see
 /// moves once per crew reply: a reply's later changes stay in the version its first one made.
 /// A change outside a reply (the code editor, an import) is a version of its own.
-pub async fn bump_files_version(conn: &mut PgConnection, project_id: Uuid) -> Result<(), sqlx::Error> {
-    bump_files_version_in(conn, project_id, nomi_agent_core::reply::current_reply()).await
+pub async fn bump_files_version(conn: &mut PgConnection, project_id: Uuid) -> Result<i64, sqlx::Error> {
+    bump_files_version_in(conn, project_id, nomi_agent_core::reply::current_reply(), None).await
 }
 
-async fn bump_files_version_in(conn: &mut PgConnection, project_id: Uuid, reply: Option<Uuid>) -> Result<(), sqlx::Error> {
-    sqlx::query(
+/// `bump_files_version` for a change a person made themselves (the code editor, an import, a
+/// restore), so the version names them.
+pub async fn bump_files_version_by(conn: &mut PgConnection, project_id: Uuid, user_id: Uuid) -> Result<i64, sqlx::Error> {
+    bump_files_version_in(conn, project_id, nomi_agent_core::reply::current_reply(), Some(user_id)).await
+}
+
+async fn bump_files_version_in(conn: &mut PgConnection, project_id: Uuid, reply: Option<Uuid>, user_id: Option<Uuid>) -> Result<i64, sqlx::Error> {
+    let version: i64 = sqlx::query_scalar(
         "UPDATE projects SET files_version = files_version + 1, updated_at = now(), \
          version = CASE WHEN $2::uuid IS NOT NULL AND version_reply_id = $2 THEN version ELSE version + 1 END, \
          version_reply_id = $2, \
-         status = CASE WHEN status = 'planning' THEN 'building' ELSE status END WHERE id = $1",
+         status = CASE WHEN status = 'planning' THEN 'building' ELSE status END WHERE id = $1 RETURNING version",
     )
     .bind(project_id)
     .bind(reply)
+    .fetch_one(&mut *conn)
+    .await?;
+    record_version(conn, project_id, version, reply.map(|_| VERSION_AGENT), user_id).await?;
+    Ok(version)
+}
+
+/// Keeps what the project's files are now as `version`: its row, and the path and content of
+/// every file. A reply's later changes replace what its version holds.
+async fn record_version(
+    conn: &mut PgConnection,
+    project_id: Uuid,
+    version: i64,
+    agent: Option<&str>,
+    user_id: Option<Uuid>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO project_versions (project_id, version, agent, user_id) VALUES ($1, $2, $3, $4) \
+         ON CONFLICT (project_id, version) DO UPDATE SET updated_at = now(), \
+         agent = COALESCE(project_versions.agent, EXCLUDED.agent), user_id = COALESCE(project_versions.user_id, EXCLUDED.user_id)",
+    )
+    .bind(project_id)
+    .bind(version)
+    .bind(agent)
+    .bind(user_id)
+    .execute(&mut *conn)
+    .await?;
+    sqlx::query("DELETE FROM project_version_files WHERE project_id = $1 AND version = $2")
+        .bind(project_id)
+        .bind(version)
+        .execute(&mut *conn)
+        .await?;
+    sqlx::query(
+        "INSERT INTO project_version_files (project_id, version, path, blob_sha, content_type, size_bytes) \
+         SELECT project_id, $2, path, blob_sha, content_type, size_bytes FROM project_files WHERE project_id = $1",
+    )
+    .bind(project_id)
+    .bind(version)
     .execute(&mut *conn)
     .await?;
     Ok(())
+}
+
+/// Keeps the content of the project's files saved before versions kept it, so the next version
+/// can be restored whole. Best effort: a file that can't be read stays without, and is tried
+/// again on the next change.
+pub async fn keep_blobs(conn: &mut PgConnection, storage: &ProjectStore, project_id: Uuid) {
+    let paths: Vec<String> = match sqlx::query_scalar("SELECT path FROM project_files WHERE project_id = $1 AND blob_sha IS NULL")
+        .bind(project_id)
+        .fetch_all(&mut *conn)
+        .await
+    {
+        Ok(paths) => paths,
+        Err(e) => {
+            tracing::warn!(%project_id, error = %e, "couldn't list files to keep");
+            return;
+        }
+    };
+    for path in paths {
+        let Ok(Some(bytes)) = storage.get_bytes(&project_file_key(project_id, &path)).await else {
+            continue;
+        };
+        let sha = content_sha(&bytes);
+        if let Err(e) = storage.put_bytes(&version_blob_key(project_id, &sha), bytes, guess_content_type(&path)).await {
+            tracing::warn!(%project_id, %path, error = %e, "couldn't keep a file's content");
+            continue;
+        }
+        let _ = sqlx::query("UPDATE project_files SET blob_sha = $3 WHERE project_id = $1 AND path = $2")
+            .bind(project_id)
+            .bind(&path)
+            .bind(&sha)
+            .execute(&mut *conn)
+            .await;
+    }
 }
 
 /// Saves one text file and its row, without bumping the version (callers do, once per change).
@@ -233,17 +325,26 @@ pub async fn save_bytes(
         tracing::error!(%project_id, %path, %key, error = %e, "failed to save file to project storage");
         return Err(format!("failed to save {path} to storage: {e}"));
     }
+    // The content is kept by its hash too, so the versions holding it can be restored.
+    let sha = content_sha(content);
+    if let Err(e) = storage.put_bytes(&version_blob_key(project_id, &sha), content.to_vec(), content_type).await {
+        tracing::error!(%project_id, %path, error = %e, "failed to keep the file's content for its version");
+        return Err(format!("failed to save {path} to storage: {e}"));
+    }
     sqlx::query(
-        "INSERT INTO project_files (project_id, path, content_type, size_bytes) VALUES ($1, $2, $3, $4) \
-         ON CONFLICT (project_id, path) DO UPDATE SET content_type = EXCLUDED.content_type, size_bytes = EXCLUDED.size_bytes, updated_at = now()",
+        "INSERT INTO project_files (project_id, path, content_type, size_bytes, blob_sha) VALUES ($1, $2, $3, $4, $5) \
+         ON CONFLICT (project_id, path) DO UPDATE SET content_type = EXCLUDED.content_type, size_bytes = EXCLUDED.size_bytes, \
+         blob_sha = EXCLUDED.blob_sha, updated_at = now()",
     )
     .bind(project_id)
     .bind(path)
     .bind(content_type)
     .bind(content.len() as i32)
+    .bind(&sha)
     .execute(&mut *conn)
     .await
     .map_err(|e| e.to_string())?;
+    keep_blobs(conn, storage, project_id).await;
     Ok(previous)
 }
 
@@ -258,6 +359,7 @@ pub async fn remove_file(conn: &mut PgConnection, storage: &ProjectStore, projec
         .await
         .map_err(|e| e.to_string())?
         .rows_affected();
+    keep_blobs(conn, storage, project_id).await;
     Ok(removed > 0)
 }
 

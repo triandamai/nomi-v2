@@ -43,6 +43,20 @@ pub fn code_email(challenge: &Challenge, code: &str, locale: Locale) -> Email {
             "sign_in.register_warning",
             "sign_in.register_reason",
         ),
+        Purpose::ChangeEmail => (
+            "sign_in.change_email_subject",
+            "sign_in.change_email_title",
+            "sign_in.change_email_intro",
+            "sign_in.change_email_warning",
+            "sign_in.change_email_reason",
+        ),
+        Purpose::DeleteAccount => (
+            "sign_in.delete_account_subject",
+            "sign_in.delete_account_title",
+            "sign_in.delete_account_intro",
+            "sign_in.delete_account_warning",
+            "sign_in.delete_account_reason",
+        ),
     };
     let minutes = (CODE_TTL_SECONDS / 60).to_string();
     BrandedEmail {
@@ -89,12 +103,13 @@ mod tests {
     fn challenge(purpose: Purpose) -> Challenge {
         Challenge {
             id: Uuid::new_v4(),
-            user_id: Uuid::new_v4(),
+            user_id: Some(Uuid::new_v4()),
             purpose,
             email: "ana@example.com".into(),
             expires_at: Utc::now(),
             resend_at: Utc::now(),
             sends_left: 4,
+            language: None,
         }
     }
 
@@ -111,6 +126,11 @@ mod tests {
         let email = code_email(&challenge(Purpose::Register), "111222", Locale::Id);
         assert!(email.subject.starts_with("Konfirmasi"));
         assert!(email.text.contains("111222"));
+
+        let email = code_email(&challenge(Purpose::ChangeEmail), "333444", Locale::En);
+        assert!(email.subject.contains("333444") && email.text.contains("new email"));
+        let email = code_email(&challenge(Purpose::DeleteAccount), "555666", Locale::Id);
+        assert!(email.subject.contains("555666") && email.text.contains("menghapus"));
     }
 
     #[test]

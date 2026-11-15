@@ -67,4 +67,17 @@ describe('verify page.server', () => {
 		const res = await settle(() => actions.verify(event({ cookies, form: { code: '123456' } })));
 		expect(res).toHaveProperty('thrown');
 	});
+
+	it('sends an account the code just made to first run', async () => {
+		const cookies = cookieJar();
+		setPendingSignIn(cookies, { ...pending, redirectTo: '/chat' });
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async (url: RequestInfo | URL) =>
+				String(url).includes('/api/auth/verify') ? json({ access_token: 'acc', refresh_token: 'ref', is_new: true }) : json({}),
+			),
+		);
+		const res = await settle(() => actions.verify(event({ cookies, form: { code: '123456' } })));
+		expect(res).toMatchObject({ thrown: { status: 303, location: '/first-run?next=%2Fchat' } });
+	});
 });

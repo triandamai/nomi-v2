@@ -203,7 +203,7 @@ async fn an_expired_token_is_refreshed_before_calling_google(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../migrations")]
-async fn a_revoked_connection_is_forgotten_and_the_user_is_asked_to_reconnect(pool: PgPool) {
+async fn a_revoked_connection_is_kept_as_expired_and_the_user_is_asked_to_reconnect(pool: PgPool) {
     let server = MockServer::start().await;
     let ana = seed_user(&pool).await;
     connect(&pool, &server, ana, &["docs"], "tok-ana").await;
@@ -217,7 +217,15 @@ async fn a_revoked_connection_is_forgotten_and_the_user_is_asked_to_reconnect(po
 
     assert!(matches!(outcome.block, Some(ContentBlock::WorkspaceConnect { .. })));
     let mut conn = pool.acquire().await.unwrap();
-    assert_eq!(connection::status(&mut conn, ana).await.unwrap(), None);
+    let shown = connection::status(&mut conn, ana).await.unwrap().unwrap();
+    assert_eq!(shown.status, "expired");
+    assert!(shown.expired_at.is_some());
+    // Until it's connected again, nothing uses it.
+    let config = GoogleConfig::all_at(&server.uri());
+    assert_eq!(
+        connection::access_token(&mut conn, &reqwest::Client::new(), &config, &KEY, ana, "docs").await.unwrap_err(),
+        connection::AccessError::NotConnected
+    );
 }
 
 #[sqlx::test(migrations = "../../migrations")]

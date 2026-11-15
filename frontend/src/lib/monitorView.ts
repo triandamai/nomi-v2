@@ -121,3 +121,16 @@ export function serviceHistory(buckets: MetricsBucket[]): Record<string, { cpu: 
 	}
 	return history;
 }
+
+/** The share of visits that sent a form; null when either wasn't measured or nobody visited. */
+export function formShare(formSends: number | null | undefined, visits: number | null | undefined): number | null {
+	if (formSends === null || formSends === undefined || !visits) return null;
+	return Math.min(1, formSends / visits);
+}
+
+/** The sources shown, largest first: the top few, the rest summed as one "Other". */
+export function topSources(sources: { name: string; share: number }[], shown: number, other: string): { name: string; share: number }[] {
+	if (sources.length <= shown) return sources;
+	const rest = sources.slice(shown - 1).reduce((sum, s) => sum + s.share, 0);
+	return [...sources.slice(0, shown - 1), { name: other, share: rest }];
+}

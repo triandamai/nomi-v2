@@ -170,12 +170,50 @@ describe('connections', () => {
 	it('lists connectors and search results', async () => {
 		const root = page(Connections, {
 			query: '',
+			catalog: [],
+			mcp: { servers: [], callable: false },
+			github: null,
 			overview: {
 				google: { email: 'ana@gmail.com' },
 				hevy: { account_name: 'Ana', connected_at: '2026-01-01' },
 			},
 		});
 		expect(text(root)).toBeTruthy();
+		await tryAll(root);
+	});
+
+	it('shows the catalog, a lapsed sign-in to reconnect, and MCP servers', async () => {
+		const root = page(
+			Connections,
+			{
+				query: '',
+				overview: {
+					google: {
+						configured: true,
+						email: 'ana@gmail.com',
+						services: ['gmail'],
+						status: 'expired',
+						used_by: ['workspace'],
+						service_access: [{ service: 'gmail', access: ['read', 'write', 'ask'] }],
+					},
+					hevy: null,
+				},
+				catalog: [
+					{ id: 'notion', name: 'Notion', category: 'work', for_agent: 'workspace', access: ['read'], available: false },
+					{ id: 'github', name: 'GitHub', category: 'building', for_agent: 'coding', access: ['write'], available: true },
+				],
+				mcp: { servers: [{ id: 's1', name: 'Notes', url: 'https://mcp.example.com', created_at: '2026-11-01T00:00:00Z' }], callable: false },
+				github: { oauth: false, connection: { login: 'ana-dev', kind: 'token', created_at: '2026-11-01T00:00:00Z', last_used_at: null, status: 'ok' } },
+			},
+			{ mcpError: 'Use an http or https address.', name: 'x', url: 'ftp://x' },
+		);
+		const shown = text(root);
+		expect(shown).toContain('Notion');
+		expect(shown).toContain('Reconnect');
+		expect(shown).toContain('Gmail · read · write · asks first');
+		expect(shown).toContain('ana-dev');
+		expect(shown).toContain('https://mcp.example.com');
+		expect(shown).toContain('Use an http or https address.');
 		await tryAll(root);
 	});
 });

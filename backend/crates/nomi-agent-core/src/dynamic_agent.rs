@@ -36,16 +36,35 @@ fn row_from_sql(row: DynamicAgentSqlRow) -> DynamicAgentRow {
 const DYNAMIC_AGENT_COLUMNS: &str =
     "id, name, system_prompt, intent_label, intent_description, granted_tools, supports_todos, supports_plans, can_delegate";
 
-/// Every currently-routable dynamic agent — fetched fresh on every call, no cache. Used by
-/// `nomi_turn::routing::classify_intent` to build the combined classification prompt and to
-/// resolve a classified label into a `DynamicAgent`.
+/// Every active admin-made dynamic agent (everyone's) — fetched fresh on every call, no cache.
+/// Routing for a person uses `fetch_crew_dynamic_agents`, which adds their own members.
 pub async fn fetch_active_dynamic_agents(conn: &mut PoolConnection<Postgres>) -> Result<Vec<DynamicAgentRow>, sqlx::Error> {
     let rows: Vec<DynamicAgentSqlRow> = sqlx::query_as(&format!(
-        "SELECT {DYNAMIC_AGENT_COLUMNS} FROM dynamic_agents WHERE is_active = true"
+        "SELECT {DYNAMIC_AGENT_COLUMNS} FROM dynamic_agents WHERE is_active = true AND owner_user_id IS NULL"
     ))
     .fetch_all(&mut **conn)
     .await?;
     Ok(rows.into_iter().map(row_from_sql).collect())
+}
+
+/// The dynamic agents `user_id` sees in their crew: the admins' ones for everyone plus their own,
+/// active, switched off or not.
+pub async fn fetch_visible_dynamic_agents(conn: &mut PoolConnection<Postgres>, user_id: Uuid) -> Result<Vec<DynamicAgentRow>, sqlx::Error> {
+    let rows: Vec<DynamicAgentSqlRow> = sqlx::query_as(&format!(
+        "SELECT {DYNAMIC_AGENT_COLUMNS} FROM dynamic_agents WHERE is_active = true AND (owner_user_id IS NULL OR owner_user_id = $1)"
+    ))
+    .bind(user_id)
+    .fetch_all(&mut **conn)
+    .await?;
+    Ok(rows.into_iter().map(row_from_sql).collect())
+}
+
+/// The dynamic agents `user_id` can be routed to: `fetch_visible_dynamic_agents` without the
+/// ones they switched off.
+pub async fn fetch_crew_dynamic_agents(conn: &mut PoolConnection<Postgres>, user_id: Uuid) -> Result<Vec<DynamicAgentRow>, sqlx::Error> {
+    let off = crate::personal_crew::disabled_agent_types(conn, user_id).await;
+    let rows = fetch_visible_dynamic_agents(conn, user_id).await?;
+    Ok(rows.into_iter().filter(|r| !off.contains(&r.id.to_string())).collect())
 }
 
 /// Looks up a dynamic agent by id regardless of `is_active` — used to resume a turn already

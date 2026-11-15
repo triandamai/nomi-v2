@@ -11,7 +11,20 @@
 	import IconPlus from '$lib/components/icons/IconPlus.svelte';
 	import IconSearch from '$lib/components/icons/IconSearch.svelte';
 	import ProviderLogo from '$lib/components/providers/ProviderLogo.svelte';
-	import { applyChanges, groupChanges, groupToggle, searchModelGroups, type ModelChange, type ModelGroup } from '$lib/modelPicker';
+	import { applyChanges, formatContext, groupChanges, groupToggle, searchModelGroups, type ModelCapability, type ModelChange, type ModelGroup } from '$lib/modelPicker';
+
+	function capabilityLabel(capability: ModelCapability): string {
+		switch (capability) {
+			case 'fast':
+				return m.model_cap_fast();
+			case 'reasoning':
+				return m.model_cap_reasoning();
+			case 'vision':
+				return m.model_cap_vision();
+			case 'code':
+				return m.model_cap_code();
+		}
+	}
 
 	let {
 		open = $bindable(false),
@@ -115,7 +128,16 @@
 							{#each group.models as model (model.key)}
 								{@const name = model.label || model.model_id}
 								<li class="row">
-									<span class="row__name" data-model-name title={model.model_id}>{name}</span>
+									<span class="row__text">
+										<span class="row__name" data-model-name title={model.model_id}>{name}</span>
+										{#if model.context || model.capabilities?.length}
+											<span class="row__meta">
+												{#if model.context}<span>{m.model_context({ tokens: formatContext(model.context) })}</span>{/if}
+												{#each model.capabilities ?? [] as capability (capability)}<span class="tag">{capabilityLabel(capability)}</span>{/each}
+											</span>
+										{/if}
+									</span>
+									{#if model.recommended}<span class="badge">{m.model_recommended()}</span>{/if}
 									{#if model.free}<span class="badge">{m.msel_free()}</span>{/if}
 									<Switch
 										checked={model.enabled}
@@ -269,13 +291,33 @@
 	.row + .row {
 		border-top: 1px solid var(--md-sys-color-outline-variant);
 	}
-	.row__name {
+	.row__text {
 		flex: 1;
+		min-width: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		padding: 6px 0;
+	}
+	.row__name {
 		min-width: 0;
 		overflow: hidden;
 		font-size: 0.875rem;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+	.row__meta {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 4px 8px;
+		font-size: 0.75rem;
+		color: var(--md-sys-color-on-surface-variant);
+	}
+	.tag {
+		padding: 0 6px;
+		border-radius: var(--md-sys-shape-corner-small);
+		background: var(--md-sys-color-surface-container-high);
 	}
 	.badge {
 		flex: none;

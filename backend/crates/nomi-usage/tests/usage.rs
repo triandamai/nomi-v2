@@ -41,7 +41,7 @@ async fn call(provider: &MeteredProvider) {
 }
 
 fn tag(admin_model_id: Option<Uuid>, own_key: bool) -> ModelTag {
-    ModelTag { admin_model_id, own_key, label: "Nomi Standard".into(), provider: "anthropic".into(), model_id: "claude-x".into() }
+    ModelTag { admin_model_id, own_key, label: "Nomi Standard".into(), provider: "anthropic".into(), model_id: "claude-x".into(), connection_id: None }
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -141,7 +141,7 @@ async fn switching_models_shows_each_one_and_a_deleted_model_keeps_its_rows(pool
     .await
     .unwrap();
     call(&MeteredProvider::new(Arc::new(FakeLlmProvider::success(reply(100, 10))), pool.clone(), ana, tag(Some(gemini), false))).await;
-    let deepseek_tag = ModelTag { admin_model_id: Some(deepseek), own_key: false, label: "DeepSeek".into(), provider: "deepseek".into(), model_id: "deepseek-chat".into() };
+    let deepseek_tag = ModelTag { admin_model_id: Some(deepseek), own_key: false, label: "DeepSeek".into(), provider: "deepseek".into(), model_id: "deepseek-chat".into(), connection_id: None };
     call(&MeteredProvider::new(Arc::new(FakeLlmProvider::success(reply(500, 50))), pool.clone(), ana, deepseek_tag)).await;
 
     let usage = nomi_usage::month(&pool, ana, None).await.unwrap();
@@ -242,4 +242,36 @@ async fn their_own_key_is_never_stopped_by_the_allowance(pool: PgPool) {
     let inner = Arc::new(FakeLlmProvider::sequence(vec![reply(10, 10)]));
     let provider = MeteredProvider::new(inner, pool.clone(), ana, tag(None, true));
     assert!(provider.complete_stream(request()).await.is_ok());
+}
+
+async fn key_status(pool: &PgPool, connection: Uuid) -> (String, bool) {
+    sqlx::query_as("SELECT key_status, key_checked_at IS NOT NULL FROM llm_provider_connections WHERE id = $1").bind(connection).fetch_one(pool).await.unwrap()
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn each_call_keeps_how_its_connections_key_fared(pool: PgPool) {
+    let ana = person(&pool, "UTC").await;
+    let connection: Uuid = sqlx::query_scalar(
+        "INSERT INTO llm_provider_connections (user_id, provider_id, label, kind, auth_type) VALUES ($1, 'openrouter', 'OpenRouter', 'openrouter', 'api_key') RETURNING id",
+    )
+    .bind(ana)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(key_status(&pool, connection).await, ("ok".to_string(), false));
+    let own = ModelTag { connection_id: Some(connection), ..tag(None, true) };
+
+    let fails = |text: &str| MeteredProvider::new(Arc::new(FakeLlmProvider::failure(text)), pool.clone(), ana, own.clone());
+    assert!(fails(r#"openrouter returned 402 Payment Required: {"error":{"message":"more credits"}}"#).complete_stream(request()).await.is_err());
+    assert_eq!(key_status(&pool, connection).await, ("balance_empty".to_string(), true));
+
+    // An outage says nothing about the key.
+    assert!(fails("openrouter returned 503 Service Unavailable: down").complete_stream(request()).await.is_err());
+    assert_eq!(key_status(&pool, connection).await.0, "balance_empty");
+
+    assert!(fails("openrouter returned 401 Unauthorized: no auth").complete_stream(request()).await.is_err());
+    assert_eq!(key_status(&pool, connection).await.0, "rejected");
+
+    call(&MeteredProvider::new(Arc::new(FakeLlmProvider::success(reply(10, 5))), pool.clone(), ana, own)).await;
+    assert_eq!(key_status(&pool, connection).await, ("ok".to_string(), true));
 }

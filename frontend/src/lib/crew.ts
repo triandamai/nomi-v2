@@ -44,9 +44,15 @@ export interface CrewRosterMember {
 	shape: string | null;
 	tone: string | null;
 	motion: string | null;
-	/** What it's doing for this user right now, across all chats. */
-	state: 'working' | 'waiting' | 'done' | 'idle';
+	/** What it's doing for this user right now, across all chats; `paused` when switched off. */
+	state: 'working' | 'waiting' | 'done' | 'idle' | 'paused';
 	status: string;
+	/** False when the person switched it off (Settings › Crew). */
+	enabled?: boolean;
+	/** A member the person made for themselves. */
+	is_own?: boolean;
+	/** Nomi, which can't be switched off. */
+	is_default?: boolean;
 }
 
 /** The crew key for an agent type: Nomi's is `nomi` (AgentShape's brand mark), others their type. */
@@ -141,9 +147,9 @@ export function buildCrew({
 	return [...members.values()];
 }
 
-const STATE_ORDER: Record<CrewRosterMember['state'], number> = { working: 0, waiting: 1, done: 2, idle: 3 };
+const STATE_ORDER: Record<CrewRosterMember['state'], number> = { working: 0, waiting: 1, done: 2, idle: 3, paused: 4 };
 
-/** The crew, busiest first: working, then waiting on you, then done, then ready. Ties keep the
+/** The crew, busiest first: working, then waiting on you, then done, then ready, then paused. Ties keep the
  * roster's order (Nomi first). */
 export function crewByActivity(crew: CrewRosterMember[]): CrewRosterMember[] {
 	return crew

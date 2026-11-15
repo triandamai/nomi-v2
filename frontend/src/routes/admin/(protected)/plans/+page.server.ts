@@ -43,6 +43,8 @@ function readPlan(data: FormData) {
 		is_active: data.get('is_active') === 'true',
 		sort_order: Number(text('sort_order')) || 0,
 		...readPlanLimits(data),
+		// Empty: not sold yet (people join its waitlist).
+		price_idr: Number(text('price_idr')) > 0 ? Math.round(Number(text('price_idr'))) : null,
 	};
 }
 

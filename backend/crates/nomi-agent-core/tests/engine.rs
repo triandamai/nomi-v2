@@ -472,6 +472,25 @@ async fn agents_see_what_the_person_did_lately_across_chats(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "../../migrations")]
+async fn agents_dont_see_other_chats_when_searching_past_chats_is_off(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    sqlx::query("UPDATE users SET recent_activity = 'Today: Dana logged lunch, Rp 50k' WHERE id = $1").bind(user_id).execute(&pool).await.unwrap();
+    let off = nomi_agent_core::memory_settings::MemorySettings { search_past_chats: false, ..Default::default() };
+    nomi_agent_core::memory_settings::save(&pool, user_id, &off).await.unwrap();
+    let provider = FakeLlmProvider::sequence(vec![text_response("Sure!", StopReason::EndTurn)]);
+    let mut conn = pool.acquire().await.unwrap();
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(TestAgent)]);
+    run_agent_turn(&mut conn, None, None, &provider, &embedding_provider, &registry, &TestAgent, session_id, agent_session_id, user_id, vec![], 100)
+        .await
+        .unwrap();
+
+    let system = provider.received_requests.lock().unwrap()[0].system.clone().unwrap();
+    assert!(!system.contains("Dana logged lunch"), "{system}");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
 async fn a_plan_written_out_in_chat_is_saved_as_a_plan_draft(pool: PgPool) {
     let itinerary = "## Bogor day trip\n\n### Morning\n- 08:00 Arrive in Bogor\n- 08:30 Botanical Gardens\n- 11:00 Coffee nearby\n\n### Afternoon\n- 12:30 Lunch: Nasi Timbel\n- 14:00 Zoology Museum\n- 16:00 Market walk or a tea house\n\n### Evening\n- 18:00 Dinner on Suryakencana Street\n- 20:00 Head home";
     let provider = FakeLlmProvider::sequence(vec![text_response(itinerary, StopReason::EndTurn)]);
@@ -1750,8 +1769,40 @@ async fn an_agent_that_finishes_with_complete_task_still_learns_from_the_chat(po
 
     assert!(matches!(outcome, LoopOutcome::Completed { .. }), "{outcome:?}");
     learn_from_the_queue(&pool, &provider, &embedding_provider).await;
-    let stored: Vec<String> = sqlx::query_scalar("SELECT content FROM memory_items WHERE user_id = $1").bind(user_id).fetch_all(&pool).await.unwrap();
-    assert_eq!(stored, vec!["Works night shifts as a nurse".to_string()]);
+    let stored: Vec<(String, Option<String>)> =
+        sqlx::query_as("SELECT content, learned_by FROM memory_items WHERE user_id = $1").bind(user_id).fetch_all(&pool).await.unwrap();
+    assert_eq!(stored, vec![("Works night shifts as a nurse".to_string(), Some("test".to_string()))], "the memory says who learned it");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn agents_that_remember_read_the_profile_unless_it_is_turned_off(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    nomi_agent_core::memory_settings::set_profile(&pool, user_id, "Nurse on night shifts. Sister Rina.").await.unwrap();
+    let registry = AgentRegistry::new(vec![Box::new(RememberingTestAgent)]);
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.5; 1536]);
+    let heading = format!("{}\nNurse on night shifts. Sister Rina.", nomi_agent_core::prompts::MEMORY_PROFILE_HEADING);
+
+    let provider = FakeLlmProvider::sequence(vec![text_response("Hi!", StopReason::EndTurn)]);
+    let mut conn = pool.acquire().await.unwrap();
+    run_agent_turn(&mut conn, None, None, &provider, &embedding_provider, &registry, &RememberingTestAgent, session_id, agent_session_id, user_id, vec![], 100)
+        .await
+        .unwrap();
+    let system = provider.received_requests.lock().unwrap()[0].system.clone().unwrap();
+    assert!(system.contains(&heading), "{system}");
+
+    // Learning off too: nothing is queued from this turn.
+    sqlx::query("DELETE FROM memory_jobs").execute(&pool).await.unwrap();
+    let off = nomi_agent_core::memory_settings::MemorySettings { keep_profile: false, learn_from_chats: false, ..Default::default() };
+    nomi_agent_core::memory_settings::save(&pool, user_id, &off).await.unwrap();
+    let provider = FakeLlmProvider::sequence(vec![text_response("Hi again!", StopReason::EndTurn)]);
+    run_agent_turn(&mut conn, None, None, &provider, &embedding_provider, &registry, &RememberingTestAgent, session_id, agent_session_id, user_id, vec![], 100)
+        .await
+        .unwrap();
+    let system = provider.received_requests.lock().unwrap()[0].system.clone().unwrap();
+    assert!(!system.contains(nomi_agent_core::prompts::MEMORY_PROFILE_HEADING), "{system}");
+    let queued: i64 = sqlx::query_scalar("SELECT count(*) FROM memory_jobs").fetch_one(&pool).await.unwrap();
+    assert_eq!(queued, 0);
 }
 
 /// What the memory worker does with the exchanges turns queue.

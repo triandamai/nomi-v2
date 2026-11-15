@@ -17,6 +17,8 @@
 	import LimitsBlock from '$lib/components/billing/LimitsBlock.svelte';
 	import PaymentsBlock from '$lib/components/billing/PaymentsBlock.svelte';
 	import ReferralBlock from '$lib/components/billing/ReferralBlock.svelte';
+	import { enhance } from '$app/forms';
+	import { formatIdr, planOffer, usdToIdr } from '$lib/planCheckout';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form?: ActionData } = $props();
@@ -140,7 +142,12 @@
 				<dl class="tiles">
 					<div class="tile">
 						<dt>{m.billing_spend()}</dt>
-						<dd><Money value={formatUsd(usage.spend_usd)} /></dd>
+						<dd><Money value={m.billing_spend_idr({ idr: formatIdr(usdToIdr(usage.spend_usd, usage.usd_to_idr)), usd: formatUsd(usage.spend_usd) })} /></dd>
+						<span class="tile__note"><Money value={m.billing_paid({ idr: formatIdr(usage.paid_idr) })} /></span>
+					</div>
+					<div class="tile">
+						<dt>{m.billing_payment_method()}</dt>
+						<dd class="tile__text">{usage.payment_method ?? m.billing_no_payment_method()}</dd>
 					</div>
 					<div class="tile">
 						<dt>{m.billing_input()}</dt>
@@ -263,7 +270,24 @@
 				{#if data.plans}
 					<div class="plans__grid">
 						{#each data.plans.plans as plan (plan.id)}
-							<PlanCard {plan} current={plan.id === data.plans.current_plan_id} />
+							{@const offer = planOffer(plan, data.plans)}
+							<PlanCard {plan} current={plan.id === data.plans.current_plan_id}>
+								{#snippet actions()}
+									{#if offer === 'checkout'}
+										<Button variant="filled" size="m" href="/billing/checkout/{plan.id}">{m.billing_choose()}</Button>
+									{:else if offer === 'waitlist'}
+										<form method="POST" action="?/waitlist" use:enhance>
+											<input type="hidden" name="plan_id" value={plan.id} />
+											<Button variant="tonal" size="m" type="submit">{m.billing_plan_waitlist()}</Button>
+										</form>
+									{:else if offer === 'waitlisted'}
+										<span class="plan-chip">{m.billing_plan_waitlisted()}</span>
+									{/if}
+									{#if form && 'waitlistError' in form && form.planId === plan.id}
+										<p class="billing__error" role="alert">{m.billing_waitlist_failed()}</p>
+									{/if}
+								{/snippet}
+							</PlanCard>
 						{/each}
 					</div>
 					{#if data.plans.custom_quota}
@@ -331,6 +355,15 @@
 		grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
 		gap: 14px;
 		align-items: start;
+	}
+	.billing__error {
+		margin: 8px 0 0;
+		font-size: 0.875rem;
+		color: var(--md-sys-color-error);
+	}
+	.tile dd.tile__text {
+		font-size: 1rem;
+		overflow-wrap: anywhere;
 	}
 	.summary {
 		display: grid;

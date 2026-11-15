@@ -2,10 +2,10 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, tick, unmount } from 'svelte';
 
-const answers = vi.hoisted(() => ({ domain: null as unknown }));
+const answers = vi.hoisted(() => ({ domain: null as unknown, domains: [] as unknown }));
 vi.mock('$lib/projectApi', () => ({
 	ProjectApiError: class extends Error {},
-	projectApi: vi.fn(async (_id: string, path: string) => (path === 'domain' ? answers.domain : { available: true, suggestions: [] })),
+	projectApi: vi.fn(async (_id: string, path: string) => (path === 'domain' ? answers.domain : path === 'domains' ? answers.domains : { available: true, suggestions: [] })),
 }));
 
 import DomainPanel from './DomainPanel.svelte';
@@ -28,8 +28,9 @@ beforeAll(() => {
 
 let component: ReturnType<typeof mount> | null = null;
 
-async function render(domain: unknown) {
+async function render(domain: unknown, domains: unknown = []) {
 	answers.domain = domain;
+	answers.domains = domains;
 	const deploy = { projectId: 'p1', changes: 0, refresh: vi.fn() } as unknown as ProjectDeploy;
 	component = mount(DomainPanel, { target: document.body, props: { deploy } });
 	flushSync();
@@ -66,6 +67,26 @@ describe('DomainPanel', () => {
 		move?.click();
 		flushSync();
 		expect(document.querySelector('.name__suffix')?.textContent).toBe('.nomi.app');
+	});
+
+	it("lists the person's own domains with their records, and offers Make primary once all are found", async () => {
+		const records = (status: string) => [
+			{ type: 'CNAME', name: 'shop.example.com', value: 'todo.nomi.app', status: 'found' },
+			{ type: 'TXT', name: '_nomi-verify.shop.example.com', value: 'nomi-verify=abc', status },
+		];
+		const own = { hostname: 'shop.example.com', checked_at: null, primary: false, https: 'pending', created_at: '2026-11-15T08:00:00Z' };
+		await render(onOldDomain, [{ ...own, records: records('waiting'), verified_at: null }]);
+		const text = document.body.textContent ?? '';
+		expect(text).toContain('shop.example.com');
+		expect(text).toContain('_nomi-verify');
+		expect(text).toContain('1 of 2 records found');
+		expect(text).toContain('Check now');
+		expect(text).not.toContain('Make primary');
+		unmount(component!);
+		component = null;
+		await render(onOldDomain, [{ ...own, records: records('found'), verified_at: '2026-11-15T09:00:00Z' }]);
+		expect(document.body.textContent).toContain('Make primary');
+		expect(document.body.textContent).toContain('Add domain');
 	});
 
 	it('says nothing about moving once the address is under the base domain', async () => {

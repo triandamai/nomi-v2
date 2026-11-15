@@ -159,6 +159,8 @@ pub struct Table {
     pub name: String,
     /// Postgres' estimate; -1 before the table was first analyzed.
     pub rows_estimate: i64,
+    /// The primary key's columns, which pick out one row to edit; empty when it has none.
+    pub primary_key: Vec<String>,
 }
 
 /// `GET /api/projects/:id/database/tables?source=`
@@ -177,7 +179,10 @@ pub async fn tables(
 pub(crate) async fn list_tables(url: &str) -> Result<Vec<Table>, ApiError> {
     let mut conn = connect(url).await?;
     let tables: Vec<Table> = sqlx::query_as(
-        "SELECT n.nspname AS schema, c.relname AS name, c.reltuples::bigint AS rows_estimate \
+        "SELECT n.nspname AS schema, c.relname AS name, c.reltuples::bigint AS rows_estimate, \
+                COALESCE((SELECT array_agg(a.attname::text ORDER BY a.attnum) FROM pg_index i \
+                          JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey) \
+                          WHERE i.indrelid = c.oid AND i.indisprimary), '{}') AS primary_key \
          FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace \
          WHERE c.relkind IN ('r', 'p', 'v', 'm') AND n.nspname NOT IN ('pg_catalog', 'information_schema') \
            AND n.nspname NOT LIKE 'pg_toast%' \

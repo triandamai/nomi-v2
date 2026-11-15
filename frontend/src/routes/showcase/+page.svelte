@@ -6,9 +6,10 @@
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
 	import IconOpenInNew from '$lib/components/icons/IconOpenInNew.svelte';
-	import type { PageData } from './$types';
+	import { enhance } from '$app/forms';
+	import type { ActionData, PageData } from './$types';
 
-	let { data }: { data: PageData } = $props();
+	let { data, form }: { data: PageData; form: ActionData } = $props();
 
 	const host = (url: string) => {
 		try {
@@ -45,6 +46,7 @@
 			<p class="hero__lede">{m.showcase_lede()}</p>
 		</section>
 
+		{#if form?.remixError}<p class="error" role="alert">{form.remixError}</p>{/if}
 		{#if data.apps.length === 0}
 			<div class="empty">
 				<AgentShape agent="coding" size={72} />
@@ -54,7 +56,7 @@
 		{:else}
 			<ul class="grid">
 				{#each data.apps as app (app.id)}
-					<li>
+					<li class="item">
 						<a class="card" href={app.url} target="_blank" rel="noopener noreferrer" aria-label={m.showcase_open_app({ name: app.name })}>
 							<div class="card__screen" aria-hidden="true">
 								<iframe src={app.url} title="" tabindex="-1" loading="lazy" sandbox="allow-scripts" referrerpolicy="no-referrer"></iframe>
@@ -68,6 +70,12 @@
 								<span class="card__meta">{host(app.url)} · {app.team ? `${app.team} · ` : ''}{stack(app.stack)}</span>
 							</div>
 						</a>
+						{#if data.signedIn}
+							<form method="POST" action="?/remix" use:enhance class="remix">
+								<input type="hidden" name="app_id" value={app.id} />
+								<Button variant="tonal" size="s" type="submit">{m.showcase_remix()}</Button>
+							</form>
+						{/if}
 					</li>
 				{/each}
 			</ul>
@@ -150,6 +158,19 @@
 		margin: 0;
 		padding: 0;
 		list-style: none;
+	}
+	.item {
+		position: relative;
+	}
+	/* Over the card's corner, outside its link, so it doesn't open the app. */
+	.remix {
+		position: absolute;
+		top: 12px;
+		right: 12px;
+	}
+	.error {
+		margin: 0;
+		color: var(--md-sys-color-error);
 	}
 	.card {
 		display: flex;

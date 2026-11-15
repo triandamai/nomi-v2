@@ -13,6 +13,7 @@ mod user_message;
 
 pub use types::*;
 pub use config::{build_provider, ModelConfig, ProviderKind};
+pub use user_message::KeyHealth;
 
 use async_trait::async_trait;
 use futures_util::StreamExt;

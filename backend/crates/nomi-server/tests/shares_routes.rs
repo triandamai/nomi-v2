@@ -210,3 +210,169 @@ async fn the_person_lists_their_live_links_newest_first(pool: PgPool) {
     assert_eq!(body["shares"][1]["session_id"], session_id.as_str());
     assert!(body["shares"][0]["expires_at"].is_string());
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_link_names_its_sharer_and_counts_views_for_its_owner(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let token = register_and_login(router.clone(), "maya.putri@example.com").await;
+    let reader = register_and_login(router.clone(), "reader-views@example.com").await;
+    sqlx::query(
+        "INSERT INTO user_profiles (user_id, display_name) SELECT user_id, 'Maya Putri' FROM web_credentials WHERE email = 'maya.putri@example.com' \
+         ON CONFLICT (user_id) DO UPDATE SET display_name = EXCLUDED.display_name",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let session_id = start_chat(router.clone(), &token).await;
+    let (_, share) = json_request(
+        router.clone(),
+        "POST",
+        &format!("/api/sessions/{session_id}/shares"),
+        json!({ "scope": "chat" }),
+        Some(&token),
+    )
+    .await;
+    let link = format!("/api/shared/{}", share["token"].as_str().unwrap());
+
+    // Two others open it: one signed out, one signed in. Masked, the sharer reads as initials.
+    let (_, shared) = json_request(router.clone(), "GET", &link, Value::Null, None).await;
+    assert_eq!(shared["shared_by"], "M. P.");
+    assert!(shared["shared_at"].is_string());
+    assert!(
+        shared.get("own").is_none()
+            && shared.get("views").is_none()
+            && shared.get("share_id").is_none()
+    );
+    let (_, shared) = json_request(router.clone(), "GET", &link, Value::Null, Some(&reader)).await;
+    assert!(shared.get("own").is_none());
+
+    // The owner sees their banner's facts; their own opens don't count.
+    let (_, own) = json_request(router.clone(), "GET", &link, Value::Null, Some(&token)).await;
+    assert_eq!(own["own"], true);
+    assert_eq!(own["share_id"], share["id"]);
+    assert_eq!(own["session_id"], session_id.as_str());
+    assert_eq!(own["views"], 2);
+    let (_, own) = json_request(router.clone(), "GET", &link, Value::Null, Some(&token)).await;
+    assert_eq!(own["views"], 2);
+
+    // Unmasked, the full name shows.
+    let path = format!(
+        "/api/sessions/{session_id}/shares/{}",
+        share["id"].as_str().unwrap()
+    );
+    json_request(
+        router.clone(),
+        "PUT",
+        &path,
+        json!({ "scope": "chat", "mask": false }),
+        Some(&token),
+    )
+    .await;
+    let (_, shared) = json_request(router, "GET", &link, Value::Null, None).await;
+    assert_eq!(shared["shared_by"], "Maya Putri");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn anyone_may_report_a_shared_page_a_few_times_an_hour(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let token = register_and_login(router.clone(), "reported@example.com").await;
+    let session_id = start_chat(router.clone(), &token).await;
+    let (_, share) = json_request(
+        router.clone(),
+        "POST",
+        &format!("/api/sessions/{session_id}/shares"),
+        json!({ "scope": "chat" }),
+        Some(&token),
+    )
+    .await;
+    let report = format!("/api/shared/{}/report", share["token"].as_str().unwrap());
+
+    let (status, _) = json_request(
+        router.clone(),
+        "POST",
+        &report,
+        json!({ "reason": "boring" }),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _) = json_request(
+        router.clone(),
+        "POST",
+        "/api/shared/nope/report",
+        json!({ "reason": "spam" }),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _) = json_request(
+        router.clone(),
+        "POST",
+        &report,
+        json!({ "reason": "spam", "note": "  ads everywhere  " }),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    for _ in 1..5 {
+        let (status, _) = json_request(
+            router.clone(),
+            "POST",
+            &report,
+            json!({ "reason": "other" }),
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+    }
+    let (status, _) = json_request(
+        router.clone(),
+        "POST",
+        &report,
+        json!({ "reason": "other" }),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    // A signed-in viewer is counted on their own.
+    let (status, _) = json_request(
+        router.clone(),
+        "POST",
+        &report,
+        json!({ "reason": "abuse" }),
+        Some(&token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    // Admins see them; others don't.
+    let (status, _) = json_request(
+        router.clone(),
+        "GET",
+        "/api/admin/shared-reports",
+        Value::Null,
+        Some(&token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    register_and_login(router.clone(), "report-admin@example.com").await;
+    sqlx::query("UPDATE users SET is_platform_admin = true WHERE id = (SELECT user_id FROM web_credentials WHERE email = 'report-admin@example.com')")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let admin = register_and_login(router.clone(), "report-admin@example.com").await;
+    let (status, body) = json_request(
+        router,
+        "GET",
+        "/api/admin/shared-reports",
+        Value::Null,
+        Some(&admin),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let reports = body["reports"].as_array().unwrap();
+    assert_eq!(reports.len(), 6);
+    assert_eq!(reports[5]["note"], "ads everywhere");
+    assert_eq!(reports[0]["reason"], "abuse");
+    assert!(reports[0].get("reporter").is_none());
+}

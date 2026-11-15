@@ -10,6 +10,19 @@ export interface ModelOption {
 	free: boolean;
 	/** Shown in the chat's model picker. */
 	enabled: boolean;
+	/** Tokens it reads; null when nothing says. */
+	context?: number | null;
+	/** What it's good at. */
+	capabilities?: ModelCapability[];
+	/** One to start with. */
+	recommended?: boolean;
+}
+
+export type ModelCapability = 'fast' | 'reasoning' | 'vision' | 'code';
+
+/** A context window, short: "200K", "1M", "1.05M". */
+export function formatContext(tokens: number): string {
+	return new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 2 }).format(tokens);
 }
 
 export interface ModelGroup {

@@ -510,6 +510,9 @@ pub async fn get_message(
     if let Err(e) = super::message_steps::attach_steps(&state.pool, session_id, &mut items).await {
         tracing::warn!(error = %e, "failed to load reply steps");
     }
+    if let Err(e) = attach_authors(&state.pool, claims.sub, &mut items).await {
+        tracing::warn!(error = %e, "failed to name message authors");
+    }
     if let Err(e) = attach_reminder_states(&state.pool, &mut items).await {
         tracing::warn!(error = %e, "failed to load reminder states");
     }

@@ -47,6 +47,10 @@
 			label: 'Base API URL (optional)',
 			hint: 'Default: https://api.xendit.co. Useful when routing through a mock server or proxy.',
 		},
+		usd_to_idr: {
+			label: 'Rupiah per dollar (optional)',
+			hint: 'Shows spend in rupiah on Billing. Default: 16000.',
+		},
 	};
 
 	let fields = $state<Field[] | null>(null);

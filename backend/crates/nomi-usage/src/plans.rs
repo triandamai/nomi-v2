@@ -39,6 +39,8 @@ pub struct PlanRow {
     pub currency: String,
     /// A cheaper monthly price, while `promo_ends_at` is in the future (or unset).
     pub promo_price_amount: Option<i64>,
+    /// What a month on it costs, in rupiah, when it can be bought; None: people join its waitlist.
+    pub price_idr: Option<i64>,
 }
 
 impl PlanRow {
@@ -61,7 +63,7 @@ const CURRENCY_CODE_LEN: usize = 3;
 const PLAN_COLUMNS: &str = "id, slug, name, description, monthly_tokens, price_label, features, card_tone, promo_label, \
      promo_price_label, promo_ends_at, is_default, is_active, sort_order, max_projects, max_orgs, max_org_members, \
      max_custom_crew, max_storage_mb, custom_domain, sandbox_size, all_models, \
-     price_amount, currency, promo_price_amount, \
+     price_amount, currency, promo_price_amount, price_idr, \
      ARRAY(SELECT model_id FROM plan_models WHERE plan_id = plans.id ORDER BY model_id) AS model_ids";
 
 /// What an admin fills in for a plan.
@@ -109,6 +111,9 @@ pub struct PlanInput {
     pub currency: String,
     #[serde(default)]
     pub promo_price_amount: Option<i64>,
+    /// None (or left out): not sold yet.
+    #[serde(default)]
+    pub price_idr: Option<i64>,
 }
 
 fn default_currency() -> String {
@@ -166,6 +171,9 @@ impl PlanInput {
         }
         self.model_ids.sort();
         self.model_ids.dedup();
+        if self.price_idr.is_some_and(|p| p <= 0) {
+            return Err("the price must be more than zero");
+        }
         Ok(self)
     }
 }
@@ -201,8 +209,8 @@ pub async fn create_plan(pool: &PgPool, input: &PlanInput) -> Result<PlanRow, sq
         "INSERT INTO plans (slug, name, description, monthly_tokens, price_label, features, card_tone, promo_label, \
                             promo_price_label, promo_ends_at, is_active, sort_order, max_projects, max_orgs, max_org_members, \
                             max_custom_crew, max_storage_mb, custom_domain, sandbox_size, all_models, \
-                            price_amount, currency, promo_price_amount) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23) RETURNING id",
+                            price_amount, currency, promo_price_amount, price_idr) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24) RETURNING id",
     )
     .bind(&input.slug)
     .bind(&input.name)
@@ -227,6 +235,7 @@ pub async fn create_plan(pool: &PgPool, input: &PlanInput) -> Result<PlanRow, sq
     .bind(input.price_amount)
     .bind(&input.currency)
     .bind(input.promo_price_amount)
+    .bind(input.price_idr)
     .fetch_one(&mut *tx)
     .await?;
     save_models(&mut tx, id, &input.model_ids).await?;
@@ -241,7 +250,7 @@ pub async fn update_plan(pool: &PgPool, id: Uuid, input: &PlanInput) -> Result<O
              card_tone = $8, promo_label = $9, promo_price_label = $10, promo_ends_at = $11, \
              is_active = $12 OR is_default, sort_order = $13, max_projects = $14, max_orgs = $15, max_org_members = $16, \
              max_custom_crew = $17, max_storage_mb = $18, custom_domain = $19, sandbox_size = $20, all_models = $21, \
-             price_amount = $22, currency = $23, promo_price_amount = $24, updated_at = now() \
+             price_amount = $22, currency = $23, promo_price_amount = $24, price_idr = $25, updated_at = now() \
          WHERE id = $1",
     )
     .bind(id)
@@ -268,6 +277,7 @@ pub async fn update_plan(pool: &PgPool, id: Uuid, input: &PlanInput) -> Result<O
     .bind(input.price_amount)
     .bind(&input.currency)
     .bind(input.promo_price_amount)
+    .bind(input.price_idr)
     .execute(&mut *tx)
     .await?
     .rows_affected();
@@ -516,6 +526,7 @@ mod tests {
             price_amount: 0,
             currency: "idr ".into(),
             promo_price_amount: None,
+            price_idr: None,
         }
     }
 
@@ -537,5 +548,6 @@ mod tests {
         assert!(PlanInput { currency: "RUPIAH".into(), ..input() }.validate().is_err());
         assert!(PlanInput { price_amount: -1, ..input() }.validate().is_err());
         assert!(PlanInput { promo_price_amount: Some(-1), ..input() }.validate().is_err());
+        assert!(PlanInput { price_idr: Some(0), ..input() }.validate().is_err());
     }
 }

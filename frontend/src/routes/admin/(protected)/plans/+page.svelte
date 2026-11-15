@@ -39,6 +39,7 @@
 	// '' is the platform default.
 	let sandboxValue = $state('');
 	let modelIds = $state<string[]>([]);
+	let priceIdrText = $state('');
 
 	function blank(): Plan {
 		return {
@@ -68,6 +69,7 @@
 			sandbox_size: null,
 			all_models: true,
 			model_ids: [],
+			price_idr: null,
 		};
 	}
 
@@ -81,6 +83,7 @@
 		promoPriceText = '';
 		orderText = String(draft.sort_order);
 		loadLimits(draft);
+		priceIdrText = '';
 		slugTouched = false;
 		sheetOpen = true;
 	}
@@ -95,6 +98,7 @@
 		promoPriceText = plan.promo_price_amount === null ? '' : String(plan.promo_price_amount);
 		orderText = String(plan.sort_order);
 		loadLimits(plan);
+		priceIdrText = plan.price_idr ? String(plan.price_idr) : '';
 		sheetOpen = true;
 	}
 
@@ -226,6 +230,7 @@
 				<TextField id="plan-price-amount" name="price_amount" type="number" min="0" step="1" label={m.plans_admin_price_amount()} supportingText={m.plans_admin_price_amount_hint()} bind:value={priceText} />
 				<TextField id="plan-currency" name="currency" label={m.plans_admin_currency()} value={draft.currency} readonly />
 			</div>
+			<TextField id="plan-price-idr" name="price_idr" type="number" min="1" label={m.plans_admin_price_idr()} supportingText={m.plans_admin_price_idr_hint()} bind:value={priceIdrText} />
 			<label class="field">
 				<span class="field__label">{m.plans_admin_features()}</span>
 				<textarea name="features" rows="4" bind:value={featuresText} placeholder={m.plans_admin_features_hint()}></textarea>

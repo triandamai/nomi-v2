@@ -35,7 +35,13 @@ describe('projects: load', () => {
 			baseDomain: 'apps.nomi.build',
 			sessions: [{ id: 's1' }],
 			members: [{ user_id: 'u1', name: 'Ana', role: 'owner' }],
+			showcase: [],
 		});
+	});
+
+	it('lists the apps on show to remix', async () => {
+		backend((path) => (path === '/api/showcase' ? json([{ id: 'a1', name: 'Kopi' }]) : undefined));
+		expect(await load(event())).toMatchObject({ showcase: [{ id: 'a1', name: 'Kopi' }] });
 	});
 
 	it('still loads without chats or members, and fails without projects', async () => {
@@ -43,6 +49,23 @@ describe('projects: load', () => {
 		expect(await load(event())).toMatchObject({ sessions: [], members: [] });
 		backend((path) => (path === '/api/projects' ? json({}, 500) : undefined));
 		expect(await settle(() => load(event()))).toMatchObject({ thrown: { status: 500 } });
+	});
+});
+
+describe('projects: rename and duplicate', () => {
+	it('renames a project with its description', async () => {
+		expect(status(await actions.renameProject(event({ form: { project_id: 'p1', name: ' ' } })))).toBe(400);
+		expect(await actions.renameProject(event({ form: { project_id: 'p1', name: ' Kopi ', description: 'orders' } }))).toEqual({ renamed: 'p1' });
+		expect(calls().at(-1)).toMatchObject({ path: '/api/projects/p1', method: 'PATCH', body: { name: 'Kopi', description: 'orders' } });
+		backend(() => json({}, 403));
+		expect(status(await actions.renameProject(event({ form: { project_id: 'p1', name: 'Kopi' } })))).toBe(403);
+	});
+
+	it('duplicates a project and opens the copy', async () => {
+		backend((path) => (path === '/api/projects/p1/duplicate' ? json({ session_id: 's9', project_id: 'p9' }, 201) : undefined));
+		expect(await settle(() => actions.duplicateProject(event({ form: { project_id: 'p1' } })))).toMatchObject({ thrown: { status: 303, location: '/projects/session/s9' } });
+		backend(() => json({}, 409));
+		expect(await actions.duplicateProject(event({ form: { project_id: 'p1' } }))).toMatchObject({ status: 409 });
 	});
 });
 

@@ -48,11 +48,20 @@ impl App {
     }
 
     pub fn with_state(pool: PgPool, state: AppState) -> Self {
-        App { pool, router: build_router(state) }
+        App {
+            pool,
+            router: build_router(state),
+        }
     }
 
     /// Sends a request; the body comes back as JSON, or as a JSON string when it isn't JSON.
-    pub async fn call(&self, method: &str, uri: &str, token: Option<&str>, body: Option<Value>) -> (StatusCode, Value) {
+    pub async fn call(
+        &self,
+        method: &str,
+        uri: &str,
+        token: Option<&str>,
+        body: Option<Value>,
+    ) -> (StatusCode, Value) {
         let mut builder = Request::builder().method(method).uri(uri);
         if let Some(token) = token {
             builder = builder.header("authorization", format!("Bearer {token}"));
@@ -64,22 +73,37 @@ impl App {
             }
             None => Body::empty(),
         };
-        let response = self.router.clone().oneshot(builder.body(body).unwrap()).await.unwrap();
+        let response = self
+            .router
+            .clone()
+            .oneshot(builder.body(body).unwrap())
+            .await
+            .unwrap();
         let status = response.status();
         let bytes = response.into_body().collect().await.unwrap().to_bytes();
         let value = if bytes.is_empty() {
             Value::Null
         } else {
-            serde_json::from_slice(&bytes).unwrap_or_else(|_| Value::String(String::from_utf8_lossy(&bytes).into_owned()))
+            serde_json::from_slice(&bytes)
+                .unwrap_or_else(|_| Value::String(String::from_utf8_lossy(&bytes).into_owned()))
         };
         (status, value)
     }
 
-    pub async fn raw(&self, request: Request<Body>) -> (StatusCode, axum::http::HeaderMap, Vec<u8>) {
+    pub async fn raw(
+        &self,
+        request: Request<Body>,
+    ) -> (StatusCode, axum::http::HeaderMap, Vec<u8>) {
         let response = self.router.clone().oneshot(request).await.unwrap();
         let status = response.status();
         let headers = response.headers().clone();
-        let bytes = response.into_body().collect().await.unwrap().to_bytes().to_vec();
+        let bytes = response
+            .into_body()
+            .collect()
+            .await
+            .unwrap()
+            .to_bytes()
+            .to_vec();
         (status, headers, bytes)
     }
 
@@ -87,7 +111,13 @@ impl App {
         self.call("GET", uri, Some(&who.token), None).await
     }
 
-    pub async fn send(&self, method: &str, uri: &str, who: &Person, body: Value) -> (StatusCode, Value) {
+    pub async fn send(
+        &self,
+        method: &str,
+        uri: &str,
+        who: &Person,
+        body: Value,
+    ) -> (StatusCode, Value) {
         self.call(method, uri, Some(&who.token), Some(body)).await
     }
 
@@ -101,10 +131,25 @@ impl App {
     }
 
     pub async fn login(&self, email: &str) -> Person {
-        let (status, body) = self.call("POST", "/api/auth/login", None, Some(json!({ "email": email, "password": "correct-password" }))).await;
+        let (status, body) = self
+            .call(
+                "POST",
+                "/api/auth/login",
+                None,
+                Some(json!({ "email": email, "password": "correct-password" })),
+            )
+            .await;
         assert!(status.is_success(), "login {email}: {status} {body}");
-        let id = sqlx::query_scalar("SELECT user_id FROM web_credentials WHERE email = $1").bind(email).fetch_one(&self.pool).await.unwrap();
-        Person { id, token: body["access_token"].as_str().unwrap().to_string(), email: email.to_string() }
+        let id = sqlx::query_scalar("SELECT user_id FROM web_credentials WHERE email = $1")
+            .bind(email)
+            .fetch_one(&self.pool)
+            .await
+            .unwrap();
+        Person {
+            id,
+            token: body["access_token"].as_str().unwrap().to_string(),
+            email: email.to_string(),
+        }
     }
 
     /// A platform admin (every admin area at manage), signed in again so the token says so.
@@ -120,13 +165,20 @@ impl App {
 
     /// A project of `owner`'s with its own chat, in the owner's organization.
     pub async fn project(&self, owner: &Person, name: &str) -> (Uuid, Uuid) {
-        let org: Uuid = sqlx::query_scalar("SELECT org_id FROM memberships WHERE user_id = $1 LIMIT 1").bind(owner.id).fetch_one(&self.pool).await.unwrap();
-        let session: Uuid = sqlx::query_scalar("INSERT INTO sessions (org_id, channel, chat_id) VALUES ($1, 'web', $2) RETURNING id")
-            .bind(org)
-            .bind(Uuid::new_v4().to_string())
-            .fetch_one(&self.pool)
-            .await
-            .unwrap();
+        let org: Uuid =
+            sqlx::query_scalar("SELECT org_id FROM memberships WHERE user_id = $1 LIMIT 1")
+                .bind(owner.id)
+                .fetch_one(&self.pool)
+                .await
+                .unwrap();
+        let session: Uuid = sqlx::query_scalar(
+            "INSERT INTO sessions (org_id, channel, chat_id) VALUES ($1, 'web', $2) RETURNING id",
+        )
+        .bind(org)
+        .bind(Uuid::new_v4().to_string())
+        .fetch_one(&self.pool)
+        .await
+        .unwrap();
         let project: Uuid = sqlx::query_scalar("INSERT INTO projects (user_id, session_id, name, org_id) VALUES ($1, $2, $3, $4) RETURNING id")
             .bind(owner.id)
             .bind(session)

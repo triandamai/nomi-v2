@@ -126,6 +126,8 @@ async fn a_person_connects_a_provider_and_its_key_never_comes_back(pool: PgPool)
     let (_, list, text) = request(router.clone(), "GET", "/api/llm/connections", Value::Null, Some(&ana)).await;
     assert_eq!(list["connections"].as_array().unwrap().len(), 1);
     assert!(!text.contains("sk-ana-1234"));
+    // No call has been made with it yet.
+    assert_eq!((&list["connections"][0]["status"], &list["connections"][0]["checked_at"]), (&json!("ok"), &Value::Null));
     let (_, theirs, _) = request(router.clone(), "GET", "/api/llm/connections", Value::Null, Some(&budi)).await;
     assert!(theirs["connections"].as_array().unwrap().is_empty());
 
@@ -191,7 +193,7 @@ async fn a_custom_endpoint_connects_with_its_own_url_and_headers(pool: PgPool) {
     let id = body["id"].as_str().unwrap();
     let (status, models, _) = request(router, "POST", &format!("/api/llm/connections/{id}/models"), Value::Null, Some(&ana)).await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(models["models"], json!([{ "id": "llama-4", "label": null }]));
+    assert_eq!(models["models"], json!([{ "id": "llama-4", "label": null, "context": null, "capabilities": [], "recommended": false }]));
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -281,4 +283,60 @@ async fn an_admin_edits_a_model_from_a_provider_without_a_key(pool: PgPool) {
     assert_eq!((updated["connection_id"].as_str(), updated["provider"].as_str()), (Some(id), Some("openai")));
     assert_eq!(updated["output_usd_per_mtok"], 2.0);
     assert_eq!(updated["api_key_masked"], "");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_providers_models_say_what_they_read_and_are_good_at(pool: PgPool) {
+    let provider = openai_like("sk-ana").await;
+    let router = build_router(test_state(pool));
+    let ana = sign_up(router.clone(), "ana@example.com").await;
+    let connect = json!({ "provider_id": "openai", "api_key": "sk-ana", "base_url": provider.uri() });
+    let (_, connection, _) = request(router.clone(), "POST", "/api/llm/connections", connect, Some(&ana)).await;
+    let id = connection["id"].as_str().unwrap();
+
+    let (status, models, _) = request(router, "POST", &format!("/api/llm/connections/{id}/models"), Value::Null, Some(&ana)).await;
+    assert_eq!(status, StatusCode::OK);
+    let gpt = &models["models"][0];
+    assert_eq!(gpt["id"], "gpt-5");
+    assert_eq!(gpt["context"].as_u64(), nomi_llm::catalog::model("openai", "gpt-5").and_then(|m| m.context));
+    assert!(gpt["capabilities"].as_array().unwrap().contains(&json!("reasoning")));
+    assert_eq!(gpt["recommended"], false);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_key_whose_balance_ran_out_says_so_on_its_connection(pool: PgPool) {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "data": [{ "id": "gpt-5" }] })))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(ResponseTemplate::new(429).set_body_json(json!({ "error": { "code": "insufficient_quota", "message": "You exceeded your current quota" } })))
+        .mount(&server)
+        .await;
+    let router = build_router(test_state(pool.clone()));
+    let ana = sign_up(router.clone(), "ana@example.com").await;
+    let connect = json!({ "provider_id": "openai", "api_key": "sk-broke", "base_url": server.uri() });
+    let (_, connection, _) = request(router.clone(), "POST", "/api/llm/connections", connect, Some(&ana)).await;
+    let id: uuid::Uuid = connection["id"].as_str().unwrap().parse().unwrap();
+    let user: uuid::Uuid = sqlx::query_scalar("SELECT user_id FROM web_credentials WHERE email = 'ana@example.com'").fetch_one(&pool).await.unwrap();
+    // Picked while it still had a balance (picking checks the model with a call).
+    assert!(nomi_settings::llm_models::set_user_llm_selection_connection(&pool, user, id, "gpt-5", "GPT-5").await.unwrap());
+    let provider = nomi_server::bootstrap::build_llm_provider_for_user(&pool, user, &nomi_test_support::TEST_SETTINGS_KEY, reqwest::Client::new()).await;
+    let request_body = nomi_llm::LlmRequest {
+        system: None,
+        messages: vec![nomi_llm::LlmMessage { role: nomi_llm::LlmRole::User, content: vec![nomi_llm::ContentBlock::Text { text: "hi".into() }] }],
+        tools: vec![],
+        max_tokens: 10,
+        enable_reasoning: false,
+        reasoning_effort: Default::default(),
+    };
+    assert!(nomi_llm::complete(provider.as_ref(), request_body).await.is_err());
+
+    let (_, list, _) = request(router, "GET", "/api/llm/connections", Value::Null, Some(&ana)).await;
+    let row = &list["connections"][0];
+    assert_eq!(row["status"], "balance_empty");
+    assert!(row["checked_at"].is_string());
 }

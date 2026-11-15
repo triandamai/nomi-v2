@@ -64,6 +64,10 @@ pub struct ModelOption {
     enabled: bool,
     /// One of Nomi's models that the person's plan doesn't include: shown, but not pickable.
     locked: bool,
+    /// How much it reads (`context`, tokens), what it's good at (`capabilities`: fast,
+    /// reasoning, vision, code) and whether it's one to start with (`recommended`).
+    #[serde(flatten)]
+    traits: catalog::ModelTraits,
 }
 
 #[derive(Serialize)]
@@ -205,6 +209,15 @@ pub async fn list_options(State(state): State<AppState>, AuthClaims(claims): Aut
     for model in models.iter().filter(|m| m.enabled) {
         let (provider_id, provider_label) = admin_provider(model, &shared);
         let key = ModelKey::Admin(model.id).to_string();
+        let mut traits = catalog::traits(&provider_id, &model.model_id);
+        // What an admin listed it reads wins over the catalog's guess.
+        if let Some(inputs) = &model.media_inputs {
+            traits.capabilities.retain(|c| *c != catalog::Capability::Vision);
+            if inputs.iter().any(|i| i == "image") {
+                traits.capabilities.push(catalog::Capability::Vision);
+                traits.capabilities.sort();
+            }
+        }
         let option = ModelOption {
             enabled: visibility.get(&key).copied().unwrap_or(true),
             key,
@@ -212,6 +225,7 @@ pub async fn list_options(State(state): State<AppState>, AuthClaims(claims): Aut
             model_id: model.model_id.clone(),
             free: false,
             locked: locked_by(plan.as_ref(), model.id),
+            traits,
         };
         let id = format!("nomi:{provider_label}");
         match groups.iter_mut().find(|g| g.id == id) {
@@ -234,8 +248,9 @@ pub async fn list_options(State(state): State<AppState>, AuthClaims(claims): Aut
     for connection in own {
         let option = |model_id: &str, label: String, free: bool| {
             let key = ModelKey::Connection { connection_id: connection.id, model_id: model_id.to_string() }.to_string();
+            let traits = catalog::traits(&connection.provider_id, model_id);
             // Models on the person's own key are never locked by the plan.
-            ModelOption { enabled: visibility.get(&key).copied().unwrap_or(false), key, label, model_id: model_id.to_string(), free, locked: false }
+            ModelOption { enabled: visibility.get(&key).copied().unwrap_or(false), key, label, model_id: model_id.to_string(), free, locked: false, traits }
         };
         let (models, error) = match catalog::provider(&connection.provider_id).filter(|_| connection.auth_type != "custom_endpoint") {
             Some(provider) => (

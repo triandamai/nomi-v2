@@ -291,7 +291,7 @@ impl SubAgent for WorkspaceAgent {
                 Ok(ToolOutcome { display_text: value.to_string(), block })
             }
             Err(GoogleError::Unauthorized) => {
-                let _ = sqlx::query("DELETE FROM workspace_connections WHERE user_id = $1").bind(user_id).execute(&mut **conn).await;
+                connection::mark_expired(conn, user_id).await;
                 Ok(connect_card("not_connected", service, "Google rejected the connection (access was revoked). A card to reconnect is shown to the user.".to_string()))
             }
             Err(GoogleError::Failed(message)) => Err(message),

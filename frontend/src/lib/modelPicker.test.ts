@@ -3,6 +3,7 @@ import {
 	applyChanges,
 	choiceFor,
 	flattenModels,
+	formatContext,
 	groupChanges,
 	groupToggle,
 	parseModelKey,
@@ -143,5 +144,13 @@ describe('choiceFor', () => {
 			chat_only: true,
 		});
 		expect(choiceFor([nomi], 'admin:nope')).toBeNull();
+	});
+});
+
+describe('formatContext', () => {
+	it('shortens a context window', () => {
+		expect(formatContext(200_000)).toBe('200K');
+		expect(formatContext(1_048_576)).toBe('1.05M');
+		expect(formatContext(8192)).toBe('8.19K');
 	});
 });

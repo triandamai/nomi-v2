@@ -1,14 +1,42 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import Button from '$lib/components/m3/Button.svelte';
+	import TextField from '$lib/components/m3/TextField.svelte';
+	import { enhance } from '$app/forms';
 	import LanguagePicker from '$lib/components/LanguagePicker.svelte';
 	import DeviceList from './DeviceList.svelte';
+	import ShareList from './ShareList.svelte';
 	import { m } from '$lib/paraglide/messages';
+	import { getLocale } from '$lib/paraglide/runtime';
+	import Switch from '$lib/components/m3/Switch.svelte';
+	import Checkbox from '$lib/components/m3/Checkbox.svelte';
+	import { FORMAT_REGIONS, formatSample } from '$lib/accountSettings';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
 	const methods = $derived(data.methods);
+
+	// Settings › General: kept as they're changed (the form saves on each change).
+	let formats = $state('');
+	let defaultAgent = $state('');
+	let enterSends = $state(true);
+	let showReplyTokens = $state(false);
+	$effect(() => {
+		formats = data.preferences?.formats ?? '';
+		defaultAgent = data.preferences?.default_agent ?? '';
+		enterSends = data.preferences?.enter_sends ?? true;
+		showReplyTokens = data.preferences?.show_reply_tokens ?? false;
+	});
+	let generalForm: HTMLFormElement | undefined = $state();
+	const saveGeneral = () => queueMicrotask(() => generalForm?.requestSubmit());
+	const crew = $derived((data.crew ?? []).filter((member) => member.agent_type !== 'supervisor'));
+
+	let changingEmail = $state(false);
+	const emailChallenge = $derived(form && 'emailChallenge' in form ? (form.emailChallenge as string | undefined) : undefined);
+	let deleting = $state(false);
+	let deleteConfirmed = $state(false);
+	const deleteChallenge = $derived(form && 'deleteChallenge' in form ? (form.deleteChallenge as string | undefined) : undefined);
 	const googleError = page.url.searchParams.get('google_error');
 	const justLinked = page.url.searchParams.get('google') === 'linked';
 </script>
@@ -17,14 +45,91 @@
 	<div class="account__inner">
 		<h1 class="md-display-small account__title">{m.account_title()}</h1>
 
-		<section class="section">
-			<h2 class="section__label">{m.account_email()}</h2>
-			<p class="md-body-large account__email">{data.profile?.email ?? '—'}</p>
+		<section class="section" aria-labelledby="email-title">
+			<h2 id="email-title" class="section__label">{m.account_email()}</h2>
+			<div class="email-row">
+				<p class="md-body-large account__email">{form && 'emailChanged' in form && form.emailChanged ? form.emailChanged : (data.profile?.email ?? '—')}</p>
+				{#if !changingEmail && !emailChallenge}
+					<Button variant="text" size="s" onclick={() => (changingEmail = true)}>{m.account_email_change()}</Button>
+				{/if}
+			</div>
+			{#if form && 'emailChanged' in form && form.emailChanged}
+				<p class="note note--ok" role="status">{m.account_email_changed({ email: form.emailChanged })}</p>
+			{/if}
+			{#if form && 'emailError' in form && form.emailError}
+				<p class="note note--error" role="alert">{form.emailError}</p>
+			{/if}
+			{#if emailChallenge}
+				<form method="POST" action="?/emailVerify" use:enhance class="password">
+					<p class="hint">{m.account_email_code_sent({ email: form && 'emailSentTo' in form && form.emailSentTo ? String(form.emailSentTo) : '' })}</p>
+					<input type="hidden" name="challenge_id" value={emailChallenge} />
+					<TextField id="email_code" name="code" label={m.account_code()} autocomplete="one-time-code" inputmode="numeric" required />
+					<div><Button type="submit" variant="tonal" size="s">{m.account_email_confirm()}</Button></div>
+				</form>
+			{:else if changingEmail}
+				<form method="POST" action="?/emailStart" use:enhance class="password">
+					<TextField id="new_email" name="email" type="email" label={m.account_email_new()} autocomplete="email" required />
+					<div class="actions">
+						<Button type="submit" variant="tonal" size="s">{m.account_email_send_code()}</Button>
+						<Button variant="text" size="s" onclick={() => (changingEmail = false)}>{m.account_cancel()}</Button>
+					</div>
+				</form>
+			{/if}
 		</section>
 
 		<section class="section" aria-labelledby="language-title">
 			<h2 id="language-title" class="section__label">{m.account_language()}</h2>
 			<LanguagePicker />
+		</section>
+
+		<section class="section" aria-labelledby="general-title">
+			<h2 id="general-title" class="section__label">{m.account_general()}</h2>
+			{#if form && 'generalError' in form && form.generalError}
+				<p class="note note--error" role="alert">{form.generalError}</p>
+			{/if}
+			<form method="POST" action="?/general" bind:this={generalForm} use:enhance={() => async ({ update }) => update({ reset: false })}>
+				<input type="hidden" name="enter_sends" value={String(enterSends)} />
+				<input type="hidden" name="show_reply_tokens" value={String(showReplyTokens)} />
+				<ul class="rows">
+					<li class="row">
+						<label class="row__text" for="formats">
+							<span class="row__headline">{m.account_formats()}</span>
+							<span class="row__supporting">{formatSample(formats, getLocale())}</span>
+						</label>
+						<select id="formats" name="formats" class="picker" bind:value={formats} onchange={saveGeneral}>
+							{#each FORMAT_REGIONS as region (region)}
+								<option value={region}>{region || m.account_formats_language()}</option>
+							{/each}
+						</select>
+					</li>
+					<li class="row">
+						<label class="row__text" for="default_agent">
+							<span class="row__headline">{m.account_default_agent()}</span>
+							<span class="row__supporting">{m.account_default_agent_hint()}</span>
+						</label>
+						<select id="default_agent" name="default_agent" class="picker" bind:value={defaultAgent} onchange={saveGeneral}>
+							<option value="">Nomi</option>
+							{#each crew.filter((member) => member.agent_type !== 'chitchat') as member (member.agent_type)}
+								<option value={member.agent_type}>{member.name}</option>
+							{/each}
+						</select>
+					</li>
+					<li class="row">
+						<span class="row__text">
+							<span class="row__headline">{m.account_enter_sends()}</span>
+							<span class="row__supporting">{enterSends ? m.account_enter_sends_on() : m.account_enter_sends_off()}</span>
+						</span>
+						<Switch bind:checked={enterSends} aria-label={m.account_enter_sends()} onchange={saveGeneral} />
+					</li>
+					<li class="row">
+						<span class="row__text">
+							<span class="row__headline">{m.account_reply_tokens()}</span>
+							<span class="row__supporting">{m.account_reply_tokens_hint()}</span>
+						</span>
+						<Switch bind:checked={showReplyTokens} aria-label={m.account_reply_tokens()} onchange={saveGeneral} />
+					</li>
+				</ul>
+			</form>
 		</section>
 
 		<section class="section" aria-labelledby="methods-title">
@@ -64,6 +169,20 @@
 					{/if}
 				</li>
 			</ul>
+			<form method="POST" action="?/password" use:enhance class="password">
+				<h3 class="password__title">{methods?.password ? m.account_password_change() : m.account_password_set()}</h3>
+				{#if form && 'passwordSaved' in form && form.passwordSaved}
+					<p class="note note--ok" role="status">{m.account_password_saved()}</p>
+				{/if}
+				{#if form && 'passwordError' in form && form.passwordError}
+					<p class="note note--error" role="alert">{form.passwordError}</p>
+				{/if}
+				{#if methods?.password}
+					<TextField id="current_password" name="current_password" type="password" label={m.account_password_current()} autocomplete="current-password" required />
+				{/if}
+				<TextField id="new_password" name="new_password" type="password" label={m.account_password_new()} autocomplete="new-password" minlength={8} required />
+				<div><Button type="submit" variant="tonal" size="s">{m.account_password_save()}</Button></div>
+			</form>
 			<p class="hint">
 				{m.account_google_hint()} <a href="/connections">{m.nav_connections()}</a>.
 			</p>
@@ -81,6 +200,55 @@
 				<DeviceList devices={data.devices} />
 			{/if}
 			<p class="hint">{m.account_devices_hint()}</p>
+		</section>
+
+		<section id="data" class="section" aria-labelledby="data-title">
+			<h2 id="data-title" class="section__label">{m.account_data()}</h2>
+			<h3 class="section__sub">{m.account_shares()}</h3>
+			{#if form && 'shareRevoked' in form && form.shareRevoked}
+				<p class="note note--ok" role="status">{m.account_share_revoked()}</p>
+			{/if}
+			{#if form && 'shareError' in form && form.shareError}
+				<p class="note note--error" role="alert">{form.shareError}</p>
+			{/if}
+			{#if data.shares}
+				<ShareList shares={data.shares} />
+			{/if}
+			<p class="hint">{m.account_shares_hint()}</p>
+		</section>
+
+		<section class="section" aria-labelledby="delete-title">
+			<h2 id="delete-title" class="section__label">{m.account_delete_title()}</h2>
+			{#if form && 'deleteError' in form && form.deleteError}
+				<p class="note note--error" role="alert">{form.deleteError}</p>
+			{/if}
+			{#if !deleting && !deleteChallenge}
+				<div class="danger">
+					<p class="hint">{m.account_delete_hint()}</p>
+					<div><Button variant="outlined" size="s" onclick={() => (deleting = true)}>{m.account_delete()}</Button></div>
+				</div>
+			{:else}
+				<form method="POST" action="?/deleteAccount" use:enhance class="password danger">
+					<p class="hint">{m.account_delete_warning()}</p>
+					{#if deleteChallenge}
+						<p class="hint">{m.account_email_code_sent({ email: form && 'deleteSentTo' in form && form.deleteSentTo ? String(form.deleteSentTo) : '' })}</p>
+						<input type="hidden" name="challenge_id" value={deleteChallenge} />
+						<TextField id="delete_code" name="code" label={m.account_code()} autocomplete="one-time-code" inputmode="numeric" required />
+					{:else if methods?.password}
+						<TextField id="delete_password" name="password" type="password" label={m.account_password_current()} autocomplete="current-password" required />
+					{/if}
+					<Checkbox name="confirm" bind:checked={deleteConfirmed} label={m.account_delete_confirm()} />
+					<div class="actions">
+						{#if deleteChallenge || methods?.password}
+							<Button type="submit" variant="filled" size="s" disabled={!deleteConfirmed}>{m.account_delete()}</Button>
+						{/if}
+						{#if !deleteChallenge}
+							<Button type="submit" variant={methods?.password ? 'text' : 'tonal'} size="s" formaction="?/deleteCode" formnovalidate>{m.account_delete_email_code()}</Button>
+						{/if}
+						<Button variant="text" size="s" onclick={() => (deleting = false)}>{m.account_cancel()}</Button>
+					</div>
+				</form>
+			{/if}
 		</section>
 	</div>
 </div>
@@ -119,6 +287,12 @@
 		font-weight: 400;
 		letter-spacing: 0.08em;
 		text-transform: uppercase;
+	}
+	.section__sub {
+		margin: 0 8px;
+		color: var(--md-sys-color-on-surface);
+		font-size: 0.9375rem;
+		font-weight: 600;
 	}
 	.rows {
 		display: flex;
@@ -180,6 +354,20 @@
 		background: var(--md-sys-color-error-container);
 		color: var(--md-sys-color-on-error-container);
 	}
+	.password {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+		padding: 14px;
+		border-radius: var(--md-sys-shape-corner-extra-large);
+		background: var(--md-sys-color-surface-container-lowest);
+	}
+	.password__title {
+		margin: 0;
+		color: var(--md-sys-color-on-surface);
+		font-size: 0.9375rem;
+		font-weight: 600;
+	}
 	.hint {
 		margin: 0 8px;
 		color: var(--md-sys-color-on-surface-variant);
@@ -189,5 +377,35 @@
 	.hint a {
 		color: var(--md-sys-color-primary);
 		font-weight: 600;
+	}
+	.email-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+	}
+	.actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+	}
+	.picker {
+		max-width: 45%;
+		font: inherit;
+		font-size: 0.875rem;
+		color: var(--md-sys-color-on-surface);
+		background: var(--md-sys-color-surface-container-high);
+		border: 1px solid var(--md-sys-color-outline-variant);
+		border-radius: var(--md-sys-shape-corner-medium);
+		padding: 8px 10px;
+	}
+	.danger {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+	}
+	form.danger {
+		outline: 1px solid var(--md-sys-color-error);
+		outline-offset: -1px;
 	}
 </style>

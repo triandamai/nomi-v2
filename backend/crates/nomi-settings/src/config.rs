@@ -161,6 +161,8 @@ pub const XENDIT: SectionDef = SectionDef {
         field("webhook_token", "XENDIT_WEBHOOK_TOKEN", Kind::Secret),
         field("public_key", "XENDIT_PUBLIC_KEY", Kind::Text),
         field("base_url", "XENDIT_BASE_URL", Kind::Text),
+        // Rupiah to the dollar, for showing spend (kept in dollars) in rupiah.
+        field("usd_to_idr", "USD_TO_IDR", Kind::Number),
     ],
 };
 

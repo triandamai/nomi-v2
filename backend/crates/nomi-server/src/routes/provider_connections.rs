@@ -98,6 +98,10 @@ pub struct ConnectionResponse {
     created_at: chrono::DateTime<chrono::Utc>,
     /// Admin models that come from it (instance connections only).
     models_in_use: Vec<String>,
+    /// How the key fared on the last call made with it: "ok", "balance_empty" or "rejected".
+    status: String,
+    /// When that call was made; null until one is.
+    checked_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 #[derive(Deserialize)]
@@ -223,6 +227,8 @@ async fn to_response(state: &AppState, row: connections::ProviderConnectionRow) 
         api_key_masked,
         created_at: row.created_at,
         models_in_use,
+        status: row.key_status,
+        checked_at: row.key_checked_at,
     })
 }
 
@@ -351,8 +357,22 @@ async fn disconnect(state: &AppState, scope: Scope, id: Uuid) -> Result<StatusCo
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// What the provider serves right now, using the connection's own key.
+/// A model the provider serves, with what the catalog says about it.
+#[derive(Serialize)]
+struct LiveModel {
+    id: String,
+    label: Option<String>,
+    #[serde(flatten)]
+    traits: catalog::ModelTraits,
+}
+
+/// What the provider serves right now, using the connection's own key, each with its context,
+/// what it's good at and whether it's one to start with.
 async fn live_models(state: &AppState, scope: Scope, id: Uuid) -> Result<Json<Value>, RouteError> {
+    let connection = connections::get_connection(&state.pool, scope, id)
+        .await
+        .map_err(|e| server_error("failed to load a provider", e))?
+        .ok_or_else(|| error(StatusCode::NOT_FOUND, "not_found", None))?;
     let config = crate::bootstrap::connection_model_config(&state.pool, &state.settings_key, scope, id, String::new())
         .await
         .ok_or_else(|| error(StatusCode::NOT_FOUND, "not_found", None))?;
@@ -360,6 +380,8 @@ async fn live_models(state: &AppState, scope: Scope, id: Uuid) -> Result<Json<Va
         Some(401 | 403) => error(StatusCode::BAD_REQUEST, "key_rejected", Some(e.to_string())),
         _ => error(StatusCode::BAD_GATEWAY, "unreachable", Some(e.to_string())),
     })?;
+    let models: Vec<LiveModel> =
+        models.into_iter().map(|m| LiveModel { traits: catalog::traits(&connection.provider_id, &m.id), id: m.id, label: m.label }).collect();
     Ok(Json(json!({ "models": models })))
 }
 

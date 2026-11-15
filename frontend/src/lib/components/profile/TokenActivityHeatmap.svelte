@@ -1,5 +1,9 @@
 <script lang="ts">
 	import Segmented from '$lib/components/ds/inputs/Segmented.svelte';
+	import { m } from '$lib/paraglide/messages';
+	import { getLocale } from '$lib/paraglide/runtime';
+	import { mostActiveLabel } from '$lib/profileInsights';
+	import type { ActiveHours } from '$lib/types';
 
 	type DayActivity = { date: string; tokens: number };
 
@@ -7,11 +11,16 @@
 		activity = [],
 		joinedDate = '',
 		totalTokens = 0,
+		activeHours = null,
 	}: {
 		activity?: DayActivity[];
 		joinedDate?: string;
 		totalTokens?: number;
+		/** The person's busiest hours (their own profile only). */
+		activeHours?: ActiveHours | null;
 	} = $props();
+
+	const mostActive = $derived(mostActiveLabel(activity, activeHours, getLocale()));
 
 	let mode = $state('daily');
 	let hoveredDay = $state<{ date: string; tokens: number; x: number; y: number } | null>(null);
@@ -218,9 +227,9 @@
 	<!-- Footer Bar -->
 	<div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 pt-2 border-t border-border text-caption text-text-2">
 		<div>
-			Most active Tue · 21:00-23:00 WIB
+			{#if mostActive}{m.profile_most_active({ when: mostActive })}{/if}
 			{#if joinedDate}
-				· joined {joinedDate}
+				{#if mostActive}·{/if} joined {joinedDate}
 			{/if}
 		</div>
 		<div class="flex items-center gap-1.5 select-none self-end sm:self-auto text-text-3 font-mono text-micro">

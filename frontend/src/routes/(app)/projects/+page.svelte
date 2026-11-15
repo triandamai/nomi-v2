@@ -15,6 +15,8 @@
 		MoreHorizontal,
 		Plus,
 		Rocket,
+		Copy,
+		Pencil,
 		Square,
 		Trash2,
 		UserPlus,
@@ -42,6 +44,7 @@
 	import { timeAgo } from '$lib/i18n';
 	import type { ActionData, PageData } from './$types';
 	import type { ProjectSummary } from '$lib/types';
+	import { isBroken, needsAttention, needsYou } from '$lib/projectHealth';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
@@ -88,6 +91,30 @@
 	let projectToDelete = $state<ProjectSummary | null>(null);
 	let deleteConfirmName = $state('');
 
+	// Rename Project Dialog
+	let renameDialogOpen = $state(false);
+	let projectToRename = $state<ProjectSummary | null>(null);
+	let renameName = $state('');
+	let renameDescription = $state('');
+
+	// Duplicating a project: a form submitted from the card's menu, which opens the copy.
+	let duplicateForm = $state<HTMLFormElement | null>(null);
+	let duplicateId = $state('');
+	async function duplicate(project: ProjectSummary) {
+		duplicateId = project.id;
+		await tick();
+		duplicateForm?.requestSubmit();
+	}
+
+	// Remixing an app on show: a copy of it, opened right away.
+	let remixForm = $state<HTMLFormElement | null>(null);
+	let remixId = $state('');
+	async function remixApp(id: string) {
+		remixId = id;
+		await tick();
+		remixForm?.requestSubmit();
+	}
+
 	// Prompt builder input
 	let promptText = $state('');
 	let promptInputEl = $state<HTMLInputElement | null>(null);
@@ -123,7 +150,7 @@
 	}
 
 	function projectStatusKind(project: ProjectSummary): 'live' | 'working' | 'failed' | 'idle' {
-		if (project.open_issues > 0) return 'failed';
+		if (project.open_issues > 0 || isBroken(project)) return 'failed';
 		if (project.status === 'ready') return 'live';
 		if (project.status === 'building') return 'working';
 		return 'idle';
@@ -145,13 +172,13 @@
 	// Filtered & Sorted Projects
 	const liveCount = $derived(data.projects.filter((p) => p.status === 'ready' && p.open_issues === 0).length);
 	const buildingCount = $derived(data.projects.filter((p) => p.status === 'building').length);
-	const attentionCount = $derived(data.projects.filter((p) => p.open_issues > 0).length);
+	const attentionCount = $derived(data.projects.filter(needsAttention).length);
 
 	const filteredProjects = $derived.by(() => {
 		let list = data.projects;
 		if (filter === 'live') list = list.filter((p) => p.status === 'ready' && p.open_issues === 0);
 		else if (filter === 'building') list = list.filter((p) => p.status === 'building');
-		else if (filter === 'attention') list = list.filter((p) => p.open_issues > 0);
+		else if (filter === 'attention') list = list.filter(needsAttention);
 
 		if (query.trim()) {
 			const q = query.trim().toLowerCase();
@@ -212,7 +239,11 @@
 
 	type CommunityTemplate = RentalTemplate | MenuTemplate | QuizTemplate;
 
-	// Community Remix Templates
+	/** How many apps on show the Community row lists; the showcase has the rest. */
+	const SHOWCASE_SHOWN = 6;
+	const showcase = $derived(data.showcase ?? []);
+
+	// Community Remix Templates (until anyone puts an app on show)
 	const COMMUNITY_TEMPLATES: CommunityTemplate[] = [
 		{
 			title: 'Kos Melati rent tracker',
@@ -287,6 +318,45 @@
 		}}
 	/>
 {/if}
+
+<form method="POST" action="?/duplicateProject" bind:this={duplicateForm} use:enhance hidden>
+	<input type="hidden" name="project_id" value={duplicateId} />
+</form>
+<form method="POST" action="/showcase?/remix" bind:this={remixForm} use:enhance hidden>
+	<input type="hidden" name="app_id" value={remixId} />
+</form>
+
+<!-- Rename Project Dialog -->
+<Dialog bind:open={renameDialogOpen} headline={m.projects_rename_title()}>
+	{#if projectToRename}
+		<form
+			method="POST"
+			action="?/renameProject"
+			use:enhance={() => {
+				return async ({ result, update }) => {
+					await update();
+					if (result.type === 'success') {
+						renameDialogOpen = false;
+						projectToRename = null;
+					}
+				};
+			}}
+		>
+			<input type="hidden" name="project_id" value={projectToRename.id} />
+			<div class="flex flex-col gap-3">
+				<TextField name="name" label={m.projects_name_label()} bind:value={renameName} required />
+				<TextField name="description" label={m.projects_description_label()} bind:value={renameDescription} />
+			</div>
+			{#if form && 'renameError' in form && form.renameError}
+				<p class="mt-2 text-caption text-danger" role="alert">{form.renameError}</p>
+			{/if}
+			<div class="mt-6 flex justify-end gap-2">
+				<Button label={m.org_cancel()} variant="ghost" onclick={() => (renameDialogOpen = false)} />
+				<Button label={m.projects_save()} type="submit" disabled={!renameName.trim()} />
+			</div>
+		</form>
+	{/if}
+</Dialog>
 
 <!-- Delete Project Confirmation Dialog -->
 <Dialog bind:open={deleteDialogOpen} headline={m.pj_delete()}>
@@ -577,6 +647,21 @@
 														}
 													},
 													{
+														label: m.projects_rename(),
+														icon: Pencil,
+														onselect: () => {
+															projectToRename = project;
+															renameName = project.name;
+															renameDescription = project.description ?? '';
+															renameDialogOpen = true;
+														}
+													},
+													{
+														label: m.projects_duplicate(),
+														icon: Copy,
+														onselect: () => void duplicate(project)
+													},
+													{
 														label: m.export_repo(),
 														icon: GitBranch,
 														onselect: () => {
@@ -623,11 +708,18 @@
 												{projectHost(project) ?? m.projects_not_published()}
 											</span>
 										{:else if statusKind === 'failed'}
-											<Status kind="failed" label={m.projects_deploy_failed()} small />
-											<span class="truncate font-mono text-caption text-text-3">{project.open_issues} issue(s)</span>
+											<Status kind="failed" label={project.live_status === 'down' ? m.projects_app_down() : m.projects_deploy_failed()} small />
+											{#if project.open_issues > 0}
+												<span class="truncate font-mono text-caption text-text-3">{project.open_issues} issue(s)</span>
+											{/if}
 										{:else}
 											<Status kind="idle" label={m.projects_draft()} small />
 											<span class="truncate font-mono text-caption text-text-3">{m.projects_not_published()}</span>
+										{/if}
+										{#if needsYou(project) > 0}
+											<span class="ml-auto shrink-0 rounded-full bg-accent-bg px-2 py-0.5 text-micro font-medium text-accent">
+												{m.projects_needs_you({ count: needsYou(project) })}
+											</span>
 										{/if}
 									</div>
 								</div>
@@ -687,6 +779,24 @@
 						</a>
 					</div>
 
+					{#if showcase.length > 0}
+					<ul class="grid grid-cols-1 gap-3.5 sm:gap-4 md:grid-cols-3">
+						{#each showcase.slice(0, SHOWCASE_SHOWN) as app (app.id)}
+							<li class="flex flex-col justify-between gap-3 rounded-xl border border-border bg-surface p-4 transition-colors hover:border-border-strong">
+								<div class="min-w-0">
+									<h4 class="truncate text-ui font-semibold text-text">{app.name}</h4>
+									{#if app.blurb}<p class="mt-1 line-clamp-2 text-caption text-text-2">{app.blurb}</p>{/if}
+								</div>
+								<div class="flex items-center justify-between gap-2 border-t border-border pt-2.5">
+									<a href={app.url} target="_blank" rel="noopener noreferrer" class="min-w-0 truncate font-mono text-micro text-text-3 hover:text-text">
+										{app.url.replace(/^https?:\/\//, '')}{app.team ? ` · ${app.team}` : ''}
+									</a>
+									<Button variant="secondary" label={m.projects_remix_btn()} iconEnd={GitFork} onclick={() => remixApp(app.id)} />
+								</div>
+							</li>
+						{/each}
+					</ul>
+					{:else}
 					<div class="grid grid-cols-1 gap-3.5 sm:gap-4 md:grid-cols-3">
 						{#each COMMUNITY_TEMPLATES as tmpl (tmpl.title)}
 							<div class="flex flex-col justify-between rounded-xl border border-border bg-surface p-4 shadow-sm transition-colors hover:border-border-strong">
@@ -752,6 +862,7 @@
 							</div>
 						{/each}
 					</div>
+					{/if}
 				</section>
 			</div>
 

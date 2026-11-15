@@ -301,14 +301,16 @@ async fn run_locked_turn(
     // without an agent session of its own, so an ongoing conversation with another agent carries
     // on afterwards. In a project's chat a file is for the project (a logo to use, data to load):
     // Rena or Koda take it like any other message there, and see the file in it.
+    // The members this person switched off: the router passes them by.
+    let off = nomi_agent_core::personal_crew::disabled_agent_types(conn, user_id).await;
     if !in_project && nomi_agent_core::attachments::has_attachments(text) {
-        if let Some(files) = registry.find(nomi_agent_core::attachments::FILES_AGENT_TYPE) {
+        if let Some(files) = registry.find(nomi_agent_core::attachments::FILES_AGENT_TYPE).filter(|a| !off.contains(a.agent_type().as_ref())) {
             return run_subagent_turn(conn, mqtt, s3, provider, embedding_provider, registry, catalog, files, session_id, session_id, sender_channel_identity_id, user_id).await;
         }
     }
 
     // Building something is a project's job (Rena plans it, Koda builds it), whoever was talking.
-    let planning = registry.find(projects::PLANNING_AGENT_TYPE);
+    let planning = registry.find(projects::PLANNING_AGENT_TYPE).filter(|a| !off.contains(a.agent_type().as_ref()));
     let build_request = projects::wants_to_build(text);
     if let (Some(planning), true) = (&planning, build_request) {
         if !in_project && projects::is_web_session(conn, session_id).await? {
@@ -317,7 +319,15 @@ async fn run_locked_turn(
     }
 
     // Addressed by name ("@Dana"): that member answers, whoever was talking before.
-    if let Some(agent) = routing::mentioned_agent(conn, registry, catalog, text).await {
+    let mentioned = match routing::mentioned_agent(conn, registry, catalog, user_id, text).await {
+        Some(routing::Mentioned::Agent(agent)) => Some(agent),
+        Some(routing::Mentioned::SwitchedOff(name)) => {
+            routing::announce_switched_off(conn, mqtt, registry, session_id, user_id, &name).await;
+            None
+        }
+        None => None,
+    };
+    if let Some(agent) = mentioned {
         if let Some(agent_session_id) = routing::find_active_agent_session(conn, session_id, sender_channel_identity_id).await? {
             let details = routing::load_active_agent_session_details(conn, agent_session_id).await?;
             if details.agent_type == agent.agent_type().as_ref() {
@@ -357,6 +367,15 @@ async fn run_locked_turn(
             if routing::is_stale(details.last_activity_at) {
                 routing::mark_expired(conn, mqtt, agent_session_id, session_id, &details.agent_type).await?;
                 RoutingOutcome::NeedsClassification
+            } else if off.contains(&details.agent_type) {
+                // Switched off since this conversation started: it ends here, and the person hears why.
+                let name = match resolve_agent(conn, registry, catalog, &details.agent_type).await {
+                    Some(agent) => agent.display_name().into_owned(),
+                    None => nomi_agent_core::crew::display_name_for(&details.agent_type),
+                };
+                routing::complete_agent_session(conn, mqtt, agent_session_id, session_id, &details.agent_type, "completed", "switched off").await?;
+                routing::announce_switched_off(conn, mqtt, registry, session_id, user_id, &name).await;
+                RoutingOutcome::NeedsClassification
             } else {
                 match resolve_agent(conn, registry, catalog, &details.agent_type).await {
                     // The active session's agent_type isn't registered anymore (e.g. an
@@ -378,7 +397,7 @@ async fn run_locked_turn(
             let agent = match &planning {
                 Some(planning) if build_request || publish_request => planning.clone(),
                 _ => {
-                    let agent = routing::classify_intent(conn, provider, registry, catalog, text).await;
+                    let agent = routing::classify_intent_for(conn, provider, registry, catalog, Some(user_id), text).await;
                     // In a project chat, anything that isn't clearly for another agent is about the project.
                     match &planning {
                         Some(planning) if in_project && agent.agent_type() == registry.default_agent().agent_type() => planning.clone(),

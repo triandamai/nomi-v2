@@ -52,4 +52,18 @@ export const actions: Actions = {
 		if (!response.ok) return fail(response.status, { error: (await response.text()).trim() || m.billing_action_failed(), action: 'cancel' });
 		return { cancelled: id };
 	},
+
+	/** Asks to be told when a plan opens. */
+	waitlist: async ({ request, cookies, fetch }) => {
+		const id = planId(await request.formData());
+		if (!id) return fail(400, { waitlistError: true, planId: null });
+		const response = await apiFetch(fetch, cookies, `/api/plans/${id}/waitlist`, { method: 'POST' });
+		if (!response.ok) return fail(response.status, { waitlistError: true, planId: id });
+		return { waitlisted: id };
+	},
 };
+
+function planId(data: FormData): string | null {
+	const id = data.get('plan_id');
+	return typeof id === 'string' && UUID.test(id) ? id : null;
+}

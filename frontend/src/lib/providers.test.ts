@@ -6,6 +6,7 @@ import {
 	connectionErrorMessage,
 	connectionName,
 	groupProviders,
+	keyStatusLabel,
 	logoUrl,
 	mediaFromInputs,
 	prefillFromCatalog,
@@ -203,5 +204,14 @@ describe('prefillFromCatalog', () => {
 	it('leaves unknown prices blank', () => {
 		const meta = { id: 'x', name: 'X', input: ['text'], cost: { input: null, output: 0, cache_read: null }, context: null };
 		expect(prefillFromCatalog(meta)).toEqual({ inputPrice: '', outputPrice: '0', cachedPrice: '', media: [] });
+	});
+});
+
+describe('a key\'s status', () => {
+	it('names an empty balance or a refused key, and says nothing while it works', () => {
+		expect(keyStatusLabel('balance_empty')).toBe('Balance empty');
+		expect(keyStatusLabel('rejected')).toBe('Key rejected');
+		expect(keyStatusLabel('ok')).toBeNull();
+		expect(keyStatusLabel(undefined)).toBeNull();
 	});
 });

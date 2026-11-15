@@ -287,6 +287,28 @@ export interface MemoryItem {
 	/** How many of Nomi's replies drew on this memory. */
 	uses: number;
 	embedding: number[];
+	/** The crew member (agent_type) whose reply it was learned from; null for older memories. */
+	learned_by?: string | null;
+}
+
+/** What the person lets Nomi do with memory (GET|PUT /api/memory/settings). Budgets are tokens. */
+export interface MemorySettings {
+	learn_from_chats: boolean;
+	keep_profile: boolean;
+	search_past_chats: boolean;
+	memory_budget: number;
+	profile_budget: number;
+	/** Tokens the live memories take. */
+	memory_used: number;
+	/** Tokens the profile takes. */
+	profile_used: number;
+}
+
+/** The profile Nomi keeps of the person (GET|PUT /api/memory/profile). */
+export interface MemoryProfile {
+	text: string;
+	tokens: number;
+	updated_at: string | null;
 }
 
 export interface MemoryListResponse {
@@ -472,6 +494,39 @@ export interface Profile {
 	activity?: ProfileDayActivity[];
 	top_models?: ProfileModelUsage[];
 	crew_usage?: ProfileCrewUsage[];
+	/** The two hours the person is most active, in their time zone; null with too little usage. */
+	active_hours?: ActiveHours | null;
+	/** Worked out from their own usage (backend: routes/profile_insights.rs); never public. */
+	insights?: ProfileInsight[];
+}
+
+export interface ActiveHours {
+	/** "21:00" */
+	from: string;
+	to: string;
+}
+
+export interface ProfileInsight {
+	kind: 'cheaper_model' | 'late_hours';
+	title: string;
+	body: string;
+	action?: { label: string; href: string };
+}
+
+/** Quiet hours as local "HH:MM" times; `start` after `end` runs over midnight. */
+export interface QuietHours {
+	start: string;
+	end: string;
+}
+
+/** `GET /api/notifications/preferences` together with `GET /api/notifications/reminder-preferences`. */
+export interface NotificationPreferences {
+	email_account: boolean;
+	email_promos: boolean;
+	/** Reminders pushed to the phones as they go off. */
+	push_reminders: boolean;
+	/** Reminders due inside these hours wait until they end; null when off. */
+	quiet_hours: QuietHours | null;
 }
 
 export interface PublicProfile {
@@ -522,6 +577,14 @@ export interface Preferences {
 	/** Recent chats listed in the drawer (on unless turned off), and how many (see $lib/drawerRecents). */
 	drawer_recents?: boolean;
 	drawer_recents_limit?: number;
+	/** The region numbers and dates follow (e.g. "en-GB"); null follows the language. */
+	formats?: string | null;
+	/** The crew member new chats start with (an agent_type); null is Nomi. */
+	default_agent?: string | null;
+	/** Enter sends (Shift+Enter for a new line); off, Enter makes a new line. */
+	enter_sends?: boolean;
+	/** Show the tokens a reply used under it. */
+	show_reply_tokens?: boolean;
 }
 
 export interface ProjectSummary {
@@ -542,6 +605,58 @@ export interface ProjectSummary {
 	deploys_count?: number;
 	files_count?: number;
 	deploy_url?: string | null;
+	/** Questions and approvals the crew is waiting on in the project's chats. */
+	waiting_on_you?: number;
+	/** Its latest finished publish. */
+	last_deploy?: { status: 'ok' | 'failed'; at: string } | null;
+	/** While live in production: down when it crashed since its last publish. */
+	live_status?: 'up' | 'down' | null;
+}
+
+/** One of a project's versions (`GET /api/projects/:id/versions`). */
+export interface ProjectVersion {
+	version: number;
+	/** The crew member whose reply made it ("Koda"), or the person whose change it was. */
+	by: { name: string | null; agent: string | null };
+	at: string;
+	/** The prompt the crew answered with it. */
+	summary: string | null;
+	files: number;
+	/** False when it was made before versions kept their files. */
+	restorable: boolean;
+	restored_from: number | null;
+	current: boolean;
+}
+
+export interface ProjectVersions {
+	versions: ProjectVersion[];
+	current: number;
+	has_more: boolean;
+}
+
+/** An app on the showcase (`GET /api/showcase`), to open or remix. */
+export interface ShowcaseApp {
+	id: string;
+	name: string;
+	blurb: string | null;
+	url: string;
+	stack: string;
+	team: string | null;
+	showcased_at: string;
+}
+
+export type SearchKind = 'chat' | 'memory' | 'file';
+
+/** One hit from `GET /api/search`. */
+export interface SearchResult {
+	kind: SearchKind;
+	/** The chat's id, the memory's id, or the file's path. */
+	id: string;
+	title: string;
+	snippet: string | null;
+	session_id?: string;
+	project_id?: string;
+	updated_at: string;
 }
 
 export interface ProjectList {
@@ -560,11 +675,38 @@ export interface OrgSummary {
 	role: OrgRole;
 	members: number;
 	projects: number;
+	/** Someone's own space, made with their account. */
+	is_personal: boolean;
+	/** The first few members, owners first. */
+	member_avatars: { name: string; avatar_url: string | null }[];
+	/** The newest thing that happened in its projects. */
+	last_activity: OrgActivity | null;
+}
+
+export interface OrgActivity {
+	kind: 'published' | 'worked_on';
+	project: string;
+	by: string | null;
+	at: string;
 }
 
 export interface OrgList {
 	orgs: OrgSummary[];
 	project_org_id: string | null;
+	/** Where Nomi opens on sign-in; null is the workspace last used. */
+	open_org_id: string | null;
+}
+
+/** An open invite to the signed-in person's address (`GET /api/invites`). */
+export interface MyInvite {
+	code: string;
+	org_id: string;
+	org_name: string;
+	inviter: string;
+	role: OrgRole;
+	projects: number;
+	expires_at: string;
+	project: { id: string; name: string } | null;
 }
 
 export interface OrgMember {
@@ -574,6 +716,9 @@ export interface OrgMember {
 	avatar_url: string | null;
 	role: OrgRole;
 	joined_at: string;
+	/** Projects in this workspace they started or were added to. */
+	projects: number;
+	last_active_at: string | null;
 }
 
 export interface OrgInvite {
@@ -582,11 +727,16 @@ export interface OrgInvite {
 	role: OrgRole;
 	created_at: string;
 	expires_at: string;
+	/** A link anyone can join with, rather than an invite to one address. */
+	link: boolean;
 }
 
 export interface OrgDetail {
 	id: string;
 	name: string;
+	is_personal: boolean;
+	created_by: { id: string; name: string } | null;
+	created_at: string;
 	my_role: OrgRole;
 	me: string;
 	members: OrgMember[];
@@ -599,7 +749,7 @@ export interface InviteInfo {
 	org_name: string;
 	inviter: string;
 	role: OrgRole;
-	state: 'open' | 'expired' | 'used' | 'member' | 'other_address';
+	state: 'open' | 'expired' | 'used' | 'declined' | 'member' | 'other_address';
 	/** The invited address, partly hidden. */
 	email: string | null;
 	/** An invite to build one project together, and as what. */
@@ -890,6 +1040,8 @@ export interface Plan {
 	all_models: boolean;
 	/** Ids of the admin-listed models this plan may use. */
 	model_ids: string[];
+	/** A month on it in rupiah, when it can be bought; null: people join its waitlist. */
+	price_idr: number | null;
 }
 
 export interface PlansForUser {
@@ -898,6 +1050,10 @@ export interface PlansForUser {
 	monthly_tokens: number;
 	custom_quota: boolean;
 	override_until: string | null;
+	/** Plans the person asked to be told about (POST /api/plans/:id/waitlist). */
+	waitlist: string[];
+	/** A plan with a price can be paid for here (POST /api/plans/:id/checkout). */
+	checkout_available: boolean;
 }
 
 export type NotificationKind = 'account' | 'subscription' | 'quota' | 'promo' | 'deploy' | 'project';
@@ -940,6 +1096,12 @@ export interface UsageMonth {
 	by_day: { date: string; tokens: number; spend_usd: number }[];
 	/** One row per model actually called, kept together by the admin model's id (so a renamed model keeps its history). */
 	by_model: { admin_model_id: string | null; label: string; provider: string; model_id: string; source: 'nomi' | 'own_key'; tokens: number; calls: number; spend_usd: number }[];
+	/** How they paid last ("BANK_TRANSFER · BCA"); null when they never have. */
+	payment_method: string | null;
+	/** What they paid for plans in the month, in rupiah. */
+	paid_idr: number;
+	/** Rupiah to the dollar, to show spend_usd in rupiah. */
+	usd_to_idr: number;
 }
 
 /** Admin → Usage: one month (UTC) of everyone's tokens, per chat model and embedding model. */
@@ -969,18 +1131,80 @@ export interface AdminUsage {
 	sandbox_minutes: { user_id: string; email: string | null; minutes: number }[];
 }
 
+/** `expired` once the app refused the sign-in or key on use: the person reconnects. */
+export type ConnectionHealth = 'ok' | 'expired';
+
 /** A connected health or fitness app (Connections → Hevy). */
 export interface HealthConnection {
 	provider: string;
 	account_name: string | null;
 	connected_at: string;
 	last_used_at: string | null;
+	status?: ConnectionHealth;
+	expired_at?: string | null;
+	used_by?: string[];
+}
+
+/** What the crew can do with an app or service: `ask` means some of it waits for an OK in chat. */
+export type ConnectionAccess = 'read' | 'write' | 'ask';
+
+export interface ServiceAccess {
+	service: string;
+	access: ConnectionAccess[];
 }
 
 /** Every connector's state for the Connections list. */
 export interface ConnectionsOverview {
-	google: { configured: boolean; email: string | null; services: string[] };
+	google: {
+		configured: boolean;
+		email: string | null;
+		services: string[];
+		status?: ConnectionHealth | null;
+		expired_at?: string | null;
+		last_used_at?: string | null;
+		used_by?: string[];
+		service_access?: ServiceAccess[];
+	};
 	hevy: HealthConnection | null;
+}
+
+/** The person's GitHub (GET /api/connections/github). */
+export interface GithubStatus {
+	oauth: boolean;
+	connection: {
+		login: string;
+		kind: 'oauth' | 'token';
+		created_at: string;
+		last_used_at: string | null;
+		expired_at?: string | null;
+		status?: ConnectionHealth;
+		used_by?: string[];
+	} | null;
+}
+
+/** One app in GET /api/connections/catalog. */
+export interface CatalogApp {
+	id: string;
+	name: string;
+	category: 'work' | 'building' | 'health' | 'money' | 'home_media';
+	for_agent: string;
+	access: ConnectionAccess[];
+	/** Whether it can be connected on this server today. */
+	available: boolean;
+}
+
+/** One of the person's MCP servers (remote only). */
+export interface McpServer {
+	id: string;
+	name: string;
+	url: string;
+	created_at: string;
+}
+
+export interface McpServers {
+	servers: McpServer[];
+	/** Whether the crew can call MCP tools yet. */
+	callable: boolean;
 }
 
 /** One publish of a project to a Shipyard environment. */
@@ -1130,6 +1354,44 @@ export interface ProjectMetrics {
 	buckets: MetricsBucket[];
 	totals: MetricsCounters;
 	previous_totals: MetricsCounters;
+	/** Where visits came from (the site reports each arrival's referrer), largest share first;
+	 * null until the published site has reported anything. */
+	sources?: MetricsSource[] | null;
+	/** Forms sent on the site over the range; null until it has reported anything. */
+	form_sends?: number | null;
+	/** Nomi's own look at the address every few minutes; null before the first. */
+	uptime?: MetricsUptime | null;
+}
+
+export interface MetricsSource {
+	name: string;
+	/** 0–1 of the range's visits. */
+	share: number;
+}
+
+export interface MetricsUptime {
+	/** 0–1 of the looks over the range that found it answering. */
+	share: number;
+	since: string;
+}
+
+export interface DnsRecord {
+	type: 'A' | 'CNAME' | 'TXT';
+	name: string;
+	value: string;
+	status: 'found' | 'waiting';
+}
+
+/** A domain the project's admins own, beside the app's address under Nomi's apps domain. */
+export interface CustomDomain {
+	hostname: string;
+	records: DnsRecord[];
+	checked_at: string | null;
+	/** When every record was found; null while any is waiting. */
+	verified_at: string | null;
+	primary: boolean;
+	https: 'pending' | 'issued';
+	created_at: string;
 }
 
 export interface ShipyardEvent {
@@ -1165,6 +1427,8 @@ export interface DatabaseTable {
 	schema: string;
 	name: string;
 	rows_estimate: number;
+	/** The primary key's columns (a row is edited by them); empty when it has none. */
+	primary_key: string[];
 }
 
 export interface QueryResult {
@@ -1356,4 +1620,50 @@ export interface AdminPaymentPage {
 	total: number;
 	page: number;
 	page_size: number;
+}
+
+/** What a crew member may do with one tool, for this person (GET /api/agents/:type/permissions). */
+export type CrewPermissionLevel = 'allow' | 'ask' | 'never';
+
+export interface CrewPermission {
+	key: string;
+	label: string;
+	description: string;
+	level: CrewPermissionLevel;
+	default_level: CrewPermissionLevel;
+}
+
+/** A crew member's soul.md (GET /api/agents/:type/soul); version 0 before one is written. */
+export interface CrewSoul {
+	text: string;
+	version: number;
+}
+
+export interface CrewSoulVersion {
+	version: number;
+	text: string;
+	created_at: string;
+	is_current: boolean;
+}
+
+/** One line of a crew member's Activity (GET /api/agents/:type/activity). */
+export interface CrewActivityItem {
+	kind: 'task' | 'tool' | 'started' | 'finished';
+	text: string;
+	status: string | null;
+	session_id: string | null;
+	chat_title: string | null;
+	at: string;
+}
+
+/** A starting point for a member of one's own (GET /api/agents/templates). */
+export interface CrewTemplate {
+	key: string;
+	name: string;
+	role: string;
+	soul: string;
+	tools: string[];
+	shape: string;
+	tone: string;
+	motion: string;
 }

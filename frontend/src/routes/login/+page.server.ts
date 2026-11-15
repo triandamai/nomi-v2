@@ -3,6 +3,7 @@ import { apiUrl } from '$lib/server/api';
 import { completeSignIn, safeRedirect, setPendingSignIn, type TokenPair, type Verification } from '$lib/server/signIn';
 import type { Actions, PageServerLoad } from './$types';
 import { m } from '$lib/paraglide/messages';
+import { getLocale } from '$lib/paraglide/runtime';
 
 export const load: PageServerLoad = async ({ fetch, url }) => {
 	const response = await fetch(apiUrl('/api/auth/google/available')).catch(() => null);
@@ -19,6 +20,25 @@ export const actions: Actions = {
 		const data = await request.formData();
 		const email = data.get('email');
 		const password = data.get('password');
+		const redirectTo = safeRedirect(url.searchParams.get('redirect_to'));
+
+		// "Email me a code": no password. The API sends a code to the address whether it has an
+		// account or not; entering it on /verify signs in, or makes the account.
+		if (data.get('mode') === 'code') {
+			if (typeof email !== 'string' || !email.trim()) return fail(400, { error: m.err_email_required(), field: 'email' });
+			const response = await fetch(apiUrl('/api/auth/start'), {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ email: email.trim(), language: getLocale() }),
+			});
+			if (response.status === 400) return fail(400, { error: m.err_email_invalid(), field: 'email' });
+			if (response.status === 429) return fail(429, { error: m.verify_too_many_codes(), field: null });
+			if (response.status === 502) return fail(502, { error: m.verify_email_failed(), field: null });
+			if (!response.ok) return fail(response.status, { error: m.err_login_failed(), field: null });
+			const body = (await response.json()) as { verification: Verification };
+			setPendingSignIn(cookies, { challengeId: body.verification.challenge_id, email: email.trim(), isNew: false, redirectTo });
+			throw redirect(303, '/verify');
+		}
 
 		if (typeof email !== 'string' || typeof password !== 'string' || !email || !password) {
 			return fail(400, { error: m.err_email_password_required(), field: typeof email === 'string' && email ? 'password' : 'email' });
@@ -44,7 +64,6 @@ export const actions: Actions = {
 		}
 
 		const body = (await response.json()) as TokenPair | { verification: Verification };
-		const redirectTo = safeRedirect(url.searchParams.get('redirect_to'));
 
 		// The right password sends a code to the account's email; sign-in finishes on /verify.
 		if ('verification' in body) {
