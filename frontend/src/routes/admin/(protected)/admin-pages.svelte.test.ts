@@ -61,7 +61,7 @@ describe('admin pages', () => {
 	it('custom agents: lists them and opens the editor', async () => {
 		fakeBackend([['*', /.*/, action({ success: true })]]);
 		const agent = { id: 'd1', name: 'Scout', system_prompt: 'Find things', intent_label: 'scouting', intent_description: 'research', granted_tools: ['list_transactions'], supports_todos: true, supports_plans: false, can_delegate: false, is_active: true, shape: 'circle', tone: 'sky', motion: 'bounce' };
-		const root = page(DynamicAgents, { agents: [agent, { ...agent, id: 'd2', name: 'Off', is_active: false }], tools: ['list_transactions', 'set_budget'] }, { error: 'Label taken' });
+		const root = page(DynamicAgents, { agents: [agent, { ...agent, id: 'd2', name: 'Off', is_active: false }], catalog: [], crew: [] }, { error: 'Label taken' });
 		expect(text(root)).toContain('Scout');
 		await tryAll(root);
 	});

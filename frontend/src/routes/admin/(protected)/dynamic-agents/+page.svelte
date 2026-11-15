@@ -5,6 +5,8 @@
 	import Button from '$lib/components/m3/Button.svelte';
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import Checkbox from '$lib/components/m3/Checkbox.svelte';
+	import SoulEditor from '$lib/components/tools/SoulEditor.svelte';
+	import { addTool } from '$lib/toolPicker';
 	import ToolPicker from '$lib/components/tools/ToolPicker.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import IconPlus from '$lib/components/icons/IconPlus.svelte';
@@ -160,10 +162,7 @@
 			bind:value={intentDescription}
 			required
 		/>
-		<label class="prompt">
-			<span class="prompt__label">{m.dyn_system_prompt()}</span>
-			<textarea name="system_prompt" bind:value={systemPrompt} required rows="6" class="prompt__field"></textarea>
-		</label>
+		<SoulEditor bind:value={systemPrompt} name="system_prompt" label={m.dyn_system_prompt()} crew={data.crew} tools={data.catalog} ontoolmention={(tool) => (grantedTools = addTool(grantedTools, tool))} />
 
 		<ToolPicker label={m.dyn_tools()} options={data.catalog} bind:selected={grantedTools} name="granted_tools" />
 
@@ -305,30 +304,6 @@
 		font-size: 0.6875rem;
 		letter-spacing: 0.08em;
 		text-transform: uppercase;
-	}
-	.prompt {
-		display: flex;
-		flex-direction: column;
-		gap: 6px;
-	}
-	.prompt__label {
-		font-size: 0.875rem;
-		color: var(--md-sys-color-on-surface-variant);
-	}
-	.prompt__field {
-		padding: 12px 14px;
-		border: 1px solid var(--md-sys-color-outline);
-		border-radius: var(--md-sys-shape-corner-large);
-		background: transparent;
-		color: var(--md-sys-color-on-surface);
-		font: inherit;
-		line-height: 1.5;
-		resize: vertical;
-	}
-	.prompt__field:focus {
-		outline: none;
-		border: 2px solid var(--md-sys-color-primary);
-		padding: 11px 15px;
 	}
 	.tools {
 		display: flex;

@@ -1,21 +1,26 @@
 import { fail } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
 import { catalogFrom } from '$lib/toolPicker';
+import type { CrewRosterMember } from '$lib/crew';
 import type { CatalogTool, DynamicAgent } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
 import { m } from '$lib/paraglide/messages';
 
 export const load: PageServerLoad = async ({ cookies, fetch }) => {
-	const [response, catalogResponse] = await Promise.all([
+	const [response, catalogResponse, crewResponse] = await Promise.all([
 		apiFetch(fetch, cookies, '/api/admin/dynamic-agents'),
 		apiFetch(fetch, cookies, '/api/tools/catalog'),
+		apiFetch(fetch, cookies, '/api/agents'),
 	]);
 	const catalog: CatalogTool[] = catalogResponse.ok ? catalogFrom(await catalogResponse.json()) : [];
+	// Who "@" mentions in the system prompt; the prompt still works without them.
+	const crewBody = crewResponse.ok ? ((await crewResponse.json()) as { agents?: CrewRosterMember[] }) : {};
+	const crew: CrewRosterMember[] = Array.isArray(crewBody.agents) ? crewBody.agents : [];
 	if (!response.ok) {
-		return { agents: [] as DynamicAgent[], catalog };
+		return { agents: [] as DynamicAgent[], catalog, crew };
 	}
 	const agents = (await response.json()) as DynamicAgent[];
-	return { agents, catalog };
+	return { agents, catalog, crew };
 };
 
 function readForm(data: FormData) {
