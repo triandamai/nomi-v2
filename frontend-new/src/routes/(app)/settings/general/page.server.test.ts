@@ -15,6 +15,7 @@ const answers: Record<string, unknown> = {
 	],
 	'/api/preferences': { theme: 'dark', timezone: 'Asia/Jakarta', language: 'en', has_stored_timezone: true },
 	'/api/notifications/preferences': { email_account: true, email_promos: false },
+	'/api/notifications/reminder-preferences': { push_reminders: true, quiet_hours: null },
 };
 const backend = (answer?: Parameters<typeof fakeBackend>[0]) =>
 	fakeBackend(answer ?? ((call) => (call.method === 'GET' ? json(answers[call.url.replace('http://api.test', '')]) : new Response(null, { status: 204 }))));
@@ -56,6 +57,22 @@ describe('Settings › General', () => {
 		const { api, result } = run('emails', { email_account: 'false', email_promos: 'true' }, () => json({ email_account: false, email_promos: true }));
 		expect(await result).toEqual({ emails: { email_account: false, email_promos: true } });
 		expect(api.calls[0].body).toEqual({ email_account: false, email_promos: true });
+	});
+
+	it('saves reminder pushes and quiet hours, refusing a time that isn’t one', async () => {
+		const answer = (call: { method: string }) => (call.method === 'PUT' ? json({ push_reminders: false, quiet_hours: { start: '22:00', end: '06:00' } }) : json({}));
+		const pushes = run('reminders', { push_reminders: 'false' }, answer);
+		expect(await pushes.result).toEqual({ reminders: { push_reminders: false, quiet_hours: { start: '22:00', end: '06:00' } } });
+		expect(pushes.api.calls[0]).toMatchObject({ method: 'PUT', url: 'http://api.test/api/notifications/reminder-preferences', body: { push_reminders: false } });
+		const quiet = run('reminders', { quiet: '22:00-06:00' }, answer);
+		await quiet.result;
+		expect(quiet.api.calls[0].body).toEqual({ quiet_hours: { start: '22:00', end: '06:00' } });
+		const off = run('reminders', { quiet: 'off' }, answer);
+		await off.result;
+		expect(off.api.calls[0].body).toEqual({ quiet_hours: null });
+		const bad = run('reminders', { quiet: '25:00-06:00' }, answer);
+		expect(await bad.result).toMatchObject({ status: 400 });
+		expect(bad.api.calls).toEqual([]);
 	});
 
 	describe('the password, changed while signed in', () => {

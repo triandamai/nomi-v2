@@ -392,8 +392,8 @@ reminders, with the work agents will do later beside them.
   (Accept/Decline an invite, "Ask Koda to fix", "Open log") have nothing to call.
 - No snooze on a reminder that's still ahead (the pen's alarm-clock tool): the backend's snooze
   moves a reminder to N minutes from now, which would bring an upcoming one forward.
-- How it reaches you: "Push for reminders" and "Quiet hours" are left out (the backend has neither:
-  BACKEND_TODO.md), and so is "All notification settings" (there's no such page). The two email
+- How it reaches you: "Push for reminders" and "Quiet hours" live in Settings › General, so they're
+  kept in one place; "All notification settings" is left out (there's no such page). The two email
   settings the backend has are shown instead: account changes, and news and offers.
 - "Earlier this week · 5 read" is "Earlier" with its count: it holds everything before today the
   pages loaded so far reach, with "Show older" for the next page of notifications.
@@ -419,10 +419,18 @@ that exist, so it never links to a page that isn't there. On Profile (`U9Gnrg`):
 On General (`m7lvY1`), every row is one the backend can keep; the rest are left out rather than
 drawn dead:
 
-- Changing the email, Formats, the Chat group (who new chats start with, Enter sends, tokens under
-  replies), the Reminders push, Crew updates and Quiet hours rows, and Delete account: the backend
-  has none of them (BACKEND_TODO.md). Reduce motion is left out too: the app follows the device's
-  own setting.
+- Changing the email and Delete account are still to come. Formats and "Show tokens under
+  replies" are left out: the backend keeps both, but nothing in v2 formats by region or shows tokens
+  under replies yet, so the rows would do nothing. Crew updates has nothing to keep it, and Reduce
+  motion is left out because the app follows the device's own setting.
+- The Chat group: "New chats start with" picks who Home's To starts on (Nomi or a built-in crew
+  member; the backend keeps it as `default_agent`), with that member's mascot in the select as
+  drawn. "Enter sends" off makes Enter a new line and ⌘ or Ctrl+Enter send, in every composer, and
+  the keys under Home's say so.
+- Notifications: Reminders switches the reminder pushes. Quiet hours is the pen's select and switch:
+  the select offers the usual nights (21:00–06:00 to 00:00–08:00, a saved other one kept first)
+  and waits while they're off. Its line says what they do ("reminders wait until they end"), not
+  the pen's "learned from your routines", which nothing works out.
 - The password row's "Change" (or "Set password", for an account made with a code or Google) opens
   a dialog the pen doesn't draw, built from the design system's Dialog and fields: the current
   password when there is one, the new one twice, and "Forgot it? Reset it by email" for the emailed

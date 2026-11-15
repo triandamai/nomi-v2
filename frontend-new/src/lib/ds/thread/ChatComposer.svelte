@@ -32,6 +32,8 @@
 	//   shows over it on hover or focus (Message controls, step 1). The pen draws Stop with Send's
 	//   arrow; it's a square here, which is what stopping looks like everywhere else.
 	// - Attach and voice come with attachments (`onattach`, `onrecord`): not drawn without them.
+	// - `enterSends` (Settings › General › Enter sends) off: Enter makes a new line and ⌘ or
+	//   Ctrl+Enter sends, and the keys say so.
 	type Props = {
 		value?: string;
 		placeholder: string;
@@ -46,6 +48,8 @@
 		models?: ModelMenuGroup[];
 		thinking?: ThinkingChoice;
 		hints?: boolean;
+		/** Enter sends (the default); off, Enter is a new line and ⌘ or Ctrl+Enter sends. */
+		enterSends?: boolean;
 		pickerAbove?: boolean;
 		field?: HTMLTextAreaElement;
 		onsend: (text: string) => void;
@@ -67,6 +71,7 @@
 		models = [],
 		thinking,
 		hints = false,
+		enterSends = true,
 		pickerAbove = false,
 		field = $bindable(),
 		onsend,
@@ -134,6 +139,7 @@
 			}
 		}
 		if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
+		if (!enterSends && !event.metaKey && !event.ctrlKey) return;
 		event.preventDefault();
 		send();
 	}
@@ -197,7 +203,17 @@
 				</Menu>
 			{/if}
 			<span class="flex-1"></span>
-			{#if hints}<span class="hidden md:block"><KeyHint hints={[{ keys: '↵', action: m.composer_hint_send() }, { keys: '⇧↵', action: m.composer_hint_newline() }]} /></span>{/if}
+			{#if hints}<span class="hidden md:block"><KeyHint
+						hints={enterSends
+							? [
+									{ keys: '↵', action: m.composer_hint_send() },
+									{ keys: '⇧↵', action: m.composer_hint_newline() },
+								]
+							: [
+									{ keys: '⌘↵', action: m.composer_hint_send() },
+									{ keys: '↵', action: m.composer_hint_newline() },
+								]}
+					/></span>{/if}
 			{#if onrecord}<IconButton icon={Mic} label={m.composer_record()} variant="ghost" onclick={onrecord} />{/if}
 			{#if busy && onstop}
 				<span class="group relative inline-flex">

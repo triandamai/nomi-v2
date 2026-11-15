@@ -867,6 +867,7 @@
 				placeholder={pane ? m.workspace_chat_placeholder() : m.chat_placeholder()}
 				busy={working}
 				pickerAbove
+				enterSends={page.data.chat?.enterSends ?? true}
 				{crew}
 				model={modelLabel}
 				{models}

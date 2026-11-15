@@ -16,7 +16,18 @@ export type Preferences = {
 	language: string;
 	/** False until the person saved a timezone: `timezone` is then only the UTC fallback. */
 	has_stored_timezone: boolean;
+	/** A region like "en-GB" for numbers and dates; null follows the language. */
+	formats?: string | null;
+	/** The crew member (an `agent_type`) new chats start with; null is Nomi. */
+	default_agent?: string | null;
+	/** Enter sends (the default); off, Enter makes a new line and ⌘/Ctrl+Enter sends. */
+	enter_sends?: boolean;
+	show_reply_tokens?: boolean;
 };
+
+/** `GET|PUT /api/notifications/reminder-preferences`: local times in the person's zone. */
+export type ReminderPreferences = { push_reminders: boolean; quiet_hours: QuietHours | null };
+export type QuietHours = { start: string; end: string };
 
 /** `GET /api/usage/brief`. */
 export type UsageBrief = {

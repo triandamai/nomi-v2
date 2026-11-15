@@ -9,8 +9,11 @@
 	import { pageAction } from '$lib/pageAction';
 	import { googleErrorFrom } from '$lib/auth/problems';
 	import { sayGoogle } from '$lib/auth/say';
-	import { devicesLine, maskEmail, zoneOptions } from '$lib/settings/general';
-	import type { EmailPreferences } from '$lib/adapters/api';
+	import { devicesLine, maskEmail, parseQuiet, quietOptions, quietValue, zoneOptions } from '$lib/settings/general';
+	import type { EmailPreferences, ReminderPreferences } from '$lib/adapters/api';
+	import { agentTypeOf, crewOf } from '$lib/adapters/shell';
+	import { mentionOptions } from '$lib/adapters/chat';
+	import Mascot from '$lib/ds/agents/Mascot.svelte';
 	import type { Theme } from '$lib/theme';
 	import { toasts } from '$lib/ds/overlays/toasts.svelte';
 	import Button from '$lib/ds/actions/Button.svelte';
@@ -29,9 +32,9 @@
 
 	// Settings › General (App / Settings / General m7lvY1): the page's groups down a column (880,
 	// 28 apart) beside On this page; every change saves as it's made and goes back if it can't.
-	// Left out, as the backend has no place to keep them (AGENTS.md §9, BACKEND_TODO.md): changing
-	// the email, Formats, Reduce motion, the Chat group (who new chats start with, Enter sends,
-	// tokens under replies), the push and quiet-hours rows of Notifications, and Delete account.
+	// Left out (AGENTS.md §9): changing the email and Delete account (still to come), Formats and
+	// tokens under replies (the backend keeps them; nothing in v2 follows them yet), Reduce motion
+	// (the device's own setting rules) and Crew updates (nothing to keep it).
 	let { data } = $props();
 
 	const time = clock();
@@ -44,6 +47,7 @@
 		{ href: '#account', label: m.general_account() },
 		{ href: '#language', label: m.general_language_region() },
 		{ href: '#appearance', label: m.general_appearance() },
+		{ href: '#chat', label: m.general_chat() },
 		{ href: '#notifications', label: m.general_notifications() },
 		{ href: '#sessions', label: m.general_sessions() },
 	]);
@@ -59,7 +63,7 @@
 	}
 
 	/** Saves one preference through /preferences; false when it didn't take. */
-	async function savePreference(change: { theme?: Theme; language?: string; timezone?: string }): Promise<boolean> {
+	async function savePreference(change: { theme?: Theme; language?: string; timezone?: string; default_agent?: string; enter_sends?: boolean }): Promise<boolean> {
 		const response = await fetch('/preferences', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(change) }).catch(() => null);
 		const ok = !!response?.ok && !response.redirected;
 		if (!ok) toasts.show({ kind: 'error', title: m.general_save_failed() });
@@ -106,6 +110,45 @@
 		emails = before;
 		if (result.message) toasts.show({ kind: 'error', title: m.general_save_failed(), detail: result.message });
 	}
+
+	// Chat: who new chats start with (Home's To) and whether Enter sends, through /preferences.
+	const starters = $derived([
+		{ value: '', label: 'Nomi' },
+		...mentionOptions(data.crew.rows).flatMap((option) => {
+			const type = option.kind === 'crew' && option.agent !== 'nomi' ? agentTypeOf(option.agent) : undefined;
+			return type ? [{ value: type, label: option.name }] : [];
+		}),
+	]);
+	let startsWith = $derived(data.preferences.default_agent && starters.some((option) => option.value === data.preferences.default_agent) ? data.preferences.default_agent : '');
+	const starterMascot = $derived((startsWith && crewOf(startsWith)) || 'nomi');
+	async function changeStarter(next: string) {
+		const before = data.preferences.default_agent ?? '';
+		if (await savePreference({ default_agent: next })) await invalidate('app:shell');
+		else startsWith = before;
+	}
+	let enterSends = $derived(data.preferences.enter_sends ?? true);
+	async function changeEnterSends(on: boolean) {
+		enterSends = on;
+		if (await savePreference({ enter_sends: on })) await invalidate('app:shell');
+		else enterSends = !on;
+	}
+
+	// Reminders: pushes and quiet hours, switched at once and back if saving fails.
+	let reminders = $derived<ReminderPreferences | null>(data.reminders);
+	// The night the select shows: the saved one, or the pen's 22:00–06:00 while they're off.
+	let night = $derived(quietValue(data.reminders?.quiet_hours ?? { start: '22:00', end: '06:00' }));
+	const nights = $derived(quietOptions(reminders?.quiet_hours ?? null));
+	async function saveReminders(fields: Record<string, string>, next: ReminderPreferences) {
+		if (!reminders) return;
+		const before = reminders;
+		reminders = next;
+		const result = await pageAction('/settings/general', 'reminders', fields);
+		if (result.ok) return;
+		reminders = before;
+		if (result.message) toasts.show({ kind: 'error', title: m.general_save_failed(), detail: result.message });
+	}
+	const setPush = (on: boolean) => reminders && saveReminders({ push_reminders: String(on) }, { ...reminders, push_reminders: on });
+	const setQuiet = (on: boolean, value = night) => reminders && saveReminders({ quiet: on ? value : 'off' }, { ...reminders, quiet_hours: on ? parseQuiet(value) : null });
 
 	let busy = $state<string>();
 	async function act(name: string, done: (data: Record<string, unknown>) => string) {
@@ -218,7 +261,27 @@
 				</SettingRow>
 			</SettingsGroup>
 
+			<SettingsGroup id="chat" title={m.general_chat()} description={m.general_chat_body()}>
+				<SettingRow title={m.general_starts_with()} description={m.general_starts_with_body()}>
+					{#snippet control()}
+						<span class="flex w-32 max-w-full">
+							<Select label={m.general_starts_with()} options={starters} bind:value={startsWith} onchange={changeStarter}>
+								{#snippet lead()}<Mascot agent={starterMascot} size={20} />{/snippet}
+							</Select>
+						</span>
+					{/snippet}
+				</SettingRow>
+				<SettingRow title={m.general_enter_sends()} description={enterSends ? m.general_enter_sends_on() : m.general_enter_sends_off()}>
+					{#snippet control()}<Toggle label={m.general_enter_sends()} checked={enterSends} onchange={changeEnterSends} />{/snippet}
+				</SettingRow>
+			</SettingsGroup>
+
 			<SettingsGroup id="notifications" title={m.general_notifications()} description={m.general_notifications_body()}>
+				{#if reminders}
+					<SettingRow title={m.general_reminders()} description={m.general_reminders_body()}>
+						{#snippet control()}<Toggle label={m.general_reminders()} checked={reminders!.push_reminders} onchange={setPush} />{/snippet}
+					</SettingRow>
+				{/if}
 				{#if emails}
 					<SettingRow title={m.general_email()} description={m.general_email_account()}>
 						{#snippet control()}<Toggle label={m.general_email()} checked={emails!.email_account} onchange={(on) => saveEmails({ email_account: on })} />{/snippet}
@@ -228,6 +291,21 @@
 					</SettingRow>
 				{:else}
 					<SettingNote text={m.general_emails_unloaded()} />
+				{/if}
+				{#if reminders}
+					<SettingRow
+						title={m.general_quiet()}
+						description={reminders.quiet_hours ? m.general_quiet_on({ range: `${reminders.quiet_hours.start}–${reminders.quiet_hours.end}` }) : m.general_quiet_off()}
+					>
+						{#snippet control()}
+							<span class="flex w-30 max-w-full">
+								<Select label={m.general_quiet()} options={nights} bind:value={night} mono disabled={!reminders!.quiet_hours} onchange={(value) => setQuiet(true, value)} />
+							</span>
+							<Toggle label={m.general_quiet()} checked={!!reminders!.quiet_hours} onchange={(on) => setQuiet(on)} />
+						{/snippet}
+					</SettingRow>
+				{:else}
+					<SettingNote text={m.general_reminders_unloaded()} />
 				{/if}
 			</SettingsGroup>
 

@@ -7,7 +7,7 @@ import { api, createAccount, signInAs } from './support/accounts';
 // saves as it's made (theme, time zone, emails, language), the password is changed in place (the
 // emailed reset for a forgotten one), and other devices are signed out.
 
-type Preferences = { theme: string; timezone: string; language: string; has_stored_timezone: boolean };
+type Preferences = { theme: string; timezone: string; language: string; has_stored_timezone: boolean; default_agent: string | null; enter_sends: boolean };
 const preferences = async (account: Parameters<typeof api>[0]) => (await (await api(account, '/api/preferences')).json()) as Preferences;
 
 test('general settings save as they’re changed', async ({ page, context }) => {
@@ -89,3 +89,42 @@ test('the password changes in place: the current one first, then the new one twi
 	await expect(page).toHaveURL(/\/settings\/general$/);
 });
 
+
+test('who new chats start with and Enter sends reach Home; reminder pushes and quiet hours are kept', async ({ page, context }) => {
+	const account = await createAccount();
+	await signInAs(context, account);
+	await page.goto('/settings/general', { waitUntil: 'networkidle' });
+
+	// Chat.
+	await page.getByRole('combobox', { name: 'New chats start with' }).selectOption({ label: 'Dana' });
+	await expect.poll(async () => (await preferences(account)).default_agent).toBe('money');
+	await page.getByRole('switch', { name: 'Enter sends' }).click();
+	await expect(page.getByText('Enter adds a new line; ⌘ or Ctrl+Enter sends')).toBeVisible();
+	await expect.poll(async () => (await preferences(account)).enter_sends).toBe(false);
+
+	// Notifications: pushes off, then quiet hours on, a later night, and off again.
+	const reminders = async () =>
+		(await (await api(account, '/api/notifications/reminder-preferences')).json()) as { push_reminders: boolean; quiet_hours: { start: string; end: string } | null };
+	await page.getByRole('switch', { name: 'Reminders' }).click();
+	await expect.poll(async () => (await reminders()).push_reminders).toBe(false);
+	const quiet = page.getByRole('combobox', { name: 'Quiet hours' });
+	await expect(quiet).toBeDisabled();
+	await page.getByRole('switch', { name: 'Quiet hours' }).click();
+	await expect.poll(async () => (await reminders()).quiet_hours).toEqual({ start: '22:00', end: '06:00' });
+	await expect(page.getByText('22:00–06:00 · reminders wait until they end.')).toBeVisible();
+	await quiet.selectOption('23:00-07:00');
+	await expect.poll(async () => (await reminders()).quiet_hours).toEqual({ start: '23:00', end: '07:00' });
+	await page.reload({ waitUntil: 'networkidle' });
+	await expect(quiet).toHaveValue('23:00-07:00');
+	await page.getByRole('switch', { name: 'Quiet hours' }).click();
+	await expect.poll(async () => (await reminders()).quiet_hours).toBeNull();
+
+	// Home: the message goes to Dana unless picked otherwise, and Enter makes a new line.
+	await page.goto('/', { waitUntil: 'networkidle' });
+	await expect(page.getByRole('button', { name: /Dana/ }).first()).toBeVisible();
+	const field = page.getByRole('textbox', { name: 'Message' });
+	await field.fill('Two');
+	await field.press('Enter');
+	await expect(field).toHaveValue('Two\n');
+	await expect(page).toHaveURL(/\/$/);
+});
