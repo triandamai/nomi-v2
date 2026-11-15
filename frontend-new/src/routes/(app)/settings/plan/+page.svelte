@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { ArrowDown, KeyRound } from '@lucide/svelte';
+	import { ArrowDown, ArrowUpRight, CircleCheck, KeyRound } from '@lucide/svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { getLocale } from '$lib/paraglide/runtime';
 	import { clock } from '$lib/clock';
@@ -22,14 +22,43 @@
 	import SettingNote from '$lib/ds/settings/SettingNote.svelte';
 	import PageToc from '$lib/ds/settings/PageToc.svelte';
 	import SettingsTip from '$lib/ds/settings/SettingsTip.svelte';
+	import Notice from '$lib/ds/admin/Notice.svelte';
+	import Icon from '$lib/ds/foundations/Icon.svelte';
+	import { pageAction } from '$lib/pageAction';
+	import { paymentOutcome, planChoice } from '$lib/settings/checkout';
 
 	// Settings › Plan & usage (App / Settings / Plan & usage C0og49): the plan the person is on and
 	// the billing facts beside it, a month of usage (its figures, a bar a day, by model), the plans
 	// to compare with Nomi's word on the fit, and their own keys; On this page beside them.
-	// Left out (AGENTS.md §9, BACKEND_TODO.md): joining a plan or its waitlist (there's no checkout),
-	// the payment method, prices in rupiah for spend (the backend keeps dollars), a key's balance and
+	// A plan above theirs is bought on the payment gateway's page (a month, checked out by the
+	// backend); one without a price has its waitlist; coming back from paying, the payment's outcome
+	// leads the page. Left out (AGENTS.md §9, BACKEND_TODO.md): the payment method, prices in rupiah for spend (the backend keeps dollars), a key's balance and
 	// "Use Nomi allowance", and "Add a key" until Models & providers is in v2.
-	let { data } = $props();
+	let { data, form } = $props();
+
+	const offers = $derived({ currentId: data.plans?.current_plan_id ?? null, currentTokens: null as number | null, waitlist: data.plans?.waitlist ?? [], checkoutAvailable: data.plans?.checkout_available ?? false });
+	// Joined here, before the page reads the plans again.
+	let joined = $state<string[]>([]);
+	let joining = $state<string | null>(null);
+	let waitlistError = $state<string | null>(null);
+	async function join(planId: string) {
+		joining = planId;
+		waitlistError = null;
+		const result = await pageAction('/settings/plan', 'waitlist', { plan: planId });
+		joining = null;
+		if (result.ok) joined = [...joined, planId];
+		else waitlistError = result.message || m.plan_waitlist_failed();
+	}
+	const payment = $derived(data.payment ? { ...data.payment, ...paymentOutcome(data.payment) } : null);
+	const paymentText = $derived.by(() => {
+		if (!payment) return '';
+		const plan = payment.plan_name;
+		if (payment.status === 'paid') return payment.period_end ? m.payment_paid_until({ plan, date: dayMonth(new Date(payment.period_end), getLocale(), true) }) : m.payment_paid({ plan });
+		if (payment.status === 'pending') return m.payment_pending({ plan });
+		if (payment.status === 'failed') return m.payment_failed({ plan });
+		if (payment.status === 'cancelled') return m.payment_cancelled({ plan });
+		return m.payment_expired({ plan });
+	});
 
 	const language = getLocale();
 	const time = clock();
@@ -78,6 +107,13 @@
 				<h1 class="text-display font-medium tracking-display text-text">{m.settings_plan()}</h1>
 				<p class="text-body text-text-2">{m.plan_intro()}</p>
 			</header>
+
+			{#if payment}
+				<div class="flex flex-col gap-2">
+					<Notice kind={payment.kind} text={paymentText} detail={payment.status === 'pending' ? m.payment_pending_detail() : undefined} />
+					{#if payment.open && payment.invoice_url}<div><Button label={m.payment_open()} variant="secondary" href={payment.invoice_url} iconEnd={ArrowUpRight} /></div>{/if}
+				</div>
+			{/if}
 
 			<div id="plan" class="scroll-mt-6">
 				<PlanSummary
@@ -168,17 +204,38 @@
 					<div class="grid gap-4 md:grid-cols-2">
 						{#each plans as plan (plan.id)}
 							{@const theirs = plan.id === data.plans?.current_plan_id}
-							<PlanOption
-								name={plan.name}
-								tag={theirs ? { label: m.plan_current(), kind: 'go' } : plan.promo_label ? { label: plan.promo_label, kind: 'neutral' } : undefined}
-								price={plan.promo_price_label ?? plan.price_label}
-								per={m.plan_per_month()}
-								description={plan.description}
-								features={plan.features}
-								raised={!theirs && current !== undefined && plan.monthly_tokens > current.monthly_tokens}
-							/>
+							{@const choice = planChoice(plan.price_idr === undefined ? { ...plan, price_idr: null } : { ...plan, price_idr: plan.price_idr }, { ...offers, currentTokens: current?.monthly_tokens ?? null, waitlist: [...offers.waitlist, ...joined] })}
+							{@const option = { name: plan.name, tag: theirs ? { label: m.plan_current(), kind: 'go' as const } : choice === 'waitlist' || choice === 'waiting' ? { label: m.plan_coming_soon(), kind: 'neutral' as const } : plan.promo_label ? { label: plan.promo_label, kind: 'neutral' as const } : undefined, price: plan.promo_price_label ?? plan.price_label, per: m.plan_per_month(), description: plan.description, features: plan.features, raised: !theirs && current !== undefined && plan.monthly_tokens > current.monthly_tokens }}
+							{#if choice === 'buy' || choice === 'closed' || choice === 'waitlist' || choice === 'waiting'}
+								<PlanOption {...option}>
+									{#snippet footer()}
+										<div class="flex flex-col gap-2">
+											{#if choice === 'buy'}
+												<!-- A native post: the server sends the person on to the gateway's own page. -->
+												<form method="POST" action="?/checkout">
+													<input type="hidden" name="plan" value={plan.id} />
+													<Button type="submit" variant="inverse" label={m.plan_upgrade({ name: plan.name })} />
+												</form>
+												<p class="text-caption text-text-3">{m.plan_upgrade_note()}</p>
+											{:else if choice === 'closed'}
+												<p class="text-caption text-text-3">{m.plan_payments_closed()}</p>
+											{:else if choice === 'waitlist'}
+												<div><Button variant="secondary" label={m.plan_join_waitlist()} loading={joining === plan.id} onclick={() => void join(plan.id)} /></div>
+												<p class="text-caption text-text-3">{m.plan_waitlist_note()}</p>
+											{:else}
+												<p class="inline-flex items-center gap-1.5 text-ui text-text"><span class="inline-flex text-accent"><Icon icon={CircleCheck} size={14} /></span>{m.plan_on_waitlist()}</p>
+												<p class="text-caption text-text-3">{m.plan_waitlist_note()}</p>
+											{/if}
+										</div>
+									{/snippet}
+								</PlanOption>
+							{:else}
+								<PlanOption {...option} />
+							{/if}
 						{/each}
 					</div>
+					{#if form?.message}<Notice kind="error" text={form.message} />{/if}
+					{#if waitlistError}<Notice kind="error" text={waitlistError} />{/if}
 					{#if thisMonth}<FitNote text={fitNote(allowed.projected, { name: usage.plan.name, monthly_tokens: usage.plan.monthly_tokens }, plans)} />{/if}
 				</section>
 			{/if}

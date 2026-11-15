@@ -424,9 +424,12 @@ drawn dead:
 
 On Plan & usage (`C0og49`):
 
-- No way to join a plan or its waitlist ("Join Pro waitlist", "Join the waitlist"): there's no
-  checkout or waitlist to call (BACKEND_TODO.md); Compare plans says plans are changed by Nomi's
-  team for now. Billing leaves out the payment method, which the backend doesn't know.
+- A plan without a price shows "Coming soon" and "Join the waitlist" (the pen's Pro card), then
+  "You're on the waitlist". A plan above yours with a price has "Upgrade to {plan}": a month, paid on
+  the payment gateway's own page (the pen draws no checkout), with "Payments aren't open on this
+  Nomi yet" where no gateway is set up. Coming back from it (/billing?payment=…), the payment's
+  outcome leads the page: received, waiting (with the payment page again), expired, failed or
+  cancelled. Billing leaves out the payment method for now.
 - Spend is in dollars at list price, as the backend keeps it; the pen's "Rp 1.800 ≈ $0.11 · you
   paid Rp 0" needs an exchange rate and what was paid.
 - An own key's row shows its masked key only: the pen's "Balance empty" and "Use Nomi allowance"

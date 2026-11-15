@@ -1,5 +1,5 @@
 import { isRedirect } from '@sveltejs/kit';
-import type { OwnConnection, PlansForUser, UsageMonth } from '$lib/adapters/api';
+import type { OwnConnection, PaymentResult, PlansForUser, UsageMonth } from '$lib/adapters/api';
 import { apiFetch, type ApiEvent } from './api';
 
 // Settings › Plan & usage's calls to the backend, as the person: a month of their usage (this
@@ -29,4 +29,42 @@ export async function loadPlan(event: ApiEvent, month: string | null): Promise<P
 	]);
 	if (!usage) return null;
 	return { usage, plans, keys: keys?.connections ?? null, joinedAt: profile?.joined_at ?? null };
+}
+
+async function post(event: ApiEvent, path: string): Promise<Response | null> {
+	try {
+		return await apiFetch(event, path, { method: 'POST' });
+	} catch (error) {
+		if (isRedirect(error)) throw error;
+		return null;
+	}
+}
+
+/** Asks to be told when a plan without a price opens; false when that couldn't be saved. */
+export async function joinWaitlist(event: ApiEvent, planId: string): Promise<boolean> {
+	return Boolean((await post(event, `/api/plans/${encodeURIComponent(planId)}/waitlist`))?.ok);
+}
+
+/**
+ * The payment gateway's page to pay a month of a plan on, or the backend's reason it can't start
+ * (`already_on_plan`, `not_for_sale`, `payments_not_configured`, `gateway_error`). The page is only
+ * ever an https address: the person is sent straight to it.
+ */
+export async function startCheckout(event: ApiEvent, planId: string): Promise<{ url: string } | { error: string; status: number }> {
+	const response = await post(event, `/api/plans/${encodeURIComponent(planId)}/checkout`);
+	if (!response) return { error: 'gateway_error', status: 503 };
+	const body = (await response.json().catch(() => ({}))) as { url?: string; error?: string };
+	if (!response.ok) return { error: body.error ?? 'gateway_error', status: response.status };
+	try {
+		if (body.url && new URL(body.url).protocol === 'https:') return { url: body.url };
+	} catch {
+		// Not an address: refused below.
+	}
+	return { error: 'gateway_error', status: 502 };
+}
+
+/** A payment of the person's (the gateway sends them back with its id); null for any other. */
+export async function loadPayment(event: ApiEvent, id: string): Promise<PaymentResult | null> {
+	if (!/^[0-9a-zA-Z-]+$/.test(id)) return null;
+	return read<PaymentResult>(event, `/api/billing/payments/${id}`);
 }
