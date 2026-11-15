@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { ArrowUpRight, Inbox, LogOut } from '@lucide/svelte';
 	import { deserialize } from '$app/forms';
+	import { leaveTo } from '$lib/live/leaving';
 	import { goto, invalidate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { m } from '$lib/paraglide/messages';
@@ -267,10 +268,14 @@
 		if (deleteWith === 'code' && !deleteSent) return void sendDeleteCode();
 		deleteBusy = true;
 		const fields: Record<string, string> = deleteWith === 'password' ? { password: deletePassword } : { challenge_id: deleteSent!.challengeId, code };
+		// Closing signs every device out, this one too: the feed's sign-out may come first.
+		leaveTo('/sign-in?closed=1');
 		const result = await pageActionWithData('deleteAccount', fields);
 		deleteBusy = false;
-		// Closed: the action signed this device out and went on to sign in.
-		if (result.ok) return;
+		// Closed: the action signed this device out and is on its way to sign in. Keep where to go
+		// set: the feed's own sign-out may still be finishing, and it must land on the same page.
+		if (result.ok || result.left) return;
+		leaveTo(null);
 		soleOwner = result.soleOwner ?? [];
 		deleteProblem = result.problem;
 		deleteCode = '';
@@ -280,7 +285,7 @@
 	async function pageActionWithData(
 		name: string,
 		fields: Record<string, string>,
-	): Promise<{ ok: true; data: Record<string, unknown> } | { ok: false; problem?: Problem; soleOwner?: { id: string; name: string }[] }> {
+	): Promise<{ ok: true; data: Record<string, unknown> } | { ok: false; left?: true; problem?: Problem; soleOwner?: { id: string; name: string }[] }> {
 		const body = new FormData();
 		for (const [key, value] of Object.entries(fields)) body.set(key, value);
 		const response = await fetch(`/settings/general?/${name}`, { method: 'POST', body, headers: { 'x-sveltekit-action': 'true' } }).catch(() => null);
@@ -289,7 +294,7 @@
 		if (result?.type === 'redirect') {
 			// Signed out (closing the account): a full load, so nothing of the app stays in memory.
 			location.assign(result.location);
-			return { ok: false };
+			return { ok: false, left: true };
 		}
 		if (result?.type === 'failure') {
 			const said = (result.data ?? {}) as { message?: string; field?: string; ended?: boolean; soleOwner?: { id: string; name: string }[] };
