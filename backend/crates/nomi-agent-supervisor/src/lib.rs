@@ -147,6 +147,7 @@ impl SubAgent for SupervisorAgent {
     }
 }
 
+#[allow(clippy::type_complexity)]
 pub async fn list_recent_agent_activity(conn: &mut PoolConnection<Postgres>, session_id: Uuid) -> Result<String, String> {
     let rows: Vec<(String, String, String, Option<String>, Option<String>)> = sqlx::query_as(
         "SELECT target_agent_type, task, status, result, error FROM agent_delegations \

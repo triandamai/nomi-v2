@@ -58,3 +58,23 @@ impl Tool for StopAgents {
         crate::stop_agents_tool(conn, session_id, user_id, &input).await
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn supervisor_tools_metadata() {
+        let catalog = catalog_tools();
+        assert_eq!(catalog.len(), 1);
+        assert_eq!(catalog[0].definition().name, "list_recent_agent_activity");
+        assert_eq!(catalog[0].group(), SUPERVISOR_AGENT_TYPE);
+        assert_eq!(catalog[0].keywords(), &["status", "delegations", "background", "progress"]);
+
+        let all = agent_tools();
+        assert_eq!(all.len(), 2);
+        assert_eq!(all[1].definition().name, "stop_agents");
+        assert_eq!(all[1].group(), SUPERVISOR_AGENT_TYPE);
+        assert_eq!(all[1].keywords(), &["cancel", "abort", "halt"]);
+    }
+}
