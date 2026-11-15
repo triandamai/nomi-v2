@@ -49,6 +49,12 @@ pub async fn gateway() -> Option<Gateway> {
     Some(Gateway { client: Arc::new(client), webhook_token })
 }
 
+/// How a payment was made, as Billing shows it: "BANK_TRANSFER · BCA".
+pub fn method_label(method: Option<&str>, channel: Option<&str>) -> Option<String> {
+    let parts: Vec<&str> = [method, channel].into_iter().flatten().map(str::trim).filter(|p| !p.is_empty()).collect();
+    (!parts.is_empty()).then(|| parts.join(" · "))
+}
+
 /// Whether two tokens are equal, taking as long whatever they share.
 pub fn tokens_match(a: &str, b: &str) -> bool {
     let (a, b) = (a.as_bytes(), b.as_bytes());
@@ -304,6 +310,13 @@ mod tests {
         assert!(!tokens_match("secret", "secret2"));
         assert!(!tokens_match("", "x"));
         assert!(tokens_match("", ""));
+    }
+
+    #[test]
+    fn names_how_it_was_paid() {
+        assert_eq!(method_label(Some("BANK_TRANSFER"), Some("BCA")).as_deref(), Some("BANK_TRANSFER · BCA"));
+        assert_eq!(method_label(Some("EWALLET"), None).as_deref(), Some("EWALLET"));
+        assert_eq!(method_label(None, Some(" ")), None);
     }
 
     #[test]

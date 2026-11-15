@@ -48,18 +48,19 @@ pub async fn usage_month(
 ) -> Result<Json<MonthUsageView>, (StatusCode, String)> {
     let usage = nomi_usage::month(&state.pool, claims.sub, query.month.as_deref()).await.map_err(internal)?;
     let paid_idr: i64 = sqlx::query_scalar(
-        "SELECT COALESCE(SUM(amount_idr), 0)::bigint FROM plan_payments WHERE user_id = $1 AND status = 'paid' \
+        "SELECT COALESCE(SUM(amount), 0)::bigint FROM payments WHERE user_id = $1 AND status = 'paid' AND currency = $4 \
            AND paid_at >= (($3 || '-01')::timestamp AT TIME ZONE $2) \
            AND paid_at < ((($3 || '-01')::timestamp + interval '1 month') AT TIME ZONE $2)",
     )
     .bind(claims.sub)
     .bind(&usage.timezone)
     .bind(&usage.month)
+    .bind(nomi_usage::plans::CURRENCY)
     .fetch_one(&state.pool)
     .await
     .map_err(internal)?;
     let payment_method: Option<String> = sqlx::query_scalar(
-        "SELECT payment_method FROM plan_payments WHERE user_id = $1 AND status = 'paid' AND payment_method IS NOT NULL ORDER BY paid_at DESC LIMIT 1",
+        "SELECT payment_method FROM payments WHERE user_id = $1 AND status = 'paid' AND payment_method IS NOT NULL ORDER BY paid_at DESC LIMIT 1",
     )
     .bind(claims.sub)
     .fetch_optional(&state.pool)

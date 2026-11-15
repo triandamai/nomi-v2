@@ -247,6 +247,7 @@ pub async fn xendit_webhook(State(state): State<AppState>, headers: HeaderMap, b
         return Ok(Json(json!({ "ok": true })));
     }
     let status: PaymentStatus = event.status;
-    server_billing::apply_status(&state.pool, &payment, &status, event.amount, event.paid_at, event.payment_method.as_deref()).await.map_err(internal)?;
+    let method = server_billing::method_label(event.payment_method.as_deref(), event.payment_channel.as_deref());
+    server_billing::apply_status(&state.pool, &payment, &status, event.amount, event.paid_at, method.as_deref()).await.map_err(internal)?;
     Ok(Json(json!({ "ok": true })))
 }

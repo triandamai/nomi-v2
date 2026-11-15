@@ -705,9 +705,13 @@ pub async fn payment_item(pool: &PgPool, id: Uuid) -> Result<Option<PaymentListI
     .await
 }
 
-/// The payment `external_id` (a payment id as text) names, if there is one.
+/// What the one-month checkouts before billing put in front of a payment's id in its gateway id.
+pub const LEGACY_EXTERNAL_ID_PREFIX: &str = "nomi-plan-";
+
+/// The payment `external_id` (a payment id as text, or a legacy `nomi-plan-<id>`) names, if any.
 pub async fn payment_by_external_id(pool: &PgPool, external_id: &str) -> Result<Option<Payment>, sqlx::Error> {
-    match Uuid::parse_str(external_id) {
+    let id = external_id.strip_prefix(LEGACY_EXTERNAL_ID_PREFIX).unwrap_or(external_id);
+    match Uuid::parse_str(id) {
         Ok(id) => get_payment(pool, id).await,
         Err(_) => Ok(None),
     }
@@ -946,6 +950,12 @@ pub async fn activate(
     .bind(payment_method)
     .execute(&mut *conn)
     .await?;
+    // On the plan now, so no longer waiting for it to open.
+    sqlx::query("DELETE FROM plan_waitlist WHERE user_id = $1 AND plan_id = $2")
+        .bind(payment.user_id)
+        .bind(payment.plan_id)
+        .execute(&mut *conn)
+        .await?;
     // A payment that was released (expired) and then paid anyway still counts against its coupon.
     if let Some(coupon_id) = payment.coupon_id {
         sqlx::query("INSERT INTO coupon_redemptions (coupon_id, user_id, payment_id) VALUES ($1, $2, $3) ON CONFLICT (payment_id) DO NOTHING")

@@ -1,5 +1,6 @@
-//! Moving to a plan: its waitlist, paying for it through Xendit (a fake one here), the gateway's
-//! callback that moves the person onto it, and what Billing then shows was paid.
+//! Moving to a plan: its waitlist, paying a month of it through Xendit (a fake one here) on the
+//! billing engine, the gateway's callback that moves the person onto it, and what Billing then
+//! shows was paid.
 
 mod support;
 
@@ -223,8 +224,18 @@ async fn paying_for_a_plan_moves_the_person_onto_it(pool: PgPool) {
         .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["url"], "https://checkout.xendit.test/inv_1");
+    // Asking again while that invoice is open gives the same page (the gateway is asked once).
+    let (status, again) = app
+        .send(
+            "POST",
+            &format!("/api/plans/{pro}/checkout"),
+            &ana,
+            json!({}),
+        )
+        .await;
+    assert_eq!((status, again["url"].clone()), (StatusCode::OK, body["url"].clone()));
     let external_id: String =
-        sqlx::query_scalar("SELECT external_id FROM plan_payments WHERE user_id = $1 AND invoice_id = 'inv_1' AND status = 'pending'").bind(ana.id).fetch_one(&pool).await.unwrap();
+        sqlx::query_scalar("SELECT id::text FROM payments WHERE user_id = $1 AND provider_invoice_id = 'inv_1' AND status = 'pending' AND term_months = 1").bind(ana.id).fetch_one(&pool).await.unwrap();
 
     let paid = |amount: i64| json!({ "id": "inv_1", "external_id": external_id, "status": "PAID", "amount": amount, "payment_method": "BANK_TRANSFER", "payment_channel": "BCA", "paid_at": chrono::Utc::now() });
     assert_eq!(
@@ -326,7 +337,7 @@ async fn a_gateway_that_refuses_fails_the_checkout(pool: PgPool) {
         (StatusCode::BAD_GATEWAY, Some("gateway_error"))
     );
     let failed: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM plan_payments WHERE user_id = $1 AND status = 'failed'",
+        "SELECT count(*) FROM payments WHERE user_id = $1 AND status = 'failed'",
     )
     .bind(ana.id)
     .fetch_one(&pool)

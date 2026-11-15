@@ -80,6 +80,19 @@ CREATE INDEX payments_user ON payments (user_id, created_at DESC);
 CREATE INDEX payments_status ON payments (status, created_at DESC);
 CREATE UNIQUE INDEX payments_provider_invoice ON payments (provider_invoice_id) WHERE provider_invoice_id IS NOT NULL;
 
+-- The one-month checkouts of 0128 become payments like any other: a month, nothing off. Their
+-- gateway id was "nomi-plan-<id>", and the webhook still recognises that for the same id.
+INSERT INTO payments (id, user_id, plan_id, term_months, kind, base_amount, amount, currency, status, provider,
+                      provider_invoice_id, invoice_url, paid_at, period_start, period_end, payment_method,
+                      created_at, updated_at)
+SELECT id, user_id, plan_id, 1, 'new', amount_idr, amount_idr, 'IDR', status, 'xendit',
+       invoice_id, invoice_url, paid_at,
+       CASE WHEN status = 'paid' THEN paid_at END,
+       CASE WHEN status = 'paid' THEN paid_at + interval '1 month' END,
+       payment_method, created_at, updated_at
+FROM plan_payments;
+DROP TABLE plan_payments;
+
 -- A coupon is counted from the moment a payment is created with it, and released when that
 -- payment expires, fails or is cancelled, so a cap counts pending and paid payments.
 CREATE TABLE coupon_redemptions (
