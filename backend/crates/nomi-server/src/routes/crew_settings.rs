@@ -12,7 +12,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use nomi_agent_core::personal_crew::{self, CrewTemplate, Level, SoulVersion};
+use nomi_agent_core::personal_crew::{self, CreateMemberError, CrewTemplate, Level, SoulVersion, SOUL_MAX_CHARS};
 use nomi_agent_core::SubAgent;
 use nomi_auth::extractor::AuthClaims;
 use nomi_llm::ToolDefinition;
@@ -20,19 +20,12 @@ use nomi_llm::ToolDefinition;
 use crate::app::AppState;
 use crate::routes::deploy::{internal, ApiError};
 
-/// The longest soul.md a member keeps.
-const SOUL_MAX_CHARS: usize = 8_000;
 /// How many soul.md versions the history lists.
 const SOUL_VERSIONS_LIMIT: i64 = 50;
 /// How many entries Activity lists.
 const ACTIVITY_LIMIT: i64 = 50;
 /// How far back Activity looks.
 const ACTIVITY_WINDOW_DAYS: i32 = 30;
-/// The most members of their own a person keeps.
-const MAX_OWN_MEMBERS: i64 = 20;
-/// The longest name and role of a member of one's own.
-const NAME_MAX_CHARS: usize = 40;
-const ROLE_MAX_CHARS: usize = 200;
 
 /// A crew member as these routes see it: who it is, and the tools a person can set levels for.
 struct Member {
@@ -52,14 +45,19 @@ fn not_found() -> ApiError {
 /// The member `agent_type` names, when `user_id` has it in their crew: a built-in one, an admin's
 /// member for everyone, or one of their own.
 async fn member(state: &AppState, user_id: Uuid, agent_type: &str) -> Result<Member, ApiError> {
-    let registry = crate::build_agent_registry(&state.pool, state.project_storage.clone());
+    let registry = crate::build_agent_registry(&state.pool, state.project_storage.clone(), state.tool_catalog.clone());
     if let Some(agent) = registry.find(agent_type) {
+        let mut tools = agent.tools();
+        // The engine runs it for them, under the same permission levels as their own tools.
+        if agent.creates_crew_members() {
+            tools.push(nomi_agent_core::engine::create_agent_tool_definition());
+        }
         return Ok(Member {
             agent_type: agent_type.to_string(),
             name: agent.display_name().into_owned(),
             is_default: agent.is_default(),
             is_own: false,
-            tools: agent.tools(),
+            tools,
             agent,
         });
     }
@@ -97,42 +95,77 @@ async fn member(state: &AppState, user_id: Uuid, agent_type: &str) -> Result<Mem
 }
 
 #[derive(Deserialize)]
-pub struct SetEnabled {
-    pub enabled: bool,
+pub struct UpdateMember {
+    #[serde(default)]
+    pub enabled: Option<bool>,
+    /// The member's tools, replacing the ones it has: only for a member of the person's own.
+    #[serde(default)]
+    pub tools: Option<Vec<String>>,
 }
 
 #[derive(Serialize)]
-pub struct EnabledResponse {
+pub struct UpdateMemberResponse {
     pub agent_type: String,
     pub enabled: bool,
+    pub tools: Vec<String>,
 }
 
-/// `PUT /api/agents/:type` `{enabled}`: switches a member on or off for this person. Nomi itself
-/// stays on (400).
-pub async fn set_enabled(
+/// `PUT /api/agents/:type` `{enabled?, tools?}`: switches a member on or off for this person
+/// (Nomi itself stays on, 400) and sets the tools of a member of their own (404 for anyone
+/// else's, 400 naming an unknown tool).
+pub async fn update_member(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
     Path(agent_type): Path<String>,
-    Json(req): Json<SetEnabled>,
-) -> Result<Json<EnabledResponse>, ApiError> {
+    Json(req): Json<UpdateMember>,
+) -> Result<Json<UpdateMemberResponse>, ApiError> {
     let member = member(&state, claims.sub, &agent_type).await?;
-    if member.is_default && !req.enabled {
+    if member.is_default && req.enabled == Some(false) {
         return Err((
             StatusCode::BAD_REQUEST,
             format!("{} can't be switched off", member.name),
         ));
     }
+    if req.tools.is_some() && !member.is_own {
+        return Err(not_found());
+    }
     let mut conn = state
         .pool
         .acquire()
         .await
-        .map_err(internal("failed to switch the member"))?;
-    personal_crew::set_enabled(&mut conn, claims.sub, &member.agent_type, req.enabled)
-        .await
-        .map_err(internal("failed to switch the member"))?;
-    Ok(Json(EnabledResponse {
+        .map_err(internal("failed to update the member"))?;
+    let tools = match req.tools {
+        Some(tools) => {
+            let tools = personal_crew::dedupe_tool_names(tools);
+            let switches = nomi_agent_core::tools::ToolSwitches::load(&mut conn).await;
+            personal_crew::check_tool_names(&state.tool_catalog, &switches, &tools).map_err(bad)?;
+            Some(tools)
+        }
+        None => None,
+    };
+    if let Some(enabled) = req.enabled {
+        personal_crew::set_enabled(&mut conn, claims.sub, &member.agent_type, enabled)
+            .await
+            .map_err(internal("failed to switch the member"))?;
+    }
+    let tools = match tools {
+        Some(tools) => {
+            let id: Uuid = member.agent_type.parse().map_err(|_| not_found())?;
+            let saved = personal_crew::set_member_tools(&mut conn, claims.sub, id, &tools)
+                .await
+                .map_err(internal("failed to save the tools"))?;
+            if !saved {
+                return Err(not_found());
+            }
+            tools
+        }
+        None => member.tools.iter().map(|t| t.name.clone()).collect(),
+    };
+    let enabled = personal_crew::is_enabled(&mut conn, claims.sub, &member.agent_type).await;
+    Ok(Json(UpdateMemberResponse {
         agent_type: member.agent_type,
-        enabled: req.enabled,
+        enabled,
+        tools,
     }))
 }
 
@@ -456,6 +489,7 @@ pub struct NewMemberResponse {
     pub name: String,
     pub role: String,
     pub soul_version: i32,
+    pub tools: Vec<String>,
 }
 
 fn bad(message: impl Into<String>) -> ApiError {
@@ -487,117 +521,61 @@ pub async fn create_member(
             .map(|t| t.tools.iter().map(|s| s.to_string()).collect())
             .unwrap_or_default()
     });
-    let shape = pick(req.shape, template.map(|t| t.shape)).unwrap_or_else(|| "cookie9".to_string());
-    let tone = pick(req.tone, template.map(|t| t.tone)).unwrap_or_else(|| "glow".to_string());
-    let motion = pick(req.motion, template.map(|t| t.motion)).unwrap_or_else(|| "spin".to_string());
-
-    if name.chars().count() > NAME_MAX_CHARS {
-        return Err(bad(format!("name is at most {NAME_MAX_CHARS} characters")));
-    }
-    if role.chars().count() > ROLE_MAX_CHARS {
-        return Err(bad(format!("role is at most {ROLE_MAX_CHARS} characters")));
-    }
-    if soul.chars().count() > SOUL_MAX_CHARS {
-        return Err(bad(format!(
-            "soul.md is at most {SOUL_MAX_CHARS} characters"
-        )));
-    }
+    let shape = pick(req.shape, template.map(|t| t.shape))
+        .unwrap_or_else(|| personal_crew::DEFAULT_SHAPE.to_string());
+    let tone = pick(req.tone, template.map(|t| t.tone))
+        .unwrap_or_else(|| personal_crew::DEFAULT_TONE.to_string());
+    let motion = pick(req.motion, template.map(|t| t.motion))
+        .unwrap_or_else(|| personal_crew::DEFAULT_MOTION.to_string());
     if !crate::routes::agents::SHAPES.contains(&shape.as_str())
         || !crate::routes::agents::TONES.contains(&tone.as_str())
         || !crate::routes::agents::MOTIONS.contains(&motion.as_str())
     {
         return Err(bad("unknown look"));
     }
-    let known = state.tool_catalog.known_tool_names();
-    if let Some(tool) = tools.iter().find(|t| !known.contains(&t.as_str())) {
-        return Err(bad(format!("unknown tool {tool}")));
-    }
-    // Mentions go by name: one of the crew's names would never reach it.
-    let registry = crate::build_agent_registry(&state.pool, state.project_storage.clone());
-    if registry
+    let registry = crate::build_agent_registry(&state.pool, state.project_storage.clone(), state.tool_catalog.clone());
+    let crew_names: Vec<String> = registry
         .agents()
         .iter()
-        .any(|a| a.display_name().eq_ignore_ascii_case(&name))
-    {
-        return Err((
-            StatusCode::CONFLICT,
-            format!("{name} is already in the crew"),
-        ));
-    }
-
-    let mut tx = state
+        .map(|a| a.display_name().into_owned())
+        .collect();
+    let mut conn = state
         .pool
-        .begin()
+        .acquire()
         .await
         .map_err(internal("failed to add the member"))?;
-    let own: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM dynamic_agents WHERE owner_user_id = $1")
-            .bind(claims.sub)
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(internal("failed to add the member"))?;
-    if own >= MAX_OWN_MEMBERS {
-        return Err((
-            StatusCode::CONFLICT,
-            format!("a crew keeps at most {MAX_OWN_MEMBERS} members of your own"),
-        ));
-    }
-    // The plan's own limit on members of one's own, under the hard cap above.
-    nomi_usage::entitlements::check_new_crew_member(&mut tx, claims.sub)
-        .await
-        .map_err(internal("failed to add the member"))?
-        .map_err(|hit| (StatusCode::PAYMENT_REQUIRED, hit.message()))?;
-    let taken: bool = sqlx::query_scalar(
-        "SELECT EXISTS (SELECT 1 FROM dynamic_agents WHERE lower(name) = lower($1) AND is_active AND (owner_user_id IS NULL OR owner_user_id = $2))",
-    )
-    .bind(&name)
-    .bind(claims.sub)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(internal("failed to add the member"))?;
-    if taken {
-        return Err((
-            StatusCode::CONFLICT,
-            format!("{name} is already in the crew"),
-        ));
-    }
-    let id = Uuid::new_v4();
-    sqlx::query(
-        "INSERT INTO dynamic_agents (id, name, system_prompt, intent_label, intent_description, granted_tools, created_by, owner_user_id, template_key, shape, tone, motion) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $8, $9, $10, $11)",
-    )
-    .bind(id)
-    .bind(&name)
-    .bind(personal_crew::personal_member_prompt(&name, &role))
-    .bind(personal_crew::intent_label_for(&name, id))
-    .bind(&role)
-    .bind(&tools)
-    .bind(claims.sub)
-    .bind(template.map(|t| t.key))
-    .bind(&shape)
-    .bind(&tone)
-    .bind(&motion)
-    .execute(&mut *tx)
-    .await
-    .map_err(internal("failed to add the member"))?;
-    let agent_type = id.to_string();
-    let soul_version = if soul.is_empty() {
-        0
-    } else {
-        personal_crew::save_soul(&mut tx, claims.sub, &agent_type, &soul)
-            .await
-            .map_err(internal("failed to add the member"))?
+    let new_member = personal_crew::NewMember {
+        name,
+        role,
+        soul,
+        tools,
+        template_key: template.map(|t| t.key),
+        shape,
+        tone,
+        motion,
     };
-    tx.commit()
-        .await
-        .map_err(internal("failed to add the member"))?;
+    let created = personal_crew::create_member(
+        &mut conn,
+        claims.sub,
+        new_member,
+        &state.tool_catalog,
+        &crew_names,
+    )
+    .await
+    .map_err(|e| match e {
+        CreateMemberError::Invalid(m) => bad(m),
+        CreateMemberError::Taken(m) | CreateMemberError::TooMany(m) => (StatusCode::CONFLICT, m),
+        CreateMemberError::PlanLimit(m) => (StatusCode::PAYMENT_REQUIRED, m),
+        CreateMemberError::Db(err) => internal("failed to add the member")(err),
+    })?;
     Ok((
         StatusCode::CREATED,
         Json(NewMemberResponse {
-            agent_type,
-            name,
-            role,
-            soul_version,
+            agent_type: created.agent_type,
+            name: created.name,
+            role: created.role,
+            soul_version: created.soul_version,
+            tools: created.tools,
         }),
     ))
 }

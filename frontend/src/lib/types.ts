@@ -1653,6 +1653,14 @@ export interface CrewActivityItem {
 	at: string;
 }
 
+/** One tool in the catalog (GET /api/tools/catalog) a crew member can be given. */
+export interface CatalogTool {
+	name: string;
+	description: string;
+	group: string;
+	keywords: string[];
+}
+
 /** A starting point for a member of one's own (GET /api/agents/templates). */
 export interface CrewTemplate {
 	key: string;

@@ -74,4 +74,8 @@ impl SubAgent for ChitchatAgent {
     fn supports_reminders(&self) -> bool {
         true
     }
+
+    fn creates_crew_members(&self) -> bool {
+        true
+    }
 }

@@ -153,6 +153,25 @@ async fn the_started_line_comes_from_the_model_in_the_crew_members_voice(pool: P
     phrase_delegation_started(&provider, &mut conn, c.user, c.session, "money", "Finley", "x").await.unwrap();
     assert!(provider.received_requests.lock().unwrap()[0].system.as_ref().unwrap().contains("You're speaking with Ana."));
 
+    sqlx::query("INSERT INTO session_personality (session_id, description, set_by) VALUES ($1, 'witty and concise', $2)")
+        .bind(c.session)
+        .bind(c.user)
+        .execute(&c.pool)
+        .await
+        .unwrap();
+    let provider = FakeLlmProvider::success(reply(Some("ok")));
+    phrase_delegation_started(&provider, &mut conn, c.user, c.session, "money", "Finley", "x").await.unwrap();
+    assert!(provider.received_requests.lock().unwrap()[0].system.as_ref().unwrap().contains("Adopt this personality in your reply: witty and concise"));
+
+    let non_text_provider = FakeLlmProvider::success(LlmResponse {
+        content: vec![LlmBlock::Thinking { text: "hmm".into(), signature: None }],
+        stop_reason: StopReason::EndTurn,
+        input_tokens: 1,
+        output_tokens: 1,
+    });
+    let fallback = phrase_delegation_started(&non_text_provider, &mut conn, c.user, c.session, "money", "Finley", "x").await.unwrap();
+    assert!(fallback.contains("money"), "non-text block falls back to default phrase: {fallback}");
+
     let failing = FakeLlmProvider::failure("overloaded");
     assert!(phrase_delegation_started(&failing, &mut conn, c.user, c.session, "money", "Finley", "x").await.unwrap_err().contains("overloaded"));
 }
@@ -167,4 +186,5 @@ fn the_supervisor_describes_itself() {
     assert_eq!(agent.tools().iter().map(|t| t.name.as_str()).collect::<Vec<_>>(), ["list_recent_agent_activity", "stop_agents"]);
     assert!(agent.uses_personality());
     assert!(!agent.is_delegation_target());
+    assert!(agent.creates_crew_members());
 }

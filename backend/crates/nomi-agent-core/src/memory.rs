@@ -16,7 +16,7 @@ pub struct RetrievedMemory {
     pub kind: String,
 }
 
-fn to_vector_literal(embedding: &[f32]) -> String {
+pub(crate) fn to_vector_literal(embedding: &[f32]) -> String {
     format!("[{}]", embedding.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(","))
 }
 
@@ -137,7 +137,7 @@ const EXTRACTION_MAX_TOKENS: u32 = 1024;
 pub const DUPLICATE_DISTANCE: f64 = 0.08;
 
 /// The width of `memory_items.embedding`.
-const STORED_DIMENSIONS: usize = 1536;
+pub const STORED_DIMENSIONS: usize = 1536;
 
 /// How many known memories the extractor sees, so it can update or retire one instead of adding
 /// a contradicting duplicate.

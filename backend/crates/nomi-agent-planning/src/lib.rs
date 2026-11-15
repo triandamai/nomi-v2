@@ -12,6 +12,10 @@ use nomi_agent_core::prompts::{PLANNING_APP_PLAYBOOK, PLANNING_SYSTEM_PROMPT};
 use nomi_agent_core::SubAgent;
 use nomi_llm::{ContentBlock, LlmMessage, LlmRole, ToolDefinition};
 
+pub mod tools;
+
+pub use tools::catalog_tools;
+
 pub const PLANNING_AGENT_TYPE: &str = "planning";
 
 /// The stacks a project can be built on (see the coding agent's guides).
@@ -116,21 +120,23 @@ impl SubAgent for PlanningAgent {
     }
 
     fn tools(&self) -> Vec<ToolDefinition> {
-        vec![create_project_tool_definition(), publish_tool_definition()]
+        let create_project = tools::CreateProject { relay: self.relay_ops.clone() };
+        vec![nomi_agent_core::Tool::definition(&create_project), publish_tool_definition()]
     }
 
     async fn execute_tool(
         &self,
         conn: &mut PoolConnection<Postgres>,
         session_id: Uuid,
-        _agent_session_id: Uuid,
+        agent_session_id: Uuid,
         user_id: Uuid,
         name: &str,
         input: Value,
     ) -> Result<nomi_agent_core::ToolOutcome, String> {
         match name {
             "create_project" => {
-                create_project(conn, session_id, user_id, input, self.relay_ops.as_ref()).await.map(nomi_agent_core::ToolOutcome::text)
+                let tool = tools::CreateProject { relay: self.relay_ops.clone() };
+                nomi_agent_core::Tool::execute(&tool, conn, session_id, agent_session_id, user_id, input).await
             }
             PUBLISH_TOOL_NAME => publish_from_tool(self.project_ops.as_ref(), user_id, &self.display_name(), &input).await.map(nomi_agent_core::ToolOutcome::text),
             other => Err(format!("unknown tool: {other}")),

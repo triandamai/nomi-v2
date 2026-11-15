@@ -1,10 +1,14 @@
 use std::sync::Arc;
 
 use crate::subagent::SubAgent;
+use crate::tool_catalog::ToolCatalog;
 
 pub struct AgentRegistry {
     agents: Vec<Arc<dyn SubAgent>>,
     default_index: usize,
+    /// The catalog of tools a member can be given, for `find_tools` and `create_agent`. Without
+    /// one (tests, mostly) neither is offered.
+    tool_catalog: Option<Arc<ToolCatalog>>,
 }
 
 impl AgentRegistry {
@@ -24,13 +28,23 @@ impl AgentRegistry {
             .collect();
 
         match default_indices.as_slice() {
-            [index] => Self { agents, default_index: *index },
+            [index] => Self { agents, default_index: *index, tool_catalog: None },
             [] => panic!("AgentRegistry::new: no registered agent returns true from is_default()"),
             _ => panic!(
                 "AgentRegistry::new: more than one registered agent returns true from is_default(): {:?}",
                 default_indices.iter().map(|&i| agents[i].agent_type().into_owned()).collect::<Vec<_>>()
             ),
         }
+    }
+
+    /// The same registry, knowing the tool catalog (see `tool_catalog`).
+    pub fn with_tool_catalog(mut self, catalog: Arc<ToolCatalog>) -> Self {
+        self.tool_catalog = Some(catalog);
+        self
+    }
+
+    pub fn tool_catalog(&self) -> Option<&Arc<ToolCatalog>> {
+        self.tool_catalog.as_ref()
     }
 
     /// Every built-in agent, the default one included.

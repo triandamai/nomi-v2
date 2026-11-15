@@ -10,6 +10,10 @@ use nomi_agent_core::prompts::PERSONALITY_SYSTEM_PROMPT;
 use nomi_agent_core::SubAgent;
 use nomi_llm::ToolDefinition;
 
+pub mod tools;
+
+pub use tools::catalog_tools;
+
 pub const PERSONALITY_AGENT_TYPE: &str = "personality";
 
 /// How many past personality versions `list_personality_versions` shows.
@@ -86,12 +90,7 @@ impl SubAgent for PersonalityAgent {
     }
 
     fn tools(&self) -> Vec<ToolDefinition> {
-        vec![
-            set_personality_tool_definition(),
-            reset_chat_personality_tool_definition(),
-            list_personality_versions_tool_definition(),
-            rollback_personality_tool_definition(),
-        ]
+        nomi_agent_core::tool_definitions(&catalog_tools())
     }
 
     async fn execute_tool(
@@ -103,13 +102,9 @@ impl SubAgent for PersonalityAgent {
         name: &str,
         input: Value,
     ) -> Result<nomi_agent_core::ToolOutcome, String> {
-        match name {
-            "set_personality" => set_personality(conn, session_id, agent_session_id, user_id, input).await.map(nomi_agent_core::ToolOutcome::text),
-            "reset_chat_personality" => reset_chat_personality(conn, session_id).await.map(nomi_agent_core::ToolOutcome::text),
-            "list_personality_versions" => list_personality_versions(conn, session_id, user_id).await.map(nomi_agent_core::ToolOutcome::text),
-            "rollback_personality" => rollback_personality(conn, session_id, agent_session_id, user_id, input).await.map(nomi_agent_core::ToolOutcome::text),
-            other => Err(format!("unknown tool: {other}")),
-        }
+        let tools = catalog_tools();
+        let tool = nomi_agent_core::find_tool(&tools, name).ok_or_else(|| format!("unknown tool: {name}"))?;
+        tool.execute(conn, session_id, agent_session_id, user_id, input).await
     }
 
     fn intent_label(&self) -> Cow<'static, str> {

@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -8,24 +7,25 @@ use sqlx::PgPool;
 use sqlx::Postgres;
 use uuid::Uuid;
 
-use nomi_agent_core::{CatalogTool, DynamicAgent, DynamicAgentRow, SubAgent, ToolCatalog, ToolOutcome};
+use nomi_agent_core::{DynamicAgent, DynamicAgentRow, SubAgent, Tool, ToolCatalog, ToolOutcome};
 use nomi_llm::ToolDefinition;
 
 struct Echo;
 #[async_trait]
-impl CatalogTool for Echo {
+impl Tool for Echo {
+    fn definition(&self) -> ToolDefinition {
+        ToolDefinition { name: "echo".to_string(), description: "echoes input".to_string(), input_schema: json!({"type": "object"}) }
+    }
+    fn group(&self) -> &'static str {
+        "test"
+    }
     async fn execute(&self, _conn: &mut PoolConnection<Postgres>, _session_id: Uuid, _agent_session_id: Uuid, _user_id: Uuid, input: Value) -> Result<ToolOutcome, String> {
         Ok(ToolOutcome::text(input.to_string()))
     }
 }
 
 fn catalog_with_echo() -> Arc<ToolCatalog> {
-    let mut entries: HashMap<&'static str, (ToolDefinition, Box<dyn CatalogTool>)> = HashMap::new();
-    entries.insert(
-        "echo",
-        (ToolDefinition { name: "echo".to_string(), description: "echoes input".to_string(), input_schema: json!({"type": "object"}) }, Box::new(Echo)),
-    );
-    Arc::new(ToolCatalog::new(entries))
+    Arc::new(ToolCatalog::from_tools(vec![Box::new(Echo)]))
 }
 
 fn sample_row() -> DynamicAgentRow {
