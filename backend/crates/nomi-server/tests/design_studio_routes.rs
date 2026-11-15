@@ -191,3 +191,41 @@ async fn a_chat_can_only_have_so_much_feedback_waiting(pool: PgPool) {
     assert!(refused.as_str().unwrap().contains("waiting"), "{refused}");
     design_on(&pool, admin.id, false).await;
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn the_person_approves_a_version_and_the_newest_approval_stands(pool: PgPool) {
+    let _g = GLOBALS.lock().await;
+    let app = App::new(pool.clone());
+    let admin = app.admin("admin@acme.test").await;
+    let ada = app.person("ada@acme.test").await;
+    let bob = app.person("bob@acme.test").await;
+    let session_id = chat_of(&pool, &ada).await;
+    save(&pool, session_id, &ada, &preview("editorial", "Fresh at six")).await;
+    save(&pool, session_id, &ada, &preview("editorial", "Fresh at six, daily")).await;
+    let uri = format!("/api/sessions/{session_id}/design/approval");
+    let studio = format!("/api/sessions/{session_id}/design");
+
+    design_on(&pool, admin.id, false).await;
+    assert_eq!(app.send("POST", &uri, &ada, json!({"version": 1})).await.0, StatusCode::NOT_FOUND);
+
+    design_on(&pool, admin.id, true).await;
+    assert_eq!(app.get(&studio, &ada).await.1["approval"], json!(null), "nothing is approved until the person says so");
+    assert_eq!(app.send("POST", &uri, &ada, json!({"version": 5})).await.0, StatusCode::NOT_FOUND, "only a version there is");
+    assert_eq!(app.send("POST", &uri, &ada, json!({})).await.0, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(app.send("POST", &uri, &bob, json!({"version": 1})).await.0, StatusCode::NOT_FOUND, "another person's chat isn't theirs to approve");
+    assert_eq!(app.call("POST", &uri, None, Some(json!({"version": 1}))).await.0, StatusCode::UNAUTHORIZED);
+
+    let (status, first) = app.send("POST", &uri, &ada, json!({"version": 1, "note": "Go with this"})).await;
+    assert_eq!(status, StatusCode::CREATED, "{first}");
+    assert_eq!((first["version"].as_i64(), first["note"].as_str()), (Some(1), Some("Go with this")));
+    assert_eq!(app.get(&studio, &ada).await.1["approval"]["version"], 1);
+
+    assert_eq!(app.send("POST", &uri, &ada, json!({"version": 2})).await.0, StatusCode::CREATED);
+    let (_, body) = app.get(&studio, &ada).await;
+    assert_eq!((body["approval"]["version"].as_i64(), body["approval"]["note"].is_null()), (Some(2), true), "the newest approval stands");
+    let mut conn = pool.acquire().await.unwrap();
+    let history = nomi_agent_core::design_approval::history(&mut conn, session_id).await.unwrap();
+    assert_eq!(history.iter().map(|a| a.version).collect::<Vec<_>>(), [1, 2], "the earlier approval is still on record");
+    assert_eq!(history[0].user_id, ada.id);
+    design_on(&pool, admin.id, false).await;
+}

@@ -3648,5 +3648,17 @@
 	"studio_refine_sent": "Terkirim ke Sora. Versi baru akan muncul di sini saat sudah siap.",
 	"studio_refine_failed": "Itu tidak bisa dikirim ke Sora. Coba lagi.",
 	"studio_refine_refresh": "Periksa versi baru",
-	"studio_refine_chat": "Lihat di obrolan"
+	"studio_refine_chat": "Lihat di obrolan",
+	"studio_mode_compare": "Bandingkan",
+	"studio_compare_with": "Bandingkan dengan",
+	"studio_compare_none": "Baru ada satu versi, jadi belum ada yang bisa dibandingkan.",
+	"studio_compare_frame": "Versi {version}: {title}",
+	"studio_approve": "Setujui versi ini",
+	"studio_approved": "Disetujui",
+	"studio_approve_question": "Setujui versi {version} sebagai desain yang akan dibangun?",
+	"studio_approve_explain": "Sora menyerahkan versi yang disetujui ke Koda untuk dibangun. Anda bisa menyetujui versi lain nanti.",
+	"studio_approve_waiting": "Masukan yang masih menunggu: {count}",
+	"studio_approve_confirm": "Setujui versi {version}",
+	"studio_approve_cancel": "Batal",
+	"studio_approve_failed": "Persetujuan itu tidak bisa disimpan. Coba lagi."
 }

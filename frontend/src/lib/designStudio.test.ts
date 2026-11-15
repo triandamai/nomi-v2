@@ -190,3 +190,24 @@ describe('designStudio refinement', () => {
 		expect(refineMessage(' ', [said(1, { status: 'resolved' })], fallback)).toBeNull();
 	});
 });
+
+import { compareWith } from './designStudio';
+
+describe('designStudio compare', () => {
+	const versions = [preview({ version: 1 }), preview({ version: 2 }), preview({ version: 4 })];
+
+	it('compares a version with the one picked', () => {
+		expect(compareWith(versions, versions[2], 1)?.version).toBe(1);
+	});
+
+	it('compares with the version before when none is picked, or the pick is the version itself', () => {
+		expect(compareWith(versions, versions[2], null)?.version).toBe(2);
+		expect(compareWith(versions, versions[1], 2)?.version).toBe(1);
+		expect(compareWith(versions, versions[1], 9)?.version).toBe(1);
+	});
+
+	it('compares the first version with the next one, and a lone version with nothing', () => {
+		expect(compareWith(versions, versions[0], null)?.version).toBe(2);
+		expect(compareWith([versions[0]], versions[0], null)).toBeNull();
+	});
+});

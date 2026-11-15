@@ -36,7 +36,9 @@ export type StudioFeedback = {
 	created_at: string;
 	resolved_at: string | null;
 };
-export type StudioResponse = { previews: StudioPreview[]; feedback: StudioFeedback[] };
+/** The version the person said is the design to build. */
+export type StudioApproval = { version: number; note: string | null; created_at: string };
+export type StudioResponse = { previews: StudioPreview[]; feedback: StudioFeedback[]; approval: StudioApproval | null };
 
 /** Who a message is from: the preview's page, or the Studio around it. */
 export const PREVIEW_SOURCE = 'nomi-design-preview';
@@ -174,4 +176,16 @@ export function refineMessage(words: string, feedback: StudioFeedback[], fallbac
 	const waiting = feedback.filter((f) => f.status === 'open').sort((a, b) => a.number - b.number);
 	if (waiting.length === 0) return null;
 	return `@${DESIGNER} ${fallback(waiting.map((f) => `#${f.number}`).join(', '))}`;
+}
+
+/**
+ * The version to show next to `current`: the one picked, else the version before it, else the
+ * one after. Null when there is no other version.
+ */
+export function compareWith(previews: StudioPreview[], current: StudioPreview, picked: number | null): StudioPreview | null {
+	const others = previews.filter((p) => p.version !== current.version).sort((a, b) => a.version - b.version);
+	const asked = others.find((p) => p.version === picked);
+	if (asked) return asked;
+	const before = others.filter((p) => p.version < current.version);
+	return before[before.length - 1] ?? others[0] ?? null;
 }

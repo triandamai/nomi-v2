@@ -12,6 +12,7 @@ use uuid::Uuid;
 
 use nomi_agent_core::crew::DESIGN_AGENT_TYPE;
 use nomi_agent_core::prompts::DESIGN_SYSTEM_PROMPT;
+use nomi_agent_core::design_approval::{self, Approval};
 use nomi_agent_core::design_artifact::{self, Manifest};
 use nomi_agent_core::design_brief::{self, DesignBrief};
 use nomi_agent_core::design_directions::{self, DesignDirections};
@@ -61,6 +62,14 @@ pub const FEEDBACK_INTRO: &str = "This is what the person said about your previe
 /// The feedback still waiting on a new version; `None` when there is none.
 pub fn feedback_context(feedback: &[Feedback]) -> Option<String> {
     design_feedback::open_markdown(feedback).map(|open| format!("{FEEDBACK_INTRO}\n\n{open}"))
+}
+
+/// What Sora is told while the person hasn't approved a version.
+pub const NOT_APPROVED: &str = "No version of the design is approved yet: the person approves one in the Design Studio.";
+
+/// The approval that stands, as Sora reads it; `newest` is the chat's newest preview version.
+pub fn approval_context(approval: &Approval, newest: i32) -> String {
+    approval.to_markdown(newest)
 }
 
 /// Sora. She is registered for everyone, and reachable only where the `design` setting is
@@ -141,7 +150,7 @@ impl SubAgent for DesignAgent {
     }
 
     /// The chat's newest design brief, when Rena saved one, the directions already proposed, the
-    /// preview built last and the feedback still waiting on a new version.
+    /// preview built last, the feedback still waiting on a new version and what the person approved.
     async fn domain_context(
         &self,
         conn: &mut PoolConnection<Postgres>,
@@ -153,7 +162,15 @@ impl SubAgent for DesignAgent {
         let brief = design_brief::latest(&mut **conn, session_id).await.ok().flatten().map(|(version, brief)| brief_context(version, &brief));
         let directions =
             design_directions::latest(&mut **conn, session_id).await.ok().flatten().map(|(version, _, set)| directions_context(version, &set));
-        let preview = match design_artifact::latest(&mut **conn, session_id).await.ok().flatten() {
+        let newest = design_artifact::latest(&mut **conn, session_id).await.ok().flatten();
+        let approval = match &newest {
+            Some((version, _)) => Some(match design_approval::current(&mut **conn, session_id).await.ok().flatten() {
+                Some(approval) => approval_context(&approval, *version),
+                None => NOT_APPROVED.to_string(),
+            }),
+            None => None,
+        };
+        let preview = match newest {
             Some((version, manifest)) => {
                 let published = static_publish::latest(&mut **conn, session_id, version).await.ok().flatten();
                 Some(preview_context(session_id, version, &manifest, published.as_ref()))
@@ -161,7 +178,7 @@ impl SubAgent for DesignAgent {
             None => None,
         };
         let feedback = design_feedback::list(&mut **conn, session_id).await.ok().and_then(|all| feedback_context(&all));
-        let parts: Vec<String> = [brief, directions, preview, feedback].into_iter().flatten().collect();
+        let parts: Vec<String> = [brief, directions, preview, feedback, approval].into_iter().flatten().collect();
         (!parts.is_empty()).then(|| parts.join("\n\n"))
     }
 
@@ -333,6 +350,19 @@ mod tests {
             assert!(prompt.contains(said), "her prompt says {said:?}");
         }
         assert!(!sora.tool_needs_approval(tools::READ_PREVIEW), "reading her own preview needs no OK");
+    }
+
+    #[test]
+    fn only_the_person_approves_and_sora_is_told_what_they_approved() {
+        let sora = DesignAgent::new();
+        let prompt = sora.system_prompt();
+        assert!(prompt.contains("Only the person approves") && prompt.contains("never say a design is approved"), "{prompt}");
+        assert!(!sora.tools().iter().any(|tool| tool.name.contains("approv")), "she has no tool that approves");
+        let approval = nomi_agent_core::design_approval::Approval { version: 2, note: None, user_id: Uuid::nil(), created_at: chrono::DateTime::<chrono::Utc>::UNIX_EPOCH };
+        let context = approval_context(&approval, 3);
+        assert!(context.starts_with("# Approved design\nThe person approved version 2"), "{context}");
+        assert!(context.contains("Version 3 is newer and not approved"));
+        assert_eq!(NOT_APPROVED, "No version of the design is approved yet: the person approves one in the Design Studio.");
     }
 
     #[test]

@@ -11,6 +11,7 @@ use axum::{
     Json,
 };
 use chrono::{DateTime, Utc};
+use nomi_agent_core::design_approval::{self, Approval};
 use nomi_agent_core::design_artifact::{self, Element, Page, ENTRY_PAGE, PREVIEW_TOKEN_CHARS};
 use nomi_agent_core::design_feedback::{self, Feedback, NewFeedback, MAX_OPEN_PER_CHAT};
 use nomi_auth::extractor::AuthClaims;
@@ -48,6 +49,8 @@ pub struct StudioResponse {
     pub previews: Vec<StudioPreview>,
     /// Everything said about the chat's previews, oldest first.
     pub feedback: Vec<Feedback>,
+    /// The approval that stands, when the person approved a version.
+    pub approval: Option<Approval>,
 }
 
 /// `GET /api/sessions/:id/design`: the chat's preview versions, oldest first.
@@ -63,8 +66,10 @@ pub async fn list(State(state): State<AppState>, AuthClaims(claims): AuthClaims,
     let mut conn = state.pool.acquire().await.map_err(failed)?;
     let previews = design_artifact::list(&mut conn, session_id).await.map_err(failed)?;
     let feedback = design_feedback::list(&mut conn, session_id).await.map_err(failed)?;
+    let approval = design_approval::current(&mut conn, session_id).await.map_err(failed)?;
     Ok(Json(StudioResponse {
         feedback,
+        approval,
         previews: previews
             .into_iter()
             .map(|stored| StudioPreview {
@@ -126,6 +131,25 @@ pub async fn add_feedback(
     }
     let kept = design_feedback::add(&mut conn, session_id, claims.sub, &feedback).await.map_err(unavailable)?;
     Ok((StatusCode::CREATED, Json(kept)))
+}
+
+/// `POST /api/sessions/:id/design/approval`: the person says this version is the design to
+/// build. Only a signed-in person who can open the chat can; no agent has a tool for it.
+pub async fn approve(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Path(session_id): Path<Uuid>,
+    Json(input): Json<serde_json::Value>,
+) -> Result<(StatusCode, Json<Approval>), Refused> {
+    studio_access(&state, claims.sub, session_id).await?;
+    let version = version_of(&input)?;
+    let note = design_approval::note_of(&input).map_err(|why| (StatusCode::UNPROCESSABLE_ENTITY, why))?;
+    let mut conn = state.pool.acquire().await.map_err(unavailable)?;
+    if design_artifact::version(&mut conn, session_id, version).await.map_err(unavailable)?.is_none() {
+        return Err(refused(StatusCode::NOT_FOUND, "no such version"));
+    }
+    let approval = design_approval::approve(&mut conn, session_id, claims.sub, version, note.as_deref()).await.map_err(unavailable)?;
+    Ok((StatusCode::CREATED, Json(approval)))
 }
 
 /// The file a request path means: nothing is the entry page, a folder its index page.

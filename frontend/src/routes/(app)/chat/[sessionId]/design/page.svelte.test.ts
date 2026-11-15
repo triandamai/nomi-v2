@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, settle, text } from '../../../../../test-stubs/render';
 import Page from './+page.svelte';
-import { PREVIEW_SOURCE, type StudioFeedback, type StudioPreview } from '$lib/designStudio';
+import { PREVIEW_SOURCE, type StudioApproval, type StudioFeedback, type StudioPreview } from '$lib/designStudio';
 
 const TOKEN = 'ab'.repeat(32);
 const preview = (version: number, extra: Partial<StudioPreview> = {}): StudioPreview => ({
@@ -23,8 +23,8 @@ const preview = (version: number, extra: Partial<StudioPreview> = {}): StudioPre
 	...extra,
 });
 
-const studio = (previews: StudioPreview[], wanted: string | null = null, feedback: StudioFeedback[] = []) =>
-	render(Page as never, { data: { previews, feedback, wanted, sessionId: 's1' } as never, params: { sessionId: 's1' } as never });
+const studio = (previews: StudioPreview[], wanted: string | null = null, feedback: StudioFeedback[] = [], approval: StudioApproval | null = null) =>
+	render(Page as never, { data: { previews, feedback, approval, wanted, sessionId: 's1' } as never, params: { sessionId: 's1' } as never });
 
 const said = (number: number, extra: Partial<StudioFeedback> = {}): StudioFeedback => ({
 	id: `f${number}`,
@@ -197,5 +197,65 @@ describe('design studio page', () => {
 		button(root, 'Feedback').click();
 		await settle();
 		expect(button(root, 'Ask Sora for a new version').disabled).toBe(true);
+	});
+
+	it('shows two versions side by side, each in its own sandbox', async () => {
+		const root = studio([preview(1), preview(2, { preview_token: 'cd'.repeat(32) }), preview(3, { preview_token: 'ef'.repeat(32) })]);
+		button(root, 'Compare').click();
+		await settle();
+		const frames = [...root.querySelectorAll('iframe')];
+		expect(frames.map((f) => f.getAttribute('src'))).toEqual([`/design-preview/${'cd'.repeat(32)}/index.html`, `/design-preview/${'ef'.repeat(32)}/index.html`]);
+		expect(frames.every((f) => f.getAttribute('sandbox') === 'allow-scripts')).toBe(true);
+		const other = root.querySelector('select') as HTMLSelectElement;
+		other.value = '1';
+		other.dispatchEvent(new Event('change', { bubbles: true }));
+		await settle();
+		expect(root.querySelectorAll('iframe')[0].getAttribute('src')).toBe(`/design-preview/${TOKEN}/index.html`);
+	});
+
+	it('has nothing to compare a lone version with', async () => {
+		const root = studio([preview(1)]);
+		button(root, 'Compare').click();
+		await settle();
+		expect(root.querySelectorAll('iframe').length).toBe(1);
+		expect(text(root)).toContain('There is only one version so far');
+	});
+
+	it('approves a version only after the person confirms', async () => {
+		const fetched = vi.fn(async (_url: string, _init?: RequestInit) => new Response(JSON.stringify({ version: 2, note: null, created_at: '2026-11-15T10:00:00Z' }), { status: 201 }));
+		vi.stubGlobal('fetch', fetched);
+		const root = studio([preview(1), preview(2)], null, [said(1)]);
+		button(root, 'Approve this version').click();
+		await settle();
+		expect(fetched).not.toHaveBeenCalled();
+		expect(text(root)).toContain('Approve version 2 as the design to build?');
+		expect(text(root)).toContain('Feedback still waiting: 1');
+		button(root, 'Approve version 2').click();
+		await settle();
+		await settle();
+		expect(fetched.mock.calls[0][0]).toBe('/chat/s1/design/approval');
+		expect(JSON.parse(fetched.mock.calls[0][1]?.body as string)).toEqual({ version: 2 });
+		expect(button(root, 'Approve this version')).toBeUndefined();
+		expect(root.querySelector('.studio__approved')?.textContent).toContain('Approved');
+	});
+
+	it('shows which version is approved, and lets another be approved instead', async () => {
+		const root = studio([preview(1), preview(2)], null, [], { version: 1, note: null, created_at: '2026-11-15T10:00:00Z' });
+		expect(button(root, 'Approve this version')).toBeDefined();
+		expect(root.querySelector('.studio__rail')?.textContent).toMatch(/Version 1\s*· Approved/);
+		([...root.querySelectorAll('button')].find((b) => b.textContent?.includes('Version 1')) as HTMLButtonElement).click();
+		await settle();
+		expect(button(root, 'Approve this version')).toBeUndefined();
+		expect(root.querySelector('.studio__approved')).not.toBeNull();
+	});
+
+	it('cancels an approval that was not confirmed', async () => {
+		const root = studio([preview(1)]);
+		button(root, 'Approve this version').click();
+		await settle();
+		button(root, 'Cancel').click();
+		await settle();
+		expect(text(root)).not.toContain('as the design to build?');
+		expect(root.querySelector('.studio__approved')).toBeNull();
 	});
 });

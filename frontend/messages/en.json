@@ -3648,5 +3648,17 @@
 	"studio_refine_sent": "Sent to Sora. The new version shows up here when it is ready.",
 	"studio_refine_failed": "That could not be sent to Sora. Try again.",
 	"studio_refine_refresh": "Check for a new version",
-	"studio_refine_chat": "See it in the chat"
+	"studio_refine_chat": "See it in the chat",
+	"studio_mode_compare": "Compare",
+	"studio_compare_with": "Compare with",
+	"studio_compare_none": "There is only one version so far, so there is nothing to compare it with.",
+	"studio_compare_frame": "Version {version}: {title}",
+	"studio_approve": "Approve this version",
+	"studio_approved": "Approved",
+	"studio_approve_question": "Approve version {version} as the design to build?",
+	"studio_approve_explain": "Sora hands the approved version to Koda to build. You can approve another version later.",
+	"studio_approve_waiting": "Feedback still waiting: {count}",
+	"studio_approve_confirm": "Approve version {version}",
+	"studio_approve_cancel": "Cancel",
+	"studio_approve_failed": "That approval could not be saved. Try again."
 }

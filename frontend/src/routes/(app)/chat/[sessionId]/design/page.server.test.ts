@@ -13,12 +13,13 @@ beforeEach(() => apiFetch.mockReset());
 
 describe('design studio: load', () => {
 	it('loads the chat’s previews and the version the link asked for', async () => {
-		apiFetch.mockResolvedValue(json({ previews: [preview(1), preview(2)], feedback: [{ number: 1, body: 'Warmer' }] }));
+		apiFetch.mockResolvedValue(json({ previews: [preview(1), preview(2)], feedback: [{ number: 1, body: 'Warmer' }], approval: { version: 2 } }));
 		const data = (await load(studio('http://localhost/chat/s1/design?version=1'))) as Record<string, any>;
 		expect(apiFetch.mock.calls[0][2]).toBe('/api/sessions/s1/design');
 		expect(data.previews.map((p: { version: number }) => p.version)).toEqual([1, 2]);
 		expect(data.wanted).toBe('1');
 		expect(data.feedback).toEqual([{ number: 1, body: 'Warmer' }]);
+		expect(data.approval).toEqual({ version: 2 });
 		expect(data.sessionId).toBe('s1');
 	});
 
@@ -27,6 +28,7 @@ describe('design studio: load', () => {
 		const data = (await load(studio())) as Record<string, any>;
 		expect(data.previews).toEqual([]);
 		expect(data.feedback).toEqual([]);
+		expect(data.approval).toBeNull();
 		expect(data.wanted).toBeNull();
 	});
 

@@ -8,6 +8,6 @@ import type { PageServerLoad } from './$types';
 export const load: PageServerLoad = async ({ params, cookies, fetch, url }) => {
 	const response = await apiFetch(fetch, cookies, `/api/sessions/${params.sessionId}/design`);
 	if (!response.ok) throw error(response.status, m.studio_not_found());
-	const { previews, feedback } = (await response.json()) as Partial<StudioResponse>;
-	return { previews: previews ?? [], feedback: feedback ?? [], wanted: url.searchParams.get('version'), sessionId: params.sessionId };
+	const { previews, feedback, approval } = (await response.json()) as Partial<StudioResponse>;
+	return { previews: previews ?? [], feedback: feedback ?? [], approval: approval ?? null, wanted: url.searchParams.get('version'), sessionId: params.sessionId };
 };

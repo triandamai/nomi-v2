@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { ArrowLeft, ExternalLink, Monitor, MousePointerClick, Smartphone, Tablet } from '@lucide/svelte';
+	import { ArrowLeft, BadgeCheck, ExternalLink, Monitor, MousePointerClick, Smartphone, Tablet } from '@lucide/svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { m } from '$lib/paraglide/messages';
 	import { getLocale } from '$lib/paraglide/runtime';
@@ -9,6 +9,7 @@
 		DEVICE_WIDTHS,
 		annotateMessage,
 		annotationsOn,
+		compareWith,
 		elementsOnPage,
 		feedbackDraft,
 		highlightMessage,
@@ -21,6 +22,7 @@
 		type Device,
 		type FeedbackScope,
 		type Selection,
+		type StudioApproval,
 		type StudioFeedback,
 		type StudioElement,
 		type StudioElementKind,
@@ -66,10 +68,11 @@
 	let frame = $state<HTMLIFrameElement | null>(null);
 
 	// Looking at a version, or saying what should change about it. Giving feedback always picks.
-	type Mode = 'preview' | 'feedback';
+	type Mode = 'preview' | 'feedback' | 'compare';
 	const MODES: { mode: Mode; label: string }[] = [
 		{ mode: 'preview', label: m.studio_mode_preview() },
 		{ mode: 'feedback', label: m.studio_mode_feedback() },
+		{ mode: 'compare', label: m.studio_mode_compare() },
 	];
 	let mode = $state<Mode>('preview');
 	const picking = $derived(selecting || mode === 'feedback');
@@ -121,6 +124,7 @@
 
 	function openVersion(version: number) {
 		pickedVersion = version;
+		confirming = false;
 		openedPage = ENTRY_PAGE;
 		shownPage = ENTRY_PAGE;
 		selection = null;
@@ -167,6 +171,38 @@
 		}
 	}
 
+	// Comparing: another version next to the one on screen, on the same page when it has it.
+	let comparedVersion = $state<number | null>(null);
+	const compared = $derived(current && mode === 'compare' ? compareWith(data.previews, current, comparedVersion) : null);
+	const otherVersions = $derived(current ? versions.filter((v) => v.version !== current.version) : []);
+
+	// The version the person said is the design to build. Approving is its own, confirmed step.
+	let approvedHere = $state<StudioApproval | null>(null);
+	const approval = $derived(approvedHere ?? data.approval);
+	const waiting = $derived(feedback.filter((f) => f.status === 'open').length);
+	let confirming = $state(false);
+	let approving = $state(false);
+	let approveError = $state('');
+
+	async function approve() {
+		if (!current || approving) return;
+		approving = true;
+		approveError = '';
+		try {
+			const response = await fetch(`/chat/${data.sessionId}/design/approval`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ version: current.version }) });
+			if (!response.ok) {
+				approveError = m.studio_approve_failed();
+				return;
+			}
+			approvedHere = (await response.json()) as StudioApproval;
+			confirming = false;
+		} catch {
+			approveError = m.studio_approve_failed();
+		} finally {
+			approving = false;
+		}
+	}
+
 	// Asking Sora for a new version: a message in the chat, so the request and her answer are there.
 	let ask = $state('');
 	let asking = $state(false);
@@ -198,6 +234,7 @@
 	async function refresh() {
 		await invalidateAll();
 		added = [];
+		approvedHere = null;
 		pickedVersion = null;
 	}
 
@@ -254,6 +291,11 @@
 				<button type="button" class="studio__tool studio__tool--wide" aria-pressed={picking} disabled={mode === 'feedback'} onclick={toggleSelecting}>
 					<Icon icon={MousePointerClick} size={18} /><span>{m.studio_select()}</span>
 				</button>
+				{#if approval?.version === current.version}
+					<span class="studio__approved md-label-large"><Icon icon={BadgeCheck} size={18} /><span>{m.studio_approved()}</span></span>
+				{:else}
+					<button type="button" class="studio__tool studio__tool--wide studio__tool--primary" onclick={() => (confirming = true)}>{m.studio_approve()}</button>
+				{/if}
 				{#if current.published_url}
 					<a class="studio__tool studio__tool--wide" href={current.published_url} target="_blank" rel="noopener noreferrer">
 						<Icon icon={ExternalLink} size={18} /><span>{m.studio_open_published()}</span>
@@ -262,6 +304,18 @@
 			</div>
 		{/if}
 	</header>
+
+	{#if current && confirming}
+		<div class="studio__confirm" role="alertdialog" aria-labelledby="studio-approve-question">
+			<div class="studio__confirm-text">
+				<p class="md-title-small" id="studio-approve-question">{m.studio_approve_question({ version: current.version })}</p>
+				<p class="md-body-small studio__muted">{m.studio_approve_explain()}{#if waiting > 0} {m.studio_approve_waiting({ count: waiting })}{/if}</p>
+				{#if approveError}<p class="md-body-small studio__error" role="alert">{approveError}</p>{/if}
+			</div>
+			<button type="button" class="studio__send md-label-large" disabled={approving} onclick={approve}>{m.studio_approve_confirm({ version: current.version })}</button>
+			<button type="button" class="studio__clear md-label-large" onclick={() => (confirming = false)}>{m.studio_approve_cancel()}</button>
+		</div>
+	{/if}
 
 	{#if !current || !frameSrc}
 		<div class="studio__empty">
@@ -276,7 +330,7 @@
 					{#each versions as version (version.version)}
 						<li>
 							<button type="button" class="studio__row" aria-current={version.version === current.version ? 'true' : undefined} onclick={() => openVersion(version.version)}>
-								<span class="md-label-large">{m.studio_version({ version: version.version })}{#if version.version === newest} · {m.studio_latest()}{/if}</span>
+								<span class="md-label-large">{m.studio_version({ version: version.version })}{#if version.version === approval?.version} · {m.studio_approved()}{/if}{#if version.version === newest} · {m.studio_latest()}{/if}</span>
 								<span class="md-body-small studio__muted">{version.title}</span>
 								<span class="md-body-small studio__muted">{version.direction_id} · {formatDate(version.created_at, getLocale())}</span>
 							</button>
@@ -298,7 +352,28 @@
 				{/if}
 			</nav>
 
-			<div class="studio__stage" class:studio__stage--device={device !== 'desktop'}>
+			<div class="studio__stage" class:studio__stage--device={device !== 'desktop'} class:studio__stage--compare={mode === 'compare'}>
+				{#if mode === 'compare'}
+					{#if compared}
+						<div class="studio__side">
+							<label class="studio__side-label md-label-large">
+								<span>{m.studio_compare_with()}</span>
+								<select class="studio__pick md-body-medium" value={String(compared.version)} onchange={(event) => (comparedVersion = Number(event.currentTarget.value))}>
+									{#each otherVersions as version (version.version)}
+										<option value={String(version.version)}>{m.studio_compare_frame({ version: version.version, title: version.title })}</option>
+									{/each}
+								</select>
+							</label>
+							{#key `${compared.preview_token}/${openedPage}`}
+								<iframe class="studio__frame" title={m.studio_compare_frame({ version: compared.version, title: compared.title })} src={previewUrl(compared, openedPage)} sandbox="allow-scripts" referrerpolicy="no-referrer" style:width={frameWidth}></iframe>
+							{/key}
+						</div>
+					{:else}
+						<p class="md-body-large studio__lone">{m.studio_compare_none()}</p>
+					{/if}
+				{/if}
+				<div class="studio__side">
+				{#if mode === 'compare' && compared}<p class="studio__side-label md-label-large">{m.studio_compare_frame({ version: current.version, title: current.title })}</p>{/if}
 				{#key `${current.preview_token}/${openedPage}`}
 					<iframe
 						bind:this={frame}
@@ -310,6 +385,7 @@
 						style:width={frameWidth}
 					></iframe>
 				{/key}
+				</div>
 			</div>
 
 			<aside class="studio__panel">
@@ -547,6 +623,82 @@
 		min-height: 0;
 		background: var(--md-sys-color-surface-container);
 	}
+	.studio__side {
+		display: flex;
+		flex: 1;
+		flex-direction: column;
+		align-items: center;
+		min-width: 0;
+		min-height: 0;
+	}
+	.studio__side-label {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		width: 100%;
+		min-height: 40px;
+		margin: 0;
+		padding: 4px 12px;
+		box-sizing: border-box;
+		color: var(--md-sys-color-on-surface-variant);
+	}
+	.studio__pick {
+		min-width: 0;
+		height: 32px;
+		border: 1px solid var(--md-sys-color-outline);
+		border-radius: var(--md-sys-shape-corner-small);
+		background: var(--md-sys-color-surface);
+		color: var(--md-sys-color-on-surface);
+	}
+	.studio__stage--compare {
+		gap: 1px;
+	}
+	.studio__stage--compare .studio__side + .studio__side {
+		border-left: 1px solid var(--md-sys-color-outline-variant);
+	}
+	.studio__lone {
+		margin: auto;
+		padding: 24px;
+		max-width: 320px;
+		text-align: center;
+		color: var(--md-sys-color-on-surface-variant);
+	}
+	.studio__approved {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		height: 40px;
+		padding: 0 12px;
+		border-radius: var(--md-sys-shape-corner-medium);
+		background: var(--md-sys-color-tertiary-container);
+		color: var(--md-sys-color-on-tertiary-container);
+	}
+	.studio__tool--primary {
+		background: var(--md-sys-color-primary);
+		color: var(--md-sys-color-on-primary);
+	}
+	.studio__tool--primary:hover {
+		background: color-mix(in srgb, var(--md-sys-color-primary) 92%, var(--md-sys-color-on-primary));
+	}
+	.studio__confirm {
+		display: flex;
+		align-items: center;
+		gap: 16px;
+		flex-wrap: wrap;
+		padding: 12px 16px;
+		border-bottom: 1px solid var(--md-sys-color-outline-variant);
+		background: var(--md-sys-color-surface-container-high);
+	}
+	.studio__confirm-text {
+		flex: 1;
+		min-width: 220px;
+	}
+	.studio__confirm-text p {
+		margin: 0;
+	}
+	.studio__confirm .studio__send {
+		align-self: center;
+	}
 	.studio__stage--device {
 		padding: 16px;
 		overflow-x: auto;
@@ -658,6 +810,10 @@
 		.studio__stage {
 			order: -1;
 			height: 70dvh;
+		}
+		.studio__stage--compare {
+			flex-direction: column;
+			height: 140dvh;
 		}
 	}
 	@media (pointer: coarse) {
