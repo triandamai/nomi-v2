@@ -3335,6 +3335,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "nomi-mcp"
+version = "0.1.0"
+dependencies = [
+ "reqwest",
+ "serde_json",
+ "tokio",
+ "wiremock",
+]
+
+[[package]]
 name = "nomi-payment"
 version = "0.1.0"
 dependencies = [
@@ -3427,6 +3437,7 @@ dependencies = [
  "nomi-i18n",
  "nomi-llm",
  "nomi-mail",
+ "nomi-mcp",
  "nomi-payment",
  "nomi-realtime",
  "nomi-relay-client",

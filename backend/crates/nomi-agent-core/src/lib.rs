@@ -22,6 +22,7 @@ pub mod personal_crew;
 pub mod personality;
 pub mod plans;
 pub mod project_ops;
+pub mod mcp_ops;
 pub mod prompts;
 pub mod records;
 pub mod issue_chat;
