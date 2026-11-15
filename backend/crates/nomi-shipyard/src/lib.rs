@@ -115,6 +115,66 @@ impl ShipyardConfig {
     }
 }
 
+/// How long uploading a static artifact may take, in seconds.
+const STATIC_PUBLISH_TIMEOUT_SECS: u64 = 120;
+/// The status of a static deployment that is being served.
+const STATIC_READY: &str = "READY";
+
+impl ShipyardConfig {
+    /// Shipyard's own address (`https://<shipyard>`), which its static deployments are served
+    /// from. `None` when the configured URL isn't one.
+    pub fn origin(&self) -> Option<String> {
+        let (scheme, rest) = self.base_url.split_once("://")?;
+        let host = rest.split('/').next().filter(|host| !host.is_empty() && !host.contains(char::is_whitespace))?;
+        matches!(scheme, "http" | "https").then(|| format!("{scheme}://{host}"))
+    }
+
+    /// The full address of a path Shipyard answered with (`/dpl/<id>`); one that is already a
+    /// full address is kept. `None` for anything else.
+    pub fn address(&self, path_or_url: &str) -> Option<String> {
+        if path_or_url.starts_with("https://") || path_or_url.starts_with("http://") {
+            return Some(path_or_url.to_string());
+        }
+        if !path_or_url.starts_with('/') || path_or_url.starts_with("//") {
+            return None;
+        }
+        Some(format!("{}{path_or_url}", self.origin()?))
+    }
+}
+
+/// A static artifact to publish: which static project it belongs to (created when new), the
+/// alias that moves to it, and whether unknown paths fall back to `index.html`.
+#[derive(Debug, Clone, Copy)]
+pub struct StaticPublish<'a> {
+    pub project_slug: &'a str,
+    pub alias: &'a str,
+    pub spa_fallback: bool,
+}
+
+/// A static artifact Shipyard is serving. The URLs are paths on Shipyard's own host
+/// (`ShipyardConfig::address`): `preview_url` is pinned to this deployment for good, `alias_url`
+/// follows the alias to the newest one.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct StaticPublished {
+    pub project_id: String,
+    #[serde(default)]
+    pub project_slug: String,
+    pub deployment_id: String,
+    #[serde(default)]
+    pub status: String,
+    pub preview_url: String,
+    #[serde(default)]
+    pub alias: Option<String>,
+    #[serde(default)]
+    pub alias_url: Option<String>,
+}
+
+impl StaticPublished {
+    pub fn is_ready(&self) -> bool {
+        self.status.eq_ignore_ascii_case(STATIC_READY)
+    }
+}
+
 /// What went wrong talking to Shipyard.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ShipyardError {
@@ -322,6 +382,26 @@ impl<'a> Shipyard<'a> {
             .multipart(form);
         let data = self.send(request, &self.config.key).await?;
         serde_json::from_value(data).map_err(|e| ShipyardError::Unavailable(format!("unexpected publish response: {e}")))
+    }
+
+    /// Publishes a zip of static files, served by Shipyard as they are (no build, no container).
+    pub async fn static_publish(&self, org: &str, publish: &StaticPublish<'_>, artifact: Vec<u8>) -> Result<StaticPublished, ShipyardError> {
+        let part = reqwest::multipart::Part::bytes(artifact)
+            .file_name("artifact.zip")
+            .mime_str("application/zip")
+            .map_err(|e| ShipyardError::Unavailable(e.to_string()))?;
+        let form = reqwest::multipart::Form::new()
+            .text("project_slug", publish.project_slug.to_string())
+            .text("alias", publish.alias.to_string())
+            .text("spa_fallback", publish.spa_fallback.to_string())
+            .part("artifact", part);
+        let request = self
+            .http
+            .post(self.url(&format!("/orgs/{}/static-publish", seg(org))))
+            .timeout(Duration::from_secs(STATIC_PUBLISH_TIMEOUT_SECS))
+            .multipart(form);
+        let data = self.send(request, &self.config.key).await?;
+        serde_json::from_value(data).map_err(|e| ShipyardError::Unavailable(format!("unexpected static publish response: {e}")))
     }
 
     pub async fn get_publish(&self, org: &str, app: &str, env: &str, publish_id: &str) -> Result<Value, ShipyardError> {

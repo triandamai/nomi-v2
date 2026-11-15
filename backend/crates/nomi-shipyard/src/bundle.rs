@@ -129,10 +129,20 @@ pub fn excluded(path: &str) -> bool {
 
 /// Zips `files` (path, contents), skipping excluded paths. Paths are kept as given.
 pub fn zip(files: &[(String, Vec<u8>)]) -> Result<Vec<u8>, String> {
+    zip_where(files, |path| !excluded(path))
+}
+
+/// Zips every one of `files`: a static artifact is already exactly what gets served, so nothing
+/// in it is source to leave out.
+pub fn zip_static(files: &[(String, Vec<u8>)]) -> Result<Vec<u8>, String> {
+    zip_where(files, |_| true)
+}
+
+fn zip_where(files: &[(String, Vec<u8>)], keep: impl Fn(&str) -> bool) -> Result<Vec<u8>, String> {
     let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
     let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
     for (path, bytes) in files {
-        if excluded(path) {
+        if !keep(path) {
             continue;
         }
         writer.start_file(path.as_str(), options).map_err(|e| e.to_string())?;

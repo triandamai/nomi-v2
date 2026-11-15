@@ -38,6 +38,7 @@ pub mod sandbox_usage;
 pub mod sandbox_worker;
 pub mod scheduler_worker;
 pub mod shipyard;
+pub mod static_publisher;
 pub mod sign_in_codes;
 pub mod user_events;
 pub mod worker;
@@ -65,7 +66,11 @@ pub fn build_agent_registry(pool: &sqlx::PgPool, project_storage: nomi_storage::
         Box::new(nomi_agent_coding::CodingAgent::new(project_storage).with_project_ops(project_ops.clone()).with_relay_ops(relay_ops).with_sandbox_ops(sandbox_ops::ServerSandboxOps::shared(pool.clone()))),
         Box::new(nomi_agent_inspector::InspectorAgent::new().with_project_ops(project_ops)),
         // Sora: off for everyone until Admin → Configuration → Design rolls her out.
-        Box::new(nomi_agent_design::DesignAgent::new().with_mcp_ops(mcp_ops::ServerMcpOps::shared(pool.clone()))),
+        Box::new(
+            nomi_agent_design::DesignAgent::new()
+                .with_mcp_ops(mcp_ops::ServerMcpOps::shared(pool.clone()))
+                .with_static_publisher(static_publisher::ShipyardStaticPublisher::shared(pool.clone())),
+        ),
     ])
     .with_tool_catalog(catalog)
 }
