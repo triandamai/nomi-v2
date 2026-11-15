@@ -68,7 +68,7 @@
 	});
 </script>
 
-{#snippet flat()}
+{#snippet flat(extra?: string)}
 	<svg
 		width={size}
 		height={size}
@@ -77,7 +77,7 @@
 		aria-label={label}
 		aria-hidden={label ? undefined : 'true'}
 		data-shape={look.shape}
-		class="shrink-0"
+		class="shrink-0 {extra ?? ''}"
 	>
 		<defs>
 			<linearGradient id="{uid}-paint" x1="0" y1="0" x2="1" y2="1">
@@ -107,9 +107,7 @@
 		onpointerenter={() => (hovered = true)}
 		onpointerleave={() => (hovered = false)}
 	>
-		<span class="sr-only opacity-0 pointer-events-none" aria-hidden="true">
-			{@render flat()}
-		</span>
+		{@render flat(avatar ? 'opacity-0' : '')}
 		<span bind:this={host} class="absolute inset-0" aria-hidden="true"></span>
 	</span>
 {:else}

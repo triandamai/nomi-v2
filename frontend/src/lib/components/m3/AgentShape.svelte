@@ -97,12 +97,12 @@
 	});
 </script>
 
-{#snippet flat()}
+{#snippet flat(extra?: string)}
 	<svg
 		width={size}
 		height={size}
 		viewBox="0 0 48 48"
-		class="agent-shape {extraClass}"
+		class="agent-shape {extraClass} {extra ?? ''}"
 		class:agent-shape--working={working}
 		data-motion={resolvedMotion}
 		role={label ? 'img' : undefined}
@@ -138,9 +138,7 @@
 		onpointerenter={() => (hovered = true)}
 		onpointerleave={() => (hovered = false)}
 	>
-		<span class="sr-only opacity-0 pointer-events-none" aria-hidden="true">
-			{@render flat()}
-		</span>
+		{@render flat(avatar ? 'opacity-0' : '')}
 		<span bind:this={host} class="absolute inset-0" aria-hidden="true"></span>
 	</span>
 {:else}
