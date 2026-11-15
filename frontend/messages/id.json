@@ -3568,5 +3568,17 @@
 	"config_billing_grace_days": "Hari masa tenggang",
 	"config_billing_grace_days_hint": "Hari paket tetap aktif setelah tanggal berakhir selama perpanjangan belum dibayar.",
 	"config_billing_invoice_hours": "Masa berlaku faktur (jam)",
-	"config_billing_invoice_hours_hint": "Berapa lama faktur bisa dibayar sebelum kedaluwarsa."
+	"config_billing_invoice_hours_hint": "Berapa lama faktur bisa dibayar sebelum kedaluwarsa.",
+	"crewnew_tools": "Alat",
+	"crewmember_tools": "Alat",
+	"crewmember_tools_lede": "Yang bisa dipakai {name}. Kamu yang membuat anggota ini, jadi kamu yang memilih.",
+	"crewmember_tool_added": "{tool} ditambahkan ke alatnya.",
+	"dyn_tools_more": "+{count} lagi",
+	"mention_tools": "Alat",
+	"toolpicker_soul_hint": "Ketik @ untuk menyebut anggota kru atau alat.",
+	"toolpicker_placeholder": "Cari alat…",
+	"toolpicker_none": "Tidak ada alat yang cocok.",
+	"toolpicker_remove": "Hapus {name}",
+	"toolpicker_count": "{count} alat cocok",
+	"toolpicker_mention_label": "Sebut anggota kru atau alat"
 }

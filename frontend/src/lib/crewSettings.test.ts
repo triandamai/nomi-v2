@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { activityFailed, levelField, levelsFromForm, newMemberFromForm, toolLabel } from './crewSettings';
+import { activityFailed, levelField, levelsFromForm, newMemberFromForm, toolLabel, toolsFromForm, TOOLS_SET_FIELD } from './crewSettings';
 import type { CrewActivityItem } from './types';
 
 const form = (entries: [string, string][]) => {
@@ -55,5 +55,18 @@ describe('activityFailed', () => {
 		expect(activityFailed(item('error'))).toBe(true);
 		expect(activityFailed(item('completed'))).toBe(false);
 		expect(activityFailed(item(null))).toBe(false);
+	});
+});
+
+describe('tools in forms', () => {
+	it('reads each tool once, in order, skipping blanks', () => {
+		expect(toolsFromForm(form([['tools', 'a'], ['tools', ' b '], ['tools', 'a'], ['tools', '']]))).toEqual(['a', 'b']);
+	});
+
+	it('sends the tools of a new member only when the form carries the field, even empty', () => {
+		const base: [string, string][] = [['name', 'Chef'], ['role', 'Cooks']];
+		expect(newMemberFromForm(form(base))).toEqual({ body: { name: 'Chef', role: 'Cooks' } });
+		expect(newMemberFromForm(form([...base, [TOOLS_SET_FIELD, '1']]))).toEqual({ body: { name: 'Chef', role: 'Cooks', tools: [] } });
+		expect(newMemberFromForm(form([...base, [TOOLS_SET_FIELD, '1'], ['tools', 'read_file']]))).toEqual({ body: { name: 'Chef', role: 'Cooks', tools: ['read_file'] } });
 	});
 });

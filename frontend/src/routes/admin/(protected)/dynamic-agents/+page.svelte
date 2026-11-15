@@ -5,6 +5,7 @@
 	import Button from '$lib/components/m3/Button.svelte';
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import Checkbox from '$lib/components/m3/Checkbox.svelte';
+	import ToolPicker from '$lib/components/tools/ToolPicker.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
 	import IconPlus from '$lib/components/icons/IconPlus.svelte';
 	import ShapePicker from '$lib/components/m3/ShapePicker.svelte';
@@ -22,38 +23,8 @@
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
-	// Grouped by source agent, matching the design spec's admin tool-picker requirement.
-	const TOOL_GROUPS: { label: string; tools: { name: string; description: string }[] }[] = [
-		{
-			label: 'Money',
-			tools: [
-				{ name: 'list_transactions', description: m.tooldesc_list_transactions() },
-				{ name: 'summarize_budget', description: m.tooldesc_summarize_budget() },
-				{ name: 'log_transaction', description: m.tooldesc_log_transaction() },
-				{ name: 'set_budget', description: m.tooldesc_set_budget() },
-				{ name: 'list_budgets', description: m.tooldesc_list_budgets() },
-			],
-		},
-		{ label: 'Planning', tools: [{ name: 'create_project', description: m.tooldesc_create_project() }] },
-		{
-			label: 'Personality',
-			tools: [
-				{ name: 'set_personality', description: m.tooldesc_set_personality() },
-				{ name: 'list_personality_versions', description: m.tooldesc_list_personality_versions() },
-				{ name: 'rollback_personality', description: m.tooldesc_rollback_personality() },
-			],
-		},
-		{ label: 'Supervisor', tools: [{ name: 'list_recent_agent_activity', description: m.tooldesc_list_recent_agent_activity() }] },
-		{
-			label: 'Coding',
-			tools: [
-				{ name: 'write_file', description: m.tooldesc_write_file() },
-				{ name: 'read_file', description: m.tooldesc_read_file() },
-				{ name: 'list_files', description: m.tooldesc_list_files() },
-				{ name: 'delete_file', description: m.tooldesc_delete_file() },
-			],
-		},
-	];
+	/** How many of an agent's tools its card names before "+N more". */
+	const CARD_TOOL_CHIPS = 5;
 
 	let sheetOpen = $state(false);
 	let editingId = $state<string | null>(null);
@@ -100,10 +71,6 @@
 		motion = isShapeMotion(agent.motion) ? agent.motion : 'spin';
 		sheetOpen = true;
 	}
-
-	function toggleTool(toolName: string, checked: boolean) {
-		grantedTools = checked ? [...grantedTools, toolName] : grantedTools.filter((t) => t !== toolName);
-	}
 </script>
 
 <PageHeader
@@ -140,6 +107,16 @@
 					</div>
 				</div>
 				<p class="card__intent">{agent.intent_description}</p>
+				{#if agent.granted_tools.length > 0}
+					<ul class="card__tools" aria-label={m.dyn_tools()}>
+						{#each agent.granted_tools.slice(0, CARD_TOOL_CHIPS) as tool (tool)}
+							<li class="chip">{tool}</li>
+						{/each}
+						{#if agent.granted_tools.length > CARD_TOOL_CHIPS}
+							<li class="card__more">{m.dyn_tools_more({ count: agent.granted_tools.length - CARD_TOOL_CHIPS })}</li>
+						{/if}
+					</ul>
+				{/if}
 				<div class="card__actions">
 					<Button type="button" variant="tonal" size="xs" onclick={() => openEdit(agent)}>{m.dyn_edit()}</Button>
 					<form method="POST" action="?/toggleActive" use:enhance>
@@ -188,23 +165,7 @@
 			<textarea name="system_prompt" bind:value={systemPrompt} required rows="6" class="prompt__field"></textarea>
 		</label>
 
-		<fieldset class="tools">
-			<legend class="section-label">{m.dyn_tools()}</legend>
-			{#each TOOL_GROUPS as group (group.label)}
-				<div class="tools__group">
-					<p class="tools__owner"><AgentShape agent={group.label} size={18} /> {group.label}</p>
-					{#each group.tools as tool (tool.name)}
-						<Checkbox
-							name="granted_tools"
-							value={tool.name}
-							checked={grantedTools.includes(tool.name)}
-							onchange={(e) => toggleTool(tool.name, (e.currentTarget as HTMLInputElement).checked)}
-							label={tool.description}
-						/>
-					{/each}
-				</div>
-			{/each}
-		</fieldset>
+		<ToolPicker label={m.dyn_tools()} options={data.catalog} bind:selected={grantedTools} name="granted_tools" />
 
 		<fieldset class="tools">
 			<legend class="section-label">{m.dyn_abilities()}</legend>
@@ -312,6 +273,19 @@
 		line-clamp: 3;
 		overflow: hidden;
 	}
+	.card__tools {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 6px;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+	.card__more {
+		color: var(--md-sys-color-on-surface-variant);
+		font-size: 0.75rem;
+	}
 	.card__actions {
 		display: flex;
 		gap: 4px;
@@ -365,18 +339,5 @@
 		border: none;
 		border-radius: var(--md-sys-shape-corner-large);
 		background: var(--md-sys-color-surface-container);
-	}
-	.tools__group {
-		display: flex;
-		flex-direction: column;
-		gap: 6px;
-	}
-	.tools__owner {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		margin: 4px 0 0;
-		font-weight: 650;
-		color: var(--md-sys-color-on-surface);
 	}
 </style>

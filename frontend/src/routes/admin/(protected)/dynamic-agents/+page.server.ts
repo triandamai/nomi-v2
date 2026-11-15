@@ -1,16 +1,21 @@
 import { fail } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
-import type { DynamicAgent } from '$lib/types';
+import { catalogFrom } from '$lib/toolPicker';
+import type { CatalogTool, DynamicAgent } from '$lib/types';
 import type { Actions, PageServerLoad } from './$types';
 import { m } from '$lib/paraglide/messages';
 
 export const load: PageServerLoad = async ({ cookies, fetch }) => {
-	const response = await apiFetch(fetch, cookies, '/api/admin/dynamic-agents');
+	const [response, catalogResponse] = await Promise.all([
+		apiFetch(fetch, cookies, '/api/admin/dynamic-agents'),
+		apiFetch(fetch, cookies, '/api/tools/catalog'),
+	]);
+	const catalog: CatalogTool[] = catalogResponse.ok ? catalogFrom(await catalogResponse.json()) : [];
 	if (!response.ok) {
-		return { agents: [] as DynamicAgent[] };
+		return { agents: [] as DynamicAgent[], catalog };
 	}
 	const agents = (await response.json()) as DynamicAgent[];
-	return { agents };
+	return { agents, catalog };
 };
 
 function readForm(data: FormData) {

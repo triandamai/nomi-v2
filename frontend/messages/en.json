@@ -3568,5 +3568,17 @@
 	"config_billing_grace_days": "Grace days",
 	"config_billing_grace_days_hint": "Days a plan stays active after its end date while the renewal is unpaid.",
 	"config_billing_invoice_hours": "Invoice lifetime (hours)",
-	"config_billing_invoice_hours_hint": "How long an invoice can be paid before it expires."
+	"config_billing_invoice_hours_hint": "How long an invoice can be paid before it expires.",
+	"crewnew_tools": "Tools",
+	"crewmember_tools": "Tools",
+	"crewmember_tools_lede": "What {name} can use. You made this member, so you choose.",
+	"crewmember_tool_added": "Added {tool} to its tools.",
+	"dyn_tools_more": "+{count} more",
+	"mention_tools": "Tools",
+	"toolpicker_soul_hint": "Type @ to mention a crew member or a tool.",
+	"toolpicker_placeholder": "Search tools…",
+	"toolpicker_none": "No tools match.",
+	"toolpicker_remove": "Remove {name}",
+	"toolpicker_count": "{count} tools match",
+	"toolpicker_mention_label": "Mention a crew member or a tool"
 }
