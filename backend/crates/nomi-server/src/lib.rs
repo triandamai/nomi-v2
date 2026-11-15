@@ -39,7 +39,6 @@ pub mod scheduler_worker;
 pub mod shipyard;
 pub mod sign_in_codes;
 pub mod user_events;
-mod tool_catalog_adapters;
 pub mod worker;
 
 /// The one place a new agent gets wired in. Adding an agent: implement `SubAgent` in its
@@ -48,7 +47,8 @@ pub mod worker;
 /// Every built-in agent. Rena and Koda publish projects, and Iris inspects them, through
 /// `project_ops::ServerProjectOps`; Rena makes Relay backends, and Koda works on them, through
 /// `relay_ops::ServerRelayOps`.
-pub fn build_agent_registry(pool: &sqlx::PgPool, project_storage: nomi_storage::ProjectStore) -> nomi_agent_core::AgentRegistry {
+/// The registry shares the tool catalog (built once by `build_tool_catalog`, in `AppState.tool_catalog`), for `find_tools` and `create_agent`.
+pub fn build_agent_registry(pool: &sqlx::PgPool, project_storage: nomi_storage::ProjectStore, catalog: std::sync::Arc<nomi_agent_core::ToolCatalog>) -> nomi_agent_core::AgentRegistry {
     let project_ops = project_ops::ServerProjectOps::shared(pool.clone(), project_storage.clone());
     let relay_ops = relay_ops::ServerRelayOps::shared(pool.clone(), project_storage.clone());
     nomi_agent_core::AgentRegistry::new(vec![
@@ -64,15 +64,45 @@ pub fn build_agent_registry(pool: &sqlx::PgPool, project_storage: nomi_storage::
         Box::new(nomi_agent_coding::CodingAgent::new(project_storage).with_project_ops(project_ops.clone()).with_relay_ops(relay_ops).with_sandbox_ops(sandbox_ops::ServerSandboxOps::shared(pool.clone()))),
         Box::new(nomi_agent_inspector::InspectorAgent::new().with_project_ops(project_ops)),
     ])
+    .with_tool_catalog(catalog)
 }
 
-/// The one place a new grantable tool gets wired into `ToolCatalog`: implement (or reuse) a
-/// free function in the owning agent crate, add its `CatalogTool` adapter to
-/// `tool_catalog_adapters`, and add one entry here.
+/// Writes the tool catalog into `tool_catalog_entries` (a failure is logged, never fatal), then
+/// embeds the rows that need it in the background, so startup never waits on the embedding
+/// provider.
+pub async fn sync_tool_catalog(pool: &sqlx::PgPool, catalog: &nomi_agent_core::ToolCatalog, settings_key: [u8; 32], http_client: reqwest::Client) {
+    let synced = match pool.acquire().await {
+        Ok(mut conn) => nomi_agent_core::tool_finder::sync_catalog_table(&mut conn, catalog).await,
+        Err(e) => Err(e),
+    };
+    if let Err(e) = synced {
+        tracing::warn!(error = %e, "tool catalog: couldn't sync the catalog table; find_tools matches by words alone");
+        return;
+    }
+    let pool = pool.clone();
+    tokio::spawn(async move {
+        let provider = bootstrap::build_embedding_provider_from_settings_or_env(&pool, &settings_key, http_client, None).await;
+        let embedded = nomi_agent_core::tool_finder::embed_catalog_entries(&pool, provider.as_ref()).await;
+        tracing::info!(embedded, "tool catalog: embeddings up to date");
+    });
+}
+
+/// The one place a crate's grantable tools get wired into `ToolCatalog`: implement
+/// `nomi_agent_core::Tool` for the tool in its own agent crate, list it in that crate's
+/// `catalog_tools`, and (for a new crate) add its `catalog_tools` here. Two tools with one name
+/// stop the server at startup.
 pub fn build_tool_catalog(project_storage: nomi_storage::ProjectStore) -> std::sync::Arc<nomi_agent_core::ToolCatalog> {
-    let mut entries = tool_catalog_adapters::non_coding_entries();
-    entries.extend(tool_catalog_adapters::coding_entries(project_storage));
-    std::sync::Arc::new(nomi_agent_core::ToolCatalog::new(entries))
+    let tools = [
+        nomi_agent_money::catalog_tools(),
+        nomi_agent_personality::catalog_tools(),
+        nomi_agent_planning::catalog_tools(),
+        nomi_agent_supervisor::catalog_tools(),
+        nomi_agent_reminders::catalog_tools(),
+        nomi_agent_coding::catalog_tools(project_storage),
+        nomi_agent_health::catalog_tools(&nomi_agent_health::HealthAgent::from_env()),
+        nomi_agent_workspace::catalog_tools(&nomi_agent_workspace::WorkspaceAgent::from_env()),
+    ];
+    std::sync::Arc::new(nomi_agent_core::ToolCatalog::from_tools(tools.into_iter().flatten().collect()))
 }
 
 /// The HTTP client for model, embedding and other provider calls. No overall timeout (a long

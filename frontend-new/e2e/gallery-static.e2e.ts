@@ -22,20 +22,31 @@ test('renders each sheet from a nested path, styled and with the fonts', async (
 test('hydrates: the sheet links, the theme and the controls work', async ({ page }) => {
 	await page.goto(at('design-system/nomi.html?theme=light'));
 	await expect(page.locator('[data-theme="light"]').first()).toBeAttached();
-	await page.getByRole('switch', { name: 'Daily digest' }).click();
-	await expect(page.getByRole('switch', { name: 'Daily digest' })).toHaveAttribute('aria-checked', 'true');
+	// A click before the page has hydrated does nothing (the docs are one bundle, parsed whole at
+	// start, which a busy CI runner can take seconds over): click until it takes, then it's on.
+	const digest = page.getByRole('switch', { name: 'Daily digest' });
+	await expect(async () => {
+		if ((await digest.getAttribute('aria-checked')) !== 'true') await digest.click();
+		await expect(digest).toHaveAttribute('aria-checked', 'true', { timeout: 1_000 });
+	}).toPass({ timeout: 30_000 });
 	await page.getByRole('link', { name: 'Chat responses' }).click();
 	await expect(page).toHaveURL(/\/shared\/nomi-ds\/design-system\/chat\.html$/);
 	await expect(page.getByRole('heading', { level: 1, name: 'Everything Nomi can put in a reply' })).toBeVisible();
 });
 
-test('loads nothing from other hosts, so it works where only its own files are allowed', async ({ page }) => {
+test('loads nothing from other hosts, and every file of its own is found from a nested path', async ({ page }) => {
 	const elsewhere: string[] = [];
+	const missing: string[] = [];
 	page.on('request', (request) => {
 		if (!request.url().startsWith('http://127.0.0.1:4181/') && !request.url().startsWith('data:')) elsewhere.push(request.url());
+	});
+	// An image imported in code once resolved from the site's root and 404'd under /shared/nomi-ds/.
+	page.on('response', (response) => {
+		if (response.status() >= 400) missing.push(`${response.status()} ${response.url()}`);
 	});
 	for (const sheet of ['nomi', 'chat', 'build', 'projects']) {
 		await page.goto(at(`design-system/${sheet}.html`), { waitUntil: 'networkidle' });
 	}
 	expect(elsewhere).toEqual([]);
+	expect(missing).toEqual([]);
 });

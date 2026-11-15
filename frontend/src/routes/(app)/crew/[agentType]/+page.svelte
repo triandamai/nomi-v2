@@ -1,15 +1,18 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages';
-	import { tick } from 'svelte';
+	import { tick, untrack } from 'svelte';
 	import { enhance } from '$app/forms';
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
 	import Dialog from '$lib/components/m3/Dialog.svelte';
 	import Select from '$lib/components/m3/Select.svelte';
 	import Switch from '$lib/components/m3/Switch.svelte';
+	import SoulEditor from '$lib/components/tools/SoulEditor.svelte';
+	import ToolPicker from '$lib/components/tools/ToolPicker.svelte';
 	import { rosterKey } from '$lib/crew';
-	import { activityFailed, levelField, PERMISSION_LEVELS, SOUL_MAX_CHARS, toolLabel } from '$lib/crewSettings';
+	import { activityFailed, levelField, PERMISSION_LEVELS, SOUL_MAX_CHARS, toolLabel, TOOLS_SET_FIELD } from '$lib/crewSettings';
 	import { timeAgo } from '$lib/i18n';
+	import { addTool } from '$lib/toolPicker';
 	import type { CrewActivityItem, CrewPermissionLevel } from '$lib/types';
 	import type { ActionData, PageData } from './$types';
 
@@ -28,9 +31,23 @@
 	let draft = $state('');
 	let removeOpen = $state(false);
 	let enabledForm: HTMLFormElement | undefined = $state();
+	// The tools of a member the person made, as edited here (the saved ones come with the crew).
+	let tools = $state<string[]>(untrack(() => [...(data.member.tools ?? [])]));
+	let toolAdded = $state<string | null>(null);
+	$effect(() => {
+		tools = [...(member.tools ?? [])];
+	});
+
+	/** "@tool" in the soul gives a member the person made that tool (the field shows it at once). */
+	function mentioned(tool: string) {
+		if (!member.is_own || tools.includes(tool)) return;
+		tools = addTool(tools, tool);
+		toolAdded = tool;
+	}
 
 	function startEdit() {
 		draft = data.soul.text;
+		toolAdded = null;
 		editing = true;
 	}
 
@@ -123,8 +140,11 @@
 							if (result.type === 'success') editing = false;
 						}}
 				>
-					<textarea class="soul__editor" name="text" bind:value={draft} maxlength={SOUL_MAX_CHARS} rows="10" aria-label="soul.md"></textarea>
+					{#if member.is_own}<input type="hidden" name={TOOLS_SET_FIELD} value="1" />{#each tools as tool (tool)}<input type="hidden" name="tools" value={tool} />{/each}{/if}
+					<SoulEditor bind:value={draft} name="text" label="soul.md" maxlength={SOUL_MAX_CHARS} rows={10} crew={data.crew} tools={data.catalog} ontoolmention={mentioned} />
 					<div class="panel__actions">
+						{#if toolAdded}<span class="panel__note" role="status">{m.crewmember_tool_added({ tool: toolAdded })}</span>{/if}
+						{#if form?.failed === 'tools'}<span class="panel__error">{m.crewmember_failed()}</span>{/if}
 						{#if form?.failed === 'soul'}<span class="panel__error">{m.crewmember_failed()}</span>{/if}
 						<Button variant="text" size="s" onclick={() => (editing = false)}>{m.common_cancel()}</Button>
 						<Button variant="tonal" size="s" type="submit">{m.common_save()}</Button>
@@ -158,6 +178,21 @@
 				</ul>
 			{/if}
 		</section>
+
+		{#if member.is_own}
+			<section class="panel" aria-labelledby="tools-title">
+				<h2 id="tools-title" class="panel__title">{m.crewmember_tools()}</h2>
+				<p class="panel__lede">{m.crewmember_tools_lede({ name: member.name })}</p>
+				<form method="POST" action="?/tools" use:enhance={() => async ({ update }) => update({ reset: false })}>
+					<ToolPicker label={m.crewmember_tools()} options={data.catalog} bind:selected={tools} name="tools" />
+					<div class="panel__actions">
+						{#if form?.saved === 'tools'}<span class="panel__note">{m.crewmember_saved()}</span>{/if}
+						{#if form?.failed === 'tools'}<span class="panel__error">{m.crewmember_failed()}</span>{/if}
+						<Button variant="tonal" size="s" type="submit">{m.common_save()}</Button>
+					</div>
+				</form>
+			</section>
+		{/if}
 
 		<section class="panel" aria-labelledby="activity-title">
 			<h2 id="activity-title" class="panel__title">{m.crewmember_activity({ count: data.activity.length })}</h2>
@@ -340,22 +375,5 @@
 		line-height: 1.5;
 		white-space: pre-wrap;
 		overflow-wrap: anywhere;
-	}
-	.soul__editor {
-		box-sizing: border-box;
-		width: 100%;
-		padding: 12px;
-		border: 1px solid var(--md-sys-color-outline-variant);
-		border-radius: var(--md-sys-shape-corner-medium);
-		background: var(--md-sys-color-surface-container-low);
-		color: var(--md-sys-color-on-surface);
-		font-family: var(--md-ref-typeface-mono);
-		font-size: 0.8125rem;
-		line-height: 1.5;
-		resize: vertical;
-	}
-	.soul__editor:focus-visible {
-		outline: 2px solid var(--md-sys-color-primary);
-		outline-offset: 1px;
 	}
 </style>

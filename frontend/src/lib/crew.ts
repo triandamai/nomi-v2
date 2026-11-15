@@ -53,6 +53,8 @@ export interface CrewRosterMember {
 	is_own?: boolean;
 	/** Nomi, which can't be switched off. */
 	is_default?: boolean;
+	/** The tools it can use (catalog names). */
+	tools?: string[];
 }
 
 /** The crew key for an agent type: Nomi's is `nomi` (AgentShape's brand mark), others their type. */

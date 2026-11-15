@@ -86,6 +86,9 @@
 	{@render heading(m.invite_used_title(), m.invite_used_sub({ inviter: invite.inviter }))}
 	<AuthButton label={m.invite_go_home()} href="/" variant="secondary" />
 {:else}
-	{@render heading(m.invite_other_title(), m.invite_other_sub({ email: invite.email ?? '' }))}
-	<AuthButton label={m.invite_go_home()} href="/" variant="secondary" />
+	{@render heading(m.invite_failed_join_title({ org: invite.org_name }), m.invite_failed_other_account({ email: invite.email ?? '' }))}
+	<form method="POST" action="/sign-out?redirect_to={encodeURIComponent('/invite/' + data.code)}" class="flex flex-col gap-3">
+		<AuthButton type="submit" label={m.invite_switch_account()} iconEnd={ArrowRight} />
+		<AuthButton label={m.invite_go_home()} href="/" variant="secondary" />
+	</form>
 {/if}

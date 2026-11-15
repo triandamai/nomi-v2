@@ -21,7 +21,7 @@ use nomi_agent_core::project_ops::{publish_from_tool, publish_tool_definition, N
 use nomi_agent_core::relay_ops::{NoRelayOps, SharedRelayOps, RELAY_TOOL_NAMES};
 use nomi_agent_core::sandbox_ops::{NoSandboxOps, SharedSandboxOps};
 use nomi_agent_core::prompts::CODING_SYSTEM_PROMPT;
-use nomi_agent_core::{SubAgent, ToolOutcome};
+use nomi_agent_core::{SubAgent, Tool, ToolOutcome};
 use nomi_llm::ToolDefinition;
 use nomi_storage::ProjectStore;
 
@@ -68,6 +68,56 @@ pub async fn execute(conn: &mut PoolConnection<Postgres>, storage: &ProjectStore
         "run_command" => runtime::run_command(conn, user_id, input).await.map(ToolOutcome::text),
         other => Err(format!("unknown tool: {other}")),
     }
+}
+
+/// Extra search words for each of Koda's tools.
+fn keywords_for(name: &str) -> &'static [&'static str] {
+    match name {
+        "read_guide" => &["docs", "stack", "how to", "reference"],
+        "list_files" => &["project", "tree", "directory", "code"],
+        "read_file" => &["open", "view", "source", "code"],
+        "search_files" => &["grep", "find", "code", "text"],
+        "write_files" => &["create", "save", "code", "many"],
+        "write_file" => &["create", "save", "code"],
+        "add_attachment" => &["upload", "image", "asset", "copy"],
+        "edit_file" => &["change", "replace", "patch", "code"],
+        "delete_file" => &["remove", "erase", "code"],
+        "run_command" => &["terminal", "shell", "npm", "build", "preview"],
+        _ => &[],
+    }
+}
+
+/// One of Koda's tools (see `TOOL_NAMES`), on the project files in `storage`.
+pub struct CodingTool {
+    definition: ToolDefinition,
+    storage: ProjectStore,
+}
+
+#[async_trait]
+impl Tool for CodingTool {
+    fn definition(&self) -> ToolDefinition {
+        self.definition.clone()
+    }
+    fn group(&self) -> &'static str {
+        CODING_AGENT_TYPE
+    }
+    fn keywords(&self) -> &'static [&'static str] {
+        keywords_for(&self.definition.name)
+    }
+    async fn execute(&self, conn: &mut PoolConnection<Postgres>, _session_id: Uuid, _agent_session_id: Uuid, user_id: Uuid, input: Value) -> Result<ToolOutcome, String> {
+        execute(conn, &self.storage, user_id, &self.definition.name, input).await
+    }
+}
+
+/// Every tool in `TOOL_NAMES`, in order, all of which run for any agent. Publishing and the Relay
+/// tools stay Koda's own: publishing goes out under the calling agent's name, and the Relay tools
+/// need the project's Relay backend and the chat's project.
+pub fn catalog_tools(storage: ProjectStore) -> Vec<Box<dyn Tool>> {
+    TOOL_NAMES
+        .iter()
+        .filter_map(|name| tool_definition(name))
+        .map(|definition| Box::new(CodingTool { definition, storage: storage.clone() }) as Box<dyn Tool>)
+        .collect()
 }
 
 /// Checks whether `task` starts with the "Project <uuid>: ..." prefix CODING_SYSTEM_PROMPT
@@ -129,19 +179,9 @@ impl SubAgent for CodingAgent {
     }
 
     fn tools(&self) -> Vec<ToolDefinition> {
-        vec![
-            guides::read_guide_tool_definition(),
-            list_files_tool_definition(),
-            read_file_tool_definition(),
-            search_files_tool_definition(),
-            write_files_tool_definition(),
-            write_file_tool_definition(),
-            add_attachment_tool_definition(),
-            edit_file_tool_definition(),
-            delete_file_tool_definition(),
-            runtime::run_command_tool_definition(),
-            publish_tool_definition(),
-        ]
+        let mut tools = nomi_agent_core::tool_definitions(&catalog_tools(self.storage.clone()));
+        tools.push(publish_tool_definition());
+        tools
     }
 
     async fn execute_tool(

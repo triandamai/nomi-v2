@@ -31,4 +31,24 @@ describe('Memory on the server', () => {
 			['DELETE', '/api/memory/m1', undefined],
 		]);
 	});
+
+	it('reads and saves the memory settings and the profile', async () => {
+		const settings = { learn_from_chats: true, keep_profile: true, search_past_chats: true, memory_budget: 8000, profile_budget: 1000, memory_used: 120, profile_used: 30 };
+		const { backend, event } = eventWith((call) => (call.url.endsWith('/settings') ? json(settings) : json({ text: 'Mario.', tokens: 2, updated_at: null })));
+		expect(await memory.loadMemorySettings(event)).toEqual(settings);
+		expect(await memory.loadProfile(event)).toEqual({ text: 'Mario.', tokens: 2, updated_at: null });
+		expect(await memory.saveMemorySettings(event, { search_past_chats: false })).toEqual({ ok: true, data: settings });
+		expect(await memory.saveProfile(event, 'Mario.')).toMatchObject({ ok: true });
+		expect(backend.calls.slice(2).map((call) => [call.method, call.url, call.body])).toEqual([
+			['PUT', 'http://api.test/api/memory/settings', { search_past_chats: false }],
+			['PUT', 'http://api.test/api/memory/profile', { text: 'Mario.' }],
+		]);
+	});
+
+	it('passes on the backend’s refusal: a budget out of range, a profile too long', async () => {
+		const { event } = eventWith((call) => json({ error: call.url.endsWith('/settings') ? 'invalid_budget' : 'too_long' }, 400));
+		expect(await memory.saveMemorySettings(event, { memory_budget: 10 })).toMatchObject({ ok: false, status: 400, code: 'invalid_budget' });
+		expect(await memory.saveProfile(event, 'x')).toMatchObject({ ok: false, status: 400, code: 'too_long' });
+	});
 });
+

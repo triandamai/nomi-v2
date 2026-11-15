@@ -1,12 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
+import { BACKEND_URL } from './support/env';
 import { api, createAccount, signInAs } from './support/accounts';
+import { codeFor } from './support/mailpit';
 
 // Settings › General against the real backend (App / Settings / General m7lvY1): each change
-// saves as it's made (theme, time zone, emails, language), the password goes through the emailed
-// reset, and other devices are signed out.
+// saves as it's made (theme, time zone, emails, language), the password is changed in place (the
+// emailed reset for a forgotten one), and other devices are signed out.
 
-type Preferences = { theme: string; timezone: string; language: string; has_stored_timezone: boolean };
+type Preferences = { theme: string; timezone: string; language: string; has_stored_timezone: boolean; default_agent: string | null; enter_sends: boolean };
 const preferences = async (account: Parameters<typeof api>[0]) => (await (await api(account, '/api/preferences')).json()) as Preferences;
 
 test('general settings save as they’re changed', async ({ page, context }) => {
@@ -17,7 +19,6 @@ test('general settings save as they’re changed', async ({ page, context }) => 
 	await expect(page).toHaveURL(/\/settings\/general$/);
 	await expect(page.getByRole('banner').getByText('changes save automatically')).toBeVisible();
 	await expect(page.getByText(`${account.email.slice(0, 2)}•`)).toBeVisible();
-	await expect(page.getByRole('link', { name: 'Change' })).toHaveAttribute('href', `/forgot-password?email=${encodeURIComponent(account.email)}`);
 
 	// Theme: on the page at once, and kept.
 	await page.getByRole('radio', { name: 'Light' }).click();
@@ -56,3 +57,131 @@ test('the other devices are signed out, this one stays', async ({ page, context 
 	await expect(page.getByText(/iPhone 15/)).toBeHidden();
 	await expect(page.getByRole('heading', { level: 1, name: 'General' })).toBeVisible();
 });
+
+test('the password changes in place: the current one first, then the new one twice', async ({ page, context }) => {
+	const account = await createAccount();
+	await signInAs(context, account);
+	await page.goto('/settings/general', { waitUntil: 'networkidle' });
+	await page.getByRole('button', { name: 'Change your password' }).click();
+	const dialog = page.getByRole('dialog', { name: 'Change your password' });
+	await expect(dialog.getByText('Your other devices stay signed in.')).toBeVisible();
+	await expect(dialog.getByRole('link', { name: 'Forgot it? Reset it by email' })).toHaveAttribute('href', `/forgot-password?email=${encodeURIComponent(account.email)}`);
+
+	await dialog.getByLabel('Current password').fill('not-my-password');
+	await dialog.getByLabel('New password', { exact: true }).fill('brand-new-horse');
+	await dialog.getByLabel('Confirm new password').fill('brand-new-hors');
+	await dialog.getByRole('button', { name: 'Save password' }).click();
+	await expect(dialog.getByText('The two passwords don’t match.')).toBeVisible();
+	await dialog.getByLabel('Confirm new password').fill('brand-new-horse');
+	await dialog.getByRole('button', { name: 'Save password' }).click();
+	await expect(dialog.getByText('That isn’t your current password.')).toBeVisible();
+
+	await dialog.getByLabel('Current password').fill(account.password);
+	await dialog.getByLabel('Current password').press('Enter');
+	await expect(page.getByText('Password changed. Your other devices stay signed in.')).toBeVisible();
+	await expect(dialog).toHaveCount(0);
+
+	// The new one is the one that works now; this device is still signed in.
+	const login = (password: string) =>
+		fetch(`${BACKEND_URL}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: account.email, password }) });
+	expect((await login(account.password)).status).toBe(401);
+	expect((await login('brand-new-horse')).status).toBe(200);
+	await page.reload();
+	await expect(page).toHaveURL(/\/settings\/general$/);
+});
+
+
+test('who new chats start with and Enter sends reach Home; reminder pushes and quiet hours are kept', async ({ page, context }) => {
+	const account = await createAccount();
+	await signInAs(context, account);
+	await page.goto('/settings/general', { waitUntil: 'networkidle' });
+
+	// Chat.
+	await page.getByRole('combobox', { name: 'New chats start with' }).selectOption({ label: 'Dana' });
+	await expect.poll(async () => (await preferences(account)).default_agent).toBe('money');
+	await page.getByRole('switch', { name: 'Enter sends' }).click();
+	await expect(page.getByText('Enter adds a new line; ⌘ or Ctrl+Enter sends')).toBeVisible();
+	await expect.poll(async () => (await preferences(account)).enter_sends).toBe(false);
+
+	// Notifications: pushes off, then quiet hours on, a later night, and off again.
+	const reminders = async () =>
+		(await (await api(account, '/api/notifications/reminder-preferences')).json()) as { push_reminders: boolean; quiet_hours: { start: string; end: string } | null };
+	await page.getByRole('switch', { name: 'Reminders' }).click();
+	await expect.poll(async () => (await reminders()).push_reminders).toBe(false);
+	const quiet = page.getByRole('combobox', { name: 'Quiet hours' });
+	await expect(quiet).toBeDisabled();
+	await page.getByRole('switch', { name: 'Quiet hours' }).click();
+	await expect.poll(async () => (await reminders()).quiet_hours).toEqual({ start: '22:00', end: '06:00' });
+	await expect(page.getByText('22:00–06:00 · reminders wait until they end.')).toBeVisible();
+	await quiet.selectOption('23:00-07:00');
+	await expect.poll(async () => (await reminders()).quiet_hours).toEqual({ start: '23:00', end: '07:00' });
+	await page.reload({ waitUntil: 'networkidle' });
+	await expect(quiet).toHaveValue('23:00-07:00');
+	await page.getByRole('switch', { name: 'Quiet hours' }).click();
+	await expect.poll(async () => (await reminders()).quiet_hours).toBeNull();
+
+	// Home: the message goes to Dana unless picked otherwise, and Enter makes a new line.
+	await page.goto('/', { waitUntil: 'networkidle' });
+	await expect(page.getByRole('button', { name: /Dana/ }).first()).toBeVisible();
+	const field = page.getByRole('textbox', { name: 'Message' });
+	await field.fill('Two');
+	await field.press('Enter');
+	await expect(field).toHaveValue('Two\n');
+	await expect(page).toHaveURL(/\/$/);
+});
+
+const login = (email: string, password: string) =>
+	fetch(`${BACKEND_URL}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, password }) });
+
+test('the email changes with a code sent to the new address', async ({ page, context }) => {
+	const account = await createAccount();
+	const other = await createAccount();
+	await signInAs(context, account);
+	await page.goto('/settings/general', { waitUntil: 'networkidle' });
+	await page.getByRole('button', { name: 'Change your email' }).click();
+	const dialog = page.getByRole('dialog', { name: 'Change your email' });
+	await dialog.getByLabel('New email').fill(other.email);
+	await dialog.getByRole('button', { name: 'Send code' }).click();
+	await expect(dialog.getByText('There’s already an account with this email. Sign in instead.')).toBeVisible();
+
+	const next = `moved-${Date.now()}@nomi.test`;
+	await dialog.getByLabel('New email').fill(next);
+	const started = Date.now();
+	await dialog.getByRole('button', { name: 'Send code' }).click();
+	const coded = page.getByRole('dialog', { name: 'Check your new email' });
+	await expect(coded.getByText(/We sent a 6-digit code to m•+@nomi\.test/)).toBeVisible();
+	const code = await codeFor(next, /new email/i, { after: started - 1000 });
+	await coded.getByRole('textbox', { name: 'Digit 1 of 6' }).click();
+	await page.keyboard.type(code);
+	await expect(page.getByText(`Your email is now ${next}. Sign in with it from now on.`)).toBeVisible();
+	expect((await login(next, account.password)).status).toBe(200);
+	expect((await login(account.email, account.password)).status).toBe(401);
+});
+
+test('deleting the account: a workspace with others in it first, then the password closes it', async ({ page, context }) => {
+	const account = await createAccount();
+	const teammate = await createAccount();
+	const org = ((await (await api(account, '/api/orgs')).json()) as { orgs: { id: string; name: string }[] }).orgs[0];
+	const invite = (await (await api(account, `/api/orgs/${org.id}/invites`, { method: 'POST', body: JSON.stringify({ email: teammate.email }) })).json()) as { code: string };
+	expect((await api(teammate, `/api/invites/${invite.code}/accept`, { method: 'POST' })).ok).toBe(true);
+
+	await signInAs(context, account);
+	await page.goto('/settings/general', { waitUntil: 'networkidle' });
+	await page.getByRole('button', { name: 'Delete', exact: true }).click();
+	const dialog = page.getByRole('dialog', { name: 'Delete your account?' });
+	await dialog.getByLabel('Password').fill('not-my-password');
+	await dialog.getByRole('button', { name: 'Delete account' }).click();
+	// The workspace is checked first, so a refused delete can be tried again.
+	await expect(dialog.getByRole('alert')).toContainText('First hand these workspaces to someone else');
+	await expect(dialog.getByRole('link', { name: org.name })).toHaveAttribute('href', `/settings/workspaces/${org.id}`);
+
+	expect((await api(account, `/api/orgs/${org.id}/members/${(await (await api(teammate, '/api/whoami')).json() as { sub: string }).sub}`, { method: 'DELETE' })).ok).toBe(true);
+	await dialog.getByRole('button', { name: 'Delete account' }).click();
+	await expect(dialog.getByText('That isn’t your current password.')).toBeVisible();
+	await dialog.getByLabel('Password').fill(account.password);
+	await dialog.getByRole('button', { name: 'Delete account' }).click();
+	await expect(page).toHaveURL(/\/sign-in\?closed=1$/);
+	await expect(page.getByText('Your account is closed, and every device was signed out.')).toBeVisible();
+	expect((await login(account.email, account.password)).status).toBe(401);
+});
+

@@ -30,8 +30,11 @@
 	//   it, Enter or Tab picks, Escape closes. Focus stays in the field.
 	// - While the crew answers (`busy`), Send becomes Stop in the same place, and "Stop reply esc"
 	//   shows over it on hover or focus (Message controls, step 1). The pen draws Stop with Send's
-	//   arrow; it's a square here, which is what stopping looks like everywhere else.
+	//   arrow; it's a square here, which is what stopping looks like everywhere else. A double-click
+	//   on Send doesn't carry on into Stop (see `stopClicked`).
 	// - Attach and voice come with attachments (`onattach`, `onrecord`): not drawn without them.
+	// - `enterSends` (Settings › General › Enter sends) off: Enter makes a new line and ⌘ or
+	//   Ctrl+Enter sends, and the keys say so.
 	type Props = {
 		value?: string;
 		placeholder: string;
@@ -46,6 +49,8 @@
 		models?: ModelMenuGroup[];
 		thinking?: ThinkingChoice;
 		hints?: boolean;
+		/** Enter sends (the default); off, Enter is a new line and ⌘ or Ctrl+Enter sends. */
+		enterSends?: boolean;
 		pickerAbove?: boolean;
 		field?: HTMLTextAreaElement;
 		onsend: (text: string) => void;
@@ -67,6 +72,7 @@
 		models = [],
 		thinking,
 		hints = false,
+		enterSends = true,
 		pickerAbove = false,
 		field = $bindable(),
 		onsend,
@@ -107,11 +113,23 @@
 		requestAnimationFrame(() => field?.setSelectionRange(at, at));
 	}
 
+	// Stop takes Send's place as soon as the message goes, so the second click of a double-click
+	// (or a double tap) on Send lands on Stop and would end the reply it just asked for. Stop takes
+	// a click of its own: not part of a double-click, and not in the moment right after sending.
+	const SETTLE_MS = 500;
+	let sentAt = -Infinity;
+
 	function send() {
 		if (!canSend) return;
 		onsend(value.trim());
 		value = '';
 		mention = null;
+		sentAt = performance.now();
+	}
+
+	function stopClicked(event: MouseEvent) {
+		if (event.detail > 1 || performance.now() - sentAt < SETTLE_MS) return;
+		onstop?.();
 	}
 
 	function onkeydown(event: KeyboardEvent) {
@@ -134,6 +152,7 @@
 			}
 		}
 		if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
+		if (!enterSends && !event.metaKey && !event.ctrlKey) return;
 		event.preventDefault();
 		send();
 	}
@@ -197,7 +216,17 @@
 				</Menu>
 			{/if}
 			<span class="flex-1"></span>
-			{#if hints}<span class="hidden md:block"><KeyHint hints={[{ keys: '↵', action: m.composer_hint_send() }, { keys: '⇧↵', action: m.composer_hint_newline() }]} /></span>{/if}
+			{#if hints}<span class="hidden md:block"><KeyHint
+						hints={enterSends
+							? [
+									{ keys: '↵', action: m.composer_hint_send() },
+									{ keys: '⇧↵', action: m.composer_hint_newline() },
+								]
+							: [
+									{ keys: '⌘↵', action: m.composer_hint_send() },
+									{ keys: '↵', action: m.composer_hint_newline() },
+								]}
+					/></span>{/if}
 			{#if onrecord}<IconButton icon={Mic} label={m.composer_record()} variant="ghost" onclick={onrecord} />{/if}
 			{#if busy && onstop}
 				<span class="group relative inline-flex">
@@ -207,7 +236,7 @@
 						aria-label={m.reply_stop()}
 						aria-keyshortcuts="Escape"
 						class="inline-flex size-7.5 shrink-0 cursor-pointer items-center justify-center rounded-sm bg-text text-bg outline-offset-1 pointer-coarse:size-11"
-						onclick={onstop}><Icon icon={Square} size={14} /></button
+						onclick={stopClicked}><Icon icon={Square} size={14} /></button
 					>
 				</span>
 			{:else}

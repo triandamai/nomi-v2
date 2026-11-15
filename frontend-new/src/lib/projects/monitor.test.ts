@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ContainerUsage, MetricsBucket, ProjectMetrics } from '$lib/adapters/api';
-import { monitorStats, resourceRows, trafficBars } from './monitor';
+import { monitorStats, resourceRows, siteStats, sourceRows, trafficBars } from './monitor';
 
 const counters = (extra: Partial<MetricsBucket> = {}) => ({ visitors: null, requests: null, errors_5xx: null, errors_4xx: null, p50_ms: null, p95_ms: null, ...extra });
 const metrics = (extra: Partial<ProjectMetrics> = {}): ProjectMetrics => ({ range: '24h', step: '1h', buckets: [], totals: counters(), previous_totals: counters(), ...extra });
@@ -13,6 +13,29 @@ describe('the Monitor’s numbers', () => {
 	it('leaves what wasn’t measured unsaid, never 0', () => {
 		expect(monitorStats(metrics())).toEqual({ requests: null, errors: null, errorShare: null, p95: null, visitors: null });
 		expect(monitorStats(metrics({ totals: counters({ requests: 0, errors_5xx: 0 }) })).errorShare).toBeNull();
+	});
+});
+
+describe('a site’s numbers', () => {
+	it('says form sends with their share of visits, uptime and how long it’s been looked at', () => {
+		const site = metrics({ totals: counters({ visitors: 312 }), form_sends: 6, uptime: { share: 1, since: '2026-11-15T00:00:00Z' } });
+		expect(siteStats(site, new Date('2026-11-15T02:37:00Z'))).toEqual({ formSends: '6', formShare: '1.9%', uptime: '100%', uptimeFor: '2h 37m' });
+		expect(siteStats(metrics({ uptime: { share: 0.9934, since: '2026-11-13T00:00:00Z' } }), new Date('2026-11-15T00:00:00Z'))).toMatchObject({ uptime: '99.3%', uptimeFor: '2d' });
+	});
+
+	it('leaves what wasn’t measured unsaid', () => {
+		expect(siteStats(metrics(), new Date())).toEqual({ formSends: null, formShare: null, uptime: null, uptimeFor: null });
+		expect(siteStats(metrics({ form_sends: 4, totals: counters({ visitors: 0 }) }), new Date())).toMatchObject({ formSends: '4', formShare: null });
+	});
+
+	it('lists where visits come from, largest first, as shares', () => {
+		expect(sourceRows([{ name: 'Google search', share: 0.28 }, { name: 'Instagram', share: 0.41 }, { name: 'Direct', share: 0.125 }])).toEqual([
+			{ name: 'Instagram', value: '41%' },
+			{ name: 'Google search', value: '28%' },
+			{ name: 'Direct', value: '13%' },
+		]);
+		expect(sourceRows(null)).toBeNull();
+		expect(sourceRows([])).toEqual([]);
 	});
 });
 

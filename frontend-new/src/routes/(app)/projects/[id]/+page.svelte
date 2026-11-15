@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
-	import { Activity, ArrowDownUp, Cpu, Database, Download, Globe, History, Hourglass, KeyRound, Link, Lock, MemoryStick, MonitorX, Power, Rocket, Settings, UserMinus, Users } from '@lucide/svelte';
+	import { Activity, ArrowDownUp, Cpu, Database, Download, Globe, History, Hourglass, KeyRound, Link, Lock, MemoryStick, MonitorX, Power, RefreshCw, Rocket, Settings, Trash2, UserMinus, Users } from '@lucide/svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { pageAction } from '$lib/pageAction';
 	import { clock as appClock } from '$lib/clock';
@@ -30,17 +30,20 @@
 	import { ago } from '$lib/adapters/time';
 	import { maskAddress } from '$lib/settings/connections';
 	import TextField from '$lib/ds/inputs/TextField.svelte';
+	import DnsRecords from '$lib/ds/projects/DnsRecords.svelte';
+	import { domainView } from '$lib/projects/domains';
 	import Search from '$lib/ds/inputs/Search.svelte';
 	import type { TransferTarget } from '$lib/server/workspace';
 	import { cellText } from '$lib/projects/database';
 	import type { DatabaseView } from '$lib/server/workspace';
 	import Icon from '$lib/ds/foundations/Icon.svelte';
 	import Segmented from '$lib/ds/inputs/Segmented.svelte';
-	import { monitorStats, resourceRows, trafficBars } from '$lib/projects/monitor';
+	import { monitorStats, resourceRows, siteStats, sourceRows, trafficBars } from '$lib/projects/monitor';
 	import type { Monitoring } from '$lib/server/workspace';
 	import type { MetricsRange } from '$lib/adapters/api';
 	import SubdomainField, { type SubdomainCheck } from '$lib/ds/projects/SubdomainField.svelte';
-	import { invalidate } from '$app/navigation';
+	import { goto, invalidate } from '$app/navigation';
+	import { page } from '$app/state';
 	import CodeView from '$lib/ds/build/CodeView.svelte';
 	import { plainLines } from '$lib/ds/chat/code';
 	import { fileTree, firstFile, quoteLines } from '$lib/projects/code';
@@ -161,6 +164,32 @@
 		return () => clearInterval(tick);
 	});
 
+	// Opened from a card's menu or the detail panel on Projects (Card menu M9O0iU: "Share, Export,
+	// Settings and Take down open the same dialogs the workspace uses"), or from search on a file
+	// (`?open=code&file=`): `?open=` says which, then the address is tidied so a reload doesn't
+	// open it again.
+	onMount(() => {
+		const open = page.url.searchParams.get('open');
+		if (!open) return;
+		if (open === 'settings') sheet = 'settings';
+		else if (open === 'export') void openExport();
+		else if (open === 'share' && liveUrl) sharing = true;
+		else if (open === 'takedown' && liveUrl) openDialog('takedown');
+		else if (open === 'code') {
+			// A file found by search: the code view, on it when it's the project's.
+			const file = page.url.searchParams.get('file');
+			view = 'code';
+			if (file && project.files.some((one) => one.path === file)) {
+				codeText = null;
+				codePath = file;
+			}
+		}
+		const url = new URL(page.url);
+		url.searchParams.delete('open');
+		url.searchParams.delete('file');
+		void goto(url, { replaceState: true, noScroll: true, keepFocus: true });
+	});
+
 	let confirming = $state(false);
 	let sending = $state(false);
 	async function startPublish() {
@@ -226,6 +255,29 @@
 		await invalidate('app:workspace-project');
 	}
 
+	// A domain of the person's own (Screen / Domain J2hPJ, Domain connected Dd60u): its address
+	// beside the app's, the records to set at the registrar, Check now, Make primary once every
+	// record is found, and Remove (asked first). Anyone on the project sees and checks them; the
+	// project's admins add, make primary and remove. The app has to be live first.
+	const ownDomains = $derived(data.ownDomains ?? []);
+	let newDomain = $state('');
+	let domainBusy = $state<string | null>(null);
+	let domainError = $state<string | null>(null);
+	let removingDomain = $state<string | null>(null);
+	async function domainAction(name: 'domainAdd' | 'domainCheck' | 'domainPrimary' | 'domainRemove', hostname: string, done?: string): Promise<boolean> {
+		domainBusy = `${name}:${hostname}`;
+		domainError = null;
+		const result = await pageAction(`/projects/${project.id}`, name, { hostname });
+		domainBusy = null;
+		if (!result.ok) {
+			domainError = result.message || m.action_failed();
+			return false;
+		}
+		if (done) toasts.show({ kind: 'success', title: done });
+		await invalidate('app:workspace-project');
+		return true;
+	}
+
 	// Monitor (step 10): the live app's numbers, looked at again every 30 seconds while it's open.
 	let range = $state<MetricsRange>('24h');
 	let monitoring = $state<Monitoring | null>(null);
@@ -249,6 +301,10 @@
 	const site = $derived(project.stack === 'static');
 	const traffic = $derived(monitoring?.metrics ? trafficBars(monitoring.metrics.buckets, time.timeZone, site ? 'visitors' : 'requests') : null);
 	const resources = $derived(monitoring?.usage ? resourceRows(monitoring.usage) : null);
+	// A site's own: forms sent, uptime, and where its visits come from (the script a publish puts in
+	// its pages reports them).
+	const siteNumbers = $derived(monitoring?.metrics ? siteStats(monitoring.metrics, now) : null);
+	const sources = $derived(sourceRows(monitoring?.metrics?.sources));
 	const RANGE_NOTE: Record<MetricsRange, () => string> = { '1h': m.monitor_last_hour, '24h': m.monitor_today, '7d': m.monitor_week };
 	const trafficLabel = $derived(site ? m.monitor_visits_traffic({ range: RANGE_NOTE[range]() }) : m.monitor_traffic({ range: RANGE_NOTE[range]() }));
 
@@ -271,6 +327,31 @@
 		if (sheet === 'database' && canRead) void loadDatabase(dbSource, dbTable);
 	});
 	const rowsLabel = (count: number) => (count < 0 ? m.database_rows_unknown() : count === 1 ? m.database_row_one() : m.database_rows({ count }));
+	// Edit rows and Download dump: a browsed table's cells edit in place, the row found by its
+	// primary key (a table without one can't be edited here); the dump is the database shown.
+	let editingRows = $state(false);
+	const browsed = $derived(database && !('error' in database) && database.rows && database.table ? { table: database.table, rows: database.rows } : null);
+	const dbKey = $derived(browsed?.table.primary_key?.length ? browsed.table.primary_key : null);
+	async function saveCell(row: number, column: number, value: string): Promise<boolean> {
+		if (!browsed || !dbKey) return false;
+		const { table, rows: shown } = browsed;
+		const raw = shown.rows[row];
+		const key = Object.fromEntries(dbKey.map((name) => [name, raw[shown.columns.indexOf(name)]]));
+		const response = await fetch(`/projects/${project.id}/database/rows`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ source: dbSource, schema: table.schema, table: table.name, key, changes: { [shown.columns[column]]: value } }),
+		}).catch(() => null);
+		const body = response ? ((await response.json().catch(() => null)) as { row?: Record<string, unknown>; error?: string } | null) : null;
+		if (!response?.ok || !body?.row) {
+			toasts.show({ kind: 'error', title: m.database_edit_failed(), detail: body?.error || undefined });
+			return false;
+		}
+		const kept = body.row;
+		shown.rows[row] = shown.columns.map((name, at) => (name in kept ? kept[name] : raw[at]));
+		toasts.show({ kind: 'success', title: m.database_saved() });
+		return true;
+	}
 
 	// Settings (steps 12, 15–17): transfer to another workspace, take the live app down, delete.
 	let dialog = $state<'transfer' | 'takedown' | 'delete' | null>(null);
@@ -957,6 +1038,7 @@
 								onchange={(value) => {
 									dbSource = value as typeof dbSource;
 									dbTable = null;
+									editingRows = false;
 								}}
 							/>
 						</div>
@@ -976,17 +1058,42 @@
 									name={table.name}
 									rows={rowsLabel(table.rows_estimate)}
 									selected={database.table?.name === table.name && database.table?.schema === table.schema}
-									onclick={() => (dbTable = `${table.schema}.${table.name}`)}
+									onclick={() => {
+									dbTable = `${table.schema}.${table.name}`;
+									editingRows = false;
+								}}
 								/>
 							{/each}
 						</div>
 						{#if database.rows && database.table}
-							<RowsGrid label={database.table.name} columns={database.rows.columns} rows={database.rows.rows.map((row) => row.map(cellText))} />
+							{@const columns = database.rows.columns}
+							{@const raw = database.rows.rows}
+							<RowsGrid
+								label={database.table.name}
+								{columns}
+								rows={raw.map((row) => row.map(cellText))}
+								edit={editingRows && dbKey
+									? {
+											locked: dbKey.map((name) => columns.indexOf(name)),
+											initial: (row, column) => (raw[row][column] === null || raw[row][column] === undefined ? '' : typeof raw[row][column] === 'object' ? JSON.stringify(raw[row][column]) : String(raw[row][column])),
+											onsave: saveCell,
+											cellLabel: (row, column) => m.database_edit_cell({ column: columns[column], row: row + 1 }),
+										}
+									: undefined}
+							/>
 							<p class="font-mono text-label text-text-3">{database.rows.truncated ? m.database_showing_first({ count: database.rows.rows.length }) : rowsLabel(database.rows.rows.length)}</p>
 						{/if}
 						<p class="flex items-center gap-2.5 rounded-sm bg-surface-2 px-3 py-2.5 text-ui text-text-2">
-							<span class="inline-flex shrink-0"><Icon icon={Lock} size={14} /></span>{m.database_read_only()}
+							<span class="inline-flex shrink-0"><Icon icon={Lock} size={14} /></span>{editingRows && browsed
+								? m.database_editing_note({ table: browsed.table.name, database: dbSource === 'production' ? m.database_production() : m.database_development() })
+								: browsed && !dbKey
+									? m.database_no_key()
+									: m.database_read_only_edit()}
 						</p>
+						<div class="flex flex-wrap gap-2">
+							<Button variant="secondary" label={editingRows ? m.database_done_editing() : m.database_edit_rows()} disabled={!dbKey} onclick={() => (editingRows = !editingRows)} />
+							<Button variant="secondary" iconStart={Download} label={m.database_download_dump()} href={`/projects/${project.id}/database/dump?source=${dbSource}`} />
+						</div>
 					{/if}
 				</WorkspaceSheet>
 			</div>
@@ -1015,9 +1122,9 @@
 							<div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
 								{#if site}
 									<MonitorStat label={m.monitor_visits()} value={stats?.visitors} note={RANGE_NOTE[range]()} notMeasured={m.monitor_not_measured()} />
+									<MonitorStat label={m.monitor_form_sends()} value={siteNumbers?.formSends} note={siteNumbers?.formShare ? m.monitor_form_share({ share: siteNumbers.formShare }) : undefined} notMeasured={m.monitor_not_measured()} />
 									<MonitorStat label="P95" value={stats?.p95} note={m.monitor_page_load()} notMeasured={m.monitor_not_measured()} />
-									<MonitorStat label={m.monitor_requests()} value={stats?.requests} note={RANGE_NOTE[range]()} notMeasured={m.monitor_not_measured()} />
-									<MonitorStat label={m.monitor_errors()} value={stats?.errors} note={stats?.errorShare ? m.monitor_error_share({ share: stats.errorShare }) : undefined} notMeasured={m.monitor_not_measured()} />
+									<MonitorStat label={m.monitor_uptime()} value={siteNumbers?.uptime} note={siteNumbers?.uptimeFor ? m.monitor_uptime_for({ time: siteNumbers.uptimeFor }) : undefined} notMeasured={m.monitor_not_measured()} />
 								{:else}
 									<MonitorStat label={m.monitor_requests()} value={stats?.requests} note={RANGE_NOTE[range]()} notMeasured={m.monitor_not_measured()} />
 									<MonitorStat label={m.monitor_errors()} value={stats?.errors} note={stats?.errorShare ? m.monitor_error_share({ share: stats.errorShare }) : undefined} notMeasured={m.monitor_not_measured()} />
@@ -1034,6 +1141,19 @@
 									<TrafficBars label={trafficLabel} bars={traffic.bars} axis={[traffic.bars[0].at, traffic.bars[traffic.bars.length - 1].at]} />
 								</section>
 							{/if}
+							{#if site}
+								<!-- The pen's site Monitor puts where visits come from in Resources' place, its rows wearing the resources' icons (pasted): each wears the globe. -->
+								<section class="flex flex-col gap-2">
+									<h3 class="font-mono text-label tracking-label text-text-3 uppercase">{m.monitor_sources()}</h3>
+									{#if sources?.length}
+										<div class="flex flex-col">
+											{#each sources as source (source.name)}<ResourceRow icon={Globe} name={source.name} value={source.value} />{/each}
+										</div>
+									{:else}
+										<p class="text-ui text-text-3">{m.monitor_sources_none()}</p>
+									{/if}
+								</section>
+							{:else}
 							<section class="flex flex-col gap-2">
 								<h3 class="font-mono text-label tracking-label text-text-3 uppercase">{m.monitor_resources()}</h3>
 								{#if resources?.memory}
@@ -1046,6 +1166,7 @@
 									<p class="text-ui text-text-3">{m.monitor_not_measured()}</p>
 								{/if}
 							</section>
+							{/if}
 							<section class="flex flex-col gap-0.5">
 								<h3 class="font-mono text-label tracking-label text-text-3 uppercase">{m.monitor_log()}</h3>
 								{#if monitoring?.logs?.length}
@@ -1069,7 +1190,30 @@
 							<p class="font-mono text-label tracking-label text-text-3 uppercase">{m.domain_addresses()}</p>
 							<AddressRow address={address.hostname} href={address.url ?? undefined} state={liveUrl ? { label: m.deploy_state_live(), tone: 'live' } : undefined} />
 							{#if address.pending_hostname}<AddressRow address={address.pending_hostname} state={{ label: m.domain_next_publish(), tone: 'waiting' }} strong />{/if}
+							{#each ownDomains as own (own.hostname)}
+								{@const shown = domainView(own, time.timeZone)}
+								<AddressRow address={own.hostname} href={shown.state.tone === 'live' ? `https://${own.hostname}` : undefined} state={shown.state} strong />
+							{/each}
 						</div>
+						{#each ownDomains as own (own.hostname)}
+							{@const shown = domainView(own, time.timeZone)}
+							<section aria-label={own.hostname} class="flex flex-col gap-4">
+								{#if ownDomains.length > 1}<p class="font-mono text-ui text-text">{own.hostname}{#if own.primary} · {m.domain_primary_tag()}{/if}</p>{/if}
+								<DnsRecords
+									records={shown.records}
+									checked={shown.checked}
+									labels={{ heading: m.domain_registrar(), type: m.domain_col_type(), name: m.domain_col_name(), value: m.domain_col_value(), status: m.domain_col_status(), found: m.domain_found(), waiting: m.domain_waiting(), copy: m.domain_copy_value() }}
+								/>
+								<p class="text-ui text-text-3">{shown.note}</p>
+								<div class="flex flex-wrap gap-2">
+									<Button variant="secondary" label={m.domain_check_now()} iconEnd={RefreshCw} loading={domainBusy === `domainCheck:${own.hostname}`} onclick={() => void domainAction('domainCheck', own.hostname)} />
+									{#if address.can_edit && shown.canMakePrimary}
+										<Button variant="secondary" label={m.domain_make_primary()} loading={domainBusy === `domainPrimary:${own.hostname}`} onclick={() => void domainAction('domainPrimary', own.hostname, m.domain_primary_done({ hostname: own.hostname }))} />
+									{/if}
+									{#if address.can_edit}<Button variant="ghost" iconStart={Trash2} label={m.domain_remove()} onclick={() => (removingDomain = own.hostname)} />{/if}
+								</div>
+							</section>
+						{/each}
 						{#if renaming}
 							<div class="flex flex-col gap-3">
 								<SubdomainField
@@ -1093,6 +1237,27 @@
 							<div><Button variant="secondary" label={m.domain_change()} onclick={startRenaming} /></div>
 						{/if}
 					{/if}
+					{#if address.can_edit}
+						<section aria-labelledby="own-domain-title" class="flex flex-col gap-3 border-t border-border pt-4">
+							<header class="flex flex-col gap-0.5">
+								<h3 id="own-domain-title" class="text-ui font-medium text-text">{m.domain_add_title()}</h3>
+								<p class="text-caption text-text-3">{liveUrl ? m.domain_add_body() : m.domain_add_live_first()}</p>
+							</header>
+							{#if liveUrl}
+								<form
+									class="flex items-end gap-2"
+									onsubmit={async (event) => {
+										event.preventDefault();
+										if (await domainAction('domainAdd', newDomain.trim().toLowerCase())) newDomain = '';
+									}}
+								>
+									<div class="min-w-0 flex-1"><TextField label={m.domain_add_field()} bind:value={newDomain} placeholder="warungkopi.id" mono name="hostname" autocomplete="off" /></div>
+									<Button type="submit" variant="inverse" label={m.domain_add()} loading={domainBusy?.startsWith('domainAdd:') ?? false} disabled={!newDomain.trim()} />
+								</form>
+							{/if}
+						</section>
+					{/if}
+					{#if domainError}<p role="alert" class="text-caption text-danger">{domainError}</p>{/if}
 				</WorkspaceSheet>
 			</div>
 		{/if}
@@ -1184,6 +1349,21 @@
 	{#snippet actions()}
 		<Button variant="ghost" label={m.action_cancel()} onclick={() => (dialog = null)} />
 		<Button variant="inverse" label={m.transfer_send()} loading={acting} disabled={!target || confirmName.trim() !== project.name} onclick={() => act('transfer', { to: target ?? '', name: confirmName.trim() })} />
+	{/snippet}
+</ProjectDialog>
+
+<ProjectDialog open={removingDomain !== null} title={m.domain_remove_title({ hostname: removingDomain ?? '' })} description={m.domain_remove_body()} width={460} onclose={() => (removingDomain = null)}>
+	{#snippet actions()}
+		<Button variant="ghost" label={m.action_cancel()} onclick={() => (removingDomain = null)} />
+		<Button
+			variant="danger"
+			label={m.domain_remove()}
+			loading={domainBusy?.startsWith('domainRemove:') ?? false}
+			onclick={async () => {
+				const hostname = removingDomain ?? '';
+				if (await domainAction('domainRemove', hostname, m.domain_removed({ hostname }))) removingDomain = null;
+			}}
+		/>
 	{/snippet}
 </ProjectDialog>
 

@@ -16,7 +16,18 @@ export type Preferences = {
 	language: string;
 	/** False until the person saved a timezone: `timezone` is then only the UTC fallback. */
 	has_stored_timezone: boolean;
+	/** A region like "en-GB" for numbers and dates; null follows the language. */
+	formats?: string | null;
+	/** The crew member (an `agent_type`) new chats start with; null is Nomi. */
+	default_agent?: string | null;
+	/** Enter sends (the default); off, Enter makes a new line and ⌘/Ctrl+Enter sends. */
+	enter_sends?: boolean;
+	show_reply_tokens?: boolean;
 };
+
+/** `GET|PUT /api/notifications/reminder-preferences`: local times in the person's zone. */
+export type ReminderPreferences = { push_reminders: boolean; quiet_hours: QuietHours | null };
+export type QuietHours = { start: string; end: string };
 
 /** `GET /api/usage/brief`. */
 export type UsageBrief = {
@@ -167,6 +178,12 @@ export type ProjectSummary = {
 	deploys_count?: number;
 	files_count?: number;
 	deploy_url?: string | null;
+	/** Questions and approvals in its chats still waiting on the person. */
+	waiting_on_you?: number;
+	/** How its last publish ended. */
+	last_deploy?: { status: 'ok' | 'failed'; at: string } | null;
+	/** Whether the live app is answering (down after a crash with no publish since); null when not live. */
+	live_status?: 'up' | 'down' | null;
 };
 /** `org_id` is the workspace shown, null until one is chosen; `base_domain` where apps go live. */
 export type ProjectList = { org_id: string | null; projects: ProjectSummary[]; base_domain?: string | null };
@@ -308,9 +325,25 @@ export type PlanOffer = {
 	is_default: boolean;
 	is_active: boolean;
 	sort_order: number;
+	/** A month's price in rupiah when it can be bought; null: people join its waitlist. */
+	price_idr?: number | null;
+	promo_price_idr?: number | null;
 };
 
-export type PlansForUser = { plans: PlanOffer[]; current_plan_id: string; monthly_tokens: number; custom_quota: boolean; override_until: string | null };
+export type PlansForUser = {
+	plans: PlanOffer[];
+	current_plan_id: string;
+	monthly_tokens: number;
+	custom_quota: boolean;
+	override_until: string | null;
+	/** The plans the person asked to be told about. */
+	waitlist?: string[];
+	/** Whether a plan with a price can be bought here (false while no payment gateway is set up). */
+	checkout_available?: boolean;
+};
+
+/** A payment of the person's (`GET /api/billing/payments/:id`): pending, paid, expired, failed or cancelled. */
+export type PaymentResult = { id: string; status: string; plan_name: string; amount: number; currency: string; invoice_url: string | null; period_end: string | null };
 
 /** One of the person's own provider keys (`GET /api/llm/connections`). */
 export type OwnConnection = { id: string; provider_id: string; label: string; auth_type: string; kind: string; base_url: string | null; api_key_masked: string | null; created_at: string };
@@ -349,7 +382,12 @@ export type MemoryItem = {
 	uses: number;
 	last_used_at: string | null;
 	needs_check: boolean;
+	/** The agent type whose reply it came from; null for older ones. */
+	learned_by?: string | null;
 };
+
+/** `GET /api/memory/profile`: the summary of the person every agent reads while it's kept. */
+export type MemoryProfileData = { text: string; tokens: number; updated_at: string | null };
 
 /** `GET /api/connections`: Google (the services granted) and Hevy, as connected now. */
 export type ConnectionsOverview = {
@@ -439,7 +477,19 @@ export type DomainAnswer = { available: boolean; reason?: string; message?: stri
 export type MetricsRange = '1h' | '24h' | '7d';
 export type MetricsCounters = { visitors: number | null; requests: number | null; errors_5xx: number | null; errors_4xx: number | null; p50_ms: number | null; p95_ms: number | null };
 export type MetricsBucket = MetricsCounters & { at: string };
-export type ProjectMetrics = { range: MetricsRange; step: string; buckets: MetricsBucket[]; totals: MetricsCounters; previous_totals: MetricsCounters };
+export type ProjectMetrics = {
+	range: MetricsRange;
+	step: string;
+	buckets: MetricsBucket[];
+	totals: MetricsCounters;
+	previous_totals: MetricsCounters;
+	/** Where a site's visits came from (shares of 1), from the script a publish puts in its pages; null until reported. */
+	sources?: { name: string; share: number }[] | null;
+	/** Forms sent on the site in the range; null until reported. */
+	form_sends?: number | null;
+	/** The share of 5-minute looks that got an answer, and since the first look; null until looked at. */
+	uptime?: { share: number; since: string } | null;
+};
 /** One container of the running app (`/deploy/usage`): its stats now, null when not measured. */
 export type ContainerUsage = {
 	service: string;
@@ -448,7 +498,7 @@ export type ContainerUsage = {
 };
 
 /** A project's database table (`/database/tables`); the row count is Postgres' estimate, -1 before it's known. */
-export type DatabaseTable = { schema: string; name: string; rows_estimate: number };
+export type DatabaseTable = { schema: string; name: string; rows_estimate: number; /** Its primary key's columns; rows are edited by them. */ primary_key?: string[] };
 /** What reading the database answered (`/database/query`). */
 export type QueryResult = { columns: string[]; rows: unknown[][]; truncated: boolean; rows_affected: number | null; took_ms: number };
 

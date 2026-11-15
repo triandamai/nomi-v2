@@ -7,7 +7,7 @@
 //! is sent to create an account with that address first.
 
 use axum::extract::{Path, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use axum::Json;
 use chrono::{DateTime, Duration, Utc};
 use rand::distributions::{Alphanumeric, DistString};
@@ -529,6 +529,24 @@ pub struct InviteRequest {
     pub email: String,
     /// "member" (default) or "admin".
     pub role: Option<String>,
+    /// The web app this invite was sent from (e.g. `https://new.nomi.app`), for links in the email.
+    pub origin: Option<String>,
+}
+
+pub(crate) fn request_origin(headers: &HeaderMap, body_origin: Option<&str>) -> Option<String> {
+    if let Some(origin) = body_origin.and_then(crate::public_url::origin) {
+        return Some(origin);
+    }
+    if let Some(origin) = headers.get("x-app-origin").and_then(|v| v.to_str().ok()).and_then(crate::public_url::origin) {
+        return Some(origin);
+    }
+    if let Some(origin) = headers.get("origin").and_then(|v| v.to_str().ok()).and_then(crate::public_url::origin) {
+        return Some(origin);
+    }
+    if let Some(referer) = headers.get("referer").and_then(|v| v.to_str().ok()).and_then(crate::public_url::origin) {
+        return Some(referer);
+    }
+    None
 }
 
 /// Percent-encodes a query value.
@@ -561,6 +579,7 @@ pub async fn create_invite(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
     Path(org_id): Path<Uuid>,
+    headers: HeaderMap,
     Json(req): Json<InviteRequest>,
 ) -> Result<(StatusCode, Json<PendingInvite>), ApiError> {
     let my_role = require_manager(&state.pool, claims.sub, org_id).await?;
@@ -579,7 +598,8 @@ pub async fn create_invite(
         ));
     }
 
-    let invite = send_invite(&state, claims.sub, org_id, &email, role, None).await?;
+    let origin = request_origin(&headers, req.origin.as_deref());
+    let invite = send_invite(&state, claims.sub, org_id, &email, role, None, origin.as_deref()).await?;
     Ok((StatusCode::CREATED, Json(invite)))
 }
 
@@ -593,6 +613,7 @@ pub(crate) async fn send_invite(
     email: &str,
     role: &str,
     project: Option<(Uuid, &str)>,
+    origin: Option<&str>,
 ) -> Result<PendingInvite, ApiError> {
     let claims_sub = inviter_id;
     nomi_usage::entitlements::check_new_org_member(&state.pool, org_id)
@@ -645,6 +666,7 @@ pub(crate) async fn send_invite(
         &code,
         invitee,
         project.map(|(id, _)| id),
+        origin,
     )
     .await?;
     Ok(invite)
@@ -660,6 +682,7 @@ async fn deliver_invite(
     code: &str,
     invitee: Option<Uuid>,
     project: Option<Uuid>,
+    origin: Option<&str>,
 ) -> Result<(), ApiError> {
     let org_name: String = sqlx::query_scalar("SELECT name FROM organizations WHERE id = $1")
         .bind(org_id)
@@ -722,7 +745,7 @@ async fn deliver_invite(
             tracing::warn!(error = %e, "failed to notify an invited member");
         }
     }
-    let (action, note) = match (invitee.is_some(), crate::public_url::link(&open_path)) {
+    let (action, note) = match (invitee.is_some(), crate::public_url::link_for(&open_path, origin)) {
         (true, Some(url)) => (
             Some(Action {
                 label: locale.t("team.invite_button"),
@@ -773,6 +796,7 @@ pub async fn resend_invite(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
     Path((org_id, code)): Path<(Uuid, String)>,
+    headers: HeaderMap,
 ) -> Result<Json<PendingInvite>, ApiError> {
     require_manager(&state.pool, claims.sub, org_id).await?;
     let expires_at = Utc::now() + Duration::days(INVITE_DAYS);
@@ -796,7 +820,8 @@ pub async fn resend_invite(
             .fetch_one(&state.pool)
             .await
             .map_err(internal("failed to resend invite"))?;
-    deliver_invite(&state, claims.sub, org_id, &email, &code, invitee, project).await?;
+    let origin = request_origin(&headers, None);
+    deliver_invite(&state, claims.sub, org_id, &email, &code, invitee, project, origin.as_deref()).await?;
     Ok(Json(invite))
 }
 
@@ -1442,7 +1467,7 @@ pub(crate) async fn announce_signup_joins(pool: &sqlx::PgPool, user_id: Uuid) {
 
 #[cfg(test)]
 mod tests {
-    use super::valid_email;
+    use super::*;
 
     #[test]
     fn checks_the_shape_of_an_address() {
@@ -1451,5 +1476,35 @@ mod tests {
         assert!(!valid_email("@example.com"));
         assert!(!valid_email("ana example@example.com"));
         assert!(!valid_email("ana@.com"));
+    }
+
+    #[test]
+    fn request_origin_prefers_body_then_headers() {
+        let mut headers = HeaderMap::new();
+        assert_eq!(request_origin(&headers, None), None);
+        assert_eq!(
+            request_origin(&headers, Some("http://localhost:4176")),
+            Some("http://localhost:4176".into())
+        );
+
+        headers.insert("x-app-origin", "http://localhost:4176".parse().unwrap());
+        assert_eq!(
+            request_origin(&headers, None),
+            Some("http://localhost:4176".into())
+        );
+
+        headers.remove("x-app-origin");
+        headers.insert("origin", "https://new.nomi.app".parse().unwrap());
+        assert_eq!(
+            request_origin(&headers, None),
+            Some("https://new.nomi.app".into())
+        );
+
+        headers.remove("origin");
+        headers.insert("referer", "https://new.nomi.app/settings/workspaces/123".parse().unwrap());
+        assert_eq!(
+            request_origin(&headers, None),
+            Some("https://new.nomi.app".into())
+        );
     }
 }

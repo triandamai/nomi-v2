@@ -98,7 +98,17 @@ async fn stop_in_a_chat_stops_only_that_chats_work(pool: PgPool) {
     let (money_elsewhere, _) = seed_paused_money_agent(&pool, &seed, seed.chat_b).await;
     let delegation_here = seed_delegation(&pool, &seed, seed.chat_a, "coding", "processing").await;
     let queued_here = seed_turn_job(&pool, &seed, seed.chat_a, "pending").await;
+    let queued_here_2 = seed_turn_job(&pool, &seed, seed.chat_a, "pending").await;
     let queued_elsewhere = seed_turn_job(&pool, &seed, seed.chat_b, "pending").await;
+    let bg_task_here: Uuid = sqlx::query_scalar(
+        "INSERT INTO background_tasks (session_id, user_id, agent_type, label, command, status) \
+         VALUES ($1, $2, 'coding', 'test suite', 'cargo test', 'running') RETURNING id",
+    )
+    .bind(seed.chat_a)
+    .bind(seed.user_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
 
     let outcome = handle_stop_message(&pool, &registry(), seed.chat_a, seed.identity_id, seed.user_id, "Stop!")
         .await
@@ -106,13 +116,16 @@ async fn stop_in_a_chat_stops_only_that_chats_work(pool: PgPool) {
         .expect("a stop command");
 
     assert_eq!(outcome.report.stopped, vec!["Money".to_string(), "Coding".to_string()]);
-    assert_eq!(outcome.report.dropped_messages, 1);
+    assert_eq!(outcome.report.dropped_messages, 2);
     assert!(outcome.reply.starts_with("Stopped Money and Coding."), "{}", outcome.reply);
+    assert!(outcome.reply.contains("dropped 2 queued messages"), "{}", outcome.reply);
 
     assert_eq!(status_of(&pool, "agent_sessions", money_here).await, "cancelled");
     assert_eq!(status_of(&pool, "agent_sessions", money_elsewhere).await, "active");
     assert_eq!(status_of(&pool, "agent_delegations", delegation_here).await, "cancelled");
+    assert_eq!(status_of(&pool, "background_tasks", bg_task_here).await, "cancelled");
     assert_eq!(status_of(&pool, "turn_jobs", queued_here).await, "cancelled");
+    assert_eq!(status_of(&pool, "turn_jobs", queued_here_2).await, "cancelled");
     assert_eq!(status_of(&pool, "turn_jobs", queued_elsewhere).await, "pending");
 
     // The approval card is settled, and the approval endpoint's own pending check now says no.
@@ -154,7 +167,13 @@ async fn stop_in_a_chat_stops_only_that_chats_work(pool: PgPool) {
         .collect();
     assert_eq!(
         tasks,
-        vec![("money".into(), "stopped".into()), ("coding".into(), "stopped".into()), ("chitchat".into(), "waiting".into())]
+        vec![
+            ("money".into(), "stopped".into()),
+            ("coding".into(), "stopped".into()),
+            ("coding".into(), "stopped".into()),
+            ("chitchat".into(), "waiting".into()),
+            ("chitchat".into(), "waiting".into()),
+        ]
     );
 
     // Turns already running see the stop.
@@ -209,11 +228,31 @@ async fn naming_an_agent_stops_only_that_agent_and_keeps_queued_messages(pool: P
     assert_eq!(status_of(&pool, "agent_sessions", money).await, "cancelled");
     assert_eq!(status_of(&pool, "agent_delegations", coding).await, "pending");
     assert_eq!(status_of(&pool, "turn_jobs", queued).await, "pending");
+
+    let dynamic_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO dynamic_agents (name, system_prompt, intent_label, intent_description, created_by) \
+         VALUES ('Researcher', 'system', 'researching', 'desc', $1) RETURNING id",
+    )
+    .bind(seed.user_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let dynamic_delegation = seed_delegation(&pool, &seed, seed.chat_a, &dynamic_id.to_string(), "pending").await;
+
+    let outcome_dyn = handle_stop_message(&pool, &registry(), seed.chat_a, seed.identity_id, seed.user_id, "stop researcher")
+        .await
+        .unwrap()
+        .expect("a stop command");
+    assert_eq!(outcome_dyn.report.stopped, vec!["Researcher".to_string()]);
+    assert_eq!(status_of(&pool, "agent_delegations", dynamic_delegation).await, "cancelled");
 }
 
 #[sqlx::test(migrations = "../../migrations")]
 async fn an_ordinary_message_or_an_idle_crew_is_handled_sensibly(pool: PgPool) {
     let seed = seed(&pool).await;
+
+    let hello = handle_stop_message(&pool, &registry(), seed.chat_a, seed.identity_id, seed.user_id, "hello").await.unwrap();
+    assert!(hello.is_none());
 
     let none = handle_stop_message(&pool, &registry(), seed.chat_a, seed.identity_id, seed.user_id, "stop telling me jokes").await.unwrap();
     assert!(none.is_none(), "not a command, so it is left for the normal queue");

@@ -11,6 +11,9 @@ use nomi_agent_core::SubAgent;
 use nomi_llm::ToolDefinition;
 
 pub mod stop;
+pub mod tools;
+
+pub use tools::catalog_tools;
 
 pub const SUPERVISOR_AGENT_TYPE: &str = "supervisor";
 
@@ -103,23 +106,21 @@ impl SubAgent for SupervisorAgent {
     }
 
     fn tools(&self) -> Vec<ToolDefinition> {
-        vec![list_recent_agent_activity_tool_definition(), stop_agents_tool_definition()]
+        nomi_agent_core::tool_definitions(&tools::agent_tools())
     }
 
     async fn execute_tool(
         &self,
         conn: &mut PoolConnection<Postgres>,
         session_id: Uuid,
-        _agent_session_id: Uuid,
+        agent_session_id: Uuid,
         user_id: Uuid,
         name: &str,
         input: Value,
     ) -> Result<nomi_agent_core::ToolOutcome, String> {
-        match name {
-            "list_recent_agent_activity" => list_recent_agent_activity(conn, session_id).await.map(nomi_agent_core::ToolOutcome::text),
-            "stop_agents" => stop_agents_tool(conn, session_id, user_id, &input).await,
-            other => Err(format!("supervisor has no tool named {other}")),
-        }
+        let tools = tools::agent_tools();
+        let tool = nomi_agent_core::find_tool(&tools, name).ok_or_else(|| format!("supervisor has no tool named {name}"))?;
+        tool.execute(conn, session_id, agent_session_id, user_id, input).await
     }
 
     fn intent_label(&self) -> Cow<'static, str> {
@@ -140,8 +141,13 @@ impl SubAgent for SupervisorAgent {
     fn is_delegation_target(&self) -> bool {
         false
     }
+
+    fn creates_crew_members(&self) -> bool {
+        true
+    }
 }
 
+#[allow(clippy::type_complexity)]
 pub async fn list_recent_agent_activity(conn: &mut PoolConnection<Postgres>, session_id: Uuid) -> Result<String, String> {
     let rows: Vec<(String, String, String, Option<String>, Option<String>)> = sqlx::query_as(
         "SELECT target_agent_type, task, status, result, error FROM agent_delegations \

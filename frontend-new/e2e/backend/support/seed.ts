@@ -58,12 +58,12 @@ export async function seedUsage(email: string, usage: { model: string; input: nu
 }
 
 /** A memory the crew kept, as its turn would have (a zero vector stands in for the embedding). */
-export async function seedMemory(email: string, memory: { content: string; kind: string; weight?: number }): Promise<string> {
+export async function seedMemory(email: string, memory: { content: string; kind: string; weight?: number; learnedBy?: string }): Promise<string> {
 	const sql = postgres(DATABASE_URL, { max: 1, onnotice: () => {} });
 	try {
 		const [row] = await sql`
-			INSERT INTO memory_items (user_id, content, kind, weight, embedding)
-			SELECT user_id, ${memory.content}, ${memory.kind}, ${memory.weight ?? 1}, array_fill(0::real, ARRAY[1536])::vector
+			INSERT INTO memory_items (user_id, content, kind, weight, embedding, learned_by)
+			SELECT user_id, ${memory.content}, ${memory.kind}, ${memory.weight ?? 1}, array_fill(0::real, ARRAY[1536])::vector, ${memory.learnedBy ?? null}
 			FROM web_credentials WHERE email = ${email}
 			RETURNING id`;
 		return row.id as string;
@@ -101,6 +101,36 @@ export async function seedPersonality(email: string, descriptions: string[]): Pr
 		for (const [index, description] of descriptions.entries()) {
 			await sql`INSERT INTO user_personality_versions (user_id, version, description) VALUES (${person.user_id}, ${index + 1}, ${description})`;
 		}
+	} finally {
+		await sql.end();
+	}
+}
+
+/** A project's state as Koda's build leaves it (`building` once files are written, `ready` when it reports done). */
+export async function setProjectStatus(id: string, status: 'planning' | 'building' | 'ready'): Promise<void> {
+	const sql = postgres(DATABASE_URL, { max: 1, onnotice: () => {} });
+	try {
+		await sql`UPDATE projects SET status = ${status} WHERE id = ${id}`;
+	} finally {
+		await sql.end();
+	}
+}
+
+/** Marks a project as published on Shipyard (its app named), as a first publish would. */
+export async function markPublished(projectId: string): Promise<void> {
+	const sql = postgres(DATABASE_URL, { max: 1, onnotice: () => {} });
+	try {
+		await sql`UPDATE projects SET shipyard_app = ${`e2e-${projectId.slice(0, 8)}`} WHERE id = ${projectId}`;
+	} finally {
+		await sql.end();
+	}
+}
+
+/** What a published site has reported about itself: its visits (with where from) and forms sent. */
+export async function siteHits(projectId: string): Promise<{ kind: string; referrer_host: string | null }[]> {
+	const sql = postgres(DATABASE_URL, { max: 1, onnotice: () => {} });
+	try {
+		return (await sql`SELECT kind, referrer_host FROM site_hits WHERE project_id = ${projectId} ORDER BY id`) as unknown as { kind: string; referrer_host: string | null }[];
 	} finally {
 		await sql.end();
 	}

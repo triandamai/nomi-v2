@@ -70,3 +70,49 @@ test('telling Nomi something to remember starts a chat with it', async ({ page, 
 	await expect(page).toHaveURL(/\/chat\/[0-9a-f-]{36}$/);
 	await expect(page.getByText('I moved to Bandung').first()).toBeVisible();
 });
+
+
+test('who learned what, the profile, and how memory learns and how much it carries', async ({ page, context }) => {
+	const account = await createAccount();
+	await seedMemory(account.email, { content: 'Budgets in Rupiah', kind: 'preference', learnedBy: 'money' });
+	await seedMemory(account.email, { content: 'Pays Netflix monthly', kind: 'preference', learnedBy: 'money' });
+	await seedMemory(account.email, { content: 'Gym at 06:30', kind: 'routine', learnedBy: 'health' });
+	await signInAs(context, account);
+	await page.setViewportSize({ width: 1512, height: 862 });
+	await page.goto('/settings/memory', { waitUntil: 'networkidle' });
+
+	// Learned by: Dana for Preferences, Raga for Routines; each memory says so too.
+	await expect(page.getByRole('button', { name: /Preferences.*Dana/ })).toBeVisible();
+	await expect(page.getByRole('button', { name: /Routines.*Raga/ })).toBeVisible();
+	await page.getByRole('button', { name: /Routines/ }).click();
+	await expect(page.getByText(/learned by Raga/)).toBeVisible();
+
+	// The profile: written, kept, cleared and brought back.
+	const profile = async () => (await (await api(account, '/api/memory/profile')).json()) as { text: string; tokens: number };
+	await page.getByRole('button', { name: 'Edit the profile' }).click();
+	await page.getByRole('textbox', { name: 'Your profile' }).fill('Ana, Jakarta. Short answers, in Bahasa.');
+	await page.getByRole('button', { name: 'Save' }).click();
+	await expect(page.getByText('Profile saved. The crew reads it from the next reply.')).toBeVisible();
+	await expect.poll(async () => (await profile()).text).toBe('Ana, Jakarta. Short answers, in Bahasa.');
+	await expect(page.getByText('10 / 1,000 tok')).toBeVisible();
+	await page.getByRole('button', { name: 'Clear the profile' }).click();
+	await expect.poll(async () => (await profile()).text).toBe('');
+	await page.getByRole('button', { name: 'Undo' }).click();
+	await expect.poll(async () => (await profile()).text).toBe('Ana, Jakarta. Short answers, in Bahasa.');
+
+	// Learning and Budget, in the column beside the topics.
+	const settings = async () => (await (await api(account, '/api/memory/settings')).json()) as { search_past_chats: boolean; memory_budget: number; profile_budget: number };
+	const column = page.getByRole('complementary', { name: 'Memory settings' });
+	await column.getByRole('switch', { name: 'Search past chats' }).click();
+	await expect.poll(async () => (await settings()).search_past_chats).toBe(false);
+	await column.getByRole('textbox', { name: 'Profile' }).fill('50');
+	await column.getByRole('textbox', { name: 'Profile' }).press('Enter');
+	await expect(column.getByText('Between 100 and 4,000 tokens.')).toBeVisible();
+	await column.getByRole('textbox', { name: 'Memory' }).fill('2200');
+	await column.getByRole('textbox', { name: 'Memory' }).press('Enter');
+	await expect.poll(async () => (await settings()).memory_budget).toBe(2200);
+	expect((await settings()).profile_budget).toBe(1000);
+	await page.reload({ waitUntil: 'networkidle' });
+	await expect(column.getByRole('switch', { name: 'Search past chats' })).not.toBeChecked();
+	await expect(column.getByRole('textbox', { name: 'Memory' })).toHaveValue('2,200');
+});

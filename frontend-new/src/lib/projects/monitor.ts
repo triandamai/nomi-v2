@@ -17,6 +17,37 @@ export function monitorStats(metrics: ProjectMetrics) {
 	};
 }
 
+const percent = (share: number) => `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 }).format(share * 100)}%`;
+
+/** How long since `since`: "2h 37m", "2d", "45m". */
+function lasted(since: string, now: Date): string {
+	const minutes = Math.max(0, Math.floor((now.getTime() - Date.parse(since)) / 60_000));
+	if (minutes >= 48 * 60) return `${Math.floor(minutes / (24 * 60))}d`;
+	if (minutes >= 60) return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+	return `${minutes}m`;
+}
+
+/**
+ * A site's own numbers (Landing page WUiji, step 5): forms sent with their share of visits, and
+ * uptime with how long it's been looked at. Not measured stays null, never 0.
+ */
+export function siteStats(metrics: ProjectMetrics, now: Date) {
+	const sends = metrics.form_sends ?? null;
+	const visits = metrics.totals.visitors;
+	return {
+		formSends: sends === null ? null : whole(sends),
+		formShare: sends === null || !visits ? null : percent(sends / visits),
+		uptime: metrics.uptime ? percent(metrics.uptime.share) : null,
+		uptimeFor: metrics.uptime ? lasted(metrics.uptime.since, now) : null,
+	};
+}
+
+/** Where a site's visits came from, the largest first, each as a share; null until any were reported. */
+export function sourceRows(sources: { name: string; share: number }[] | null | undefined): { name: string; value: string }[] | null {
+	if (!sources) return null;
+	return [...sources].sort((a, b) => b.share - a.share).map((source) => ({ name: source.name, value: `${Math.round(source.share * 100)}%` }));
+}
+
 export type TrafficBar = { at: string; share: number | null; count: number | null };
 
 /**

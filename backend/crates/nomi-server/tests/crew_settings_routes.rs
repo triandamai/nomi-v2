@@ -114,7 +114,8 @@ async fn a_member_switches_off_and_on_but_nomi_stays_on(pool: PgPool) {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body, json!({ "agent_type": "money", "enabled": false }));
+    assert_eq!(body["agent_type"], "money");
+    assert_eq!(body["enabled"], false);
     let (_, crew) = request(router.clone(), "GET", "/api/agents", Some(&token), None).await;
     let money = member(&crew, "money").unwrap();
     assert_eq!(money["enabled"], false);
@@ -625,4 +626,124 @@ async fn the_plan_limits_members_of_ones_own(pool: PgPool) {
     )
     .await;
     assert_eq!(status, StatusCode::CREATED);
+}
+
+fn tool_names(value: &Value) -> Vec<String> {
+    value
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t.as_str().unwrap().to_string())
+        .collect()
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn members_list_their_tools_and_own_ones_change_them(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let token = register(router.clone(), "crew-tools@example.com").await;
+    let other = register(router.clone(), "crew-tools-other@example.com").await;
+
+    // A template's tools apply when none are sent; sent ones win.
+    let (status, coach) = request(
+        router.clone(),
+        "POST",
+        "/api/agents",
+        Some(&token),
+        Some(json!({ "template": "budget_coach" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{coach}");
+    assert!(tool_names(&coach["tools"]).contains(&"set_budget".to_string()));
+    let (status, logger) = request(
+        router.clone(),
+        "POST",
+        "/api/agents",
+        Some(&token),
+        Some(json!({ "template": "expense_logger", "tools": ["list_budgets"] })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{logger}");
+    assert_eq!(tool_names(&logger["tools"]), ["list_budgets"]);
+    let agent_type = logger["agent_type"].as_str().unwrap().to_string();
+
+    let (_, crew) = request(router.clone(), "GET", "/api/agents", Some(&token), None).await;
+    assert_eq!(
+        tool_names(&member(&crew, &agent_type).unwrap()["tools"]),
+        ["list_budgets"]
+    );
+    assert!(tool_names(&member(&crew, "money").unwrap()["tools"]).contains(&"set_budget".to_string()));
+
+    let (status, body) = request(
+        router.clone(),
+        "PUT",
+        &format!("/api/agents/{agent_type}"),
+        Some(&token),
+        Some(json!({ "tools": ["set_budget", "list_budgets"] })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(tool_names(&body["tools"]), ["set_budget", "list_budgets"]);
+    assert_eq!(body["enabled"], true);
+    let (_, crew) = request(router.clone(), "GET", "/api/agents", Some(&token), None).await;
+    assert_eq!(
+        tool_names(&member(&crew, &agent_type).unwrap()["tools"]),
+        ["set_budget", "list_budgets"]
+    );
+
+    let (status, _) = request(
+        router.clone(),
+        "PUT",
+        &format!("/api/agents/{agent_type}"),
+        Some(&token),
+        Some(json!({ "tools": ["not_a_tool"] })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (status, _) = request(
+        router.clone(),
+        "PUT",
+        "/api/agents/money",
+        Some(&token),
+        Some(json!({ "tools": [] })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "a built-in's tools are its own");
+    let (status, _) = request(
+        router.clone(),
+        "PUT",
+        &format!("/api/agents/{agent_type}"),
+        Some(&other),
+        Some(json!({ "tools": [] })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "someone else's member");
+
+    // Nomi asks before making a member, unless the person says otherwise.
+    let (_, perms) = request(
+        router.clone(),
+        "GET",
+        "/api/agents/chitchat/permissions",
+        Some(&token),
+        None,
+    )
+    .await;
+    let create = perms
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["key"] == "create_agent")
+        .expect("create_agent is listed for Nomi");
+    assert_eq!(create["default_level"], "ask");
+
+    for made in [&coach, &logger] {
+        let (status, _) = request(
+            router.clone(),
+            "DELETE",
+            &format!("/api/agents/{}", made["agent_type"].as_str().unwrap()),
+            Some(&token),
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::NO_CONTENT);
+    }
 }

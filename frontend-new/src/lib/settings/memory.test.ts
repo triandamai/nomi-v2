@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { MemoryItem } from '$lib/adapters/api';
-import { memoryCounts, memoryTopics, strength } from './memory';
+import { memoryCounts, memoryTopics, strength, topLearner } from './memory';
 
 const memory = (id: string, kind: string, weight: number, extra: Partial<MemoryItem> = {}): MemoryItem => ({
 	id,
@@ -56,3 +56,17 @@ describe('the topics', () => {
 		expect(memoryCounts(memories)).toEqual({ all: 4, core: 1, fading: 1, topics: 3 });
 	});
 });
+
+describe('who learned a topic', () => {
+	it('is the member who learned most of its memories, the latest of a tie; null when none says', () => {
+		expect(topLearner([memory('a', 'fact', 1, { learned_by: 'money' }), memory('b', 'fact', 1, { learned_by: 'money' }), memory('c', 'fact', 1, { learned_by: 'reminders' })])).toBe('money');
+		expect(
+			topLearner([
+				memory('a', 'fact', 1, { learned_by: 'money', updated_at: '2026-10-01T00:00:00Z' }),
+				memory('b', 'fact', 1, { learned_by: 'health', updated_at: '2026-10-09T00:00:00Z' }),
+			]),
+		).toBe('health');
+		expect(topLearner([memory('a', 'fact', 1), memory('b', 'fact', 1, { learned_by: null })])).toBeNull();
+	});
+});
+

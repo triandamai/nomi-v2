@@ -6,22 +6,23 @@
 
 	// Design System / Projects → Project / Stop Dialog (m7QPG7): before stopping a build, what
 	// stopping keeps (the finished file, the steps done, nothing deployed) and where Resume picks up.
-	// 420 wide; Keep building (secondary) closes it, Stop is the inverse main action.
+	// 420 wide; Keep building (secondary) closes it, Stop is the inverse main action. Without the
+	// step counts (where the build's steps aren't known) it says the same without numbers.
 	type Props = {
 		open?: boolean;
 		inline?: boolean;
 		name: string;
 		/** Steps finished so far. */
-		done: number;
+		done?: number;
 		/** The step Resume starts from. */
-		next: number;
+		next?: number;
 		onstop: () => void;
 		onclose?: () => void;
 	};
 	let { open = $bindable(false), inline = false, name, done, next, onstop, onclose }: Props = $props();
 </script>
 
-<ProjectDialog bind:open {inline} {onclose} title={m.projects_stop_title({ name })} description={m.projects_stop_body({ done, next })}>
+<ProjectDialog bind:open {inline} {onclose} title={m.projects_stop_title({ name })} description={done !== undefined && next !== undefined ? m.projects_stop_body({ done, next }) : m.projects_stop_body_plain()}>
 	{#snippet actions()}
 		<Button variant="secondary" label={m.projects_keep_building()} onclick={() => (open = false)} />
 		<Button

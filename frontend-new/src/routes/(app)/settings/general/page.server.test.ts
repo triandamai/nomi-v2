@@ -15,6 +15,7 @@ const answers: Record<string, unknown> = {
 	],
 	'/api/preferences': { theme: 'dark', timezone: 'Asia/Jakarta', language: 'en', has_stored_timezone: true },
 	'/api/notifications/preferences': { email_account: true, email_promos: false },
+	'/api/notifications/reminder-preferences': { push_reminders: true, quiet_hours: null },
 };
 const backend = (answer?: Parameters<typeof fakeBackend>[0]) =>
 	fakeBackend(answer ?? ((call) => (call.method === 'GET' ? json(answers[call.url.replace('http://api.test', '')]) : new Response(null, { status: 204 }))));
@@ -56,5 +57,125 @@ describe('Settings › General', () => {
 		const { api, result } = run('emails', { email_account: 'false', email_promos: 'true' }, () => json({ email_account: false, email_promos: true }));
 		expect(await result).toEqual({ emails: { email_account: false, email_promos: true } });
 		expect(api.calls[0].body).toEqual({ email_account: false, email_promos: true });
+	});
+
+	it('saves reminder pushes and quiet hours, refusing a time that isn’t one', async () => {
+		const answer = (call: { method: string }) => (call.method === 'PUT' ? json({ push_reminders: false, quiet_hours: { start: '22:00', end: '06:00' } }) : json({}));
+		const pushes = run('reminders', { push_reminders: 'false' }, answer);
+		expect(await pushes.result).toEqual({ reminders: { push_reminders: false, quiet_hours: { start: '22:00', end: '06:00' } } });
+		expect(pushes.api.calls[0]).toMatchObject({ method: 'PUT', url: 'http://api.test/api/notifications/reminder-preferences', body: { push_reminders: false } });
+		const quiet = run('reminders', { quiet: '22:00-06:00' }, answer);
+		await quiet.result;
+		expect(quiet.api.calls[0].body).toEqual({ quiet_hours: { start: '22:00', end: '06:00' } });
+		const off = run('reminders', { quiet: 'off' }, answer);
+		await off.result;
+		expect(off.api.calls[0].body).toEqual({ quiet_hours: null });
+		const bad = run('reminders', { quiet: '25:00-06:00' }, answer);
+		expect(await bad.result).toMatchObject({ status: 400 });
+		expect(bad.api.calls).toEqual([]);
+	});
+
+	describe('changing the email, with a code to the new address', () => {
+		const sent = { challenge_id: 'c9', purpose: 'change_email', email: 'n**@nomi.test', expires_in: 600, resend_in: 60, sends_left: 4 };
+
+		it('sends the code, or says why it can’t on the field', async () => {
+			const started = run('emailStart', { email: ' New@Nomi.test ' }, () => json(sent));
+			expect(await started.result).toEqual({ code: { challengeId: 'c9', email: 'n••@nomi.test', minutes: 10 } });
+			expect(started.api.calls[0]).toMatchObject({ url: 'http://api.test/api/account/email', method: 'POST', body: { email: 'New@Nomi.test' } });
+			for (const [answer, message] of [
+				[json({ error: 'email_taken' }, 409), 'There’s already an account with this email. Sign in instead.'],
+				[json({ error: 'same_email' }, 400), 'That’s the address you have now.'],
+				[json({ error: 'invalid_email' }, 400), 'That doesn’t look like an email address.'],
+			] as const) {
+				expect(await run('emailStart', { email: 'x@nomi.test' }, () => answer.clone()).result).toMatchObject({ data: { field: 'email', message } });
+			}
+			const empty = run('emailStart', { email: 'nope' });
+			expect(await empty.result).toMatchObject({ status: 400, data: { field: 'email' } });
+			expect(empty.api.calls).toEqual([]);
+		});
+
+		it('moves the account with the code, and says what went wrong with one', async () => {
+			const moved = run('emailVerify', { challenge_id: 'c9', code: '048 917' }, () => json({ email: 'new@nomi.test' }));
+			expect(await moved.result).toEqual({ email: 'new@nomi.test' });
+			expect(moved.api.calls[0]).toMatchObject({ url: 'http://api.test/api/account/email/verify', body: { challenge_id: 'c9', code: '048917' } });
+			expect(await run('emailVerify', { challenge_id: 'c9', code: '111111' }, () => json({ error: 'wrong_code', attempts_left: 2 }, 400)).result).toMatchObject({
+				status: 400,
+				data: { field: 'code', message: 'That code isn’t right. 2 tries left.' },
+			});
+			expect(await run('emailVerify', { challenge_id: 'c9', code: '111111' }, () => json({ error: 'expired' }, 410)).result).toMatchObject({ data: { field: 'code', ended: true } });
+			expect(await run('emailVerify', { challenge_id: 'c9', code: '111111' }, () => json({ error: 'too_many_attempts' }, 410)).result).toMatchObject({ data: { ended: true } });
+			const short = run('emailVerify', { challenge_id: 'c9', code: '12' });
+			expect(await short.result).toMatchObject({ status: 400, data: { field: 'code' } });
+			expect(short.api.calls).toEqual([]);
+		});
+	});
+
+	describe('deleting the account', () => {
+		it('emails a code for an account to close without its password', async () => {
+			const sent = run('deleteCode', {}, () => json({ challenge_id: 'd1', purpose: 'delete_account', email: 's***@example.com', expires_in: 600, resend_in: 60, sends_left: 4 }));
+			expect(await sent.result).toEqual({ code: { challengeId: 'd1', email: 's•••@example.com', minutes: 10 } });
+			expect(sent.api.calls[0]).toMatchObject({ url: 'http://api.test/api/account/delete/code', method: 'POST' });
+		});
+
+		it('closes it with the password or a code, signs this device out and says so on sign in', async () => {
+			const api = backend(() => new Response(null, { status: 204 }));
+			const event = fakeEvent({ url: 'http://localhost/settings/general', form: { password: 'old-horse-1' }, fetch: api.fetch, locals: { accessToken: 'token' }, cookies: { access_token: 'token', refresh_token: 'r' } });
+			expect(await thrown(() => actions.deleteAccount(event as never))).toMatchObject({ status: 303, location: '/sign-in?closed=1' });
+			expect(api.calls[0]).toMatchObject({ url: 'http://api.test/api/account', method: 'DELETE', body: { password: 'old-horse-1' } });
+			expect(event.jar.has('access_token')).toBe(false);
+			const coded = run('deleteAccount', { challenge_id: 'd1', code: '048917' }, () => new Response(null, { status: 204 }));
+			await thrown(() => coded.result);
+			expect(coded.api.calls[0].body).toEqual({ challenge_id: 'd1', code: '048917' });
+		});
+
+		it('names the workspaces to hand over first, and says a wrong password or code on its field', async () => {
+			const orgs = [{ id: 'o1', name: 'Warung Bu Sari' }];
+			expect(await run('deleteAccount', { password: 'pw' }, () => json({ error: 'sole_owner', orgs }, 409)).result).toMatchObject({ status: 409, data: { soleOwner: orgs } });
+			expect(await run('deleteAccount', { password: 'nope' }, () => json({ error: 'wrong_password' }, 403)).result).toMatchObject({
+				status: 403,
+				data: { field: 'password', message: 'That isn’t your current password.' },
+			});
+			expect(await run('deleteAccount', { challenge_id: 'd1', code: '111111' }, () => json({ error: 'wrong_code', attempts_left: 4 }, 400)).result).toMatchObject({
+				data: { field: 'code', message: 'That code isn’t right. 4 tries left.' },
+			});
+			const neither = run('deleteAccount', {});
+			expect(await neither.result).toMatchObject({ status: 400, data: { field: 'password' } });
+			expect(neither.api.calls).toEqual([]);
+		});
+	});
+
+	describe('the password, changed while signed in', () => {
+		it('checks the new one is long enough and typed twice alike before asking the backend', async () => {
+			for (const [form, field, message] of [
+				[{ current: 'old-horse-1', next: 'short', confirm: 'short' }, 'next', 'Use at least 8 characters.'],
+				[{ current: 'old-horse-1', next: 'brand-new-horse', confirm: 'brand-new-hors' }, 'confirm', 'The two passwords don’t match.'],
+			] as const) {
+				const { api, result } = run('password', form);
+				expect(await result).toMatchObject({ status: 400, data: { field, message } });
+				expect(api.calls).toEqual([]);
+			}
+		});
+
+		it('changes it with the current one, or sets a first one without', async () => {
+			const changed = run('password', { current: 'old-horse-1', next: 'brand-new-horse', confirm: 'brand-new-horse' });
+			expect(await changed.result).toEqual({ password: 'changed' });
+			expect(changed.api.calls[0]).toMatchObject({ url: 'http://api.test/api/auth/password', method: 'PUT', body: { current_password: 'old-horse-1', new_password: 'brand-new-horse' } });
+			const set = run('password', { next: 'brand-new-horse', confirm: 'brand-new-horse' });
+			expect(await set.result).toEqual({ password: 'set' });
+			expect(set.api.calls[0]).toMatchObject({ body: { new_password: 'brand-new-horse' } });
+			expect(set.api.calls[0].body).not.toHaveProperty('current_password');
+		});
+
+		it('says the backend’s refusals on the field they’re about', async () => {
+			expect(await run('password', { current: 'nope', next: 'brand-new-horse', confirm: 'brand-new-horse' }, () => json({ error: 'wrong_password' }, 403)).result).toMatchObject({
+				status: 403,
+				data: { field: 'current', message: 'That isn’t your current password.' },
+			});
+			expect(await run('password', { current: 'old', next: 'brand-new-horse', confirm: 'brand-new-horse' }, () => json({ error: 'too_short' }, 400)).result).toMatchObject({
+				status: 400,
+				data: { field: 'next', message: 'Use at least 8 characters.' },
+			});
+			expect(await run('password', { next: 'brand-new-horse', confirm: 'brand-new-horse' }, () => json({ error: 'failed' }, 500)).result).toMatchObject({ status: 500, data: { message: expect.any(String) } });
+		});
 	});
 });

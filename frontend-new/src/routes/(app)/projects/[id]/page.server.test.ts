@@ -13,6 +13,8 @@ const { sealPreview } = await import('$lib/server/previewGrant');
 const app = await import('./app/+page.server');
 const sandbox = await import('./sandbox/[action]/+server');
 const presence = await import('./presence/+server');
+const dump = await import('./database/dump/+server');
+const rows = await import('./database/rows/+server');
 const queue = await import('./queue/+server');
 const queueAsk = await import('./queue/[job]/+server');
 const requests = await import('./requests/+server');
@@ -227,5 +229,49 @@ describe('a project’s workspace', () => {
 		const odd = form({ request: 'r1', action: 'merge' }, () => json({}));
 		expect(await actions.answer(odd.event as never)).toMatchObject({ status: 400 });
 		expect(odd.one.api.calls).toEqual([]);
+	});
+	it('adds, checks, makes primary and removes an own domain, saying why not', async () => {
+		const form = (body: Record<string, string>, answer: Parameters<typeof fakeBackend>[0]) => {
+			const { api, event } = at(answer, { id: 'p1' });
+			return { api, event: { ...event, request: new Request('http://localhost/projects/p1', { method: 'POST', body: new URLSearchParams(body) }) } };
+		};
+		const added = form({ hostname: ' WarungKopi.ID ' }, () => json({}, 201));
+		expect(await actions.domainAdd(added.event as never)).toEqual({ domain: 'warungkopi.id' });
+		expect(added.api.calls[0]).toMatchObject({ method: 'POST', url: 'http://api.test/api/projects/p1/domains', body: { hostname: 'warungkopi.id' } });
+		expect(await actions.domainAdd(form({ hostname: ' ' }, () => json({})).event as never)).toMatchObject({ status: 400 });
+		expect(await actions.domainAdd(form({ hostname: 'x.id' }, () => new Response('your plan doesn’t include your own domains', { status: 402 })).event as never)).toMatchObject({ status: 402, data: { message: 'your plan doesn’t include your own domains' } });
+		for (const [action, method, path] of [['domainCheck', 'POST', '/check'], ['domainPrimary', 'PUT', '/primary'], ['domainRemove', 'DELETE', '']] as const) {
+			const done = form({ hostname: 'warungkopi.id' }, () => (method === 'DELETE' ? new Response(null, { status: 204 }) : json({})));
+			expect(await actions[action](done.event as never)).toEqual({ domain: 'warungkopi.id' });
+			expect(done.api.calls[0]).toMatchObject({ method, url: `http://api.test/api/projects/p1/domains/warungkopi.id${path}` });
+		}
+	});
+	it('downloads a dump as the backend names it, from the database asked for', async () => {
+		const { api, event } = at(() => new Response('-- dump', { headers: { 'content-type': 'application/sql', 'content-disposition': 'attachment; filename="warung-production-2026-11-15.sql"' } }), { id: 'p1' });
+		const response = await dump.GET({ ...event, url: new URL('http://localhost/projects/p1/database/dump?source=production') } as never);
+		expect([response.status, response.headers.get('content-disposition'), await response.text()]).toEqual([200, 'attachment; filename="warung-production-2026-11-15.sql"', '-- dump']);
+		expect(api.calls[0].url).toBe('http://api.test/api/projects/p1/database/dump?source=production');
+		const other = at(() => new Response('-- dump'), { id: 'p1' });
+		await dump.GET({ ...other.event, url: new URL('http://localhost/projects/p1/database/dump?source=everything') } as never);
+		expect(other.api.calls[0].url).toBe('http://api.test/api/projects/p1/database/dump?source=development');
+	});
+
+	it('edits a row from the grid, and refuses a body that isn’t one', async () => {
+		const send = (body: unknown, answer: Parameters<typeof fakeBackend>[0] = () => json({ row: { id: 7 } })) => {
+			const { api, event } = at(answer, { id: 'p1' });
+			const request = new Request('http://localhost/projects/p1/database/rows', { method: 'POST', body: JSON.stringify(body) });
+			return { api, done: rows.POST({ ...event, request } as never) };
+		};
+		const ok = send({ source: 'development', schema: 'public', table: 'orders', key: { id: 7 }, changes: { status: 'picked up' } });
+		const answered = await ok.done;
+		expect([answered.status, await answered.json()]).toEqual([200, { row: { id: 7 } }]);
+		expect(ok.api.calls[0]).toMatchObject({ method: 'PATCH', url: 'http://api.test/api/projects/p1/database/tables/public/orders/rows' });
+		for (const bad of [{}, { source: 'development', schema: 'public', table: 'orders', key: [], changes: {} }, { source: 'development', schema: 1, table: 'orders', key: {}, changes: {} }, 'nope']) {
+			const refused = send(bad);
+			expect((await refused.done).status).toBe(400);
+			expect(refused.api.calls).toEqual([]);
+		}
+		const reason = await send({ source: 'production', schema: 'public', table: 'orders', key: { id: 7 }, changes: { total: 'abc' } }, () => new Response('invalid input', { status: 422 })).done;
+		expect([reason.status, await reason.json()]).toEqual([422, { error: 'invalid input' }]);
 	});
 });

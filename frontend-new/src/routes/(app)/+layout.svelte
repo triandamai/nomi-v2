@@ -13,6 +13,7 @@
 	import { setClock } from '$lib/clock';
 	import { tabId } from '$lib/device';
 	import { connectActivity } from '$lib/live/activity';
+	import { signedOutTarget } from '$lib/live/leaving';
 	import { settledRefresh } from '$lib/live/settle';
 	import { SHORTCUT_KEYS, isTyping, shortcutFor } from '$lib/shortcuts';
 	import { VERSION_LABEL } from '$lib/version';
@@ -28,6 +29,8 @@
 	import AccountMenu from '$lib/ds/chrome/AccountMenu.svelte';
 	import WorkspaceSwitcher from '$lib/ds/chrome/WorkspaceSwitcher.svelte';
 	import TopBar from '$lib/ds/chrome/TopBar.svelte';
+	import QuickSearch, { type QuickSearchRow } from '$lib/ds/chrome/QuickSearch.svelte';
+	import { searchGroups, type SearchGroup, type SearchHit } from '$lib/search';
 	import ProjectTopBar, { type ProjectMember } from '$lib/ds/projects/ProjectTopBar.svelte';
 	import ChatTopBar from '$lib/ds/thread/ChatTopBar.svelte';
 	import SettingsNav from '$lib/ds/chrome/SettingsNav.svelte';
@@ -116,6 +119,7 @@
 		{ value: 'id', label: m.language_id() },
 	];
 	const shortcuts = [
+		{ label: m.search_shortcut(), keys: SHORTCUT_KEYS.search },
 		{ label: m.nav_new_chat(), keys: SHORTCUT_KEYS['new-chat'] },
 		{ label: m.nav_settings(), keys: SHORTCUT_KEYS.settings },
 		{ label: m.workspace_settings(), keys: SHORTCUT_KEYS['workspace-settings'] },
@@ -277,11 +281,54 @@
 		const shortcut = shortcutFor({ key, code, metaKey, ctrlKey, shiftKey, altKey, typing: isTyping(event.target) });
 		if (!shortcut) return;
 		event.preventDefault();
-		if (shortcut === 'new-chat') void goto('/chat/new');
+		if (shortcut === 'search') {
+			// The field is in Home's top bar (and the app's list pages'); from anywhere else, Home.
+			if (searchField) searchField.focus();
+			else {
+				focusSearchNext = true;
+				void goto('/');
+			}
+		} else if (shortcut === 'new-chat') void goto('/chat/new');
 		else if (shortcut === 'settings') void goto('/settings');
 		else if (shortcut === 'workspace-settings' && workspaceSettings) void goto(workspaceSettings);
 		else if (shortcut === 'shortcuts') shortcutsOpen = true;
 	}
+
+	// Search (App / Home's top bar, ⌘K): what's typed is looked up after a pause, and a later answer
+	// for what's no longer typed is let go; a row opens where it lives.
+	let query = $state('');
+	let found = $state<SearchGroup[] | null>(null);
+	let searching = $state(false);
+	let searchFailed = $state(false);
+	let searchField = $state<HTMLInputElement | null>(null);
+	let searchTimer: ReturnType<typeof setTimeout> | undefined;
+	let focusSearchNext = false;
+	function lookUp(value: string) {
+		clearTimeout(searchTimer);
+		const wanted = value.trim();
+		found = null;
+		searchFailed = false;
+		searching = Boolean(wanted);
+		if (!wanted) return;
+		searchTimer = setTimeout(async () => {
+			const response = await fetch(`/search?q=${encodeURIComponent(wanted)}`).catch(() => null);
+			if (query.trim() !== wanted) return;
+			searching = false;
+			if (!response?.ok) return void (searchFailed = true);
+			found = searchGroups(((await response.json()) as { results: SearchHit[] }).results, new Date());
+		}, 250);
+	}
+	function openFound(row: QuickSearchRow) {
+		query = '';
+		found = null;
+		void goto(row.href);
+	}
+	$effect(() => {
+		if (searchField && focusSearchNext) {
+			focusSearchNext = false;
+			searchField.focus();
+		}
+	});
 
 	onMount(() => {
 		browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -314,7 +361,7 @@
 				},
 				async signedOutHere() {
 					await fetch('/sign-out', { method: 'POST' }).catch(() => null);
-					location.assign('/sign-in');
+					location.assign(signedOutTarget());
 				},
 				lost(code) {
 					if (code === 4401) sessionOver = true;
@@ -344,7 +391,7 @@
 			onlogout={() => logout?.requestSubmit()}
 		/>
 	{:else}
-		<Sidebar newChatHref="/chat/new">
+		<Sidebar newChatHref="/chat/new" newChatShortcut={SHORTCUT_KEYS['new-chat']}>
 			<NavItem href="/" icon={House} label={m.nav_home()} active={path === '/'} />
 			<NavItem href="/inbox" icon={Inbox} label={m.nav_inbox()} count={unread > 0 ? unread : undefined} active={path.startsWith('/inbox')} />
 			<NavGroupLabel label={m.nav_talk()} />
@@ -383,9 +430,28 @@
 	{/if}
 {/snippet}
 
+{#snippet search()}
+	<!-- On a phone the bar keeps its room for the page's name; ⌘K isn't a phone's. -->
+	<span class="max-sm:hidden">
+		<QuickSearch
+			bind:value={query}
+			bind:field={searchField}
+			groups={found}
+			{searching}
+			failed={searchFailed}
+			shortcut={SHORTCUT_KEYS.search}
+			labels={{ field: m.search_field(), groups: { chat: m.search_group_chat(), memory: m.search_group_memory(), file: m.search_group_file() }, empty: m.search_empty({ query: query.trim() }), searching: m.search_searching(), failed: m.search_failed() }}
+			oninput={lookUp}
+			onpick={openFound}
+		/>
+	</span>
+{/snippet}
+
 {#snippet topbar()}
 	{#if isHome}
-		<TopBar title={m.home_title()} meta={stamp(now, language, timeZone)} />
+		<TopBar title={m.home_title()} meta={stamp(now, language, timeZone)}>
+			{#snippet actions()}{@render search()}{/snippet}
+		</TopBar>
 	{:else if isChat && chatData.chat}
 		{@const id = chatData.chat.id}
 		<ChatTopBar
@@ -430,7 +496,9 @@
 		<TopBar title={page.route.id === CHAT ? m.nav_chats() : m.error_title()} />
 	{:else}
 		<!-- Other pages name themselves in their load: { title, meta }. -->
-		<TopBar title={pageTitle.title ?? ''} meta={pageTitle.meta} />
+		<TopBar title={pageTitle.title ?? ''} meta={pageTitle.meta}>
+			{#snippet actions()}{@render search()}{/snippet}
+		</TopBar>
 	{/if}
 {/snippet}
 

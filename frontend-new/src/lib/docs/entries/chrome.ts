@@ -51,6 +51,15 @@ export default [
 		related: ['chrome/AccountMenu.svelte', 'overlays/Dialog.svelte', 'actions/Kbd.svelte'],
 	},
 	{
+		file: 'chrome/QuickSearch.svelte',
+		summary: 'The top bar’s search: the person’s chats, memory and project files, found as they type, each opening where it lives.',
+		use: ['The top bar of Home and the app’s list pages, with ⌘K to reach it.'],
+		dos: ['Group what was found by kind, in the backend’s order.', 'Say while it looks, when nothing was found, and when search isn’t answering.'],
+		donts: ['Search on every key press without a pause: wait for the person to stop typing.'],
+		accessibility: ['A combobox over a listbox: the arrows move through the results (announced by aria-activedescendant), Enter opens one, Escape closes.'],
+		related: ['chrome/TopBar.svelte', 'inputs/Search.svelte'],
+	},
+	{
 		file: 'chrome/TopBar.svelte',
 		summary: 'What goes in an app-shell screen\'s top bar: the page\'s name, then what it\'s about in mono after a slash ("Home / Wed, 21 Oct 2026 · 08:14"), and actions at the end.',
 		use: ['AppShell\'s topbar slot.'],

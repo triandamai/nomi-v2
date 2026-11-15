@@ -52,6 +52,7 @@ fn http_client() -> reqwest::Client {
 }
 
 /// Where the agent's Google OAuth client comes from.
+#[derive(Clone)]
 enum GoogleSource {
     /// Given once (tests); `None` means Google isn't set up.
     Fixed(Option<Arc<GoogleConfig>>),
@@ -59,6 +60,7 @@ enum GoogleSource {
     Current,
 }
 
+#[derive(Clone)]
 pub struct WorkspaceAgent {
     http: reqwest::Client,
     config: GoogleSource,
@@ -216,38 +218,7 @@ impl SubAgent for WorkspaceAgent {
     }
 
     fn tools(&self) -> Vec<ToolDefinition> {
-        vec![
-            tool("gmail_search", "Search the user's Gmail with Gmail search syntax (from:, subject:, newer_than:7d, has:attachment, ...). Returns id, from, subject, date and a snippet for each.",
-                json!({"type": "object", "properties": {"query": {"type": "string"}, "max_results": {"type": "integer", "description": "1-25, default 10"}}, "required": ["query"]})),
-            tool("gmail_read", "Read one Gmail message in full (headers and plain-text body).",
-                json!({"type": "object", "properties": {"message_id": {"type": "string"}}, "required": ["message_id"]})),
-            tool("gmail_draft", "Save an email as a Gmail draft (not sent). The default for writing email.", email_schema()),
-            tool("gmail_send", "Send an email from the user's Gmail. Only when they clearly asked to send; they approve it in chat first.", email_schema()),
-            tool("sheets_read", "Read a Google Sheet. Without a range: its title and tab names. With a range in A1 notation (e.g. 'Stays!A1:F50'): the cell values.",
-                json!({"type": "object", "properties": {"spreadsheet_id": {"type": "string"}, "range": {"type": "string"}}, "required": ["spreadsheet_id"]})),
-            tool("sheets_append", "Add rows after the last row of a table in a Google Sheet (e.g. range 'Stays!A:F').",
-                json!({"type": "object", "properties": {"spreadsheet_id": {"type": "string"}, "range": {"type": "string"}, "rows": rows_schema()}, "required": ["spreadsheet_id", "range", "rows"]})),
-            tool("sheets_update", "Overwrite cells in a Google Sheet range with the given rows.",
-                json!({"type": "object", "properties": {"spreadsheet_id": {"type": "string"}, "range": {"type": "string"}, "rows": rows_schema()}, "required": ["spreadsheet_id", "range", "rows"]})),
-            tool("sheets_create", "Create a new Google Sheet, optionally with a header row.",
-                json!({"type": "object", "properties": {"title": {"type": "string"}, "header": {"type": "array", "items": {"type": "string"}}}, "required": ["title"]})),
-            tool("docs_read", "Read a Google Doc's text.",
-                json!({"type": "object", "properties": {"document_id": {"type": "string"}}, "required": ["document_id"]})),
-            tool("docs_create", "Create a new Google Doc, optionally with text.",
-                json!({"type": "object", "properties": {"title": {"type": "string"}, "text": {"type": "string"}}, "required": ["title"]})),
-            tool("docs_append", "Add text to the end of a Google Doc.",
-                json!({"type": "object", "properties": {"document_id": {"type": "string"}, "text": {"type": "string"}}, "required": ["document_id", "text"]})),
-            tool("drive_search", "Find files in the user's Google Drive by name. Returns id, name, type and link. Use it to get the id of a Sheet or Doc.",
-                json!({"type": "object", "properties": {"query": {"type": "string", "description": "Part of the file name."}, "max_results": {"type": "integer"}}, "required": ["query"]})),
-            tool("calendar_events", "List events on the user's primary Google Calendar between two times (RFC 3339).",
-                json!({"type": "object", "properties": {"time_min": {"type": "string"}, "time_max": {"type": "string"}, "max_results": {"type": "integer"}}, "required": ["time_min"]})),
-            tool("calendar_add_event", "Add an event to the user's primary Google Calendar. Times are RFC 3339 with the user's offset. Attendees get an invitation. The user approves it first.",
-                json!({"type": "object", "properties": {
-                    "summary": {"type": "string"}, "start": {"type": "string"}, "end": {"type": "string"},
-                    "description": {"type": "string"}, "location": {"type": "string"},
-                    "attendees": {"type": "array", "items": {"type": "string"}, "description": "Email addresses to invite."}
-                }, "required": ["summary", "start", "end"]})),
-        ]
+        tool_definitions()
     }
 
     async fn execute_tool(
@@ -259,6 +230,13 @@ impl SubAgent for WorkspaceAgent {
         name: &str,
         input: Value,
     ) -> Result<ToolOutcome, String> {
+        self.run(conn, user_id, name, input).await
+    }
+}
+
+impl WorkspaceAgent {
+    /// Runs Workspace tool `name` in `user_id`'s own Google account.
+    async fn run(&self, conn: &mut PoolConnection<Postgres>, user_id: Uuid, name: &str, input: Value) -> Result<ToolOutcome, String> {
         let service = tool_service(name).ok_or_else(|| format!("unknown tool {name}"))?;
         let google_config = self.google_config().await;
         let Some(config) = google_config.as_deref() else {
@@ -297,6 +275,96 @@ impl SubAgent for WorkspaceAgent {
             Err(GoogleError::Failed(message)) => Err(message),
         }
     }
+}
+
+/// Extra search words for each Workspace tool.
+fn keywords_for(name: &str) -> &'static [&'static str] {
+    match name {
+        "gmail_search" => &["email", "inbox", "google", "find"],
+        "gmail_read" => &["email", "inbox", "google", "open"],
+        "gmail_draft" => &["email", "compose", "google", "write"],
+        "gmail_send" => &["email", "compose", "google", "mail"],
+        "sheets_read" => &["spreadsheet", "google", "table", "cells"],
+        "sheets_append" => &["spreadsheet", "google", "rows", "add"],
+        "sheets_update" => &["spreadsheet", "google", "cells", "edit"],
+        "sheets_create" => &["spreadsheet", "google", "new"],
+        "docs_read" => &["document", "google", "text"],
+        "docs_create" => &["document", "google", "write", "new"],
+        "docs_append" => &["document", "google", "write", "add"],
+        "drive_search" => &["files", "google", "find"],
+        "calendar_events" => &["schedule", "agenda", "google", "meetings"],
+        "calendar_add_event" => &["schedule", "meeting", "invite", "google"],
+        _ => &[],
+    }
+}
+
+/// One Workspace tool, run through `agent`'s Google access.
+pub struct WorkspaceTool {
+    definition: ToolDefinition,
+    agent: Arc<WorkspaceAgent>,
+}
+
+#[async_trait]
+impl nomi_agent_core::Tool for WorkspaceTool {
+    fn definition(&self) -> ToolDefinition {
+        self.definition.clone()
+    }
+    fn group(&self) -> &'static str {
+        WORKSPACE_AGENT_TYPE
+    }
+    fn keywords(&self) -> &'static [&'static str] {
+        keywords_for(&self.definition.name)
+    }
+    async fn execute(&self, conn: &mut PoolConnection<Postgres>, _session_id: Uuid, _agent_session_id: Uuid, user_id: Uuid, input: Value) -> Result<ToolOutcome, String> {
+        self.agent.run(conn, user_id, &self.definition.name, input).await
+    }
+}
+
+/// Every Workspace tool, run through `agent`'s HTTP client, Google client and key. All of them
+/// run for any agent: each works in the asking person's own Google account, and a custom agent
+/// asks the person before every tool call.
+pub fn catalog_tools(agent: &WorkspaceAgent) -> Vec<Box<dyn nomi_agent_core::Tool>> {
+    let agent = Arc::new(agent.clone());
+    tool_definitions()
+        .into_iter()
+        .map(|definition| Box::new(WorkspaceTool { definition, agent: agent.clone() }) as Box<dyn nomi_agent_core::Tool>)
+        .collect()
+}
+
+/// Every Workspace tool, in the order Tara is offered them.
+fn tool_definitions() -> Vec<ToolDefinition> {
+    vec![
+        tool("gmail_search", "Search the user's Gmail with Gmail search syntax (from:, subject:, newer_than:7d, has:attachment, ...). Returns id, from, subject, date and a snippet for each.",
+            json!({"type": "object", "properties": {"query": {"type": "string"}, "max_results": {"type": "integer", "description": "1-25, default 10"}}, "required": ["query"]})),
+        tool("gmail_read", "Read one Gmail message in full (headers and plain-text body).",
+            json!({"type": "object", "properties": {"message_id": {"type": "string"}}, "required": ["message_id"]})),
+        tool("gmail_draft", "Save an email as a Gmail draft (not sent). The default for writing email.", email_schema()),
+        tool("gmail_send", "Send an email from the user's Gmail. Only when they clearly asked to send; they approve it in chat first.", email_schema()),
+        tool("sheets_read", "Read a Google Sheet. Without a range: its title and tab names. With a range in A1 notation (e.g. 'Stays!A1:F50'): the cell values.",
+            json!({"type": "object", "properties": {"spreadsheet_id": {"type": "string"}, "range": {"type": "string"}}, "required": ["spreadsheet_id"]})),
+        tool("sheets_append", "Add rows after the last row of a table in a Google Sheet (e.g. range 'Stays!A:F').",
+            json!({"type": "object", "properties": {"spreadsheet_id": {"type": "string"}, "range": {"type": "string"}, "rows": rows_schema()}, "required": ["spreadsheet_id", "range", "rows"]})),
+        tool("sheets_update", "Overwrite cells in a Google Sheet range with the given rows.",
+            json!({"type": "object", "properties": {"spreadsheet_id": {"type": "string"}, "range": {"type": "string"}, "rows": rows_schema()}, "required": ["spreadsheet_id", "range", "rows"]})),
+        tool("sheets_create", "Create a new Google Sheet, optionally with a header row.",
+            json!({"type": "object", "properties": {"title": {"type": "string"}, "header": {"type": "array", "items": {"type": "string"}}}, "required": ["title"]})),
+        tool("docs_read", "Read a Google Doc's text.",
+            json!({"type": "object", "properties": {"document_id": {"type": "string"}}, "required": ["document_id"]})),
+        tool("docs_create", "Create a new Google Doc, optionally with text.",
+            json!({"type": "object", "properties": {"title": {"type": "string"}, "text": {"type": "string"}}, "required": ["title"]})),
+        tool("docs_append", "Add text to the end of a Google Doc.",
+            json!({"type": "object", "properties": {"document_id": {"type": "string"}, "text": {"type": "string"}}, "required": ["document_id", "text"]})),
+        tool("drive_search", "Find files in the user's Google Drive by name. Returns id, name, type and link. Use it to get the id of a Sheet or Doc.",
+            json!({"type": "object", "properties": {"query": {"type": "string", "description": "Part of the file name."}, "max_results": {"type": "integer"}}, "required": ["query"]})),
+        tool("calendar_events", "List events on the user's primary Google Calendar between two times (RFC 3339).",
+            json!({"type": "object", "properties": {"time_min": {"type": "string"}, "time_max": {"type": "string"}, "max_results": {"type": "integer"}}, "required": ["time_min"]})),
+        tool("calendar_add_event", "Add an event to the user's primary Google Calendar. Times are RFC 3339 with the user's offset. Attendees get an invitation. The user approves it first.",
+            json!({"type": "object", "properties": {
+                "summary": {"type": "string"}, "start": {"type": "string"}, "end": {"type": "string"},
+                "description": {"type": "string"}, "location": {"type": "string"},
+                "attendees": {"type": "array", "items": {"type": "string"}, "description": "Email addresses to invite."}
+            }, "required": ["summary", "start", "end"]})),
+    ]
 }
 
 /// What a write shows in the chat: a card of the event, doc, sheet or email it made, with a link

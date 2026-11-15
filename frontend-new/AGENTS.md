@@ -354,13 +354,23 @@ hard. Add to this list instead of deviating silently.
   a 6-digit code…" under the title, a "Name Field" label with a mail icon): the page uses the
   design system's FirstRun (Build → First run) in the sign-in layout's form column instead,
   without the greeting above it (FirstRun has its own mascot).
+- Sign in or create (vDaAQ) is the pen's one step: the email alone and "Continue with email", whose
+  code signs an address with an account in, or makes the account for a new one (then First run).
+  "Use a password instead", which the pen draws as a link to nowhere, is the email and password
+  form (`?with=password`), which adds what the pen leaves off: "Email me a code instead", "New to
+  Nomi? Create an account" (the register form, with a workspace name) and "Forgot password?".
 
 The app shell (App / Home `Vr4nn`, the account menu `LkJLt`, the workspace switcher `t24cE`)
 leaves out what v2 or the backend can't do yet, rather than draw it dead:
 
 - The sidebar's LIFE › Money group: Money isn't part of v2 yet.
-- The top bar's search ("Search chats, memory, files ⌘K"): the backend has no search to call
-  (BACKEND_TODO.md). ⌘K stays New chat's, as the sidebar shows.
+- The top bar's search ("Search chats, memory, files ⌘K") is in Home's top bar and the app's list
+  pages' (`QuickSearch`): the person's chats, memory and project files, found as they type, in
+  groups, each opening where it lives (a file in its project's code view). The pen draws no
+  results: they float under the field in the menu's style. The pen marks both the search and the
+  sidebar's New chat ⌘K: ⌘K is search's (it reaches the field from any page, by way of Home where
+  the page has none), as the old app's was, and New chat is ⌘⇧O. On a phone the field is left out
+  of the bar.
 - The sidebar's collapse button: the shell has no collapsed layout yet.
 - The account menu's "Help & docs" (Nomi has no help site to open) and What's new's "new" dot
   (there are no release notes to be new); What's new shows the version, as drawn.
@@ -382,8 +392,8 @@ reminders, with the work agents will do later beside them.
   (Accept/Decline an invite, "Ask Koda to fix", "Open log") have nothing to call.
 - No snooze on a reminder that's still ahead (the pen's alarm-clock tool): the backend's snooze
   moves a reminder to N minutes from now, which would bring an upcoming one forward.
-- How it reaches you: "Push for reminders" and "Quiet hours" are left out (the backend has neither:
-  BACKEND_TODO.md), and so is "All notification settings" (there's no such page). The two email
+- How it reaches you: "Push for reminders" and "Quiet hours" live in Settings › General, so they're
+  kept in one place; "All notification settings" is left out (there's no such page). The two email
   settings the backend has are shown instead: account changes, and news and offers.
 - "Earlier this week · 5 read" is "Earlier" with its count: it holds everything before today the
   pages loaded so far reach, with "Show older" for the next page of notifications.
@@ -409,12 +419,28 @@ that exist, so it never links to a page that isn't there. On Profile (`U9Gnrg`):
 On General (`m7lvY1`), every row is one the backend can keep; the rest are left out rather than
 drawn dead:
 
-- Changing the email, Formats, the Chat group (who new chats start with, Enter sends, tokens under
-  replies), the Reminders push, Crew updates and Quiet hours rows, and Delete account: the backend
-  has none of them (BACKEND_TODO.md). Reduce motion is left out too: the app follows the device's
-  own setting.
-- The password row leads to the emailed reset (changing it while signed in has no endpoint), so
-  its button is "Change" or "Set password" with the arrow out.
+- The email row's Change and the Delete account row's Delete open dialogs the pen doesn't draw,
+  from the design system's Dialog, fields and the code boxes. Change: the new address, then the
+  code sent to it (nothing changes until it goes in; a used-up code starts over). Delete says what
+  goes and asks for the password, or an emailed code ("Email me a code instead", the only way for
+  an account without a password); a workspace only they own with others in it is named, linked to
+  its page, to hand over first. Closed, this device is signed out and sign in says so. The pen's
+  "Export first in Data & privacy" is left out (v2 has no such page). Formats and "Show tokens under
+  replies" are left out: the backend keeps both, but nothing in v2 formats by region or shows tokens
+  under replies yet, so the rows would do nothing. Crew updates has nothing to keep it, and Reduce
+  motion is left out because the app follows the device's own setting.
+- The Chat group: "New chats start with" picks who Home's To starts on (Nomi or a built-in crew
+  member; the backend keeps it as `default_agent`), with that member's mascot in the select as
+  drawn. "Enter sends" off makes Enter a new line and ⌘ or Ctrl+Enter send, in every composer, and
+  the keys under Home's say so.
+- Notifications: Reminders switches the reminder pushes. Quiet hours is the pen's select and switch:
+  the select offers the usual nights (21:00–06:00 to 00:00–08:00, a saved other one kept first)
+  and waits while they're off. Its line says what they do ("reminders wait until they end"), not
+  the pen's "learned from your routines", which nothing works out.
+- The password row's "Change" (or "Set password", for an account made with a code or Google) opens
+  a dialog the pen doesn't draw, built from the design system's Dialog and fields: the current
+  password when there is one, the new one twice, and "Forgot it? Reset it by email" for the emailed
+  reset. Other devices stay signed in, as the backend keeps them.
 - The Google row shows "connected" with Disconnect beside it (the pen shows no way to remove it);
   it's hidden when this Nomi doesn't offer Google.
 - Group names are sentence case ("Account & sign-in"): the pen writes most in capitals in sans,
@@ -424,9 +450,12 @@ drawn dead:
 
 On Plan & usage (`C0og49`):
 
-- No way to join a plan or its waitlist ("Join Pro waitlist", "Join the waitlist"): there's no
-  checkout or waitlist to call (BACKEND_TODO.md); Compare plans says plans are changed by Nomi's
-  team for now. Billing leaves out the payment method, which the backend doesn't know.
+- A plan without a price shows "Coming soon" and "Join the waitlist" (the pen's Pro card), then
+  "You're on the waitlist". A plan above yours with a price has "Upgrade to {plan}": a month, paid on
+  the payment gateway's own page (the pen draws no checkout), with "Payments aren't open on this
+  Nomi yet" where no gateway is set up. Coming back from it (/billing?payment=…), the payment's
+  outcome leads the page: received, waiting (with the payment page again), expired, failed or
+  cancelled. Billing leaves out the payment method for now.
 - Spend is in dollars at list price, as the backend keeps it; the pen's "Rp 1.800 ≈ $0.11 · you
   paid Rp 0" needs an exchange rate and what was paid.
 - An own key's row shows its masked key only: the pen's "Balance empty" and "Use Nomi allowance"
@@ -452,9 +481,18 @@ On Memory & context (`hANTE`):
 - Topics are the backend's kinds of memory (Preferences, People, Routines, Goals, Facts), not the
   pen's subjects (Communication, Money, Work); each opens to its memories, to correct, confirm or
   forget. Strength is five steps of a memory's weight.
-- Left out, with nothing to keep them (BACKEND_TODO.md): the "You" profile row, the Learned by
-  column, and the whole settings column (Learn from chats, Keep a profile, Search past chats, the
-  Memory and Profile budgets, Storage). The page is one column.
+- You is the profile every agent reads (`MemoryProfile`): its size against the profile budget
+  ("312 / 1,375 tok"), the person's initials, when it last changed, Edit in place (its size counted
+  as it's typed, Save refused past the budget) and Clear, with Undo. Empty, it says Nomi writes it
+  about daily; with Keep a profile off, that it's off.
+- Learned by is the member who learned most of a topic (the latest of a tie), a dash where none of
+  its memories says; each memory's line says who learned it too. The column is shown once any
+  memory says, and left off on a phone (each memory says it there).
+- The settings column (`MemorySettings`) is beside the topics from 1280 and under them below it:
+  Learning's three switches and the Memory and Profile budgets, each saved as it changes; a budget
+  only once it's in the backend's range, which the field says otherwise. Storage (Provider),
+  Context & compression, Import from another AI and Forget everything are left out: nothing in the
+  backend is behind them.
 - The search sits in the page's header, not the top bar. Export downloads the memories as JSON.
 - Telling Nomi to remember or forget starts a chat with it, where the crew keeps or drops it.
 
@@ -514,14 +552,49 @@ change owners; nobody changes or removes themselves (they leave); the last owner
 - The invite box keeps what's typed as text when it loses focus: turning it into chips then moved
   the role cards under a click (a person picking Admin got Member).
 
-On Projects (`JyWON`), the cards are the backend's projects: live once they have an address,
-building while Koda builds, else a draft.
+On Projects (`JyWON`), the cards are the backend's projects: building while Koda is at work in
+the project's chat ("Koda is changing it" once it's live), deploying while a publish started from
+the card runs, live once it has an address, stopped when Koda left a build unfinished (files
+written, never reported done: an imported project starts here too), else a draft.
 
-- Left out for now: the detail panel and Community (next), importing from GitHub, and the card
-  menu's Rename, Duplicate, Move, Share, Settings and Take down; the backend has no rename or
-  duplicate, nor a "waiting on you" count, so Needs attention stays empty (BACKEND_TODO.md).
-- Until the project's workspace lands, a card has no footer action (the pen's Deploy, Stop, Resume
-  belong to it) and Open goes to the project's chat, where Koda works on it.
+- A card's one action (Act from the card `syolc`): Stop asks first and tells the project's chat to
+  stop, as the chat's own Stop does; the dialog says what's kept without the pen's step counts (the
+  build's steps aren't given), and the toast offers Resume. Resume asks Koda, in the project's
+  chat, to carry on where it stopped. Deploy (a draft with files, where this Nomi has Shipyard)
+  confirms with the address it'll get (a new one under the apps domain: the name is picked on the
+  first publish) and its data; the pen's "Uses · 1 build · 26 of 30 left" is left out (no build
+  allowance to read). The card then shows the publish with its time ("Koda is deploying · 00:24"),
+  without the pen's Stop (a publish can't be cancelled), and the toast says it's live with Copy URL,
+  or why it failed. Open on a live card goes to its workspace.
+- What needs the person: a card whose chat has questions or approvals waiting on them is the pen's
+  needs-answer card (Answer opens the project's chat); a live app the backend says is down after a
+  crash is the down card (Ask Koda to check); a last deploy that failed is the failed card, saying
+  the deploy still live (Ask Koda to fix). Check and Fix say it to Koda in the project's chat, and
+  Needs attention holds these. The pen's failure reason ("build error in src/lib/pdf.ts") isn't
+  given with the list; building cards show no step ("3 of 6") or file Koda is writing
+  (BACKEND_TODO.md).
+- The card menu (`M9O0iU`): Open, Visit, Rename, Duplicate, Move, Export, Settings, Share (once live), Take down (once
+  live) and Delete. Share, Export, Settings and Take down open the workspace with that dialog or
+  sheet open, as the flow says ("the same dialogs the workspace uses"). Move lists the workspaces
+  the backend allows (never a personal one) and moves the project at once: the dialog's choice is
+  the confirmation (the name the backend wants is the card's), and its note says the chosen
+  workspace's owner gets the project, as the backend does, in place of the pen's "Trian approves
+  the move"; so there's no "Waiting on the owner" (step 6). Rename edits the name on the card (F2),
+  as the pen's renaming card draws it; Duplicate (⌘D) makes a copy in the same workspace (its
+  files, stack, description and plan; not its publishing, data or people) and the toast opens it.
+- The detail panel (`pgSon`) docks beside the list on a desktop of 1280 and wider (the first
+  project in it, as drawn) and opens over the list below that, the phone's full width. Its
+  picture of the app is the app's initial in its tint (Nomi keeps no screenshots). Code is the
+  file count and stack (a commit, "main@a3f9c21", isn't given); Deploys counts the publishes that
+  went live, with how long the last one took; Members is who can open it. Asking Koda for a
+  change sends it to the project's own chat, where Koda builds it, not to a new chat as the pen draws
+  (a chat moved into a project doesn't build it), so the field's note says where it goes.
+- The first load comes with the page, so the loading cards show while Retry reads the list again.
+  A list that couldn't be read says so with the status and time, and Retry; the toolbar waits
+  (there are no counts to show). Offline (step 3) and Community are left out.
+- Importing from GitHub (`qJxWu`) is left out: the backend imports a public repository into a
+  project by `owner/name`, but can't list a person's repos, read a private one, or say what Koda
+  found (BACKEND_TODO.md).
 - The composer leaves the domain chip out where this Nomi has no base domain.
 
 A project's workspace (Flow / Build — Sign in → live URL `o882RC`, Building and Live) is built in
@@ -536,9 +609,15 @@ steps; what isn't there yet is left out, not drawn dead:
   shown: a publish has no commit, so a row says when and who.
 - Domain (steps 8–9) is the app's own address under Nomi's apps domain: its row (live, linked),
   where it moves on the next publish, and, for the project's admins, Change address (the name
-  checked as it's typed, with the hosting's reason and free names when it's taken). A domain of
-  the person's own (the DNS table, Check now, Make primary, Remove) has no backend yet
-  (BACKEND_TODO.md). Before the first publish it says there's no address yet.
+  checked as it's typed, with the hosting's reason and free names when it's taken). Before the
+  first publish it says there's no address yet. A domain of the person's own (J2hPJ, Dd60u) sits
+  under the app's address, waiting for DNS (the warning dot) or connected, with the records to set
+  at the registrar (`DnsRecords`: each value to copy, found or waiting, when they were last checked
+  and that they're checked every 5 minutes), the note on HTTPS, Check now, and for the project's
+  admins Make primary (once every record is found) and Remove domain (asked first). The admins add
+  one under "Use your own domain" once the app is live. The pen's "[hosting IP]" placeholders are
+  the backend's real records. Until the hosting can serve more than one name, a domain's HTTPS says
+  it's on its way rather than on (BACKEND_TODO.md).
 - Monitor (step 10) shows what Shipyard measures of the live app over 1h, today or 7 days,
   refreshed every 30 seconds while open: requests, errors with their share, p95, and visitors in
   the place of the pen's uptime (not measured); requests per bucket; memory, CPU and bandwidth;
@@ -546,8 +625,11 @@ steps; what isn't there yet is left out, not drawn dead:
   parsed log columns (method, path, status) aren't given: the log is the app's own lines.
 - Database (step 11) reads a project's tables and the first 50 rows of one, from the development
   database (or, once published, the live one), read only: the statement is built on the server
-  from a table the backend listed. The pen's Edit rows and Download dump have no backend (a dump,
-  row edits); the note says to ask Koda instead. The pen's "showing 5 of 7" says the rows shown.
+  from a table the backend listed. Edit rows (the pen draws only the button) turns each cell
+  outside the primary key into one that opens in place: Enter saves it through the backend (by the
+  row's key, cast to the column's type; the database's reason when it refuses), Esc puts it back.
+  A table without a primary key says why it can't be edited here. Download dump is the database
+  shown, as a `.sql` file the backend writes. The pen's "showing 5 of 7" says the rows shown.
 - Settings (steps 12, 15–17): Transfer, Take down and Delete, each through its dialog. Transfer goes
   to another workspace the person is in (the backend moves projects between workspaces, not to a
   person by email as the pen draws it), the project's name typed to confirm; Take down stops the
@@ -587,10 +669,13 @@ steps; what isn't there yet is left out, not drawn dead:
   Preview and Code only.
 - A site (Flow / Build — Landing page `WUiji`) uses the same workspace. Database shows only when the
   site keeps tables (step 3: "the tabs only show what this site has"). Share already leads with the
-  card and its send-to apps, with no QR (step 4). Monitor (step 5) leads with visits and the page
-  load, and its bars count visits; the pen's "Where visits come from", Form sends and Uptime aren't
-  measured (BACKEND_TODO.md), so requests and errors take their places. The plan in the chat (step 2)
-  is Koda's own.
+  card and its send-to apps, with no QR (step 4). Monitor (step 5) is the pen's: visits, form sends
+  with their share of visits, P95 page load and uptime with how long it's been looked at; the bars
+  count visits; "Where visits come from" stands in Resources' place, largest first. Its rows wear the
+  globe: the pen's wear the resources' icons (memory, CPU), pasted from that section. What the site
+  hasn't reported yet says so. The site reports through this app (`/hooks/sites/:id`, answered in
+  server.js before SvelteKit, which reads no body without a content type, and the site's beacon
+  sends none). The plan in the chat (step 2) is Koda's own.
 - Building together (Flow / Build — Invite & build together `TnwQT`): inviting (steps 1–3) is
   Share's Invite, which opens People. While someone else has the project open, the bar shows your
   face and theirs (step 5) in place of your own. Pressing the faces lists who's here and where each

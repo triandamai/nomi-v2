@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { api, createAccount, signInAs } from './support/accounts';
+import { markPublished, siteHits } from './support/seed';
+import { APP_URL } from './support/env';
 
 // A project's workspace against the real backend (Flow / Build — Sign in → live URL o882RC,
 // Building and Live): started from Projects it opens in its workspace with Koda on it; the chat
@@ -105,6 +107,10 @@ test('Deployments, Domain, Monitor and Database say what can’t be done yet, an
 	await tools.getByRole('button', { name: 'Domain' }).click();
 	await expect(page.getByText('No address yet')).toBeVisible();
 	await expect(page.getByRole('button', { name: 'Change address' })).toHaveCount(0);
+	// A domain of one's own waits for the app to be live: its records point at the live address.
+	await expect(page.getByRole('heading', { name: 'Use your own domain' })).toBeVisible();
+	await expect(page.getByText('Publish the app first: your domain points at its live address.')).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Add domain' })).toHaveCount(0);
 	await tools.getByRole('button', { name: 'Domain' }).click();
 	await expect(page.getByText('No address yet')).toHaveCount(0);
 
@@ -264,4 +270,51 @@ test('a static site’s preview runs its own CSS and scripts, sandboxed away fro
 	expect((await page.request.get(`/projects/${id}/preview/`)).status()).toBe(403);
 	await context.clearCookies();
 	expect((await page.request.get(src.replace(/~[^/]+/, '~made-up'))).status()).toBe(403);
+});
+
+test('a published site’s visits and forms reach Nomi through this app, from the site’s own address', async ({ playwright }) => {
+	const account = await createAccount();
+	const home = ((await (await api(account, '/api/orgs')).json()) as { orgs: { id: string }[] }).orgs[0].id;
+	const id = ((await (await api(account, '/api/projects', { method: 'POST', body: JSON.stringify({ org_id: home }) })).json()) as { project_id: string }).project_id;
+	await markPublished(id);
+	// The site's script sends from the visitor's browser on the site's own address, signed in to
+	// nothing: a cross-site beacon without a form type, which the app passes on and answers empty.
+	const visitor = await playwright.request.newContext({ baseURL: APP_URL });
+	const report = (body: object) => visitor.post(`/hooks/sites/${id}`, { data: Buffer.from(JSON.stringify(body)), headers: { origin: 'https://warungkopi.id', 'content-type': '' } });
+	const visit = await report({ k: 'v', r: 'https://www.instagram.com/p/123', h: 'warungkopi.id' });
+	expect([visit.status(), visit.headers()['access-control-allow-origin']]).toEqual([204, '*']);
+	expect((await report({ k: 'f', r: '', h: 'warungkopi.id' })).status()).toBe(204);
+	// A move between the site's own pages isn't an arrival.
+	expect((await report({ k: 'v', r: 'https://warungkopi.id/menu', h: 'warungkopi.id' })).status()).toBe(204);
+	await expect.poll(() => siteHits(id)).toEqual([
+		{ kind: 'visit', referrer_host: 'www.instagram.com' },
+		{ kind: 'form', referrer_host: null },
+	]);
+	await visitor.dispose();
+});
+
+test('a double-click on Send sends the message once and lets Koda answer', async ({ page, context }) => {
+	const account = await createAccount();
+	await signInAs(context, account);
+	await page.goto('/projects', { waitUntil: 'networkidle' });
+	await page.getByRole('textbox', { name: 'Describe an app to build' }).fill('A one-page menu for Warung Kopi');
+	await page.getByRole('button', { name: 'Start building' }).dblclick();
+	await expect(page).toHaveURL(/\/projects\/[0-9a-f-]{36}$/);
+	expect(((await (await api(account, '/api/projects')).json()) as Projects).projects).toHaveLength(1);
+	const chat = page.getByRole('region', { name: 'Chat' });
+	await expect(chat.getByText(REPLY)).toHaveCount(1);
+
+	// Send turns into Stop under the pointer: the second click mustn't stop the reply.
+	const sent: string[] = [];
+	page.on('request', (request) => {
+		if (request.method() === 'POST' && request.url().endsWith('/api/messages')) sent.push((JSON.parse(request.postData() ?? '{}') as { text: string }).text);
+	});
+	const composer = chat.getByRole('textbox', { name: 'Message' });
+	await expect(async () => {
+		await composer.fill('Tambah jam buka');
+		await expect(chat.getByRole('button', { name: 'Send' })).toBeEnabled({ timeout: 1_000 });
+	}).toPass();
+	await chat.getByRole('button', { name: 'Send' }).dblclick();
+	await expect(chat.getByText(REPLY)).toHaveCount(2);
+	expect(sent).toEqual(['Tambah jam buka']);
 });

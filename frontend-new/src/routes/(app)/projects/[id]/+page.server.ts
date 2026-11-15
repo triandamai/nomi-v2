@@ -19,7 +19,7 @@ export const load: PageServerLoad = async (event) => {
 	if (!loaded.project) error(loaded.status === 404 || loaded.status === 403 ? 404 : 503, { message: loaded.status === 404 || loaded.status === 403 ? m.workspace_project_missing() : m.error_title() });
 	const id = event.params.id;
 	// A site keeps no data unless Koda gave it some: Database shows only when there are tables.
-	const [chat, deploy, address, people, secrets, showcase, sandbox, database] = await Promise.all([
+	const [chat, deploy, address, people, secrets, showcase, sandbox, database, ownDomains] = await Promise.all([
 		loadChatPage(event, loaded.project.session_id),
 		loadDeploy(event, id),
 		loadDomain(event, id),
@@ -28,16 +28,44 @@ export const load: PageServerLoad = async (event) => {
 		tools.loadShowcase(event, id),
 		tools.loadSandbox(event, id),
 		loaded.project.stack === 'static' ? tools.hasTables(event, id) : true,
+		tools.loadOwnDomains(event, id),
 	]);
 	// A static site shows its own files, sandboxed, through a grant made for this page (previewGrant.ts).
 	const token = event.locals.accessToken;
 	const preview = loaded.project.stack === 'static' && loaded.project.files.some((file) => file.path === 'index.html') && token ? `/projects/${id}/preview/~${sealPreview(id, token)}/` : null;
-	return { ...chat, preview, title: loaded.project.name, project: loaded.project, live: loaded.live, domain: loaded.domain, deploy, address, people, secrets, showcase, sandbox: usesSandbox(sandbox), database };
+	return { ...chat, preview, title: loaded.project.name, project: loaded.project, live: loaded.live, domain: loaded.domain, deploy, address, people, secrets, showcase, sandbox: usesSandbox(sandbox), database, ownDomains };
 };
 
 const refused = (sent: { status: number; message: string }) => fail(sent.status, { message: sent.message || m.action_failed() });
 
+const hostnameOf = async (request: Request) => String((await request.formData()).get('hostname') ?? '').trim().toLowerCase();
+
 export const actions: Actions = {
+	/** A domain the person owns: its records come back to set at their registrar. */
+	domainAdd: async (event) => {
+		const hostname = await hostnameOf(event.request);
+		if (!hostname) return fail(400, { message: m.domain_name_needed() });
+		const sent = await tools.addOwnDomain(event, event.params.id, hostname);
+		return sent.ok ? { domain: hostname } : refused(sent);
+	},
+	/** Check now. */
+	domainCheck: async (event) => {
+		const hostname = await hostnameOf(event.request);
+		const sent = await tools.checkOwnDomain(event, event.params.id, hostname);
+		return sent.ok ? { domain: hostname } : refused(sent);
+	},
+	/** Make primary, once every record is found. */
+	domainPrimary: async (event) => {
+		const hostname = await hostnameOf(event.request);
+		const sent = await tools.makeDomainPrimary(event, event.params.id, hostname);
+		return sent.ok ? { domain: hostname } : refused(sent);
+	},
+	/** Remove domain, asked first. */
+	domainRemove: async (event) => {
+		const hostname = await hostnameOf(event.request);
+		const sent = await tools.removeOwnDomain(event, event.params.id, hostname);
+		return sent.ok ? { domain: hostname } : refused(sent);
+	},
 	/** Sends what's in the preview live, as the next deploy; it runs on its own. */
 	publish: async (event) => {
 		const sent = await publish(event, event.params.id);

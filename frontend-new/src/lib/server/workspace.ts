@@ -2,6 +2,7 @@ import { isRedirect } from '@sveltejs/kit';
 import type { ContainerUsage, DatabaseTable, DeployOverview, ExportSummary, ProjectShowcase, DomainAnswer, MetricsRange, ProjectDetail, ProjectDomain, ProjectList, ProjectMembers, ProjectMetrics, ProjectSecrets, QueryResult, SandboxLogs, SandboxStatus } from '$lib/adapters/api';
 import { apiFetch, type ApiEvent } from './api';
 import { readTable } from '$lib/projects/database';
+import type { OwnDomain } from '$lib/projects/domains';
 import type { PublishRequestRow, QueuedAsk } from '$lib/projects/asks';
 
 // A project's workspace on the server: the project (its files and chat), where it's live (the
@@ -177,7 +178,8 @@ export async function loadPeople(event: ApiEvent, id: string): Promise<ProjectMe
 }
 
 /** Invites an address as `build` (admin), `prompt` (member) or `view` (viewer). */
-export const invitePerson = (event: ApiEvent, id: string, email: string, role: 'build' | 'prompt' | 'view') => send(event, `${at(id)}/invites`, 'POST', { email, role });
+export const invitePerson = (event: ApiEvent, id: string, email: string, role: 'build' | 'prompt' | 'view') =>
+	send(event, `${at(id)}/invites`, 'POST', { email, role });
 export const setPersonRole = (event: ApiEvent, id: string, userId: string, role: 'admin' | 'member' | 'viewer') => send(event, `${at(id)}/members/${encodeURIComponent(userId)}`, 'PUT', { role });
 export const removePerson = (event: ApiEvent, id: string, userId: string) => send(event, `${at(id)}/members/${encodeURIComponent(userId)}`, 'DELETE');
 /** Opens the project to the whole workspace, or only to the people added. */
@@ -298,3 +300,45 @@ export async function loadPresence(event: ApiEvent, id: string): Promise<{ me: s
 	const response = await call(event, `${at(id)}/presence`);
 	return response.ok ? ((await response.json()) as { me: string; people: PresentPerson[] }) : null;
 }
+
+/** The project's own domains (the primary first); null where they can't be read. */
+export async function loadOwnDomains(event: ApiEvent, id: string): Promise<OwnDomain[] | null> {
+	const response = await call(event, `${at(id)}/domains`);
+	return response.ok ? ((await response.json()) as OwnDomain[]) : null;
+}
+const domainPath = (id: string, hostname: string) => `${at(id)}/domains/${encodeURIComponent(hostname)}`;
+/** A domain the person owns, looked up once as it's added (the app must be live). */
+export const addOwnDomain = (event: ApiEvent, id: string, hostname: string) => send(event, `${at(id)}/domains`, 'POST', { hostname });
+/** Check now: its records looked up again. */
+export const checkOwnDomain = (event: ApiEvent, id: string, hostname: string) => send(event, `${domainPath(id, hostname)}/check`, 'POST');
+/** The address the app answers at first (only once every record is found). */
+export const makeDomainPrimary = (event: ApiEvent, id: string, hostname: string) => send(event, `${domainPath(id, hostname)}/primary`, 'PUT');
+export const removeOwnDomain = (event: ApiEvent, id: string, hostname: string) => send(event, domainPath(id, hostname), 'DELETE');
+
+/**
+ * A row's new values, found by its primary key (the backend checks the table, the columns and the
+ * key against the catalog, and casts each value to its column's type); the database's own reason
+ * when it refuses.
+ */
+export async function editRow(
+	event: ApiEvent,
+	id: string,
+	source: 'development' | 'production',
+	table: { schema: string; name: string },
+	key: Record<string, unknown>,
+	changes: Record<string, unknown>,
+): Promise<{ ok: true; row: Record<string, unknown> } | { ok: false; status: number; message: string }> {
+	const path = `${at(id)}/database/tables/${encodeURIComponent(table.schema)}/${encodeURIComponent(table.name)}/rows`;
+	let response: Response;
+	try {
+		response = await apiFetch(event, path, { method: 'PATCH', body: JSON.stringify({ key, changes, source }) });
+	} catch (error) {
+		if (isRedirect(error)) throw error;
+		return { ok: false, status: 503, message: '' };
+	}
+	if (!response.ok) return { ok: false, status: response.status, message: (await response.text()).trim().slice(0, 300) };
+	return { ok: true, row: ((await response.json()) as { row: Record<string, unknown> }).row };
+}
+
+/** A dump of the database (a `.sql` file), as the backend streams it. */
+export const databaseDump = (event: ApiEvent, id: string, source: 'development' | 'production') => call(event, `${at(id)}/database/dump?source=${source}`);

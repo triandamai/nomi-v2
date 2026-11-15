@@ -12,6 +12,9 @@ use nomi_agent_core::prompts::MONEY_SYSTEM_PROMPT;
 use nomi_agent_core::SubAgent;
 
 pub mod period;
+pub mod tools;
+
+pub use tools::catalog_tools;
 
 pub const MONEY_AGENT_TYPE: &str = "money";
 
@@ -393,38 +396,21 @@ impl SubAgent for MoneyAgent {
     }
 
     fn tools(&self) -> Vec<ToolDefinition> {
-        vec![
-            list_transactions_tool_definition(),
-            summarize_budget_tool_definition(),
-            log_transaction_tool_definition(),
-            set_budget_tool_definition(),
-            list_budgets_tool_definition(),
-            set_month_start_tool_definition(),
-        ]
+        nomi_agent_core::tool_definitions(&catalog_tools())
     }
 
     async fn execute_tool(
         &self,
         conn: &mut PoolConnection<Postgres>,
         session_id: Uuid,
-        _agent_session_id: Uuid,
+        agent_session_id: Uuid,
         user_id: Uuid,
         name: &str,
         input: Value,
     ) -> Result<nomi_agent_core::ToolOutcome, String> {
-        match name {
-            "list_transactions" => list_transactions(conn, user_id, input).await.map(nomi_agent_core::ToolOutcome::text),
-            "summarize_budget" => summarize_budget(conn, user_id, input).await.map(nomi_agent_core::ToolOutcome::text),
-            "log_transaction" => log_transaction_outcome(conn, user_id, &input, session_id).await,
-            "set_budget" => set_budget(conn, user_id, &input).await.map(nomi_agent_core::ToolOutcome::text),
-            "list_budgets" => list_budgets(conn, user_id).await.map(nomi_agent_core::ToolOutcome::text),
-            "set_month_start" => {
-                let day = input.get("day").and_then(|v| v.as_i64()).ok_or("day is required")?;
-                period::set_start_day(conn, user_id, day).await?;
-                Ok(nomi_agent_core::ToolOutcome::text(format!("Their money month now starts on day {day}.")))
-            }
-            other => Err(format!("unknown tool: {other}")),
-        }
+        let tools = catalog_tools();
+        let tool = nomi_agent_core::find_tool(&tools, name).ok_or_else(|| format!("unknown tool: {name}"))?;
+        tool.execute(conn, session_id, agent_session_id, user_id, input).await
     }
 
     fn intent_label(&self) -> Cow<'static, str> {
