@@ -69,7 +69,7 @@ describe('designStudio', () => {
 		const said = { source: PREVIEW_SOURCE, type: 'select', page: 'index.html', id: 'hero', tag: 'section', text: 'Fresh at six', rect: { x: 0, y: 10, width: 300, height: 200 } };
 		expect(readPreviewMessage(said, preview())).toEqual({
 			type: 'select',
-			selection: { id: 'hero', page: 'index.html', kind: 'section', label: 'Hero', tag: 'section', text: 'Fresh at six' },
+			selection: { id: 'hero', page: 'index.html', kind: 'section', label: 'Hero', tag: 'section', text: 'Fresh at six', point: null },
 		});
 		expect(readPreviewMessage({ source: PREVIEW_SOURCE, type: 'ready', page: 'menu/index.html' }, preview())).toEqual({ type: 'ready', page: 'menu/index.html' });
 	});
@@ -91,5 +91,84 @@ describe('designStudio', () => {
 		const messy = readPreviewMessage({ ...select, tag: '<script>', text: 'x'.repeat(500) }, preview());
 		expect(messy).toMatchObject({ type: 'select', selection: { tag: '', text: 'x'.repeat(120) } });
 		expect(readPreviewMessage({ ...select, text: { toString: () => 'boo' } }, preview())).toMatchObject({ selection: { text: '' } });
+	});
+});
+
+import { annotateMessage, annotationsOn, feedbackDraft, feedbackTarget, openFeedback, type Selection, type StudioFeedback } from './designStudio';
+
+const said = (number: number, extra: Partial<StudioFeedback> = {}): StudioFeedback => ({
+	id: `f${number}`,
+	number,
+	version: 2,
+	level: 'section',
+	page: 'index.html',
+	element_id: 'hero',
+	body: 'Make it shorter',
+	pin: null,
+	status: 'open',
+	resolved_in_version: null,
+	resolution: null,
+	created_at: '2026-11-15T10:00:00Z',
+	resolved_at: null,
+	...extra,
+});
+
+const hero: Selection = { id: 'hero', page: 'index.html', kind: 'section', label: 'Hero', tag: 'section', text: '', point: { x: 0.5, y: 0.25 } };
+
+describe('designStudio feedback', () => {
+	it('drafts feedback about the whole design, a page or the selected element', () => {
+		expect(feedbackDraft({ version: 2, scope: 'global', page: 'index.html', selection: hero, interaction: true, body: ' Warmer ' })).toEqual({ version: 2, level: 'global', body: 'Warmer' });
+		expect(feedbackDraft({ version: 2, scope: 'page', page: 'menu/index.html', selection: null, interaction: false, body: 'Too long' })).toEqual({ version: 2, level: 'page', page: 'menu/index.html', body: 'Too long' });
+		expect(feedbackDraft({ version: 2, scope: 'element', page: 'index.html', selection: hero, interaction: false, body: 'Shorter' })).toEqual({
+			version: 2,
+			level: 'section',
+			page: 'index.html',
+			element_id: 'hero',
+			body: 'Shorter',
+			pin: { x: 0.5, y: 0.25 },
+		});
+	});
+
+	it('drafts feedback about how a page or an element behaves', () => {
+		expect(feedbackDraft({ version: 2, scope: 'page', page: 'index.html', selection: null, interaction: true, body: 'Slide in' })).toEqual({ version: 2, level: 'interaction', page: 'index.html', body: 'Slide in' });
+		const onElement = feedbackDraft({ version: 2, scope: 'element', page: 'index.html', selection: { ...hero, point: null }, interaction: true, body: 'Fade' });
+		expect(onElement).toEqual({ version: 2, level: 'interaction', page: 'index.html', element_id: 'hero', body: 'Fade' });
+	});
+
+	it('drafts nothing without words, or about an element that is not picked', () => {
+		expect(feedbackDraft({ version: 2, scope: 'global', page: 'index.html', selection: null, interaction: false, body: '  ' })).toBeNull();
+		expect(feedbackDraft({ version: 2, scope: 'element', page: 'index.html', selection: null, interaction: false, body: 'x' })).toBeNull();
+		expect(feedbackDraft({ version: 2, scope: 'element', page: 'menu/index.html', selection: hero, interaction: false, body: 'x' })).toBeNull();
+	});
+
+	it('keeps the open feedback, newest first', () => {
+		const all = [said(1, { status: 'resolved' }), said(2), said(3)];
+		expect(openFeedback(all).map((f) => f.number)).toEqual([3, 2]);
+	});
+
+	it('marks the open feedback that points at an element this page of this version still has', () => {
+		const all = [
+			said(1, { version: 1, pin: { x: 0.1, y: 0.2 } }),
+			said(2, { status: 'resolved' }),
+			said(3, { element_id: 'gone' }),
+			said(4, { level: 'global', page: null, element_id: null }),
+			said(5, { level: 'interaction', element_id: 'site-header', page: 'menu/index.html' }),
+		];
+		expect(annotationsOn(all, preview(), 'index.html')).toEqual([
+			{ id: 'hero', number: 1, pin: { x: 0.1, y: 0.2 } },
+			{ id: 'site-header', number: 5, pin: null },
+		]);
+		expect(annotateMessage([{ id: 'hero', number: 1, pin: null }])).toEqual({ source: STUDIO_SOURCE, type: 'annotate', items: [{ id: 'hero', number: 1, pin: null }] });
+	});
+
+	it('says what feedback points at', () => {
+		expect(feedbackTarget(said(1, { level: 'global', page: null, element_id: null }))).toEqual({ level: 'global', page: null, element: null });
+		expect(feedbackTarget(said(1))).toEqual({ level: 'section', page: 'index.html', element: 'hero' });
+	});
+
+	it('takes the point clicked from the preview only when it is inside the element', () => {
+		const from = (point: unknown) => readPreviewMessage({ source: PREVIEW_SOURCE, type: 'select', page: 'index.html', id: 'hero', tag: 'section', text: '', point }, preview());
+		expect(from({ x: 0.5, y: 0.25 })).toMatchObject({ selection: { point: { x: 0.5, y: 0.25 } } });
+		for (const off of [{ x: 2, y: 0 }, { x: 'a', y: 0 }, null, undefined, { x: -1, y: 0.5 }]) expect(from(off)).toMatchObject({ selection: { point: null } });
 	});
 });

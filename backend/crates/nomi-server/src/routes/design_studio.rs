@@ -12,6 +12,7 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 use nomi_agent_core::design_artifact::{self, Element, Page, ENTRY_PAGE, PREVIEW_TOKEN_CHARS};
+use nomi_agent_core::design_feedback::{self, Feedback, NewFeedback, MAX_OPEN_PER_CHAT};
 use nomi_auth::extractor::AuthClaims;
 use serde::Serialize;
 use uuid::Uuid;
@@ -45,6 +46,8 @@ pub struct StudioPreview {
 #[derive(Serialize)]
 pub struct StudioResponse {
     pub previews: Vec<StudioPreview>,
+    /// Everything said about the chat's previews, oldest first.
+    pub feedback: Vec<Feedback>,
 }
 
 /// `GET /api/sessions/:id/design`: the chat's preview versions, oldest first.
@@ -59,7 +62,9 @@ pub async fn list(State(state): State<AppState>, AuthClaims(claims): AuthClaims,
     };
     let mut conn = state.pool.acquire().await.map_err(failed)?;
     let previews = design_artifact::list(&mut conn, session_id).await.map_err(failed)?;
+    let feedback = design_feedback::list(&mut conn, session_id).await.map_err(failed)?;
     Ok(Json(StudioResponse {
+        feedback,
         previews: previews
             .into_iter()
             .map(|stored| StudioPreview {
@@ -74,6 +79,53 @@ pub async fn list(State(state): State<AppState>, AuthClaims(claims): AuthClaims,
             })
             .collect(),
     }))
+}
+
+type Refused = (StatusCode, String);
+
+fn refused(status: StatusCode, why: &str) -> Refused {
+    (status, why.to_string())
+}
+
+/// Whether this person may use the Studio for this chat; the refusal otherwise.
+async fn studio_access(state: &AppState, user_id: Uuid, session_id: Uuid) -> Result<(), Refused> {
+    if !nomi_settings::config::design_enabled_for(user_id).await {
+        return Err(refused(StatusCode::NOT_FOUND, "not found"));
+    }
+    authorize_session_access(&state.pool, user_id, session_id).await.map_err(|(status, why)| refused(status, why))
+}
+
+fn unavailable(e: sqlx::Error) -> Refused {
+    tracing::error!(error = %e, "design studio: the database couldn't be reached");
+    refused(StatusCode::INTERNAL_SERVER_ERROR, "that didn't work, try again")
+}
+
+/// The version a request's body names.
+fn version_of(input: &serde_json::Value) -> Result<i32, Refused> {
+    input
+        .get("version")
+        .and_then(serde_json::Value::as_i64)
+        .and_then(|version| i32::try_from(version).ok())
+        .ok_or_else(|| refused(StatusCode::UNPROCESSABLE_ENTITY, "version is required"))
+}
+
+/// `POST /api/sessions/:id/design/feedback`: something said about one version, kept for good.
+pub async fn add_feedback(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Path(session_id): Path<Uuid>,
+    Json(input): Json<serde_json::Value>,
+) -> Result<(StatusCode, Json<Feedback>), Refused> {
+    studio_access(&state, claims.sub, session_id).await?;
+    let version = version_of(&input)?;
+    let mut conn = state.pool.acquire().await.map_err(unavailable)?;
+    let manifest = design_artifact::version(&mut conn, session_id, version).await.map_err(unavailable)?.ok_or_else(|| refused(StatusCode::NOT_FOUND, "no such version"))?;
+    let feedback = NewFeedback::parse(version, &manifest, &input).map_err(|why| (StatusCode::UNPROCESSABLE_ENTITY, why))?;
+    if design_feedback::open_count(&mut conn, session_id).await.map_err(unavailable)? >= MAX_OPEN_PER_CHAT {
+        return Err(refused(StatusCode::UNPROCESSABLE_ENTITY, "there is a lot of feedback waiting already: ask Sora for a new version first"));
+    }
+    let kept = design_feedback::add(&mut conn, session_id, claims.sub, &feedback).await.map_err(unavailable)?;
+    Ok((StatusCode::CREATED, Json(kept)))
 }
 
 /// The file a request path means: nothing is the entry page, a folder its index page.
@@ -177,6 +229,8 @@ mod tests {
         assert!(BRIDGE.contains("'nomi-design-preview'") && BRIDGE.contains("'nomi-design-studio'"));
         assert!(BRIDGE.contains("data-design-id"));
         assert!(!BRIDGE.contains("</script"), "it can't end the tag it is put in");
+        assert!(BRIDGE.contains("'annotate'") && BRIDGE.contains("point:"), "it marks feedback and says where a click landed");
+        assert!(BRIDGE.contains("textContent = String(") && !BRIDGE.contains("innerHTML"), "what the Studio sends is never read as markup");
     }
 
     #[test]

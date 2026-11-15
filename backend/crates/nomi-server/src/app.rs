@@ -130,6 +130,7 @@ pub fn build_router(state: AppState) -> Router {
             get(sessions_routes::list_agent_plans),
         )
         .route("/api/sessions/:id/design", get(crate::routes::design_studio::list))
+        .route("/api/sessions/:id/design/feedback", post(crate::routes::design_studio::add_feedback))
         .route("/api/design/preview/:token", get(crate::routes::design_studio::preview_index))
         .route("/api/design/preview/:token/", get(crate::routes::design_studio::preview_index))
         .route("/api/design/preview/:token/*path", get(crate::routes::design_studio::preview_file))

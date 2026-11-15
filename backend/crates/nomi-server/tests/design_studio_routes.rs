@@ -131,3 +131,63 @@ async fn a_versions_files_are_served_by_name_into_a_sandbox_with_no_sign_in(pool
         assert_eq!(fetch(&app, &missing).await.0, StatusCode::NOT_FOUND, "{missing}");
     }
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn feedback_from_the_studio_is_kept_for_the_chat_and_listed_with_its_previews(pool: PgPool) {
+    let _g = GLOBALS.lock().await;
+    let app = App::new(pool.clone());
+    let admin = app.admin("admin@acme.test").await;
+    let ada = app.person("ada@acme.test").await;
+    let bob = app.person("bob@acme.test").await;
+    let session_id = chat_of(&pool, &ada).await;
+    save(&pool, session_id, &ada, &preview("editorial", "Fresh at six")).await;
+    let uri = format!("/api/sessions/{session_id}/design/feedback");
+    let on_hero = json!({"version": 1, "level": "element", "page": "index.html", "element_id": "hero", "body": "Make it shorter", "pin": {"x": 0.5, "y": 0.25}});
+
+    design_on(&pool, admin.id, false).await;
+    assert_eq!(app.send("POST", &uri, &ada, on_hero.clone()).await.0, StatusCode::NOT_FOUND, "no feedback where Design isn't rolled out");
+
+    design_on(&pool, admin.id, true).await;
+    let (status, first) = app.send("POST", &uri, &ada, on_hero.clone()).await;
+    assert_eq!(status, StatusCode::CREATED, "{first}");
+    assert_eq!((first["number"].as_i64(), first["level"].as_str(), first["status"].as_str()), (Some(1), Some("section"), Some("open")), "the manifest says the hero is a section");
+    assert_eq!(first["pin"], json!({"x": 0.5, "y": 0.25}));
+    let (status, second) = app.send("POST", &uri, &ada, json!({"version": 1, "level": "global", "body": "Warmer overall"})).await;
+    assert_eq!((status, second["number"].as_i64()), (StatusCode::CREATED, Some(2)));
+
+    let (status, refused) = app.send("POST", &uri, &ada, json!({"version": 1, "level": "page", "page": "about.html", "body": "x"})).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(refused, json!("this version has no page \"about.html\""));
+    assert_eq!(app.send("POST", &uri, &ada, json!({"version": 9, "level": "global", "body": "x"})).await.0, StatusCode::NOT_FOUND, "feedback is about a version there is");
+    assert_eq!(app.send("POST", &uri, &ada, json!({"level": "global", "body": "x"})).await.0, StatusCode::UNPROCESSABLE_ENTITY, "it names its version");
+    assert_eq!(app.send("POST", &uri, &bob, on_hero.clone()).await.0, StatusCode::NOT_FOUND, "another person's chat isn't theirs to comment on");
+    assert_eq!(app.call("POST", &uri, None, Some(on_hero)).await.0, StatusCode::UNAUTHORIZED);
+
+    let (_, studio) = app.get(&format!("/api/sessions/{session_id}/design"), &ada).await;
+    let kept = studio["feedback"].as_array().unwrap();
+    assert_eq!(kept.iter().map(|f| (f["number"].as_i64().unwrap(), f["body"].as_str().unwrap())).collect::<Vec<_>>(), [(1, "Make it shorter"), (2, "Warmer overall")]);
+    assert_eq!((kept[0]["version"].as_i64(), kept[0]["element_id"].as_str(), kept[0]["page"].as_str()), (Some(1), Some("hero"), Some("index.html")));
+    design_on(&pool, admin.id, false).await;
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_chat_can_only_have_so_much_feedback_waiting(pool: PgPool) {
+    let _g = GLOBALS.lock().await;
+    let app = App::new(pool.clone());
+    let admin = app.admin("admin@acme.test").await;
+    let ada = app.person("ada@acme.test").await;
+    let session_id = chat_of(&pool, &ada).await;
+    save(&pool, session_id, &ada, &preview("editorial", "Fresh at six")).await;
+    sqlx::query("INSERT INTO design_feedback (session_id, user_id, number, artifact_version, level, body) SELECT $1, $2, n, 1, 'global', 'x' FROM generate_series(1, $3) n")
+        .bind(session_id)
+        .bind(ada.id)
+        .bind(nomi_agent_core::design_feedback::MAX_OPEN_PER_CHAT as i32)
+        .execute(&pool)
+        .await
+        .unwrap();
+    design_on(&pool, admin.id, true).await;
+    let (status, refused) = app.send("POST", &format!("/api/sessions/{session_id}/design/feedback"), &ada, json!({"version": 1, "level": "global", "body": "One more"})).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(refused.as_str().unwrap().contains("waiting"), "{refused}");
+    design_on(&pool, admin.id, false).await;
+}

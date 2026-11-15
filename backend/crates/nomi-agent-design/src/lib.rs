@@ -15,6 +15,7 @@ use nomi_agent_core::prompts::DESIGN_SYSTEM_PROMPT;
 use nomi_agent_core::design_artifact::{self, Manifest};
 use nomi_agent_core::design_brief::{self, DesignBrief};
 use nomi_agent_core::design_directions::{self, DesignDirections};
+use nomi_agent_core::design_feedback::{self, Feedback};
 use nomi_agent_core::mcp_ops::{NoMcpOps, SharedMcpOps};
 use nomi_agent_core::static_publish::{self, NoStaticPublisher, Published, SharedStaticPublisher};
 use nomi_agent_core::{find_tool, tool_definitions, SubAgent};
@@ -50,6 +51,16 @@ pub fn preview_context(session_id: Uuid, version: i32, manifest: &Manifest, publ
         None => "Not published outside Nomi.".to_string(),
     };
     format!("{PREVIEW_INTRO}\n\n{}\nDesign Studio: {}\n{address}", manifest.to_markdown(version), tools::studio_link(session_id, version))
+}
+
+/// What Sora is told before the feedback that is still waiting.
+pub const FEEDBACK_INTRO: &str = "This is what the person said about your previews in the Design Studio and no version has dealt with \
+     yet. Each piece has a number, the version it was given on and what it points at. When they ask you to act on it, change \
+     only what it asks and leave the rest of the design as it is.";
+
+/// The feedback still waiting on a new version; `None` when there is none.
+pub fn feedback_context(feedback: &[Feedback]) -> Option<String> {
+    design_feedback::open_markdown(feedback).map(|open| format!("{FEEDBACK_INTRO}\n\n{open}"))
 }
 
 /// Sora. She is registered for everyone, and reachable only where the `design` setting is
@@ -129,8 +140,8 @@ impl SubAgent for DesignAgent {
         Some(format!("Use {} on {}", text("tool")?, text("server")?))
     }
 
-    /// The chat's newest design brief, when Rena saved one, the directions already proposed and
-    /// the preview built last.
+    /// The chat's newest design brief, when Rena saved one, the directions already proposed, the
+    /// preview built last and the feedback still waiting on a new version.
     async fn domain_context(
         &self,
         conn: &mut PoolConnection<Postgres>,
@@ -149,7 +160,8 @@ impl SubAgent for DesignAgent {
             }
             None => None,
         };
-        let parts: Vec<String> = [brief, directions, preview].into_iter().flatten().collect();
+        let feedback = design_feedback::list(&mut **conn, session_id).await.ok().and_then(|all| feedback_context(&all));
+        let parts: Vec<String> = [brief, directions, preview, feedback].into_iter().flatten().collect();
         (!parts.is_empty()).then(|| parts.join("\n\n"))
     }
 
@@ -272,6 +284,36 @@ mod tests {
         assert!(context.contains("Design Studio: /chat/00000000-0000-0000-0000-000000000000/design?version=2"));
         assert!(preview_context(Uuid::nil(), 2, &manifest, None).ends_with("Not published outside Nomi."));
         assert!(PREVIEW_INTRO.contains("same data-design-id"));
+    }
+
+    #[test]
+    fn feedback_still_waiting_is_put_in_front_of_sora_by_number() {
+        let html = "<html><head><meta name=\"viewport\" content=\"width=device-width\"><title>Home</title></head><body><h1 data-design-id=\"hero\">Hi</h1></body></html>";
+        let input = serde_json::json!({"direction_id": "editorial", "title": "First pass", "files": [{"path": "index.html", "content": html}]});
+        let manifest = nomi_agent_core::design_artifact::DesignArtifact::parse(&input).unwrap().manifest;
+        let new = nomi_agent_core::design_feedback::NewFeedback::parse(1, &manifest, &serde_json::json!({"level": "element", "page": "index.html", "element_id": "hero", "body": "Shorter"})).unwrap();
+        let feedback = nomi_agent_core::design_feedback::Feedback {
+            id: Uuid::nil(),
+            number: 4,
+            version: new.version,
+            level: new.level,
+            page: new.page,
+            element_id: new.element_id,
+            body: new.body,
+            pin: None,
+            status: nomi_agent_core::design_feedback::Status::Open,
+            resolved_in_version: None,
+            resolution: None,
+            user_id: Uuid::nil(),
+            created_at: chrono::DateTime::<chrono::Utc>::UNIX_EPOCH,
+            resolved_at: None,
+        };
+        let context = feedback_context(std::slice::from_ref(&feedback)).unwrap();
+        assert!(context.starts_with(FEEDBACK_INTRO));
+        assert!(context.ends_with("- #4 (version 1, element hero on index.html): Shorter"), "{context}");
+        assert!(FEEDBACK_INTRO.contains("only what it asks"));
+        let dealt_with = nomi_agent_core::design_feedback::Feedback { status: nomi_agent_core::design_feedback::Status::Resolved, ..feedback };
+        assert_eq!(feedback_context(&[dealt_with]), None, "feedback a version dealt with isn't asked for again");
     }
 
     #[test]

@@ -6,7 +6,10 @@
 	import Icon from '$lib/components/ds/foundations/Icon.svelte';
 	import {
 		DEVICE_WIDTHS,
+		annotateMessage,
+		annotationsOn,
 		elementsOnPage,
+		feedbackDraft,
 		highlightMessage,
 		modeMessage,
 		pickVersion,
@@ -14,7 +17,9 @@
 		readPreviewMessage,
 		versionsNewestFirst,
 		type Device,
+		type FeedbackScope,
 		type Selection,
+		type StudioFeedback,
 		type StudioElement,
 		type StudioElementKind,
 	} from '$lib/designStudio';
@@ -26,6 +31,8 @@
 	let { data }: { data: PageData } = $props();
 
 	const ENTRY_PAGE = 'index.html';
+	// The most characters in one piece of feedback (design_feedback::MAX_BODY_CHARS).
+	const FEEDBACK_CHARS = 2000;
 	const DEVICES: { device: Device; icon: typeof Monitor; label: string }[] = [
 		{ device: 'desktop', icon: Monitor, label: m.device_desktop() },
 		{ device: 'tablet', icon: Tablet, label: m.studio_device_tablet() },
@@ -56,6 +63,40 @@
 	let selection = $state<Selection | null>(null);
 	let frame = $state<HTMLIFrameElement | null>(null);
 
+	// Looking at a version, or saying what should change about it. Giving feedback always picks.
+	type Mode = 'preview' | 'feedback';
+	const MODES: { mode: Mode; label: string }[] = [
+		{ mode: 'preview', label: m.studio_mode_preview() },
+		{ mode: 'feedback', label: m.studio_mode_feedback() },
+	];
+	let mode = $state<Mode>('preview');
+	const picking = $derived(selecting || mode === 'feedback');
+
+	// Everything said about the chat's previews: what the page loaded with, and what was added here.
+	let added = $state<StudioFeedback[]>([]);
+	const feedback = $derived([...data.feedback, ...added]);
+	const history = $derived([...feedback].sort((a, b) => b.number - a.number));
+	const marks = $derived(current && mode === 'feedback' ? annotationsOn(feedback, current, shownPage) : []);
+
+	const SCOPES: { scope: FeedbackScope; label: string }[] = [
+		{ scope: 'global', label: m.studio_scope_global() },
+		{ scope: 'page', label: m.studio_scope_page() },
+		{ scope: 'element', label: m.studio_scope_element() },
+	];
+	let scope = $state<FeedbackScope>('page');
+	let interaction = $state(false);
+	let words = $state('');
+	let sending = $state(false);
+	let feedbackError = $state('');
+	const draft = $derived(current ? feedbackDraft({ version: current.version, scope, page: shownPage, selection, interaction, body: words }) : null);
+
+	$effect(() => {
+		if (frame) tell(modeMessage(picking));
+	});
+	$effect(() => {
+		if (frame) tell(annotateMessage(marks));
+	});
+
 	// The frame's origin is its own and unnameable, so messages are addressed to its window.
 	function tell(message: object) {
 		frame?.contentWindow?.postMessage(message, '*');
@@ -67,10 +108,12 @@
 		if (!said) return;
 		if (said.type === 'ready') {
 			shownPage = said.page;
-			tell(modeMessage(selecting));
+			tell(modeMessage(picking));
+			tell(annotateMessage(marks));
 			if (selection && selection.page === said.page) tell(highlightMessage(selection.id));
 		} else {
 			selection = said.selection;
+			if (mode === 'feedback') scope = 'element';
 		}
 	}
 
@@ -88,11 +131,56 @@
 
 	function toggleSelecting() {
 		selecting = !selecting;
-		tell(modeMessage(selecting));
 	}
 
 	function pick(element: StudioElement) {
-		selection = { id: element.id, page: shownPage, kind: element.kind, label: element.label, tag: '', text: '' };
+		selection = { id: element.id, page: shownPage, kind: element.kind, label: element.label, tag: '', text: '', point: null };
+		if (mode === 'feedback') scope = 'element';
+		tell(highlightMessage(element.id));
+	}
+
+	function openMode(next: Mode) {
+		mode = next;
+		if (next === 'feedback' && selection) scope = 'element';
+	}
+
+	async function addFeedback(event: SubmitEvent) {
+		event.preventDefault();
+		if (!draft || sending) return;
+		sending = true;
+		feedbackError = '';
+		try {
+			const response = await fetch(`/chat/${data.sessionId}/design/feedback`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(draft) });
+			if (!response.ok) {
+				const refused = (await response.json().catch(() => null)) as { message?: string } | null;
+				feedbackError = refused?.message || m.studio_feedback_failed();
+				return;
+			}
+			added = [...added, (await response.json()) as StudioFeedback];
+			words = '';
+		} catch {
+			feedbackError = m.studio_feedback_failed();
+		} finally {
+			sending = false;
+		}
+	}
+
+	// What a piece of feedback points at, in words.
+	function where(item: StudioFeedback): string {
+		const page = item.page ?? '';
+		const element = item.element_id ? (current?.elements.find((e) => e.id === item.element_id)?.label ?? item.element_id) : null;
+		if (item.level === 'global') return m.studio_feedback_where_global();
+		const target = element ? m.studio_feedback_where_element({ element, page }) : m.studio_feedback_where_page({ page });
+		return item.level === 'interaction' ? m.studio_feedback_where_interaction({ target }) : target;
+	}
+
+	// Shows what a piece of feedback is about, when this version still has it.
+	function showFeedback(item: StudioFeedback) {
+		if (!current || !item.page || !current.pages.some((p) => p.path === item.page)) return;
+		if (item.page !== shownPage) openPage(item.page);
+		const element = current.elements.find((e) => e.id === item.element_id && e.pages.includes(item.page as string));
+		if (!element) return;
+		selection = { id: element.id, page: item.page, kind: element.kind, label: element.label, tag: '', text: '', point: null };
 		tell(highlightMessage(element.id));
 	}
 
@@ -122,7 +210,12 @@
 						</button>
 					{/each}
 				</div>
-				<button type="button" class="studio__tool studio__tool--wide" aria-pressed={selecting} onclick={toggleSelecting}>
+				<div class="studio__devices" role="group" aria-label={m.studio_mode()}>
+					{#each MODES as option (option.mode)}
+						<button type="button" class="studio__tool studio__tool--wide" aria-pressed={mode === option.mode} onclick={() => openMode(option.mode)}>{option.label}</button>
+					{/each}
+				</div>
+				<button type="button" class="studio__tool studio__tool--wide" aria-pressed={picking} disabled={mode === 'feedback'} onclick={toggleSelecting}>
 					<Icon icon={MousePointerClick} size={18} /><span>{m.studio_select()}</span>
 				</button>
 				{#if current.published_url}
@@ -194,7 +287,55 @@
 						<button type="button" class="studio__clear md-label-large" onclick={clearSelection}>{m.studio_clear()}</button>
 					</div>
 				{:else}
-					<p class="md-body-medium studio__muted">{selecting ? m.studio_select_hint() : m.studio_selected_none()}</p>
+					<p class="md-body-medium studio__muted">{picking ? m.studio_select_hint() : m.studio_selected_none()}</p>
+				{/if}
+
+				{#if mode === 'feedback'}
+					<form class="studio__form" onsubmit={addFeedback}>
+						<fieldset class="studio__scopes">
+							<legend class="md-label-large studio__label">{m.studio_feedback_about()}</legend>
+							{#each SCOPES as option (option.scope)}
+								<label class="studio__choice md-body-medium">
+									<input type="radio" name="scope" value={option.scope} checked={scope === option.scope} onchange={() => (scope = option.scope)} />
+									<span>{option.label}</span>
+								</label>
+							{/each}
+						</fieldset>
+						{#if scope === 'element' && !(selection && selection.page === shownPage)}
+							<p class="md-body-small studio__muted">{m.studio_feedback_pick_first()}</p>
+						{/if}
+						{#if scope !== 'global'}
+							<label class="studio__choice md-body-medium">
+								<input type="checkbox" bind:checked={interaction} />
+								<span>{m.studio_feedback_interaction()}</span>
+							</label>
+						{/if}
+						<label class="md-label-large studio__label" for="studio-feedback">{m.studio_feedback_label()}</label>
+						<textarea id="studio-feedback" class="studio__words md-body-medium" rows="4" maxlength={FEEDBACK_CHARS} placeholder={m.studio_feedback_placeholder()} bind:value={words}></textarea>
+						{#if feedbackError}<p class="md-body-small studio__error" role="alert">{feedbackError}</p>{/if}
+						<button type="submit" class="studio__send md-label-large" disabled={!draft || sending}>{m.studio_feedback_add()}</button>
+					</form>
+
+					<h2 class="md-label-large studio__label">{m.studio_feedback_history()}</h2>
+					{#if history.length === 0}
+						<p class="md-body-medium studio__muted">{m.studio_feedback_none()}</p>
+					{:else}
+						<ol class="studio__list studio__history">
+							{#each history as item (item.id)}
+								<li>
+									<button type="button" class="studio__row" aria-label={m.studio_feedback_show({ number: item.number })} onclick={() => showFeedback(item)}>
+										<span class="md-label-large">{m.studio_feedback_number({ number: item.number })} · {where(item)}</span>
+										<span class="md-body-medium">{item.body}</span>
+										<span class="md-body-small studio__muted">
+											{m.studio_feedback_given_on({ version: item.version })} ·
+											{item.status === 'resolved' && item.resolved_in_version !== null ? m.studio_feedback_resolved({ version: item.resolved_in_version }) : m.studio_feedback_open()}
+										</span>
+										{#if item.resolution}<span class="md-body-small studio__quote">{item.resolution}</span>{/if}
+									</button>
+								</li>
+							{/each}
+						</ol>
+					{/if}
 				{/if}
 
 				<h2 class="md-label-large studio__label">{m.studio_elements()}</h2>
@@ -382,6 +523,66 @@
 	.studio__quote {
 		padding-left: 8px;
 		border-left: 2px solid var(--md-sys-color-outline);
+	}
+	.studio__form {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		margin-top: 12px;
+	}
+	.studio__scopes {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		margin: 0;
+		padding: 0;
+		border: 0;
+	}
+	.studio__scopes legend {
+		padding: 0;
+	}
+	.studio__choice {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		min-height: 32px;
+	}
+	.studio__words {
+		width: 100%;
+		padding: 8px 12px;
+		border: 1px solid var(--md-sys-color-outline);
+		border-radius: var(--md-sys-shape-corner-small);
+		background: var(--md-sys-color-surface);
+		color: inherit;
+		box-sizing: border-box;
+		resize: vertical;
+	}
+	.studio__words:focus-visible {
+		outline: 2px solid var(--md-sys-color-primary);
+		outline-offset: -1px;
+	}
+	.studio__error {
+		margin: 0;
+		color: var(--md-sys-color-error);
+	}
+	.studio__send {
+		align-self: flex-start;
+		min-height: 40px;
+		padding: 0 24px;
+		border: 0;
+		border-radius: var(--md-sys-shape-corner-full);
+		background: var(--md-sys-color-primary);
+		color: var(--md-sys-color-on-primary);
+		cursor: pointer;
+	}
+	.studio__send:disabled,
+	.studio__tool:disabled {
+		opacity: 0.38;
+		cursor: default;
+	}
+	.studio__send:focus-visible {
+		outline: 2px solid var(--md-sys-color-primary);
+		outline-offset: 2px;
 	}
 	.studio__clear {
 		margin-top: 4px;

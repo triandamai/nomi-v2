@@ -16,7 +16,27 @@ export type StudioPreview = {
 	published_url: string | null;
 	created_at: string;
 };
-export type StudioResponse = { previews: StudioPreview[] };
+export type FeedbackLevel = 'global' | 'page' | 'section' | 'component' | 'element' | 'interaction';
+/** A point inside what feedback is about: x across and y down, each from 0 to 1. */
+export type StudioPin = { x: number; y: number };
+export type StudioFeedback = {
+	id: string;
+	/** Its place in the chat's feedback: what Sora and the person call it. */
+	number: number;
+	/** The version it was given on. */
+	version: number;
+	level: FeedbackLevel;
+	page: string | null;
+	element_id: string | null;
+	body: string;
+	pin: StudioPin | null;
+	status: 'open' | 'resolved';
+	resolved_in_version: number | null;
+	resolution: string | null;
+	created_at: string;
+	resolved_at: string | null;
+};
+export type StudioResponse = { previews: StudioPreview[]; feedback: StudioFeedback[] };
 
 /** Who a message is from: the preview's page, or the Studio around it. */
 export const PREVIEW_SOURCE = 'nomi-design-preview';
@@ -62,7 +82,7 @@ export function highlightMessage(id: string | null) {
 }
 
 /** An element the person picked in the preview. */
-export type Selection = { id: string; page: string; kind: StudioElementKind; label: string; tag: string; text: string };
+export type Selection = { id: string; page: string; kind: StudioElementKind; label: string; tag: string; text: string; point: StudioPin | null };
 export type PreviewMessage = { type: 'ready'; page: string } | { type: 'select'; selection: Selection };
 
 /**
@@ -82,5 +102,61 @@ export function readPreviewMessage(data: unknown, preview: StudioPreview): Previ
 	if (!element) return null;
 	const tag = typeof said.tag === 'string' && TAG.test(said.tag) ? said.tag : '';
 	const text = typeof said.text === 'string' ? said.text.slice(0, TEXT_CHARS) : '';
-	return { type: 'select', selection: { id: element.id, page, kind: element.kind, label: element.label, tag, text } };
+	return { type: 'select', selection: { id: element.id, page, kind: element.kind, label: element.label, tag, text, point: pointOf(said.point) } };
+}
+
+const inside = (value: unknown): value is number => typeof value === 'number' && value >= 0 && value <= 1;
+
+function pointOf(point: unknown): StudioPin | null {
+	if (typeof point !== 'object' || point === null) return null;
+	const { x, y } = point as Record<string, unknown>;
+	return inside(x) && inside(y) ? { x, y } : null;
+}
+
+/** What feedback is about, as the person picks it: everything, the page on screen, or the selected element. */
+export type FeedbackScope = 'global' | 'page' | 'element';
+export type FeedbackDraft = { version: number; level: FeedbackLevel; page?: string; element_id?: string; body: string; pin?: StudioPin };
+
+/**
+ * The feedback to send, or null when there is nothing to say or nothing picked to say it about.
+ * `interaction` is for how the page or the element behaves rather than how it looks.
+ */
+export function feedbackDraft(input: { version: number; scope: FeedbackScope; page: string; selection: Selection | null; interaction: boolean; body: string }): FeedbackDraft | null {
+	const body = input.body.trim();
+	if (!body) return null;
+	const { version, page, selection } = input;
+	if (input.scope === 'global') return { version, level: 'global', body };
+	if (input.scope === 'page') return { version, level: input.interaction ? 'interaction' : 'page', page, body };
+	if (!selection || selection.page !== page) return null;
+	const draft: FeedbackDraft = { version, level: input.interaction ? 'interaction' : selection.kind, page, element_id: selection.id, body };
+	if (selection.point && !input.interaction) draft.pin = selection.point;
+	return draft;
+}
+
+/** The feedback no version has dealt with yet, newest first. */
+export function openFeedback(feedback: StudioFeedback[]): StudioFeedback[] {
+	return feedback.filter((f) => f.status === 'open').sort((a, b) => b.number - a.number);
+}
+
+export function feedbackTarget(feedback: StudioFeedback): { level: FeedbackLevel; page: string | null; element: string | null } {
+	return { level: feedback.level, page: feedback.page, element: feedback.element_id };
+}
+
+/** A numbered mark on an element of the preview. */
+export type Annotation = { id: string; number: number; pin: StudioPin | null };
+
+/**
+ * The marks for a page of a version: open feedback about an element the page still has, whichever
+ * version it was given on (an element keeps its id from one version to the next).
+ */
+export function annotationsOn(feedback: StudioFeedback[], preview: StudioPreview, page: string): Annotation[] {
+	const here = new Set(elementsOnPage(preview, page).map((element) => element.id));
+	return feedback
+		.filter((f) => f.status === 'open' && f.element_id !== null && here.has(f.element_id))
+		.map((f) => ({ id: f.element_id as string, number: f.number, pin: f.pin }));
+}
+
+/** Tells the preview which elements to mark with a feedback number. */
+export function annotateMessage(items: Annotation[]) {
+	return { source: STUDIO_SOURCE, type: 'annotate' as const, items };
 }

@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, settle, text } from '../../../../../test-stubs/render';
 import Page from './+page.svelte';
-import { PREVIEW_SOURCE, type StudioPreview } from '$lib/designStudio';
+import { PREVIEW_SOURCE, type StudioFeedback, type StudioPreview } from '$lib/designStudio';
 
 const TOKEN = 'ab'.repeat(32);
 const preview = (version: number, extra: Partial<StudioPreview> = {}): StudioPreview => ({
@@ -23,8 +23,36 @@ const preview = (version: number, extra: Partial<StudioPreview> = {}): StudioPre
 	...extra,
 });
 
-const studio = (previews: StudioPreview[], wanted: string | null = null) =>
-	render(Page as never, { data: { previews, wanted, sessionId: 's1' } as never, params: { sessionId: 's1' } as never });
+const studio = (previews: StudioPreview[], wanted: string | null = null, feedback: StudioFeedback[] = []) =>
+	render(Page as never, { data: { previews, feedback, wanted, sessionId: 's1' } as never, params: { sessionId: 's1' } as never });
+
+const said = (number: number, extra: Partial<StudioFeedback> = {}): StudioFeedback => ({
+	id: `f${number}`,
+	number,
+	version: 1,
+	level: 'section',
+	page: 'index.html',
+	element_id: 'hero',
+	body: 'Make it shorter',
+	pin: null,
+	status: 'open',
+	resolved_in_version: null,
+	resolution: null,
+	created_at: '2026-11-15T10:00:00Z',
+	resolved_at: null,
+	...extra,
+});
+
+const button = (root: HTMLElement, label: string) => [...root.querySelectorAll('button')].find((b) => b.textContent?.trim() === label) as HTMLButtonElement;
+
+async function type(root: HTMLElement, words: string) {
+	const box = root.querySelector('textarea') as HTMLTextAreaElement;
+	box.value = words;
+	box.dispatchEvent(new Event('input', { bubbles: true }));
+	await settle();
+}
+
+afterEach(() => vi.unstubAllGlobals());
 
 const frame = (root: HTMLElement) => root.querySelector('iframe') as HTMLIFrameElement;
 
@@ -87,5 +115,66 @@ describe('design studio page', () => {
 		const root = studio([preview(1, { published_url: 'https://ship.example.com/dpl/d1' })]);
 		const link = root.querySelector('a[href="https://ship.example.com/dpl/d1"]') as HTMLAnchorElement;
 		expect(link.getAttribute('rel')).toContain('noopener');
+	});
+
+	it('keeps what was said about the previews, with what became of it', async () => {
+		const root = studio([preview(1), preview(2)], null, [said(1, { status: 'resolved', resolved_in_version: 2, resolution: 'Hero is half the height' }), said(2, { level: 'global', page: null, element_id: null, body: 'Warmer overall' })]);
+		expect(root.querySelector('textarea')).toBeNull();
+		button(root, 'Feedback').click();
+		await settle();
+		const history = root.querySelector('.studio__history') as HTMLElement;
+		expect(history.textContent).toContain('#2');
+		expect(history.textContent).toContain('Warmer overall');
+		expect(history.textContent).toContain('The whole design');
+		expect(history.textContent).toContain('Waiting for a new version');
+		expect(history.textContent).toContain('Dealt with in version 2');
+		expect(history.textContent).toContain('Hero is half the height');
+		expect(history.textContent?.indexOf('#2')).toBeLessThan(history.textContent?.indexOf('#1') as number);
+	});
+
+	it('sends feedback about the page on screen and adds it to the history', async () => {
+		const fetched = vi.fn(async (_url: string, _init?: RequestInit) => new Response(JSON.stringify(said(1, { level: 'page', element_id: null, body: 'Too long' })), { status: 201 }));
+		vi.stubGlobal('fetch', fetched);
+		const root = studio([preview(1)]);
+		button(root, 'Feedback').click();
+		await settle();
+		expect(text(root)).toContain('No feedback yet.');
+		expect(button(root, 'Add feedback').disabled).toBe(true);
+		await type(root, 'Too long');
+		button(root, 'Add feedback').click();
+		await settle();
+		await settle();
+		expect(fetched.mock.calls[0][0]).toBe('/chat/s1/design/feedback');
+		expect(JSON.parse(fetched.mock.calls[0][1]?.body as string)).toEqual({ version: 1, level: 'page', page: 'index.html', body: 'Too long' });
+		expect(root.querySelector('.studio__history')?.textContent).toContain('Too long');
+		expect((root.querySelector('textarea') as HTMLTextAreaElement).value).toBe('');
+	});
+
+	it('sends feedback about the element picked from the list', async () => {
+		const fetched = vi.fn(async (_url: string, _init?: RequestInit) => new Response(JSON.stringify(said(1)), { status: 201 }));
+		vi.stubGlobal('fetch', fetched);
+		const root = studio([preview(1)]);
+		button(root, 'Feedback').click();
+		await settle();
+		([...root.querySelectorAll('button')].find((b) => b.textContent?.includes('Hero')) as HTMLButtonElement).click();
+		await settle();
+		await type(root, 'Make it shorter');
+		button(root, 'Add feedback').click();
+		await settle();
+		await settle();
+		expect(JSON.parse(fetched.mock.calls[0][1]?.body as string)).toEqual({ version: 1, level: 'section', page: 'index.html', element_id: 'hero', body: 'Make it shorter' });
+	});
+
+	it('says why feedback could not be saved and keeps the words', async () => {
+		vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ message: 'there is a lot of feedback waiting already' }), { status: 422 })));
+		const root = studio([preview(1)]);
+		button(root, 'Feedback').click();
+		await settle();
+		await type(root, 'One more');
+		button(root, 'Add feedback').click();
+		await settle();
+		await settle();
+		expect(root.querySelector('[role="alert"]')?.textContent).toContain('there is a lot of feedback waiting already');
+		expect((root.querySelector('textarea') as HTMLTextAreaElement).value).toBe('One more');
 	});
 });
