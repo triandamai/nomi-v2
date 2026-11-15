@@ -129,8 +129,6 @@
 		class="agent-shape-host relative inline-block shrink-0 {extraClass}"
 		style:width="{size}px"
 		style:height="{size}px"
-		role={label ? 'img' : undefined}
-		aria-label={label}
 		aria-hidden={label ? undefined : 'true'}
 		data-shape={resolvedShape}
 		data-live={avatar ? 'mounted' : 'pending'}

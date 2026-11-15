@@ -98,8 +98,6 @@
 		class="relative inline-block shrink-0"
 		style:width="{size}px"
 		style:height="{size}px"
-		role={label ? 'img' : undefined}
-		aria-label={label}
 		aria-hidden={label ? undefined : 'true'}
 		data-shape={look.shape}
 		data-live={avatar ? 'mounted' : 'pending'}
