@@ -66,6 +66,9 @@
 	--color-crew-supervisor: var(--crew-supervisor);
 	--color-crew-supervisor-bg: var(--crew-supervisor-bg);
 	--color-crew-supervisor-ink: var(--crew-supervisor-ink);
+	--color-crew-iris: var(--crew-iris);
+	--color-crew-iris-bg: var(--crew-iris-bg);
+	--color-crew-iris-ink: var(--crew-iris-ink);
 	--color-bg-clear: var(--nm-bg-clear);
 	--color-code-keyword: var(--nm-code-keyword);
 	--color-code-string: var(--nm-code-string);

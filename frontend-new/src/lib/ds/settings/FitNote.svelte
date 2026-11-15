@@ -7,6 +7,6 @@
 </script>
 
 <p role="status" class="flex items-center gap-2.5 rounded-sm bg-accent-bg px-3.5 py-2.5 text-caption text-text">
-	<Mascot agent="nomi" size={20} />
+	<Mascot agent="nomi" size={20} live />
 	<span>{text}</span>
 </p>

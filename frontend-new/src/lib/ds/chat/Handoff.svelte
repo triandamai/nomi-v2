@@ -13,9 +13,9 @@
 </script>
 
 <p class="flex w-full flex-wrap items-center gap-2 rounded-sm px-3 py-2 outline -outline-offset-1 outline-border">
-	<Mascot agent={from.agent} size={20} />
+	<Mascot agent={from.agent} size={20} live />
 	<span class="inline-flex text-text-3"><Icon icon={ArrowRight} size={12} /></span>
-	<Mascot agent={to.agent} size={20} />
+	<Mascot agent={to.agent} size={20} live />
 	<span class="text-caption text-text-2">{m.handoff({ from: from.name, to: to.name })}</span>
 	<span class="min-w-0 flex-1 font-mono text-label text-text-3">{reason}</span>
 	{#if onback}

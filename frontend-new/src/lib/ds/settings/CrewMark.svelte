@@ -9,7 +9,7 @@
 </script>
 
 {#if agent}
-	<Mascot {agent} {size} />
+	<Mascot {agent} {size} live />
 {:else}
 	<span
 		data-part="mark"

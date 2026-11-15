@@ -12,7 +12,7 @@
 </script>
 
 {#snippet inside(alternative: Alternative)}
-	<Mascot agent={alternative.agent} size={20} />
+	<Mascot agent={alternative.agent} size={20} live />
 	<span class="flex min-w-0 flex-1 flex-col gap-px">
 		<span class="text-ui text-text">{alternative.title}</span>
 		{#if alternative.detail}

@@ -49,7 +49,7 @@
 		{#if form?.remixError}<p class="error" role="alert">{form.remixError}</p>{/if}
 		{#if data.apps.length === 0}
 			<div class="empty">
-				<AgentShape agent="coding" size={72} />
+				<AgentShape agent="coding" size={72} face />
 				<p class="empty__title">{data.failed ? m.showcase_failed() : m.showcase_empty()}</p>
 				<p class="empty__hint">{m.showcase_empty_hint()}</p>
 			</div>

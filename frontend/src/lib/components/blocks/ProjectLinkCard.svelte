@@ -9,8 +9,8 @@
 
 <a class="project-link" href="/projects/session/{block.session_id}" target="_blank" rel="noopener">
 	<span class="project-link__crew" aria-hidden="true">
-		<AgentShape agent="planning" size={40} working />
-		<AgentShape agent="coding" size={40} working />
+		<AgentShape agent="planning" size={40} face working />
+		<AgentShape agent="coding" size={40} face working />
 	</span>
 	<span class="project-link__text">
 		<span class="project-link__eyebrow">{m.project_link_eyebrow()}</span>

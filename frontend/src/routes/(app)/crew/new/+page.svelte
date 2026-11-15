@@ -33,7 +33,7 @@
 				<ul class="templates">
 					{#each data.templates as template (template.key)}
 						<li class="template">
-							<AgentShape agent={template.key} size={40} />
+							<AgentShape agent={template.key} size={40} face />
 							<div class="template__text">
 								<span class="template__name">{template.name}</span>
 								<span class="template__role">{template.role}</span>

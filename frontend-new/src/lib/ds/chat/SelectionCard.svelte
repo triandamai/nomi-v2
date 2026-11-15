@@ -40,7 +40,7 @@
 
 <section class="flex w-full flex-col overflow-hidden rounded-md bg-bg outline -outline-offset-1 outline-border-strong">
 	<header class="flex items-center gap-2.5 border-b border-border bg-surface pt-2.5 pr-2 pb-2.25 pl-3.5">
-		<Mascot {agent} size={20} />
+		<Mascot {agent} size={20} live />
 		<p class="min-w-0 flex-1 text-ui font-medium text-text">{question}</p>
 		<button type="button" class="cursor-pointer rounded-xs px-1.5 text-caption text-text-2 outline-offset-1 hover:text-text pointer-coarse:min-h-11" onclick={() => set(items.map(() => !all))}>
 			{all ? m.selection_none() : m.selection_all()}

@@ -52,7 +52,7 @@
 	<div class="member-page__inner">
 		<a class="member-page__back" href="/crew">← {m.crewmember_back()}</a>
 		<header class="member-page__head">
-			<AgentShape agent={key} size={64} face={key === 'nomi'} />
+			<AgentShape agent={key} size={64} face />
 			<div class="member-page__title">
 				<h1 class="md-headline-medium">{member.name}</h1>
 				<p class="member-page__role">{member.role}</p>

@@ -85,7 +85,7 @@
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <section class="flex w-full flex-col overflow-hidden rounded-md bg-bg outline -outline-offset-1 outline-border-strong" aria-labelledby="{id}-title" {onkeydown}>
 	<header class="flex items-center gap-2.5 border-b border-border bg-surface px-3.5 pt-2.5 pb-2.25">
-		<Mascot {agent} size={20} />
+		<Mascot {agent} size={20} live />
 		<p id="{id}-title" class="min-w-0 flex-1 text-ui font-medium text-text">{title}</p>
 		<span class="font-mono text-label text-text-3">{m.clarify_progress({ n: String(step + 1), total: String(questions.length) })}</span>
 	</header>

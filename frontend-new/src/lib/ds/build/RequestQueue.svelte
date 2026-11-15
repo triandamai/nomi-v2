@@ -18,7 +18,7 @@
 
 <section class="flex w-full flex-col overflow-hidden rounded-md bg-surface outline -outline-offset-1 outline-border">
 	<header class="flex items-center gap-2 px-3.5 py-2.5">
-		<Mascot agent="koda" size={20} />
+		<Mascot agent="koda" size={20} live />
 		<p class="text-ui font-medium text-text">{asks.length === 1 ? m.queue_title_one() : m.queue_title({ count: String(asks.length) })}</p>
 		<span class="min-w-0 flex-1 text-right font-mono text-label text-text-3">{m.queue_meta()}</span>
 	</header>

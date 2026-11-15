@@ -23,7 +23,7 @@
 		face = false,
 		label,
 		paint,
-		live = face && size >= 32,
+		live = face && size >= 20,
 		mood,
 		class: extraClass = '',
 	}: {
@@ -42,7 +42,7 @@
 		label?: string;
 		/** Gradient stops (any CSS colour, var() included) in place of the tone's own. */
 		paint?: string[];
-		/** When face is shown and size >= 32, renders an interactive open-bot-avatar character. */
+		/** When face is shown and size >= 20, renders an interactive open-bot-avatar character. */
 		live?: boolean;
 		/** Overrides avatar mood ('idle' | 'thinking' | 'happy'). Defaults to thinking when working, else idle. */
 		mood?: AvatarMotion;

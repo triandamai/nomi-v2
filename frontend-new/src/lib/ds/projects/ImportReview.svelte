@@ -58,7 +58,7 @@
 
 <section aria-labelledby="{id}-title" class="flex w-95 max-w-full flex-col gap-4 rounded-md bg-bg p-5 outline -outline-offset-1 outline-border">
 	<div class="flex items-center gap-2.5">
-		<Mascot agent="koda" size={20} />
+		<Mascot agent="koda" size={20} live />
 		<h2 id="{id}-title" class="min-w-0 flex-1 truncate text-ui font-medium text-text">{m.projects_review_title({ repo })}</h2>
 		<span class="shrink-0 font-mono text-label text-text-3">{meta}</span>
 	</div>

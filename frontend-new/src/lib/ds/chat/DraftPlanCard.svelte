@@ -69,7 +69,7 @@
 					aria-haspopup="menu"
 					class="inline-flex h-6.5 cursor-pointer items-center gap-1.5 rounded-sm border border-border-strong pr-1.75 pl-0.75 outline-offset-1 hover:bg-surface-2"
 				>
-					<Mascot agent={step.owner.agent} size={20} />
+					<Mascot agent={step.owner.agent} size={20} live />
 					<span class="text-caption text-text-2">{step.owner.name}</span>
 					<span class="inline-flex text-text-3"><Icon icon={ChevronDown} size={12} /></span>
 				</button>

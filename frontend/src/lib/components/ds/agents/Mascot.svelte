@@ -9,7 +9,7 @@
 		agent,
 		size = 96,
 		label,
-		live = size >= 32,
+		live = size >= 20,
 		mood = 'idle',
 	}: { agent: CrewId; size?: 96 | 32 | 20 | 16; label?: string; live?: boolean; mood?: AvatarMotion } = $props();
 </script>

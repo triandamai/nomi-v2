@@ -95,6 +95,9 @@
 	--crew-supervisor: #A587F2;
 	--crew-supervisor-bg: light-dark(#EDE7FC, #221D2E);
 	--crew-supervisor-ink: light-dark(#5B3FB0, #BFA9F5);
+	--crew-iris: #A587F2;
+	--crew-iris-bg: light-dark(#EDE7FC, #221D2E);
+	--crew-iris-ink: light-dark(#5B3FB0, #BFA9F5);
 
 	/* Type */
 	--nm-sans: "Geist Variable", "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;

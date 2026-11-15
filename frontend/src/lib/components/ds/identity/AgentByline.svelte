@@ -7,7 +7,7 @@
 </script>
 
 <span class="byline">
-	<Mascot {agent} size={20} />
+	<Mascot {agent} size={20} live />
 	<span class="name">{name}</span>
 	{#if meta}<span class="meta">{meta}</span>{/if}
 </span>

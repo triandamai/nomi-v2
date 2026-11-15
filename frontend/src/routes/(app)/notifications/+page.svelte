@@ -112,7 +112,7 @@
 							<input type="hidden" name="id" value={item.id} />
 							{#if item.link}<input type="hidden" name="link" value={item.link} />{/if}
 							<button type="submit" class="item" class:item--unread={!item.read}>
-								<AgentShape agent={kind.agent} size={40} />
+								<AgentShape agent={kind.agent} size={40} face />
 								<span class="item__text">
 									<span class="item__meta">
 										<span class="item__kind">{kind.label()}</span>

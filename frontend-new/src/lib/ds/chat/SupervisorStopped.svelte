@@ -17,7 +17,7 @@
 
 <section class="flex w-full flex-col overflow-hidden rounded-md bg-bg outline -outline-offset-1 outline-border-strong">
 	<header class="flex items-center gap-2.5 border-b border-border bg-surface px-3.5 pt-2.5 pb-2.25">
-		<Mascot agent="supervisor" size={20} />
+		<Mascot agent="supervisor" size={20} live />
 		<p class="min-w-0 flex-1 text-ui font-medium text-text">{tasks.length === 1 ? m.supervisor_stopped_one() : m.supervisor_stopped({ count: String(tasks.length) })}</p>
 		{#if meta}<span class="font-mono text-label text-text-3">{meta}</span>{/if}
 	</header>
@@ -25,7 +25,7 @@
 		{#each tasks as task, index (index)}
 			<li class={['flex flex-wrap items-center gap-2.5 pb-2', index > 0 ? 'border-t border-border pt-1.75' : 'pt-2']}>
 				<span class={['inline-flex shrink-0', task.state === 'done' ? 'text-accent' : 'text-text-3']}><Icon icon={ICON[task.state]} size={14} /></span>
-				<Mascot agent={task.agent} size={20} />
+				<Mascot agent={task.agent} size={20} live />
 				<span class="min-w-0 flex-1 text-ui text-text">{task.title}</span>
 				{#if task.detail}<span class="font-mono text-label text-text-3">{task.detail}</span>{/if}
 			</li>

@@ -13,7 +13,7 @@
 		<li>
 			<a class="plans__item" href="/chat/{plan.session_id}">
 				<span class="plans__row">
-					<AgentShape agent={plan.agent} size={20} />
+					<AgentShape agent={plan.agent} size={20} face />
 					<span class="plans__name">{plan.title}</span>
 					<span class="plans__count">{plan.total > 0 ? `${plan.done} / ${plan.total}` : m.home_plan_draft()}</span>
 				</span>

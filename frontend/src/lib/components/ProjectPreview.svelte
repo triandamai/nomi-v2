@@ -68,7 +68,7 @@
 {#if !runtime || runtime.phase === 'unsupported'}
 	{#if files.length === 0}
 		<div class="preview preview--status">
-			<AgentShape agent="coding" size={72} working />
+			<AgentShape agent="coding" size={72} face working />
 			<h3 class="preview__title">{m.project_nothing_yet()}</h3>
 			<p class="preview__note">{m.project_nothing_yet_body()}</p>
 		</div>
@@ -84,7 +84,7 @@
 		</div>
 	{:else}
 		<div class="preview preview--status">
-			<AgentShape agent="coding" size={72} />
+			<AgentShape agent="coding" size={72} face />
 			<h3 class="preview__title">{m.project_live_needed()}</h3>
 			<p class="preview__note">{staticStack ? m.project_no_index() : m.project_live_needed_body()}</p>
 			<div class="preview__actions">

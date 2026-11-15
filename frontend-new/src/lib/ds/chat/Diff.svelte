@@ -44,7 +44,7 @@
 		<footer class="flex flex-wrap items-center gap-2 border-t border-border px-3.5 pt-2.25 pb-2.5">
 			<span class="flex min-w-0 flex-1 basis-48 items-center gap-1.5">
 				{#if request}
-					<Mascot agent={request.agent} size={20} />
+					<Mascot agent={request.agent} size={20} live />
 					<span class="text-caption text-text-2">
 						{request.files === 1 ? m.diff_request_one({ name: request.name }) : m.diff_request({ name: request.name, count: String(request.files) })}
 					</span>
