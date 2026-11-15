@@ -38,8 +38,8 @@ export async function loadWorkspace(event: ApiEvent, id: string): Promise<Worksp
 const org = (id: string) => `/api/orgs/${encodeURIComponent(id)}`;
 
 export const rename = (event: ApiEvent, id: string, name: string) => send<unknown>(event, org(id), 'PATCH', { name });
-export const invite = (event: ApiEvent, id: string, email: string, role: Exclude<OrgRole, 'owner'>, origin?: string) =>
-	send<OrgInvite>(event, `${org(id)}/invites`, 'POST', { email, role, ...(origin ? { origin } : {}) });
+export const invite = (event: ApiEvent, id: string, email: string, role: Exclude<OrgRole, 'owner'>) =>
+	send<OrgInvite>(event, `${org(id)}/invites`, 'POST', { email, role });
 export const revoke = (event: ApiEvent, id: string, code: string) => send<void>(event, `${org(id)}/invites/${encodeURIComponent(code)}`, 'DELETE');
 export const setRole = (event: ApiEvent, id: string, userId: string, role: OrgRole) => send<void>(event, `${org(id)}/members/${encodeURIComponent(userId)}`, 'PATCH', { role });
 /** Removes someone, or leaves when it's the person themselves. */

@@ -36,7 +36,7 @@ export const actions: Actions = {
 		const role = field(form, 'role') === 'admin' ? 'admin' : 'member';
 		const failed: { email: string; message: string }[] = [];
 		for (const email of valid) {
-			const sent = await workspaces.invite(event, event.params.id, email, role, event.url.origin);
+			const sent = await workspaces.invite(event, event.params.id, email, role);
 			if (!sent.ok) failed.push({ email, message: sent.message || m.action_failed() });
 		}
 		return { sent: valid.length - failed.length, failed };
