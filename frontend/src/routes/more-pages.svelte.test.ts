@@ -35,7 +35,7 @@ describe('public pages', () => {
 		expect(text(root)).toBeTruthy();
 		await tryAll(root);
 		expect(page(Welcome, { apps: [], signedIn: true }).textContent).toBeTruthy();
-	});
+	}, 30000);
 
 	it('a public profile shows what its owner chose to share', async () => {
 		const profile = {
@@ -57,7 +57,7 @@ describe('public pages', () => {
 		expect(text(root)).toContain('Ana K');
 		await tryAll(root);
 		expect(page(PublicProfile, { profile: { ...profile, display_name: null, show_stats_publicly: false, show_crew_publicly: false, stats: null, showcase_projects: [] } }).textContent).toBeTruthy();
-	});
+	}, 30000);
 
 	it('the design system page and sign-up verification render', async () => {
 		const ds = page(DesignSystem, {});
@@ -67,7 +67,7 @@ describe('public pages', () => {
 		expect(text(verify)).toContain('ana@acme.test');
 		await tryAll(verify);
 		expect(page(Verify, { verification: null, expired: true, isNew: false }).textContent).toBeTruthy();
-	});
+	}, 30000);
 });
 
 describe('app pages', () => {

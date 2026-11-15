@@ -2695,5 +2695,11 @@
 	"database_edit_cell": "Edit {column} of row {row}",
 	"database_edit_failed": "The row couldn’t be saved",
 	"database_saved": "Saved",
-	"database_editing_note": "Editing {table} in the {database} database. Enter saves a cell; Esc puts it back."
+	"database_editing_note": "Editing {table} in the {database} database. Enter saves a cell; Esc puts it back.",
+	"monitor_form_sends": "Form sends",
+	"monitor_form_share": "{share} of visits",
+	"monitor_uptime": "Uptime",
+	"monitor_uptime_for": "looked at for {time}",
+	"monitor_sources": "Where visits come from",
+	"monitor_sources_none": "Not measured yet: the site reports where its visits come from once it’s published again."
 }

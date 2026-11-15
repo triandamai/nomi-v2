@@ -15,6 +15,7 @@ RUN npm run build
 FROM node:22-bookworm-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
+ENV BODY_SIZE_LIMIT=Infinity
 # The live-chat WebSocket relay (ws-proxy) runs outside the build and reads it here.
 ARG APP_VERSION=""
 ENV APP_VERSION=${APP_VERSION}

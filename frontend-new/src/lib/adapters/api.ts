@@ -461,7 +461,19 @@ export type DomainAnswer = { available: boolean; reason?: string; message?: stri
 export type MetricsRange = '1h' | '24h' | '7d';
 export type MetricsCounters = { visitors: number | null; requests: number | null; errors_5xx: number | null; errors_4xx: number | null; p50_ms: number | null; p95_ms: number | null };
 export type MetricsBucket = MetricsCounters & { at: string };
-export type ProjectMetrics = { range: MetricsRange; step: string; buckets: MetricsBucket[]; totals: MetricsCounters; previous_totals: MetricsCounters };
+export type ProjectMetrics = {
+	range: MetricsRange;
+	step: string;
+	buckets: MetricsBucket[];
+	totals: MetricsCounters;
+	previous_totals: MetricsCounters;
+	/** Where a site's visits came from (shares of 1), from the script a publish puts in its pages; null until reported. */
+	sources?: { name: string; share: number }[] | null;
+	/** Forms sent on the site in the range; null until reported. */
+	form_sends?: number | null;
+	/** The share of 5-minute looks that got an answer, and since the first look; null until looked at. */
+	uptime?: { share: number; since: string } | null;
+};
 /** One container of the running app (`/deploy/usage`): its stats now, null when not measured. */
 export type ContainerUsage = {
 	service: string;

@@ -53,7 +53,13 @@ async function post(event: ApiEvent, path: string, body?: unknown): Promise<Sent
 		if (isRedirect(error)) throw error;
 		return { ok: false, status: 503, message: '' };
 	}
-	return response.ok ? { ok: true } : { ok: false, status: response.status, message: (await response.text()).trim().slice(0, 300) };
+	let message = (await response.text()).trim().slice(0, 300);
+	try {
+		const parsed = JSON.parse(message);
+		if (typeof parsed?.message === 'string') message = parsed.message;
+		else if (typeof parsed?.error === 'string') message = parsed.error;
+	} catch {}
+	return response.ok ? { ok: true } : { ok: false, status: response.status, message };
 }
 
 /** Sends the project's current files live (production); the publish runs on its own. */
