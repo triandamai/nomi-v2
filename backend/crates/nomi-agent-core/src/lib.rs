@@ -35,6 +35,7 @@ pub mod stop;
 pub mod subagent;
 pub mod suggestions;
 pub mod tool_catalog;
+pub mod tool_finder;
 pub mod tools;
 pub mod views;
 pub mod voice;
@@ -48,7 +49,7 @@ pub use content_block::{ApprovalStatus, ContentBlock, FileWriteEntry, TableColum
 pub use dynamic_agent::{DynamicAgent, DynamicAgentRow};
 pub use engine::{
     crew_tool_definitions, resolve_tool_batch, run_agent_turn, LoopOutcome, ToolBatchOutcome, CANCEL_REMINDER_TOOL_NAME,
-    COMPLETE_TASK_TOOL_NAME, CREATE_REMINDER_TOOL_NAME, DELEGATE_TOOL_NAME, LIST_REMINDERS_TOOL_NAME,
+    COMPLETE_TASK_TOOL_NAME, CREATE_AGENT_TOOL_NAME, CREATE_REMINDER_TOOL_NAME, FIND_TOOLS_TOOL_NAME, DELEGATE_TOOL_NAME, LIST_REMINDERS_TOOL_NAME,
     UPDATE_TODOS_TOOL_NAME, WRITE_PLAN_TOOL_NAME,
 };
 pub use error::TurnError;

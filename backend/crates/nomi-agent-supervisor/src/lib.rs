@@ -141,6 +141,10 @@ impl SubAgent for SupervisorAgent {
     fn is_delegation_target(&self) -> bool {
         false
     }
+
+    fn creates_crew_members(&self) -> bool {
+        true
+    }
 }
 
 pub async fn list_recent_agent_activity(conn: &mut PoolConnection<Postgres>, session_id: Uuid) -> Result<String, String> {

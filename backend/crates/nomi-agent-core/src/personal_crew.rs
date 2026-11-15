@@ -7,10 +7,11 @@ use std::collections::{HashMap, HashSet};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::PgConnection;
+use sqlx::{Connection, PgConnection};
 use uuid::Uuid;
 
 use crate::prompts;
+use crate::tool_catalog::ToolCatalog;
 
 /// What a member may do with one tool, for this person.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -335,6 +336,182 @@ pub fn template(key: &str) -> Option<&'static CrewTemplate> {
     TEMPLATES.iter().find(|t| t.key == key)
 }
 
+/// The longest soul.md a member keeps.
+pub const SOUL_MAX_CHARS: usize = 8_000;
+/// The most members of their own a person keeps, whatever their plan allows.
+pub const MAX_OWN_MEMBERS: i64 = 20;
+/// The longest name and role of a member of one's own.
+pub const NAME_MAX_CHARS: usize = 40;
+pub const ROLE_MAX_CHARS: usize = 200;
+/// The look of a member made without picking one.
+pub const DEFAULT_SHAPE: &str = "cookie9";
+pub const DEFAULT_TONE: &str = "glow";
+pub const DEFAULT_MOTION: &str = "spin";
+
+/// A member of the person's own, about to be added (Settings › Crew, or Nomi's `create_agent`).
+#[derive(Debug, Clone)]
+pub struct NewMember {
+    pub name: String,
+    pub role: String,
+    /// Empty: no soul.md yet.
+    pub soul: String,
+    pub tools: Vec<String>,
+    pub template_key: Option<&'static str>,
+    pub shape: String,
+    pub tone: String,
+    pub motion: String,
+}
+
+/// The member `create_member` added.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CreatedMember {
+    pub agent_type: String,
+    pub name: String,
+    pub role: String,
+    pub tools: Vec<String>,
+    /// 0 when it has no soul.md.
+    pub soul_version: i32,
+}
+
+/// Why a member wasn't added. Each carries the text to show the person.
+#[derive(Debug)]
+pub enum CreateMemberError {
+    /// Something in the request is wrong (too long, an unknown tool).
+    Invalid(String),
+    /// The name is taken in their crew.
+    Taken(String),
+    /// They already keep `MAX_OWN_MEMBERS`.
+    TooMany(String),
+    /// Their plan's `max_custom_crew` is reached.
+    PlanLimit(String),
+    Db(sqlx::Error),
+}
+
+impl CreateMemberError {
+    pub fn message(&self) -> String {
+        match self {
+            Self::Invalid(m) | Self::Taken(m) | Self::TooMany(m) | Self::PlanLimit(m) => m.clone(),
+            Self::Db(_) => "failed to add the member".to_string(),
+        }
+    }
+}
+
+impl From<sqlx::Error> for CreateMemberError {
+    fn from(e: sqlx::Error) -> Self {
+        Self::Db(e)
+    }
+}
+
+/// The first of `tools` the catalog doesn't have, as the error naming it.
+pub fn check_tool_names(catalog: &ToolCatalog, tools: &[String]) -> Result<(), String> {
+    let known = catalog.known_tool_names();
+    match tools.iter().find(|t| !known.contains(&t.as_str())) {
+        Some(tool) => Err(format!("unknown tool {tool}")),
+        None => Ok(()),
+    }
+}
+
+/// The lengths a member's name, role and soul.md may have.
+pub fn check_member_text(name: &str, role: &str, soul: &str) -> Result<(), String> {
+    if name.trim().is_empty() {
+        return Err("name is required".to_string());
+    }
+    if role.trim().is_empty() {
+        return Err("role is required".to_string());
+    }
+    if name.chars().count() > NAME_MAX_CHARS {
+        return Err(format!("name is at most {NAME_MAX_CHARS} characters"));
+    }
+    if role.chars().count() > ROLE_MAX_CHARS {
+        return Err(format!("role is at most {ROLE_MAX_CHARS} characters"));
+    }
+    if soul.chars().count() > SOUL_MAX_CHARS {
+        return Err(format!("soul.md is at most {SOUL_MAX_CHARS} characters"));
+    }
+    Ok(())
+}
+
+fn taken(name: &str) -> CreateMemberError {
+    CreateMemberError::Taken(format!("{name} is already in the crew"))
+}
+
+/// Adds `member` to `user_id`'s own crew: only they see it, talk to it and can route to it; its
+/// soul.md (when given) starts at version 1. `crew_names` are the built-in members' names: a
+/// mention goes by name, so one of theirs would never reach it. Enforces the hard cap and the
+/// plan's `max_custom_crew`. The one way a member of one's own is made (`POST /api/agents` and
+/// the `create_agent` tool).
+pub async fn create_member(
+    conn: &mut PgConnection,
+    user_id: Uuid,
+    member: NewMember,
+    catalog: &ToolCatalog,
+    crew_names: &[String],
+) -> Result<CreatedMember, CreateMemberError> {
+    let NewMember { name, role, soul, tools, template_key, shape, tone, motion } = member;
+    check_member_text(&name, &role, &soul).map_err(CreateMemberError::Invalid)?;
+    check_tool_names(catalog, &tools).map_err(CreateMemberError::Invalid)?;
+    if crew_names.iter().any(|n| n.eq_ignore_ascii_case(&name)) {
+        return Err(taken(&name));
+    }
+
+    let mut tx = conn.begin().await?;
+    let own: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM dynamic_agents WHERE owner_user_id = $1")
+        .bind(user_id)
+        .fetch_one(&mut *tx)
+        .await?;
+    if own >= MAX_OWN_MEMBERS {
+        return Err(CreateMemberError::TooMany(format!("a crew keeps at most {MAX_OWN_MEMBERS} members of your own")));
+    }
+    // The plan's own limit on members of one's own, under the hard cap above.
+    if let Err(hit) = nomi_usage::entitlements::check_new_crew_member(&mut tx, user_id).await? {
+        return Err(CreateMemberError::PlanLimit(hit.message()));
+    }
+    let name_taken: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM dynamic_agents WHERE lower(name) = lower($1) AND is_active AND (owner_user_id IS NULL OR owner_user_id = $2))",
+    )
+    .bind(&name)
+    .bind(user_id)
+    .fetch_one(&mut *tx)
+    .await?;
+    if name_taken {
+        return Err(taken(&name));
+    }
+    let id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO dynamic_agents (id, name, system_prompt, intent_label, intent_description, granted_tools, created_by, owner_user_id, template_key, shape, tone, motion) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $8, $9, $10, $11)",
+    )
+    .bind(id)
+    .bind(&name)
+    .bind(personal_member_prompt(&name, &role))
+    .bind(intent_label_for(&name, id))
+    .bind(&role)
+    .bind(&tools)
+    .bind(user_id)
+    .bind(template_key)
+    .bind(&shape)
+    .bind(&tone)
+    .bind(&motion)
+    .execute(&mut *tx)
+    .await?;
+    let agent_type = id.to_string();
+    let soul_version = if soul.is_empty() { 0 } else { save_soul(&mut tx, user_id, &agent_type, &soul).await? };
+    tx.commit().await?;
+    Ok(CreatedMember { agent_type, name, role, tools, soul_version })
+}
+
+/// Replaces the tools of `user_id`'s own member `id`. False when they have no such member.
+pub async fn set_member_tools(conn: &mut PgConnection, user_id: Uuid, id: Uuid, tools: &[String]) -> Result<bool, sqlx::Error> {
+    let updated = sqlx::query("UPDATE dynamic_agents SET granted_tools = $3, updated_at = now() WHERE id = $1 AND owner_user_id = $2")
+        .bind(id)
+        .bind(user_id)
+        .bind(tools)
+        .execute(conn)
+        .await?
+        .rows_affected();
+    Ok(updated > 0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -364,6 +541,26 @@ mod tests {
         assert!(TEMPLATES
             .iter()
             .all(|t| !t.soul.is_empty() && template(t.key).is_some()));
+    }
+
+    #[test]
+    fn member_text_is_checked_for_presence_and_length() {
+        assert!(check_member_text("Chef", "cooks", "").is_ok());
+        assert_eq!(check_member_text(" ", "cooks", "").unwrap_err(), "name is required");
+        assert_eq!(check_member_text("Chef", "", "").unwrap_err(), "role is required");
+        let long_name = "x".repeat(NAME_MAX_CHARS + 1);
+        assert!(check_member_text(&long_name, "cooks", "").unwrap_err().starts_with("name is at most"));
+        let long_role = "x".repeat(ROLE_MAX_CHARS + 1);
+        assert!(check_member_text("Chef", &long_role, "").unwrap_err().starts_with("role is at most"));
+        let long_soul = "x".repeat(SOUL_MAX_CHARS + 1);
+        assert!(check_member_text("Chef", "cooks", &long_soul).unwrap_err().starts_with("soul.md is at most"));
+    }
+
+    #[test]
+    fn tool_names_are_checked_against_the_catalog() {
+        let catalog = ToolCatalog::empty();
+        assert!(check_tool_names(&catalog, &[]).is_ok());
+        assert_eq!(check_tool_names(&catalog, &["made_up".to_string()]).unwrap_err(), "unknown tool made_up");
     }
 
     #[test]

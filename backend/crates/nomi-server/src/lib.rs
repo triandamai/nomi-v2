@@ -47,7 +47,9 @@ pub mod worker;
 /// Every built-in agent. Rena and Koda publish projects, and Iris inspects them, through
 /// `project_ops::ServerProjectOps`; Rena makes Relay backends, and Koda works on them, through
 /// `relay_ops::ServerRelayOps`.
+/// The registry knows the tool catalog (`build_tool_catalog`), for `find_tools` and `create_agent`.
 pub fn build_agent_registry(pool: &sqlx::PgPool, project_storage: nomi_storage::ProjectStore) -> nomi_agent_core::AgentRegistry {
+    let catalog = build_tool_catalog(project_storage.clone());
     let project_ops = project_ops::ServerProjectOps::shared(pool.clone(), project_storage.clone());
     let relay_ops = relay_ops::ServerRelayOps::shared(pool.clone(), project_storage.clone());
     nomi_agent_core::AgentRegistry::new(vec![
@@ -63,6 +65,27 @@ pub fn build_agent_registry(pool: &sqlx::PgPool, project_storage: nomi_storage::
         Box::new(nomi_agent_coding::CodingAgent::new(project_storage).with_project_ops(project_ops.clone()).with_relay_ops(relay_ops).with_sandbox_ops(sandbox_ops::ServerSandboxOps::shared(pool.clone()))),
         Box::new(nomi_agent_inspector::InspectorAgent::new().with_project_ops(project_ops)),
     ])
+    .with_tool_catalog(catalog)
+}
+
+/// Writes the tool catalog into `tool_catalog_entries` (a failure is logged, never fatal), then
+/// embeds the rows that need it in the background, so startup never waits on the embedding
+/// provider.
+pub async fn sync_tool_catalog(pool: &sqlx::PgPool, catalog: &nomi_agent_core::ToolCatalog, settings_key: [u8; 32], http_client: reqwest::Client) {
+    let synced = match pool.acquire().await {
+        Ok(mut conn) => nomi_agent_core::tool_finder::sync_catalog_table(&mut conn, catalog).await,
+        Err(e) => Err(e),
+    };
+    if let Err(e) = synced {
+        tracing::warn!(error = %e, "tool catalog: couldn't sync the catalog table; find_tools matches by words alone");
+        return;
+    }
+    let pool = pool.clone();
+    tokio::spawn(async move {
+        let provider = bootstrap::build_embedding_provider_from_settings_or_env(&pool, &settings_key, http_client, None).await;
+        let embedded = nomi_agent_core::tool_finder::embed_catalog_entries(&pool, provider.as_ref()).await;
+        tracing::info!(embedded, "tool catalog: embeddings up to date");
+    });
 }
 
 /// The one place a crate's grantable tools get wired into `ToolCatalog`: implement

@@ -49,6 +49,8 @@ pub const READ_PLAN_TOOL_NAME: &str = "read_plan";
 pub const CREATE_REMINDER_TOOL_NAME: &str = "create_reminder";
 pub const LIST_REMINDERS_TOOL_NAME: &str = "list_reminders";
 pub const CANCEL_REMINDER_TOOL_NAME: &str = "cancel_reminder";
+pub const FIND_TOOLS_TOOL_NAME: &str = "find_tools";
+pub const CREATE_AGENT_TOOL_NAME: &str = "create_agent";
 
 const PHASE_THINKING: &str = "thinking";
 const PHASE_CALLING_TOOL: &str = "calling_tool";
@@ -454,6 +456,45 @@ fn cancel_reminder_tool_definition() -> ToolDefinition {
     }
 }
 
+pub fn find_tools_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        name: FIND_TOOLS_TOOL_NAME.to_string(),
+        description: "Search every tool the crew can be given, by what a task needs (e.g. \"track my spending\", \
+                       \"send an email\"). Returns the best matches with what each does, whether you have it \
+                       (granted), and which crew members have it (carried_by). It only informs: you can still call \
+                       only the tools you were given."
+            .to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "A few words about the task or the tool you're looking for"},
+                "limit": {"type": "integer", "description": "How many tools at most (default 8, up to 20)"}
+            },
+            "required": ["query"]
+        }),
+    }
+}
+
+pub fn create_agent_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        name: CREATE_AGENT_TOOL_NAME.to_string(),
+        description: "Add a new member to the person's own crew, for a task they want an agent for. Call find_tools \
+                       first and pass the names of the tools that fit. The member is theirs alone; their plan may \
+                       limit how many they can have."
+            .to_string(),
+        input_schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "A short name, unlike any crew member's (at most 40 characters)"},
+                "role": {"type": "string", "description": "Its job in one sentence (at most 200 characters)"},
+                "soul": {"type": "string", "description": "Optional soul.md: who it is and how it works, in markdown"},
+                "tools": {"type": "array", "items": {"type": "string"}, "description": "Tool names from find_tools; may be empty"}
+            },
+            "required": ["name", "role", "tools"]
+        }),
+    }
+}
+
 /// A built-in agent's own tools, which Admin → Tools switches never take away from it.
 fn always_on_own_tools(agent: &dyn SubAgent) -> std::collections::HashSet<String> {
     if agent.own_tools_switchable() {
@@ -486,6 +527,8 @@ pub fn crew_tool_definitions(registry: &AgentRegistry) -> Vec<ToolDefinition> {
     tools.push(crate::web::read_web_page_tool_definition());
     tools.push(crate::voice::speak_tool_definition());
     tools.push(crate::attachments::read_attachment_tool_definition());
+    tools.push(find_tools_tool_definition());
+    tools.push(create_agent_tool_definition());
     tools
 }
 
@@ -530,6 +573,8 @@ pub fn is_gateable(tool_name: &str) -> bool {
         && tool_name != CREATE_REMINDER_TOOL_NAME
         && tool_name != LIST_REMINDERS_TOOL_NAME
         && tool_name != CANCEL_REMINDER_TOOL_NAME
+        // Looking through the tool catalog changes nothing.
+        && tool_name != FIND_TOOLS_TOOL_NAME
         // Talking with the crew stays in the chat.
         && tool_name != crate::crew_talk::ASK_AGENT_TOOL_NAME
         && tool_name != crate::crew_talk::NOTE_TOOL_NAME
@@ -679,6 +724,13 @@ async fn run_agent_turn_in_reply(
         tools.push(create_reminder_tool_definition(&targets));
         tools.push(list_reminders_tool_definition());
         tools.push(cancel_reminder_tool_definition());
+    }
+    // Looking through the tool catalog, and (Nomi and the supervisor) making crew members with it.
+    if registry.tool_catalog().is_some() {
+        tools.push(find_tools_tool_definition());
+        if agent.creates_crew_members() {
+            tools.push(create_agent_tool_definition());
+        }
     }
     // The web tools, and whatever an admin switched off in Admin → Tools.
     let switches = crate::tools::ToolSwitches::load(conn).await;
@@ -1116,7 +1168,7 @@ async fn run_agent_turn_in_reply(
             }
         }
 
-        match resolve_tool_batch_in_reply(conn, mqtt, s3, Some(provider), registry, agent, session_id, agent_session_id, user_id, &pending_tool_use_blocks, &messages, &[]).await? {
+        match resolve_tool_batch_in_reply(conn, mqtt, s3, Some(provider), Some(embedding_provider), registry, agent, session_id, agent_session_id, user_id, &pending_tool_use_blocks, &messages, &[]).await? {
             ToolBatchOutcome::AwaitingApproval { message_id } => {
                 tracing::info!(%session_id, %agent_session_id, %message_id, "agent turn paused awaiting approval");
                 return Ok(LoopOutcome::AwaitingApproval { message_id });
@@ -1256,6 +1308,8 @@ pub async fn resolve_tool_batch(
         mqtt,
         s3,
         provider,
+        // A resumed batch matches find_tools by words alone.
+        None,
         registry,
         agent,
         session_id,
@@ -1275,6 +1329,8 @@ async fn resolve_tool_batch_in_reply(
     s3: Option<&nomi_storage::S3Config>,
     // For asking another crew member (ask_agent).
     provider: Option<&dyn LlmProvider>,
+    // For find_tools' matches by meaning; without it, by words alone.
+    embedding: Option<&dyn EmbeddingProvider>,
     registry: &AgentRegistry,
     agent: &dyn SubAgent,
     session_id: Uuid,
@@ -1541,6 +1597,11 @@ async fn resolve_tool_batch_in_reply(
                     Ok((text, block)) => (text, false, Some(block)),
                     Err(err) => (err, true, None),
                 }
+            } else if let (FIND_TOOLS_TOOL_NAME, Some(catalog)) = (name.as_str(), registry.tool_catalog()) {
+                match crate::tool_finder::find_tools(conn, registry, catalog, embedding, &switches, agent, user_id, input).await {
+                    Ok(text) => (text, false, None),
+                    Err(err) => (err, true, None),
+                }
             } else if crate::web::is_web_tool(name) {
                 match crate::web::execute(conn, name, input).await {
                     Some(Ok(text)) => (text, false, None),
@@ -1551,7 +1612,7 @@ async fn resolve_tool_batch_in_reply(
                 (crate::prompts::MEMBER_TOOL_NEVER_RESULT.to_string(), true, None)
             } else if let Some((_, approved)) = already_decided.iter().find(|(decided_id, _)| decided_id == id) {
                 if *approved {
-                    match agent.execute_tool(conn, session_id, agent_session_id, user_id, name, input.clone()).await {
+                    match execute_agent_tool(conn, registry, agent, session_id, agent_session_id, user_id, name, input.clone()).await {
                         Ok(outcome) => (outcome.display_text, false, outcome.block),
                         Err(err) => (describe_tool_error(name, input, &err, locale), true, None),
                     }
@@ -1566,7 +1627,7 @@ async fn resolve_tool_batch_in_reply(
             {
                 (USER_DENIED_RESULT.to_string(), true, None)
             } else {
-                match agent.execute_tool(conn, session_id, agent_session_id, user_id, name, input.clone()).await {
+                match execute_agent_tool(conn, registry, agent, session_id, agent_session_id, user_id, name, input.clone()).await {
                     Ok(outcome) => (outcome.display_text, false, outcome.block),
                     Err(err) => (describe_tool_error(name, input, &err, locale), true, None),
                 }
@@ -1596,6 +1657,7 @@ async fn resolve_tool_batch_in_reply(
                     && name.as_str() != CREATE_REMINDER_TOOL_NAME
                     && name.as_str() != LIST_REMINDERS_TOOL_NAME
                     && name.as_str() != CANCEL_REMINDER_TOOL_NAME
+                    && name.as_str() != FIND_TOOLS_TOOL_NAME
                     && !crate::background::BACKGROUND_TOOL_NAMES.contains(&name.as_str())
                     && !crate::web::is_web_tool(name)
                     && !crate::records::RECORD_TOOL_NAMES.contains(&name.as_str()));
@@ -1615,6 +1677,26 @@ async fn resolve_tool_batch_in_reply(
     }
 
     Ok(ToolBatchOutcome::Resolved(tool_results))
+}
+
+/// Runs one of the agent's tools that the person may have to approve: its own, or `create_agent`
+/// (which the engine runs for Nomi and the supervisor, through the same approval and levels).
+#[allow(clippy::too_many_arguments)]
+async fn execute_agent_tool(
+    conn: &mut PoolConnection<Postgres>,
+    registry: &AgentRegistry,
+    agent: &dyn SubAgent,
+    session_id: Uuid,
+    agent_session_id: Uuid,
+    user_id: Uuid,
+    name: &str,
+    input: serde_json::Value,
+) -> Result<crate::content_block::ToolOutcome, String> {
+    if name == CREATE_AGENT_TOOL_NAME && agent.creates_crew_members() {
+        let Some(catalog) = registry.tool_catalog() else { return Err("the tool catalog isn't available".to_string()) };
+        return crate::tool_finder::create_agent(conn, registry, catalog, user_id, &input).await.map(crate::content_block::ToolOutcome::text);
+    }
+    agent.execute_tool(conn, session_id, agent_session_id, user_id, name, input).await
 }
 
 /// The plain text a posted card stands for (a view's own text).
@@ -2046,6 +2128,17 @@ mod background_engine_tests {
         fn intent_label(&self) -> Cow<'static, str> { Cow::Borrowed("chitchat") }
         fn intent_description(&self) -> Cow<'static, str> { Cow::Borrowed("default") }
         fn is_default(&self) -> bool { true }
+    }
+
+    #[test]
+    fn crew_tools_list_find_tools_ungated_and_create_agent_gated() {
+        let registry = AgentRegistry::new(vec![Box::new(DummyDefaultAgent)]);
+        let defs = crew_tool_definitions(&registry);
+        let names: Vec<&str> = defs.iter().map(|d| d.name.as_str()).collect();
+        assert!(names.contains(&FIND_TOOLS_TOOL_NAME) && names.contains(&CREATE_AGENT_TOOL_NAME));
+        assert!(!is_gateable(FIND_TOOLS_TOOL_NAME), "looking through the catalog changes nothing");
+        assert!(is_gateable(CREATE_AGENT_TOOL_NAME), "making a member goes through the person's permission level");
+        assert!(!crate::tools::REQUIRED_TOOLS.contains(&FIND_TOOLS_TOOL_NAME), "an admin can switch it off");
     }
 
     #[test]
