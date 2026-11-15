@@ -2703,5 +2703,11 @@
 	"search_empty": "Nothing found for “{query}”",
 	"search_searching": "Searching…",
 	"search_failed": "Search isn’t answering. Try again in a moment.",
-	"search_shortcut": "Search"
+	"search_shortcut": "Search",
+	"monitor_form_sends": "Form sends",
+	"monitor_form_share": "{share} of visits",
+	"monitor_uptime": "Uptime",
+	"monitor_uptime_for": "looked at for {time}",
+	"monitor_sources": "Where visits come from",
+	"monitor_sources_none": "Not measured yet: the site reports where its visits come from once it’s published again."
 }

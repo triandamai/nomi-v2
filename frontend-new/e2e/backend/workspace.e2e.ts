@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { api, createAccount, signInAs } from './support/accounts';
+import { markPublished, siteHits } from './support/seed';
+import { APP_URL } from './support/env';
 
 // A project's workspace against the real backend (Flow / Build — Sign in → live URL o882RC,
 // Building and Live): started from Projects it opens in its workspace with Koda on it; the chat
@@ -268,4 +270,25 @@ test('a static site’s preview runs its own CSS and scripts, sandboxed away fro
 	expect((await page.request.get(`/projects/${id}/preview/`)).status()).toBe(403);
 	await context.clearCookies();
 	expect((await page.request.get(src.replace(/~[^/]+/, '~made-up'))).status()).toBe(403);
+});
+
+test('a published site’s visits and forms reach Nomi through this app, from the site’s own address', async ({ playwright }) => {
+	const account = await createAccount();
+	const home = ((await (await api(account, '/api/orgs')).json()) as { orgs: { id: string }[] }).orgs[0].id;
+	const id = ((await (await api(account, '/api/projects', { method: 'POST', body: JSON.stringify({ org_id: home }) })).json()) as { project_id: string }).project_id;
+	await markPublished(id);
+	// The site's script sends from the visitor's browser on the site's own address, signed in to
+	// nothing: a cross-site beacon without a form type, which the app passes on and answers empty.
+	const visitor = await playwright.request.newContext({ baseURL: APP_URL });
+	const report = (body: object) => visitor.post(`/hooks/sites/${id}`, { data: Buffer.from(JSON.stringify(body)), headers: { origin: 'https://warungkopi.id', 'content-type': '' } });
+	const visit = await report({ k: 'v', r: 'https://www.instagram.com/p/123', h: 'warungkopi.id' });
+	expect([visit.status(), visit.headers()['access-control-allow-origin']]).toEqual([204, '*']);
+	expect((await report({ k: 'f', r: '', h: 'warungkopi.id' })).status()).toBe(204);
+	// A move between the site's own pages isn't an arrival.
+	expect((await report({ k: 'v', r: 'https://warungkopi.id/menu', h: 'warungkopi.id' })).status()).toBe(204);
+	await expect.poll(() => siteHits(id)).toEqual([
+		{ kind: 'visit', referrer_host: 'www.instagram.com' },
+		{ kind: 'form', referrer_host: null },
+	]);
+	await visitor.dispose();
 });

@@ -2703,5 +2703,11 @@
 	"search_empty": "Tidak ada yang cocok dengan “{query}”",
 	"search_searching": "Mencari…",
 	"search_failed": "Pencarian tidak menjawab. Coba lagi sebentar lagi.",
-	"search_shortcut": "Cari"
+	"search_shortcut": "Cari",
+	"monitor_form_sends": "Formulir terkirim",
+	"monitor_form_share": "{share} dari kunjungan",
+	"monitor_uptime": "Uptime",
+	"monitor_uptime_for": "dipantau selama {time}",
+	"monitor_sources": "Asal kunjungan",
+	"monitor_sources_none": "Belum diukur: situs melaporkan asal kunjungannya setelah diterbitkan lagi."
 }

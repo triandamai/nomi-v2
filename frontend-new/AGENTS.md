@@ -639,10 +639,13 @@ steps; what isn't there yet is left out, not drawn dead:
   Preview and Code only.
 - A site (Flow / Build — Landing page `WUiji`) uses the same workspace. Database shows only when the
   site keeps tables (step 3: "the tabs only show what this site has"). Share already leads with the
-  card and its send-to apps, with no QR (step 4). Monitor (step 5) leads with visits and the page
-  load, and its bars count visits; the pen's "Where visits come from", Form sends and Uptime aren't
-  measured (BACKEND_TODO.md), so requests and errors take their places. The plan in the chat (step 2)
-  is Koda's own.
+  card and its send-to apps, with no QR (step 4). Monitor (step 5) is the pen's: visits, form sends
+  with their share of visits, P95 page load and uptime with how long it's been looked at; the bars
+  count visits; "Where visits come from" stands in Resources' place, largest first. Its rows wear the
+  globe: the pen's wear the resources' icons (memory, CPU), pasted from that section. What the site
+  hasn't reported yet says so. The site reports through this app (`/hooks/sites/:id`, answered in
+  server.js before SvelteKit, which reads no body without a content type, and the site's beacon
+  sends none). The plan in the chat (step 2) is Koda's own.
 - Building together (Flow / Build — Invite & build together `TnwQT`): inviting (steps 1–3) is
   Share's Invite, which opens People. While someone else has the project open, the bar shows your
   face and theirs (step 5) in place of your own. Pressing the faces lists who's here and where each
