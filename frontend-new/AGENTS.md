@@ -574,9 +574,15 @@ steps; what isn't there yet is left out, not drawn dead:
   shown: a publish has no commit, so a row says when and who.
 - Domain (steps 8–9) is the app's own address under Nomi's apps domain: its row (live, linked),
   where it moves on the next publish, and, for the project's admins, Change address (the name
-  checked as it's typed, with the hosting's reason and free names when it's taken). A domain of
-  the person's own (the DNS table, Check now, Make primary, Remove) has no backend yet
-  (BACKEND_TODO.md). Before the first publish it says there's no address yet.
+  checked as it's typed, with the hosting's reason and free names when it's taken). Before the
+  first publish it says there's no address yet. A domain of the person's own (J2hPJ, Dd60u) sits
+  under the app's address, waiting for DNS (the warning dot) or connected, with the records to set
+  at the registrar (`DnsRecords`: each value to copy, found or waiting, when they were last checked
+  and that they're checked every 5 minutes), the note on HTTPS, Check now, and for the project's
+  admins Make primary (once every record is found) and Remove domain (asked first). The admins add
+  one under "Use your own domain" once the app is live. The pen's "[hosting IP]" placeholders are
+  the backend's real records. Until the hosting can serve more than one name, a domain's HTTPS says
+  it's on its way rather than on (BACKEND_TODO.md).
 - Monitor (step 10) shows what Shipyard measures of the live app over 1h, today or 7 days,
   refreshed every 30 seconds while open: requests, errors with their share, p95, and visitors in
   the place of the pen's uptime (not measured); requests per bucket; memory, CPU and bandwidth;

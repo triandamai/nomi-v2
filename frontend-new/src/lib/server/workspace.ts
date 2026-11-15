@@ -2,6 +2,7 @@ import { isRedirect } from '@sveltejs/kit';
 import type { ContainerUsage, DatabaseTable, DeployOverview, ExportSummary, ProjectShowcase, DomainAnswer, MetricsRange, ProjectDetail, ProjectDomain, ProjectList, ProjectMembers, ProjectMetrics, ProjectSecrets, QueryResult, SandboxLogs, SandboxStatus } from '$lib/adapters/api';
 import { apiFetch, type ApiEvent } from './api';
 import { readTable } from '$lib/projects/database';
+import type { OwnDomain } from '$lib/projects/domains';
 import type { PublishRequestRow, QueuedAsk } from '$lib/projects/asks';
 
 // A project's workspace on the server: the project (its files and chat), where it's live (the
@@ -292,3 +293,17 @@ export async function loadPresence(event: ApiEvent, id: string): Promise<{ me: s
 	const response = await call(event, `${at(id)}/presence`);
 	return response.ok ? ((await response.json()) as { me: string; people: PresentPerson[] }) : null;
 }
+
+/** The project's own domains (the primary first); null where they can't be read. */
+export async function loadOwnDomains(event: ApiEvent, id: string): Promise<OwnDomain[] | null> {
+	const response = await call(event, `${at(id)}/domains`);
+	return response.ok ? ((await response.json()) as OwnDomain[]) : null;
+}
+const domainPath = (id: string, hostname: string) => `${at(id)}/domains/${encodeURIComponent(hostname)}`;
+/** A domain the person owns, looked up once as it's added (the app must be live). */
+export const addOwnDomain = (event: ApiEvent, id: string, hostname: string) => send(event, `${at(id)}/domains`, 'POST', { hostname });
+/** Check now: its records looked up again. */
+export const checkOwnDomain = (event: ApiEvent, id: string, hostname: string) => send(event, `${domainPath(id, hostname)}/check`, 'POST');
+/** The address the app answers at first (only once every record is found). */
+export const makeDomainPrimary = (event: ApiEvent, id: string, hostname: string) => send(event, `${domainPath(id, hostname)}/primary`, 'PUT');
+export const removeOwnDomain = (event: ApiEvent, id: string, hostname: string) => send(event, domainPath(id, hostname), 'DELETE');

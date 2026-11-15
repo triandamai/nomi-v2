@@ -208,4 +208,23 @@ describe('a project’s workspace on the server', () => {
 		expect(await workspace.answerRequest(off.event, 'p1', 'r1', 'approve')).toEqual({ ok: false, status: 503, message: 'publishing isn’t set up on this Nomi' });
 		expect(await workspace.loadRequests(off.event, 'p1')).toBeNull();
 	});
+	it('lists, adds, checks, makes primary and removes the project’s own domains, passing the backend’s reason on', async () => {
+		const own = { hostname: 'warungkopibusiti.id', records: [], checked_at: null, verified_at: null, primary: false, https: 'pending', created_at: '2026-11-15T01:50:00Z' };
+		const { backend, event } = eventWith((call) => (call.method === 'GET' ? json([own]) : call.method === 'DELETE' ? new Response(null, { status: 204 }) : json(own, call.method === 'POST' && call.url.endsWith('/domains') ? 201 : 200)));
+		expect(await workspace.loadOwnDomains(event, 'p1')).toEqual([own]);
+		expect(await workspace.addOwnDomain(event, 'p1', 'warungkopibusiti.id')).toEqual({ ok: true });
+		expect(await workspace.checkOwnDomain(event, 'p1', 'warungkopibusiti.id')).toEqual({ ok: true });
+		expect(await workspace.makeDomainPrimary(event, 'p1', 'warungkopibusiti.id')).toEqual({ ok: true });
+		expect(await workspace.removeOwnDomain(event, 'p1', 'warungkopibusiti.id')).toEqual({ ok: true });
+		expect(backend.calls.map((call) => [call.method, call.url.replace('http://api.test', ''), call.body])).toEqual([
+			['GET', '/api/projects/p1/domains', undefined],
+			['POST', '/api/projects/p1/domains', { hostname: 'warungkopibusiti.id' }],
+			['POST', '/api/projects/p1/domains/warungkopibusiti.id/check', undefined],
+			['PUT', '/api/projects/p1/domains/warungkopibusiti.id/primary', undefined],
+			['DELETE', '/api/projects/p1/domains/warungkopibusiti.id', undefined],
+		]);
+		const refused = eventWith(() => new Response('the app must be live first', { status: 409 }));
+		expect(await workspace.addOwnDomain(refused.event, 'p1', 'x.id')).toEqual({ ok: false, status: 409, message: 'the app must be live first' });
+		expect(await workspace.loadOwnDomains(refused.event, 'p1')).toBeNull();
+	});
 });

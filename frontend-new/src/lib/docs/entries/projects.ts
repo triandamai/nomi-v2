@@ -320,6 +320,15 @@ export default [
 		related: ['projects/AddressRow.svelte'],
 	},
 	{
+		file: 'projects/DnsRecords.svelte',
+		summary: 'The records to set at a registrar for a domain of the person’s own: type, name, value to copy, and whether each was found.',
+		use: ['The Domain sheet, under a domain that’s waiting for DNS or connected.'],
+		dos: ['Say when the records were last checked and how often they’re checked again.', 'Give each value its own copy button: people paste them one by one.'],
+		donts: ['Turn a waiting record green before it’s found.'],
+		accessibility: ['A real table, named by its heading, with a header row; each copy button names the value it copies.'],
+		related: ['projects/AddressRow.svelte'],
+	},
+	{
 		file: 'projects/MonitorStat.svelte',
 		summary: 'One number of a running app: requests, errors, p95 or visitors, with a note.',
 		use: ['The Monitor sheet.'],

@@ -19,25 +19,12 @@ export default defineConfig({
 	define: { __APP_VERSION__: JSON.stringify(version), __DS_STATIC__: JSON.stringify(galleryStatic) },
 	// Rolldown's plugin-timing report prints as a warning on every build; it's a profiling aid, not
 	// a problem with the build.
+	// The static copy is served from any path: an image imported in code is found next to the code
+	// that asked for it, not at the site's root.
+	experimental: galleryStatic ? { renderBuiltUrl: (_file: string, { hostType }: { hostType: string }) => (hostType === 'js' ? { relative: true } : undefined) } : undefined,
 	build: {
 		rolldownOptions: {
 			checks: { pluginTimings: false },
-			// The static copy goes to share hosts that cap a site at about 500 files, so its design-system
-			// code, its messages, its packages and the rest of the app's code (its routes are built too,
-			// though never served there) each ship as one shared chunk instead of many small ones, so new
-			// app pages don't push the copy over the cap.
-			output: galleryStatic
-				? {
-						advancedChunks: {
-							groups: [
-								{ name: 'design-system', test: /src[\\/]lib[\\/](ds|gallery|docs)[\\/]/ },
-								{ name: 'messages', test: /src[\\/]lib[\\/]paraglide[\\/]/ },
-								{ name: 'vendor', test: /node_modules[\\/]/ },
-								{ name: 'app', test: /src[\\/](lib|routes)[\\/]/ },
-							],
-						},
-					}
-				: undefined,
 		},
 	},
 	plugins: [
@@ -66,6 +53,10 @@ export default defineConfig({
 			// Every design-system page: the docs, the sheets, and (through their `entries`) each
 			// component and pattern. Links there end in .html, so nothing is found by crawling.
 			prerender: galleryStatic ? { crawl: false, entries: ['*'], handleUnseenRoutes: 'ignore' } : undefined,
+			// The static copy goes to share hosts that cap a site at about 500 files, and every route of
+			// the app is built into it (though only the design system's are served): one bundle for
+			// all of them keeps a new page from costing a file there.
+			output: galleryStatic ? { bundleStrategy: 'single' } : undefined,
 			// SvelteKit's own update check follows the same version: after a deploy, the next
 			// navigation loads the new build.
 			version: { name: version, pollInterval: 5 * 60_000 },

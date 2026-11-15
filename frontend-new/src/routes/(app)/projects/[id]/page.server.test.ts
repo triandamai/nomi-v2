@@ -228,4 +228,20 @@ describe('a project’s workspace', () => {
 		expect(await actions.answer(odd.event as never)).toMatchObject({ status: 400 });
 		expect(odd.one.api.calls).toEqual([]);
 	});
+	it('adds, checks, makes primary and removes an own domain, saying why not', async () => {
+		const form = (body: Record<string, string>, answer: Parameters<typeof fakeBackend>[0]) => {
+			const { api, event } = at(answer, { id: 'p1' });
+			return { api, event: { ...event, request: new Request('http://localhost/projects/p1', { method: 'POST', body: new URLSearchParams(body) }) } };
+		};
+		const added = form({ hostname: ' WarungKopi.ID ' }, () => json({}, 201));
+		expect(await actions.domainAdd(added.event as never)).toEqual({ domain: 'warungkopi.id' });
+		expect(added.api.calls[0]).toMatchObject({ method: 'POST', url: 'http://api.test/api/projects/p1/domains', body: { hostname: 'warungkopi.id' } });
+		expect(await actions.domainAdd(form({ hostname: ' ' }, () => json({})).event as never)).toMatchObject({ status: 400 });
+		expect(await actions.domainAdd(form({ hostname: 'x.id' }, () => new Response('your plan doesn’t include your own domains', { status: 402 })).event as never)).toMatchObject({ status: 402, data: { message: 'your plan doesn’t include your own domains' } });
+		for (const [action, method, path] of [['domainCheck', 'POST', '/check'], ['domainPrimary', 'PUT', '/primary'], ['domainRemove', 'DELETE', '']] as const) {
+			const done = form({ hostname: 'warungkopi.id' }, () => (method === 'DELETE' ? new Response(null, { status: 204 }) : json({})));
+			expect(await actions[action](done.event as never)).toEqual({ domain: 'warungkopi.id' });
+			expect(done.api.calls[0]).toMatchObject({ method, url: `http://api.test/api/projects/p1/domains/warungkopi.id${path}` });
+		}
+	});
 });

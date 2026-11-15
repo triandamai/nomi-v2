@@ -5,8 +5,8 @@
 
 	// Flow / Build — Workspace tools (U16wU) → Screen / Domain (J2hPJ) → Addr: one address of the
 	// app, [12,14] and 10 apart, outlined (border-strong where `strong`): the globe, the address in
-	// mono (linked when it's served), and its state on the right: Live with its dot, or what it's
-	// waiting for in the warning colour.
+	// mono (linked when it's served), and its state on the right: Live (or Connected) with its dot,
+	// or what it's waiting for in the warning colour after its warning dot.
 	type Props = { address: string; href?: string; state?: { label: string; tone: 'live' | 'waiting' }; strong?: boolean };
 	let { address, href, state: shown, strong = false }: Props = $props();
 </script>
@@ -21,6 +21,6 @@
 	{#if shown?.tone === 'live'}
 		<Status kind="live" label={shown.label} small />
 	{:else if shown}
-		<span class="shrink-0 text-label text-warning">{shown.label}</span>
+		<span class="inline-flex shrink-0 items-center gap-1.5"><span aria-hidden="true" class="size-1.5 rounded-full bg-warning"></span><span class="text-label text-warning">{shown.label}</span></span>
 	{/if}
 </div>
