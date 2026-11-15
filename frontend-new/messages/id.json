@@ -2728,5 +2728,18 @@
 	"general_password_save": "Simpan kata sandi",
 	"general_password_forgot": "Lupa? Atur ulang lewat email",
 	"general_password_changed": "Kata sandi diubah. Perangkatmu yang lain tetap masuk.",
-	"general_password_was_set": "Kata sandi dibuat. Sekarang kamu bisa masuk dengannya."
+	"general_password_was_set": "Kata sandi dibuat. Sekarang kamu bisa masuk dengannya.",
+	"general_chat": "Obrolan",
+	"general_chat_body": "Cara obrolan dimulai dan berjalan.",
+	"general_starts_with": "Obrolan baru dimulai dengan",
+	"general_starts_with_body": "Siapa yang menjawab kalau kamu tidak @ siapa pun",
+	"general_enter_sends": "Enter mengirim",
+	"general_enter_sends_on": "Shift+Enter menambah baris baru",
+	"general_enter_sends_off": "Enter menambah baris baru; ⌘ atau Ctrl+Enter mengirim",
+	"general_reminders": "Pengingat",
+	"general_reminders_body": "Notifikasi tepat waktu, di ponsel dan desktop",
+	"general_quiet": "Jam tenang",
+	"general_quiet_on": "{range} · pengingat menunggu sampai selesai.",
+	"general_quiet_off": "Mati. Pengingat berbunyi tepat waktu, siang atau malam.",
+	"general_reminders_unloaded": "Pengaturan pengingat tidak bisa dimuat. Muat ulang untuk mencoba lagi."
 }

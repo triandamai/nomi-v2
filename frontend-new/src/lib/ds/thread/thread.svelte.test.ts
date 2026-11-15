@@ -55,6 +55,19 @@ describe('ChatComposer', () => {
 		await expect.element(field).toHaveValue('');
 	});
 
+	it('with Enter sends off, Enter makes a new line and ⌘ or Ctrl+Enter sends', async () => {
+		const onsend = vi.fn();
+		await render(ChatComposer, { placeholder: 'Ask anything…', onsend, enterSends: false, hints: true });
+		const field = page.getByRole('textbox', { name: 'Message' });
+		await field.fill('Two lines');
+		await userEvent.keyboard('{Enter}');
+		expect(onsend).not.toHaveBeenCalled();
+		await expect.element(field).toHaveValue('Two lines\n');
+		await userEvent.keyboard('{Control>}{Enter}{/Control}');
+		expect(onsend).toHaveBeenCalledWith('Two lines');
+		await expect.element(page.getByText('⌘↵')).toBeInTheDocument();
+	});
+
 	it('lays out as the pen draws it: padded [14,12,10,12] inside its stroke, 14 between field and toolbar', async () => {
 		await render(ChatComposer, { placeholder: 'Ask anything…', onsend: () => {}, model: 'deepseek-flash', models: [{ group: 'Nomi credits', models: [{ key: 'admin:1', label: 'deepseek-flash', source: 'Nomi credits', chosen: true }] }] });
 		const box = document.querySelector<HTMLElement>('[data-composer]')!;

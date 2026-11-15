@@ -1,5 +1,5 @@
 import { isRedirect } from '@sveltejs/kit';
-import type { DeviceItem, EmailPreferences, Preferences, SignInMethods } from '$lib/adapters/api';
+import type { DeviceItem, EmailPreferences, Preferences, ReminderPreferences, SignInMethods } from '$lib/adapters/api';
 import { apiFetch, type ApiEvent } from './api';
 import { readApiError } from './apiError';
 import type { Outcome } from './chat';
@@ -16,6 +16,8 @@ export type GeneralData = {
 	devices: DeviceItem[] | null;
 	preferences: Preferences;
 	emails: EmailPreferences | null;
+	/** Reminder pushes and quiet hours; null when they couldn't be read. */
+	reminders: ReminderPreferences | null;
 };
 
 /** A backend that can't be reached answers like one that's down. */
@@ -40,16 +42,21 @@ async function send<T>(event: ApiEvent, path: string, method: string, parse = fa
 }
 
 export async function loadGeneral(event: ApiEvent): Promise<GeneralData | null> {
-	const [profile, methods, devices, preferences, emails] = await Promise.all([
+	const [profile, methods, devices, preferences, emails, reminders] = await Promise.all([
 		read<{ email: string }>(event, '/api/profile'),
 		read<SignInMethods>(event, '/api/auth/google'),
 		read<DeviceItem[]>(event, '/api/devices'),
 		read<Preferences>(event, '/api/preferences'),
 		read<EmailPreferences>(event, '/api/notifications/preferences'),
+		read<ReminderPreferences>(event, '/api/notifications/reminder-preferences'),
 	]);
 	if (!profile || !methods || !preferences) return null;
-	return { email: profile.email, methods, devices, preferences, emails };
+	return { email: profile.email, methods, devices, preferences, emails, reminders };
 }
+
+/** Saves reminder pushes or quiet hours (`quiet_hours: null` turns them off); only what's sent changes. */
+export const saveReminders = (event: ApiEvent, change: Partial<ReminderPreferences>) =>
+	send<ReminderPreferences>(event, '/api/notifications/reminder-preferences', 'PUT', true, change);
 
 /** Where Google asks the person to add their account; it comes back through /auth/google/callback. */
 /** Google comes back to the app at `origin` (this one). */

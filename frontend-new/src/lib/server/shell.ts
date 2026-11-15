@@ -2,11 +2,13 @@ import { isRedirect } from '@sveltejs/kit';
 import { m } from '$lib/paraglide/messages';
 import { getLocale, isLocale } from '$lib/paraglide/runtime';
 import { DEVICE_COOKIE } from '$lib/device';
+import type { CrewId } from '$lib/ds/agents/crew';
 import { THEME_COOKIE, parseTheme, type Theme } from '$lib/theme';
 import type { CrewMember, OrgList, Preferences, Profile, SessionSummary, UsageBrief } from '$lib/adapters/api';
 import {
 	accountLine,
 	chatsCount,
+	crewOf,
 	crewRows,
 	crewSummary,
 	firstName,
@@ -35,6 +37,8 @@ export type Shell = {
 	recents: Recent[];
 	chats: number;
 	crew: { rows: CrewRowProps[]; summary: { kind: 'idle' | 'live'; label: string } };
+	/** Settings › General's Chat group: whether Enter sends, and who new chats start with (null: Nomi). */
+	chat: { enterSends: boolean; startsWith: CrewId | null };
 	workspaces: WorkspaceRow[];
 	/** The workspace projects are listed from: the Build group's chip and Projects count. */
 	projectsWorkspace: { id: string; name: string; projects: number } | null;
@@ -102,6 +106,7 @@ export async function loadShell(event: ApiEvent & { userAgent: string }, now: Da
 		recents: recents(sessions?.sessions ?? [], now, undefined, undefined, timeZone ?? undefined),
 		chats: chatsCount(sessions?.sessions ?? []),
 		crew: { rows: crewRows(members), summary: crewSummary(members) },
+		chat: { enterSends: preferences?.enter_sends ?? true, startsWith: (preferences?.default_agent && crewOf(preferences.default_agent)) || null },
 		workspaces: workspaces ? workspaceRows(workspaces) : [],
 		projectsWorkspace: chosen && { id: chosen.id, name: chosen.name, projects: chosen.projects },
 		deviceId: event.cookies.get(DEVICE_COOKIE) ?? null,

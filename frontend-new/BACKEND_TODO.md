@@ -180,6 +180,7 @@ Found while building sign in and create account (Phase 1, 2026-11-10).
   - The reminders worker pushes each reminder as it goes off (`kind: "reminder"`, opens its chat) unless `push_reminders` is off.
   - A reminder due inside quiet hours is held (`reminders.held_until`) until they end, then goes off; its schedule (`due_at`) doesn't move. Changing quiet hours lets held reminders go by the new ones.
   - `frontend/`: the Inbox's settings have "Push for reminders" and "Quiet hours" with From and Until.
+  - v2: Settings › General's Notifications has Reminders and Quiet hours.
 
 Found while building the Inbox (2026-11-12).
 
@@ -200,6 +201,8 @@ Found while building Settings › Profile (2026-11-12).
   - `DELETE /api/account` with `{ password }` or `{ challenge_id, code }` (from `POST /api/account/delete/code`) → `204`. The account is kept as a row (chats, projects and usage others share point at it), with `users.deleted_at` set and its sign-in, refresh tokens, devices (each hears `DeviceSignedOut`), memberships, profile, memories, reminders, connections and own keys removed; the address is free again. A workspace only they're in closes with it; one they're the only owner of with other people in it answers `409 { error: "sole_owner", orgs: [{ id, name }] }` until it's handed over or closed.
   - `frontend/`: Account has Change email (with the code step), Formats and the chat rows (the composer follows Enter sends), and Delete account with a confirmation and the password or an emailed code.
   - **Still open:** the old frontend shows no tokens under replies, so `show_reply_tokens` is kept but nothing reads it there; a closed account's live apps aren't taken down.
+  - v2: General's Chat group has "New chats start with" (Home's To) and "Enter sends" (every composer). Formats and tokens under replies wait for v2 to follow them.
+  - **Still open (backend):** the turn's routing doesn't read `default_agent`, so a chat started elsewhere (a phone app, the API) still starts with Nomi.
 
 Found while building Settings › General (2026-11-12).
 

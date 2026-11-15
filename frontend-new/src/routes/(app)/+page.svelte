@@ -26,11 +26,16 @@
 	const NOMI: Recipient = { agent: 'nomi', name: 'Nomi' };
 	let draft = $state('');
 	let field: HTMLTextAreaElement | undefined = $state();
-	let to = $state<Recipient>(NOMI);
 	let modelKey = $state<string | null>(null);
 	let busy = $state(false);
 
 	const crew = $derived(mentionOptions(data.crew.rows));
+	// Who new chats start with (Settings › General), else Nomi.
+	const startsWith = (): Recipient => {
+		const member = mentionOptions(data.crew.rows).find((option) => option.kind === 'crew' && option.agent === data.chat.startsWith);
+		return member?.kind === 'crew' ? { agent: member.agent, name: member.name } : NOMI;
+	};
+	let to = $state<Recipient>(startsWith());
 	const models = $derived(modelMenu(data.models, modelKey ?? data.models.current?.key ?? null));
 	const modelLabel = $derived(models.flatMap((group) => group.models).find((option) => option.chosen)?.label ?? data.models.current?.label);
 	const picks = $derived(starters(data.crew.rows));
@@ -78,6 +83,7 @@
 		placeholder={m.home_placeholder()}
 		roomy
 		hints
+		enterSends={data.chat.enterSends}
 		{busy}
 		{to}
 		{crew}

@@ -2728,5 +2728,18 @@
 	"general_password_save": "Save password",
 	"general_password_forgot": "Forgot it? Reset it by email",
 	"general_password_changed": "Password changed. Your other devices stay signed in.",
-	"general_password_was_set": "Password set. You can sign in with it now."
+	"general_password_was_set": "Password set. You can sign in with it now.",
+	"general_chat": "Chat",
+	"general_chat_body": "How conversations start and behave.",
+	"general_starts_with": "New chats start with",
+	"general_starts_with_body": "Who answers when you don’t @ anyone",
+	"general_enter_sends": "Enter sends",
+	"general_enter_sends_on": "Shift+Enter adds a new line",
+	"general_enter_sends_off": "Enter adds a new line; ⌘ or Ctrl+Enter sends",
+	"general_reminders": "Reminders",
+	"general_reminders_body": "Push at the exact time, on phone and desktop",
+	"general_quiet": "Quiet hours",
+	"general_quiet_on": "{range} · reminders wait until they end.",
+	"general_quiet_off": "Off. Reminders go off at their time, day or night.",
+	"general_reminders_unloaded": "Your reminder settings couldn’t load. Reload to try again."
 }
