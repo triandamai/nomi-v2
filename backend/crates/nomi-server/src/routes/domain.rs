@@ -176,12 +176,6 @@ pub async fn change(
     Json(req): Json<ChangeRequest>,
 ) -> Result<Response, ApiError> {
     require_admin(&state.pool, project_id, claims.sub).await?;
-    // Picking another name is the project owner's plan to allow, whoever of its admins asks.
-    if let Some(owner_plan) = nomi_usage::entitlements::for_project_owner(&state.pool, project_id).await.map_err(internal("failed to change the address"))? {
-        if !owner_plan.custom_domain {
-            return Err((StatusCode::PAYMENT_REQUIRED, nomi_usage::entitlements::LimitHit::CustomDomain.message()));
-        }
-    }
     let name = clean(&req.subdomain)?;
     let hostname = full_hostname(&name).await;
     let target = target(&state, project_id).await?;

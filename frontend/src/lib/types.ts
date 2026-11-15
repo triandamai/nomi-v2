@@ -1029,7 +1029,7 @@ export interface Plan {
 	max_custom_crew: number | null;
 	/** Storage for project files, in MB. */
 	max_storage_mb: number | null;
-	/** May pick a custom address for published projects. */
+	/** A project may use a domain of its own (on its owner's plan). */
 	custom_domain: boolean;
 	/** null is the platform default. */
 	sandbox_size: 'small' | 'default' | 'large' | null;

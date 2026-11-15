@@ -306,6 +306,18 @@ pub async fn add(
     Json(req): Json<AddDomain>,
 ) -> Result<(StatusCode, Json<CustomDomain>), ApiError> {
     require_admin(&state.pool, project_id, claims.sub).await?;
+    // A domain of the project's own is the project owner's plan to allow, whoever of its admins asks.
+    if let Some(owner_plan) = nomi_usage::entitlements::for_project_owner(&state.pool, project_id)
+        .await
+        .map_err(internal("failed to add the domain"))?
+    {
+        if !owner_plan.custom_domain {
+            return Err((
+                StatusCode::PAYMENT_REQUIRED,
+                nomi_usage::entitlements::LimitHit::CustomDomain.message(),
+            ));
+        }
+    }
     let hostname = clean_hostname(&req.hostname)?;
     if let Some(base) = crate::configuration::apps_base_domain().await {
         if hostname == base || hostname.ends_with(&format!(".{base}")) {

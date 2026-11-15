@@ -1,6 +1,6 @@
 //! What someone's plan includes beyond its token allowance: how many projects and organizations
 //! they may own, how many members their organizations may hold, how much file storage, whether
-//! they may pick their own address, which sandbox size and which of Nomi's models they get.
+//! a project may use a domain of its own, which sandbox size and which of Nomi's models they get.
 //! A limit left empty on the plan is unlimited, so nothing is refused until an admin sets one.
 
 use std::collections::HashMap;
@@ -92,7 +92,7 @@ impl LimitHit {
             LimitHit::Storage { limit_mb } => {
                 format!("Your plan includes {limit_mb} MB of project storage and it's full. Upgrade your plan to store more.")
             }
-            LimitHit::CustomDomain => "Your plan doesn't include choosing your own address. Upgrade your plan to pick one.".to_string(),
+            LimitHit::CustomDomain => "Your plan doesn't include using your own domain. Upgrade your plan to add one.".to_string(),
             LimitHit::Model => "That model isn't included in your plan. Upgrade your plan to use it.".to_string(),
             LimitHit::CustomCrew { limit } => {
                 format!("Your plan allows {} of your own. Upgrade your plan to add more.", plural(*limit, "custom crew member", "custom crew members"))

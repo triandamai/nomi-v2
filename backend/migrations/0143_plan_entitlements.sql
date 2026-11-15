@@ -6,7 +6,7 @@ ALTER TABLE plans
     ADD COLUMN max_org_members INT    CHECK (max_org_members IS NULL OR max_org_members >= 0),
     ADD COLUMN max_custom_crew INT    CHECK (max_custom_crew IS NULL OR max_custom_crew >= 0),
     ADD COLUMN max_storage_mb  BIGINT CHECK (max_storage_mb IS NULL OR max_storage_mb >= 0),
-    -- May pick its own address for a published project.
+    -- A project may use a domain of its own (Project → Domains), on its owner's plan.
     ADD COLUMN custom_domain   BOOLEAN NOT NULL DEFAULT true,
     -- Sandbox size for the account's projects (small, default or large); NULL is the platform default.
     ADD COLUMN sandbox_size    TEXT    CHECK (sandbox_size IS NULL OR sandbox_size IN ('small', 'default', 'large')),
