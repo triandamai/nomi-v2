@@ -249,7 +249,7 @@ mod tests {
     #[test]
     fn soras_own_tools_are_directions_previews_and_the_persons_connected_tools() {
         let names: Vec<String> = DesignAgent::new().tools().into_iter().map(|t| t.name).collect();
-        assert_eq!(names, [tools::PROPOSE_DIRECTIONS, tools::SAVE_PREVIEW, tools::READ_PREVIEW, tools::LIST_CONNECTED_TOOLS, tools::USE_CONNECTED_TOOL]);
+        assert_eq!(names, [tools::PROPOSE_DIRECTIONS, tools::SAVE_PREVIEW, tools::READ_PREVIEW, tools::CREATE_HANDOFF, tools::LIST_CONNECTED_TOOLS, tools::USE_CONNECTED_TOOL]);
     }
 
     #[test]
@@ -363,6 +363,14 @@ mod tests {
         assert!(context.starts_with("# Approved design\nThe person approved version 2"), "{context}");
         assert!(context.contains("Version 3 is newer and not approved"));
         assert_eq!(NOT_APPROVED, "No version of the design is approved yet: the person approves one in the Design Studio.");
+    }
+
+    #[test]
+    fn an_approved_design_goes_to_koda_as_a_handoff() {
+        let sora = DesignAgent::new();
+        let prompt = sora.system_prompt();
+        assert!(prompt.contains("create_handoff") && prompt.contains("delegate_to_agent"), "{prompt}");
+        assert!(!sora.tool_needs_approval(tools::CREATE_HANDOFF), "the person already approved the design");
     }
 
     #[test]

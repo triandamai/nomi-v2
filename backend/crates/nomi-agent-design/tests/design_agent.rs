@@ -270,3 +270,48 @@ async fn sora_reads_her_preview_back_and_a_new_version_marks_the_feedback_it_dea
     let context = sora.domain_context(&mut conn, None, session_id, user_id, &[]).await.unwrap();
     assert!(!context.contains("Make it shorter") && context.contains("Warmer overall"), "{context}");
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_handoff_is_written_only_for_a_version_the_person_approved(pool: PgPool) {
+    use nomi_agent_core::{design_approval, design_feedback, design_handoff};
+    let (session_id, user_id) = chat(&pool).await;
+    let sora = DesignAgent::new();
+    let mut conn = pool.acquire().await.unwrap();
+    let spec = json!({
+        "design_system": {"colors": [{"name": "Accent", "value": "#B5532A"}], "typography": [{"role": "Heading", "font": "Fraunces"}]},
+        "sitemap": [{"path": "index.html", "title": "Home", "purpose": "Landing"}],
+        "user_flows": [{"name": "Read", "steps": ["Open Home"]}],
+        "pages": [{"path": "index.html", "purpose": "Landing", "sections": ["hero"]}],
+        "components": [{"id": "hero", "name": "Hero", "description": "Headline"}],
+        "responsive": ["One column under 720px"],
+        "accessibility": ["Contrast at least 4.5:1"],
+        "decisions": [{"decision": "Serif headings", "reason": "Warmth"}]
+    });
+    sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "propose_directions", directions()).await.unwrap();
+    sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "save_preview", preview("editorial", HERO_AND_MENU)).await.unwrap();
+    sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "save_preview", preview("editorial", HERO_ONLY)).await.unwrap();
+
+    let early = sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "create_handoff", spec.clone()).await.unwrap_err();
+    assert_eq!(early, nomi_agent_design::tools::NOT_APPROVED_YET, "her newest version isn't approved by being newest");
+    assert_eq!(design_handoff::latest(&mut conn, session_id).await.unwrap(), None);
+
+    let manifest = nomi_agent_core::design_artifact::version(&mut conn, session_id, 2).await.unwrap().unwrap();
+    let said = design_feedback::NewFeedback::parse(2, &manifest, &json!({"level": "global", "body": "Warmer"})).unwrap();
+    design_feedback::add(&mut conn, session_id, user_id, &said).await.unwrap();
+    design_approval::approve(&mut conn, session_id, user_id, 2, None).await.unwrap();
+    let context = sora.domain_context(&mut conn, None, session_id, user_id, &[]).await.unwrap();
+    assert!(context.contains("The person approved version 2") && context.contains("It is the newest version."), "{context}");
+
+    let mut wrong = spec.clone();
+    wrong["components"][0]["id"] = json!("menu-list");
+    let refused = sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "create_handoff", wrong).await.unwrap_err();
+    assert_eq!(refused, "components names \"menu-list\", which isn't a data-design-id of the approved version", "version 1 had it; the approved one doesn't");
+
+    let saved = sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "create_handoff", spec).await.unwrap().display_text;
+    assert!(saved.starts_with("Handoff saved as version 1, for approved preview version 2.") && saved.contains("There is no project in this chat yet"), "{saved}");
+    let (version, package) = design_handoff::latest(&mut conn, session_id).await.unwrap().unwrap();
+    assert_eq!((version, package.artifact_version, package.direction_id.as_str()), (1, 2, "editorial"));
+    assert_eq!(package.studio_link, format!("/chat/{session_id}/design?version=2"));
+    assert_eq!(package.feedback.iter().map(|f| (f.number, f.body.as_str(), f.resolved_in_version)).collect::<Vec<_>>(), [(1, "Warmer", None)]);
+    assert_eq!((package.brief, package.published_url), (None, None));
+}

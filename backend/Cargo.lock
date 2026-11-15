@@ -3027,6 +3027,7 @@ dependencies = [
  "chrono",
  "nomi-agent-core",
  "nomi-llm",
+ "nomi-settings",
  "nomi-storage",
  "nomi-test-support",
  "nomi-usage",

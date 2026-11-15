@@ -14,6 +14,10 @@ use nomi_agent_core::relay_ops::{RelayEnv, RelayOps, RelayPackages, DEFAULT_SDK_
 /// More files than this are summarised as a count: list_files shows them all.
 const MAX_LISTED_FILES: usize = 150;
 const MAX_CHECK_OUTPUT: usize = 3000;
+/// The most characters of the approved preview's files put in the brief; a file that doesn't
+/// fit is named instead of cut.
+const MAX_DESIGN_FILE_CHARS: usize = 60_000;
+const PAGE_SUFFIX: &str = ".html";
 
 /// The project named by the newest "Project <uuid>:" in what the person (or the agent handing
 /// the task over) said, else the newest project in this chat — `None` when there's neither, or
@@ -116,6 +120,37 @@ fn clip(text: &str, max: usize) -> &str {
         Some((at, _)) => &text[..at],
         None => text,
     }
+}
+
+/// The approved design as Koda starts from it: Sora's handoff, then the approved preview's own
+/// files (pages first) for the exact markup and styles.
+fn design_section(handoff: &str, artifact_version: i32, files: &[nomi_agent_core::design_artifact::ArtifactFile]) -> String {
+    let mut section = format!(
+        "## The approved design\nSora handed this over after the person approved it. Build what it describes, in this project's \
+         stack: the same pages, layout, colours, type, content order and behaviour. The preview's files below are static \
+         mock-ups to match, not code to copy in as it is; keep each data-design-id on the element you build for it. Where the \
+         plan and the design disagree about how something looks, the design wins; say so in your report.\n\n{}\n\n\
+         ### The approved preview's files (version {artifact_version})\n",
+        handoff.trim()
+    );
+    let mut ordered: Vec<&nomi_agent_core::design_artifact::ArtifactFile> = files.iter().collect();
+    ordered.sort_by_key(|file| !file.path.ends_with(PAGE_SUFFIX));
+    let mut room = MAX_DESIGN_FILE_CHARS;
+    let mut left_out: Vec<&str> = Vec::new();
+    for file in ordered {
+        let length = file.content.chars().count();
+        if length > room {
+            left_out.push(&file.path);
+            continue;
+        }
+        room -= length;
+        section.push_str(&format!("#### {}\n{}\n", file.path, file.content.trim_end()));
+    }
+    if !left_out.is_empty() {
+        section.push_str(&format!("Left out for length: {}. The handoff above describes them.\n", left_out.join(", ")));
+    }
+    section.push('\n');
+    section
 }
 
 pub async fn task_brief(
@@ -227,6 +262,13 @@ The person stored these for the published app, read on the server from the envir
         ),
     }
 
+    // Only where Design is rolled out to this person and Sora handed a design over: without
+    // one the brief is what it always was.
+    if let Some((version, package)) = nomi_agent_core::design_handoff::for_builder(&mut **conn, session_id, user_id).await {
+        let files = nomi_agent_core::design_artifact::files(&mut **conn, session_id, package.artifact_version).await.unwrap_or_default();
+        brief.push_str(&design_section(&package.to_markdown(version), package.artifact_version, &files));
+    }
+
     let on_relay = crate::relay::backend_of(conn, project_id).await.as_deref() == Some(crate::relay::BACKEND_RELAY);
     if on_relay {
         brief.push_str(&relay_section(relay, user_id, project_id).await);
@@ -310,5 +352,36 @@ mod package_tests {
         let section = relay_section(&StartingRelay, Uuid::new_v4(), Uuid::new_v4()).await;
         assert!(section.contains("The dev backend is being set up in the background right now"), "{section}");
         assert!(!section.contains("Couldn't read the dev backend"), "{section}");
+    }
+}
+
+#[cfg(test)]
+mod design_tests {
+    use super::*;
+    use nomi_agent_core::design_artifact::ArtifactFile;
+
+    fn file(path: &str, content: &str) -> ArtifactFile {
+        ArtifactFile { path: path.to_string(), content: content.to_string() }
+    }
+
+    #[test]
+    fn the_approved_design_is_put_in_the_brief_with_its_pages_first() {
+        let files = [file("app.js", "let a = 1"), file("index.html", "<h1>Hi</h1>"), file("styles.css", "h1 { margin: 0 }")];
+        let section = design_section("# Design handoff (version 2)\nApproved preview: version 3", 3, &files);
+        assert!(section.starts_with("## The approved design\nSora handed this over after the person approved it. Build what it describes"), "{section}");
+        assert!(section.contains("# Design handoff (version 2)\nApproved preview: version 3\n"));
+        assert!(section.contains("### The approved preview's files (version 3)\n#### index.html\n<h1>Hi</h1>\n"), "{section}");
+        assert!(section.find("#### index.html").unwrap() < section.find("#### app.js").unwrap(), "pages come first");
+        assert!(section.ends_with("\n\n"));
+    }
+
+    #[test]
+    fn files_that_dont_fit_are_named_not_cut() {
+        let big = "x".repeat(MAX_DESIGN_FILE_CHARS);
+        let files = [file("index.html", "<h1>Hi</h1>"), file("styles.css", &big)];
+        let section = design_section("# Design handoff (version 1)", 1, &files);
+        assert!(section.contains("#### index.html\n<h1>Hi</h1>"));
+        assert!(!section.contains(&big));
+        assert!(section.contains("Left out for length: styles.css"), "{section}");
     }
 }

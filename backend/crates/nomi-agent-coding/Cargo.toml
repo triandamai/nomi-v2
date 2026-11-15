@@ -19,5 +19,6 @@ tracing = "0.1"
 sha2 = "0.10"
 
 [dev-dependencies]
+nomi-settings = { path = "../nomi-settings" }
 tokio = { version = "1", features = ["full"] }
 nomi-test-support = { path = "../nomi-test-support" }

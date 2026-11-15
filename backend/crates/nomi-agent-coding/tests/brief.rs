@@ -193,3 +193,75 @@ async fn a_later_successful_publish_clears_the_failure(pool: PgPool) {
 
     assert!(!brief_of(&pool, &seeded).await.contains("The last publish to"));
 }
+
+/// The `design` setting is read through the process-wide settings cache and pool, so the tests
+/// that set it take turns.
+static GLOBALS: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+async fn design(pool: &PgPool, on: bool) {
+    let key: String = nomi_test_support::TEST_SETTINGS_KEY.iter().map(|b| format!("{b:02x}")).collect();
+    std::env::set_var("SETTINGS_ENCRYPTION_KEY", key);
+    nomi_settings::config::install(pool.clone());
+    let admin: Uuid = sqlx::query_scalar("INSERT INTO users DEFAULT VALUES RETURNING id").fetch_one(pool).await.unwrap();
+    let pairs: &[(&str, &str)] = if on { &[("enabled", "on"), ("rollout", "all")] } else { &[("enabled", "off")] };
+    let values = pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+    nomi_settings::config::save(pool, &nomi_test_support::TEST_SETTINGS_KEY, &nomi_settings::config::DESIGN, &values, admin).await.unwrap();
+    nomi_settings::config::forget();
+}
+
+async fn handed_over(pool: &PgPool, seeded: &Seeded) {
+    use nomi_agent_core::design_artifact::{self, DesignArtifact};
+    use nomi_agent_core::design_handoff::{self, Package, Spec};
+    use serde_json::json;
+    let html = "<html><head><meta name=\"viewport\" content=\"width=device-width\"><title>Home</title></head><body><h1 data-design-id=\"hero\">Fresh at six</h1></body></html>";
+    let artifact = DesignArtifact::parse(&json!({"direction_id": "editorial", "title": "Approved pass", "files": [{"path": "index.html", "content": html}, {"path": "styles.css", "content": "h1 { color: #B5532A }"}]})).unwrap();
+    let spec = json!({
+        "design_system": {"colors": [{"name": "Accent", "value": "#B5532A"}], "typography": [{"role": "Heading", "font": "Fraunces"}]},
+        "sitemap": [{"path": "index.html", "title": "Home", "purpose": "Landing"}],
+        "user_flows": [{"name": "Pre-order", "steps": ["Open Home", "Tap Order"]}],
+        "pages": [{"path": "index.html", "purpose": "Landing", "sections": ["hero"]}],
+        "components": [{"id": "hero", "name": "Hero", "description": "Headline over a photo"}],
+        "responsive": ["One column under 720px"],
+        "accessibility": ["Contrast at least 4.5:1"],
+        "decisions": [{"decision": "Serif headings", "reason": "Warmth"}]
+    });
+    let mut conn = pool.acquire().await.unwrap();
+    let version = design_artifact::save(&mut conn, seeded.session_id, Uuid::new_v4(), seeded.user_id, None, &artifact).await.unwrap();
+    let package = Package {
+        spec: Spec::parse(&spec, &artifact.manifest).unwrap(),
+        artifact_version: version,
+        direction_id: "editorial".into(),
+        studio_link: format!("/chat/{}/design?version={version}", seeded.session_id),
+        published_url: None,
+        brief_version: None,
+        brief: None,
+        feedback: vec![],
+    };
+    assert_eq!(design_handoff::save(&mut conn, seeded.session_id, Uuid::new_v4(), seeded.user_id, &package).await.unwrap(), 1);
+    assert_eq!(design_handoff::latest(&mut conn, seeded.session_id).await.unwrap(), Some((1, package)), "it is kept as it was written");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn an_approved_design_is_in_the_brief_where_design_is_rolled_out(pool: PgPool) {
+    let _g = GLOBALS.lock().await;
+    let seeded = seed(&pool).await;
+    plan(&pool, &seeded, seeded.rena, "Bakery site", 1, BAKERY_PLAN).await;
+    let messages = vec![said(&format!("Project {}: build the approved design", seeded.project_id))];
+    let mut conn = pool.acquire().await.unwrap();
+
+    design(&pool, true).await;
+    let before = agent().domain_context(&mut conn, None, seeded.session_id, seeded.user_id, &messages).await.expect("a brief");
+    assert!(!before.contains("The approved design"), "nothing was handed over yet");
+
+    handed_over(&pool, &seeded).await;
+    let brief = agent().domain_context(&mut conn, None, seeded.session_id, seeded.user_id, &messages).await.expect("a brief");
+    assert!(brief.contains("## The approved design\n") && brief.contains("# Design handoff (version 1)\nApproved preview: version 1 of direction editorial"), "{brief}");
+    assert!(brief.contains("- Accent: #B5532A") && brief.contains("## Responsive rules\n- One column under 720px"));
+    assert!(brief.contains("#### index.html\n") && brief.contains("Fresh at six") && brief.contains("#### styles.css\nh1 { color: #B5532A }"), "the approved preview's own files");
+    assert!(brief.contains("Bakery site") && brief.contains("Done when"), "Rena's plan is still there");
+    assert!(brief.find("Bakery site").unwrap() < brief.find("## The approved design").unwrap(), "after the plan");
+
+    design(&pool, false).await;
+    let off = agent().domain_context(&mut conn, None, seeded.session_id, seeded.user_id, &messages).await.expect("a brief");
+    assert_eq!(off, before, "with Design off the brief is what it always was");
+}

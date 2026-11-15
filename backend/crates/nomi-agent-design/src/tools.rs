@@ -10,7 +10,9 @@ use uuid::Uuid;
 
 use nomi_agent_core::mcp_ops::{format_listing, McpOps, SharedMcpOps, CARRY_ON};
 use nomi_agent_core::design_artifact::{self, ArtifactFile, DesignArtifact, Manifest, ID_ATTRIBUTE};
+use nomi_agent_core::design_approval;
 use nomi_agent_core::design_feedback::{self, Status};
+use nomi_agent_core::design_handoff::{self, FeedbackOutcome, Package, Spec};
 use nomi_agent_core::design_brief;
 use nomi_agent_core::static_publish::{self, PublishRequest, Published, SharedStaticPublisher};
 use nomi_agent_core::design_directions::{self, DesignDirections};
@@ -20,6 +22,9 @@ use nomi_llm::ToolDefinition;
 pub const PROPOSE_DIRECTIONS: &str = "propose_directions";
 pub const SAVE_PREVIEW: &str = "save_preview";
 pub const READ_PREVIEW: &str = "read_preview";
+pub const CREATE_HANDOFF: &str = "create_handoff";
+/// What Sora is told when she tries to hand over a design the person hasn't approved.
+pub const NOT_APPROVED_YET: &str = "the person hasn't approved a version yet: ask them to approve the one they want built with Approve in the Design Studio, then hand it over";
 pub const LIST_CONNECTED_TOOLS: &str = "list_connected_tools";
 pub const USE_CONNECTED_TOOL: &str = "use_connected_tool";
 /// The tools' group in listings.
@@ -352,12 +357,80 @@ impl Tool for SavePreview {
     }
 }
 
+/// What Sora is told after a handoff was saved: how it reaches Koda.
+pub fn handoff_message(version: i32, artifact_version: i32, project: Option<Uuid>) -> String {
+    let next = match project {
+        Some(project_id) => format!(
+            "Now pass it on: call delegate_to_agent with target coding and a task that starts exactly \"Project {project_id}: \" followed by \
+             one line on what to build. Koda gets the whole package in his brief, so don't repeat it in the task."
+        ),
+        None => "There is no project in this chat yet, so Koda has nowhere to build it: tell the person the design is ready and that \
+                 Rena sets the project up; Koda gets the whole package in his brief once she hands the build over."
+            .to_string(),
+    };
+    format!("Handoff saved as version {version}, for approved preview version {artifact_version}. {next}")
+}
+
+/// `create_handoff`: writes down the approved design for Koda, with the brief it came from, what
+/// became of the feedback and the approved preview's version and address.
+pub struct CreateHandoff;
+
+#[async_trait]
+impl Tool for CreateHandoff {
+    fn definition(&self) -> ToolDefinition {
+        ToolDefinition {
+            name: CREATE_HANDOFF.to_string(),
+            description: "Write the handoff for the version the person approved, so Koda can build it without guessing: the design \
+                          system, sitemap, user flows, every page and component (by their data-design-id), interactions, responsive \
+                          rules, accessibility, assets and the decisions made. The brief, the feedback's outcome and the approved \
+                          preview's version and address are added for you. It only works once the person has approved a version."
+                .to_string(),
+            input_schema: design_handoff::handoff_input_schema(),
+        }
+    }
+
+    fn group(&self) -> &'static str {
+        GROUP
+    }
+
+    fn keywords(&self) -> &'static [&'static str] {
+        &["design", "handoff", "build"]
+    }
+
+    async fn execute(&self, conn: &mut PoolConnection<Postgres>, session_id: Uuid, agent_session_id: Uuid, user_id: Uuid, input: Value) -> Result<ToolOutcome, String> {
+        let unsaved = |e: sqlx::Error| {
+            tracing::error!(error = %e, "design handoff: save failed");
+            "the handoff couldn't be saved right now".to_string()
+        };
+        let approval = design_approval::current(&mut **conn, session_id).await.map_err(unsaved)?.ok_or(NOT_APPROVED_YET)?;
+        let manifest = design_artifact::version(&mut **conn, session_id, approval.version).await.map_err(unsaved)?.ok_or(NOT_APPROVED_YET)?;
+        let spec = Spec::parse(&input, &manifest)?;
+        let brief = design_brief::latest(&mut **conn, session_id).await.map_err(unsaved)?;
+        let feedback = design_feedback::list(&mut **conn, session_id).await.map_err(unsaved)?;
+        let published = static_publish::latest(&mut **conn, session_id, approval.version).await.map_err(unsaved)?;
+        let package = Package {
+            spec,
+            artifact_version: approval.version,
+            direction_id: manifest.direction_id,
+            studio_link: studio_link(session_id, approval.version),
+            published_url: published.map(|published| published.url),
+            brief_version: brief.as_ref().map(|(version, _)| *version),
+            brief: brief.map(|(_, brief)| brief),
+            feedback: feedback.iter().map(FeedbackOutcome::from).collect(),
+        };
+        let version = design_handoff::save(&mut **conn, session_id, agent_session_id, user_id, &package).await.map_err(unsaved)?;
+        let project: Option<Uuid> = sqlx::query_scalar("SELECT id FROM projects WHERE id = chat_project($1)").bind(session_id).fetch_optional(&mut **conn).await.ok().flatten();
+        Ok(ToolOutcome::text(handoff_message(version, approval.version, project)))
+    }
+}
+
 /// Sora's own tools.
 pub fn own_tools(mcp: &SharedMcpOps, publisher: &SharedStaticPublisher) -> Vec<Box<dyn Tool>> {
     vec![
         Box::new(ProposeDirections),
         Box::new(SavePreview { publisher: publisher.clone() }),
         Box::new(ReadPreview),
+        Box::new(CreateHandoff),
         Box::new(ListConnectedTools { mcp: mcp.clone() }),
         Box::new(UseConnectedTool { mcp: mcp.clone() }),
     ]
@@ -483,6 +556,26 @@ pub(crate) mod tests {
         let schema = SavePreview { publisher: std::sync::Arc::new(nomi_agent_core::static_publish::NoStaticPublisher) }.definition().input_schema;
         assert_eq!(schema["properties"]["resolves"]["items"]["required"], json!(["feedback", "note"]));
         assert_eq!(schema["required"], json!(["direction_id", "title", "files"]), "resolves stays optional");
+    }
+
+    #[test]
+    fn a_saved_handoff_tells_sora_how_to_pass_it_to_koda() {
+        let project = Uuid::parse_str("0193309a-4f5b-7b00-8cb5-123456789abc").unwrap();
+        let said = handoff_message(2, 3, Some(project));
+        assert!(said.starts_with("Handoff saved as version 2, for approved preview version 3."), "{said}");
+        assert!(said.contains("delegate_to_agent") && said.contains("\"Project 0193309a-4f5b-7b00-8cb5-123456789abc: "), "{said}");
+        assert!(said.contains("Koda gets the whole package in his brief"));
+        let nowhere = handoff_message(1, 3, None);
+        assert!(nowhere.contains("There is no project in this chat yet") && !nowhere.contains("\"Project "), "{nowhere}");
+    }
+
+    #[test]
+    fn a_handoff_waits_for_the_persons_approval() {
+        assert!(NOT_APPROVED_YET.contains("approve") && NOT_APPROVED_YET.contains("Design Studio"));
+        let tool = CreateHandoff.definition();
+        assert_eq!(tool.name, CREATE_HANDOFF);
+        assert_eq!(tool.input_schema, nomi_agent_core::design_handoff::handoff_input_schema());
+        assert!(tool.description.contains("approved"));
     }
 
     #[test]
