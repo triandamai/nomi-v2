@@ -48,7 +48,8 @@ test('says when nothing was found, and New chat is ⌘⇧O', async ({ page, cont
 	const account = await createAccount();
 	await signInAs(context, account);
 	await page.goto('/', { waitUntil: 'networkidle' });
-	await page.getByRole('combobox', { name: 'Search chats, memory, files' }).fill('zzqx');
+	const search = page.getByRole('combobox', { name: 'Search chats, memory, files' });
+	await search.fill('zzqx');
 	await expect(page.getByText('Nothing found for “zzqx”')).toBeVisible();
 	await page.keyboard.press('Escape');
 	await expect(page.getByText('Nothing found for “zzqx”')).toHaveCount(0);

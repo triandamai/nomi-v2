@@ -3,7 +3,7 @@
 //! admins (they also publish, roll back, take it offline, see the database and manage members).
 
 use axum::extract::{Path, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use axum::Json;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -234,6 +234,8 @@ pub struct ProjectInviteRequest {
     pub email: String,
     /// build, prompt or view.
     pub role: String,
+    /// The web app this invite was sent from (e.g. `https://new.nomi.app`), for links in the email.
+    pub origin: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -254,6 +256,7 @@ pub async fn invite(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
     Path(project_id): Path<Uuid>,
+    headers: HeaderMap,
     Json(req): Json<ProjectInviteRequest>,
 ) -> Result<(StatusCode, Json<ProjectInvite>), ApiError> {
     require_admin(&state.pool, project_id, claims.sub).await?;
@@ -284,7 +287,8 @@ pub async fn invite(
         let _ = put_member(State(state.clone()), AuthClaims(claims), Path((project_id, user_id)), Json(MemberRequest { role: role.to_string() })).await?;
         return Ok((StatusCode::OK, Json(ProjectInvite { added: true, email, role: req.role, path: None, expires_at: None })));
     }
-    let sent = crate::routes::orgs::send_invite(&state, claims.sub, org_id, &email, "member", Some((project_id, role)))
+    let origin = crate::routes::orgs::request_origin(&headers, req.origin.as_deref());
+    let sent = crate::routes::orgs::send_invite(&state, claims.sub, org_id, &email, "member", Some((project_id, role)), origin.as_deref())
         .await
         .map_err(|(code, why)| (code, why.to_string()))?;
     Ok((
