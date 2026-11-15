@@ -7,7 +7,7 @@ fn env(name: &str) -> Option<String> {
 }
 
 /// The scheme and host of `url` (`https://nomi.example.com`), without a trailing slash.
-fn origin(url: &str) -> Option<String> {
+pub fn origin(url: &str) -> Option<String> {
     let parsed = reqwest::Url::parse(url).ok()?;
     if !matches!(parsed.scheme(), "http" | "https") || parsed.host_str().is_none() {
         return None;
@@ -28,14 +28,20 @@ pub fn app_url() -> Option<String> {
     resolve(env("APP_URL"), env("GOOGLE_REDIRECT_URI"))
 }
 
-/// `path` (an in-app path like `/invite/abc`) as a full link, or `None` when the address isn't
-/// known. Anything that is already a full link is kept as it is.
-pub fn link(path: &str) -> Option<String> {
+/// `path` (an in-app path like `/invite/abc`) as a full link on `origin_override` (or `app_url()`
+/// when None). Anything that is already a full link is kept as it is.
+pub fn link_for(path: &str, origin_override: Option<&str>) -> Option<String> {
     if origin(path).is_some() {
         return Some(path.to_string());
     }
-    let base = app_url()?;
+    let base = origin_override.and_then(origin).or_else(app_url)?;
     Some(if path.starts_with('/') { format!("{base}{path}") } else { format!("{base}/{path}") })
+}
+
+/// `path` (an in-app path like `/invite/abc`) as a full link, or `None` when the address isn't
+/// known. Anything that is already a full link is kept as it is.
+pub fn link(path: &str) -> Option<String> {
+    link_for(path, None)
 }
 
 /// Logged once at startup: without an address, emails can only name the page to open.
@@ -64,5 +70,17 @@ mod tests {
         assert_eq!(origin("http://localhost:5173/x").as_deref(), Some("http://localhost:5173"));
         assert_eq!(origin("/invite/abc"), None);
         assert_eq!(origin("javascript:alert(1)"), None);
+    }
+
+    #[test]
+    fn link_for_prefers_origin_override() {
+        assert_eq!(
+            link_for("/invite/abc", Some("http://localhost:4176")).as_deref(),
+            Some("http://localhost:4176/invite/abc")
+        );
+        assert_eq!(
+            link_for("https://example.com/already-full", Some("http://localhost:4176")).as_deref(),
+            Some("https://example.com/already-full")
+        );
     }
 }
