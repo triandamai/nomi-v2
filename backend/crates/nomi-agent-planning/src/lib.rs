@@ -92,23 +92,20 @@ impl SubAgent for PlanningAgent {
         user_id: Uuid,
         messages: &[LlmMessage],
     ) -> Option<String> {
-        let asked_to_build = messages
-            .iter()
-            .filter(|m| m.role == LlmRole::User)
-            .flat_map(|m| m.content.iter())
-            .any(|block| matches!(block, ContentBlock::Text { text } if nomi_agent_core::build_intent::wants_to_build(text)));
-        if asked_to_build {
-            return Some(discovery::app_context_for(&mut **conn, session_id, user_id).await);
-        }
-        let project_chat: bool = sqlx::query_scalar("SELECT chat_project($1) IS NOT NULL")
-            .bind(session_id)
-            .fetch_one(&mut **conn)
-            .await
-            .unwrap_or(false);
-        if !project_chat {
+        if !is_app_chat(conn, session_id, messages).await {
             return None;
         }
         Some(discovery::app_context_for(&mut **conn, session_id, user_id).await)
+    }
+
+    /// The structured design brief (`save_design_brief`), for an app or site where the design
+    /// workflow is rolled out to the person.
+    async fn chat_tools(&self, conn: &mut PoolConnection<Postgres>, session_id: Uuid, user_id: Uuid, messages: &[LlmMessage]) -> Vec<ToolDefinition> {
+        if is_app_chat(conn, session_id, messages).await && nomi_settings::config::design_enabled_for(user_id).await {
+            vec![discovery::save_design_brief_definition()]
+        } else {
+            Vec::new()
+        }
     }
 
     /// Remembers durable facts the user mentions here and recalls them in later turns.
@@ -143,6 +140,9 @@ impl SubAgent for PlanningAgent {
                 let tool = tools::CreateProject { relay: self.relay_ops.clone() };
                 nomi_agent_core::Tool::execute(&tool, conn, session_id, agent_session_id, user_id, input).await
             }
+            discovery::SAVE_DESIGN_BRIEF if nomi_settings::config::design_enabled_for(user_id).await => {
+                discovery::save_design_brief(&mut **conn, session_id, agent_session_id, user_id, &input).await.map(nomi_agent_core::ToolOutcome::text)
+            }
             PUBLISH_TOOL_NAME => publish_from_tool(self.project_ops.as_ref(), user_id, &self.display_name(), &input).await.map(nomi_agent_core::ToolOutcome::text),
             other => Err(format!("unknown tool: {other}")),
         }
@@ -176,9 +176,10 @@ impl SubAgent for PlanningAgent {
         true
     }
 
-    /// Rena only names and describes the chat's own project: nothing to approve.
+    /// Rena only names and describes the chat's own project, and notes what she found out about
+    /// it: nothing to approve.
     fn tool_needs_approval(&self, tool_name: &str) -> bool {
-        tool_name != "create_project"
+        tool_name != "create_project" && tool_name != discovery::SAVE_DESIGN_BRIEF
     }
 
     fn supports_plans(&self) -> bool {
@@ -188,6 +189,20 @@ impl SubAgent for PlanningAgent {
     fn keeps_plans_in_drafts(&self) -> bool {
         true
     }
+}
+
+/// Whether this chat is about building something: the person asked for an app, site or the like
+/// in `messages`, or it is a project's chat.
+async fn is_app_chat(conn: &mut PoolConnection<Postgres>, session_id: Uuid, messages: &[LlmMessage]) -> bool {
+    let asked_to_build = messages
+        .iter()
+        .filter(|m| m.role == LlmRole::User)
+        .flat_map(|m| m.content.iter())
+        .any(|block| matches!(block, ContentBlock::Text { text } if nomi_agent_core::build_intent::wants_to_build(text)));
+    if asked_to_build {
+        return true;
+    }
+    sqlx::query_scalar("SELECT chat_project($1) IS NOT NULL").bind(session_id).fetch_one(&mut **conn).await.unwrap_or(false)
 }
 
 /// A project row may already exist for this session — the "+ Add new project" entry point

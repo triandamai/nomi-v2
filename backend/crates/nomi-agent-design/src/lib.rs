@@ -12,9 +12,20 @@ use uuid::Uuid;
 
 use nomi_agent_core::crew::DESIGN_AGENT_TYPE;
 use nomi_agent_core::prompts::DESIGN_SYSTEM_PROMPT;
+use nomi_agent_core::design_brief::{self, DesignBrief};
 use nomi_agent_core::mcp_ops::{NoMcpOps, SharedMcpOps};
 use nomi_agent_core::{find_tool, tool_definitions, SubAgent};
 use nomi_llm::ToolDefinition;
+
+/// What Sora is told before the brief.
+pub const BRIEF_INTRO: &str = "This is the design brief Rena saved for this chat: start from it rather than asking for what it \
+     already says. Treat what is marked confirmed as fact, what is from research as evidence, and what is recommended or \
+     assumed as open to change; say so when a direction rests on an assumption.";
+
+/// The chat's brief as Sora starts from it.
+pub fn brief_context(version: i32, brief: &DesignBrief) -> String {
+    format!("{BRIEF_INTRO}\n\n{}", brief.to_markdown(version))
+}
 
 /// Sora. She is registered for everyone, and reachable only where the `design` setting is
 /// rolled out (see `nomi_agent_core::personal_crew::with_design_gate`).
@@ -83,6 +94,19 @@ impl SubAgent for DesignAgent {
         }
         let text = |field: &str| input.get(field).and_then(Value::as_str).map(str::trim).filter(|v| !v.is_empty());
         Some(format!("Use {} on {}", text("tool")?, text("server")?))
+    }
+
+    /// The chat's newest design brief, when Rena saved one.
+    async fn domain_context(
+        &self,
+        conn: &mut PoolConnection<Postgres>,
+        _s3: Option<&nomi_storage::S3Config>,
+        session_id: Uuid,
+        _user_id: Uuid,
+        _messages: &[nomi_llm::LlmMessage],
+    ) -> Option<String> {
+        let (version, brief) = design_brief::latest(&mut **conn, session_id).await.ok().flatten()?;
+        Some(brief_context(version, &brief))
     }
 
     fn intent_label(&self) -> Cow<'static, str> {
@@ -163,6 +187,21 @@ mod tests {
         let action = sora.describe_action(tools::USE_CONNECTED_TOOL, &serde_json::json!({"server": "Refs", "tool": "search_references"}), nomi_agent_core::Locale::En);
         assert_eq!(action.as_deref(), Some("Use search_references on Refs"));
         assert_eq!(sora.describe_action(tools::LIST_CONNECTED_TOOLS, &serde_json::json!({}), nomi_agent_core::Locale::En), None);
+    }
+
+    #[test]
+    fn the_brief_is_put_in_front_of_sora_with_its_version_and_how_to_read_it() {
+        let brief = nomi_agent_core::design_brief::DesignBrief::parse(&serde_json::json!({
+            "company": [{"value": "Roti Pagi", "source": "confirmed"}],
+            "audience": [{"value": "Neighbours", "source": "assumed"}],
+            "objectives": [{"value": "Pre-orders", "source": "confirmed"}]
+        }))
+        .unwrap();
+        let context = brief_context(4, &brief);
+        assert!(context.contains("# Design brief (version 4)"));
+        assert!(context.contains("- Neighbours (assumed, not confirmed)"));
+        assert!(context.starts_with(BRIEF_INTRO));
+        assert!(BRIEF_INTRO.contains("assumed") && BRIEF_INTRO.contains("confirmed"));
     }
 
     #[test]

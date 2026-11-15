@@ -139,3 +139,58 @@ async fn with_design_an_app_request_also_gets_discovery_and_what_this_chat_alrea
     drop(conn);
     design(&pool, false).await;
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn rena_has_the_brief_tool_only_where_design_is_on_and_only_for_an_app(pool: PgPool) {
+    let _g = GLOBALS.lock().await;
+    let session_id = chat(&pool).await;
+    let app = vec![said(LlmRole::User, "Can you build me a website for my bakery?")];
+    let trip = vec![said(LlmRole::User, "Plan a 3-day trip to Bali for two")];
+    let names = |tools: Vec<nomi_llm::ToolDefinition>| tools.into_iter().map(|t| t.name).collect::<Vec<_>>();
+
+    design(&pool, false).await;
+    let mut conn = pool.acquire().await.unwrap();
+    assert!(PlanningAgent::new().chat_tools(&mut conn, session_id, Uuid::new_v4(), &app).await.is_empty());
+    drop(conn);
+
+    design(&pool, true).await;
+    let mut conn = pool.acquire().await.unwrap();
+    assert_eq!(names(PlanningAgent::new().chat_tools(&mut conn, session_id, Uuid::new_v4(), &app).await), ["save_design_brief"]);
+    assert!(PlanningAgent::new().chat_tools(&mut conn, session_id, Uuid::new_v4(), &trip).await.is_empty());
+    assert!(!PlanningAgent::new().tool_needs_approval("save_design_brief"));
+    drop(conn);
+    design(&pool, false).await;
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn saving_a_brief_keeps_versions_and_refuses_one_that_is_not_valid(pool: PgPool) {
+    let _g = GLOBALS.lock().await;
+    design(&pool, true).await;
+    let session_id = chat(&pool).await;
+    let user_id: Uuid = sqlx::query_scalar("INSERT INTO users DEFAULT VALUES RETURNING id").fetch_one(&pool).await.unwrap();
+    let mut conn = pool.acquire().await.unwrap();
+    let rena = PlanningAgent::new();
+    let brief = serde_json::json!({
+        "company": [{"value": "Roti Pagi", "source": "confirmed"}],
+        "audience": [{"value": "Neighbours", "source": "assumed"}],
+        "objectives": [{"value": "Pre-orders", "source": "confirmed"}]
+    });
+
+    let first = rena.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "save_design_brief", brief.clone()).await.unwrap();
+    assert!(first.display_text.starts_with("Design brief saved as version 1."));
+    let second = rena.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "save_design_brief", brief).await.unwrap();
+    assert!(second.display_text.starts_with("Design brief saved as version 2."));
+
+    let invalid = serde_json::json!({"company": [{"value": "Roti Pagi", "source": "confirmed"}]});
+    let refused = rena.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "save_design_brief", invalid).await.unwrap_err();
+    assert!(refused.starts_with("the brief needs audience and objectives"));
+    let (version, _) = nomi_agent_core::design_brief::latest(&mut conn, session_id).await.unwrap().unwrap();
+    assert_eq!(version, 2, "a refused brief saves nothing");
+    drop(conn);
+
+    // With design off the tool isn't there to call.
+    design(&pool, false).await;
+    let mut conn = pool.acquire().await.unwrap();
+    let off = rena.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "save_design_brief", serde_json::json!({})).await.unwrap_err();
+    assert_eq!(off, "unknown tool: save_design_brief");
+}

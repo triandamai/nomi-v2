@@ -5,6 +5,7 @@
 use std::collections::HashSet;
 
 use nomi_agent_core::prompts::{PLANNING_APP_PLAYBOOK, PLANNING_DESIGN_DISCOVERY};
+use nomi_agent_core::design_brief::{self, DesignBrief};
 use nomi_agent_core::ContentBlock;
 use serde_json::Value;
 use sqlx::PgConnection;
@@ -55,6 +56,47 @@ pub fn already_asked_section(asked: &[String]) -> Option<String> {
     let newest = &unique[unique.len().saturating_sub(MAX_ASKED_LISTED)..];
     let list: Vec<String> = newest.iter().map(|q| format!("- {q}")).collect();
     Some(format!("{ALREADY_ASKED_HEADING}\n{}", list.join("\n")))
+}
+
+pub const SAVE_DESIGN_BRIEF: &str = "save_design_brief";
+
+/// `save_design_brief`: Rena's tool for the structured brief, where the design workflow is on.
+pub fn save_design_brief_definition() -> nomi_llm::ToolDefinition {
+    nomi_llm::ToolDefinition {
+        name: SAVE_DESIGN_BRIEF.to_string(),
+        description: "Save the design brief: what you found out about this site or app, section by section, each entry marked \
+                      with where it came from. Only company, audience and objectives are required; leave the rest out \
+                      when it isn't known. Every call saves the whole brief as a new version, so send it complete \
+                      whenever something changes."
+            .to_string(),
+        input_schema: design_brief::brief_input_schema(),
+    }
+}
+
+/// What Rena is told after a brief was saved.
+pub fn saved_message(version: i32, brief: &DesignBrief) -> String {
+    let mut said = format!("Design brief saved as version {version}.");
+    let unspecified = brief.unspecified();
+    if !unspecified.is_empty() {
+        said.push_str(&format!(" Not specified: {}.", unspecified.join(", ")));
+    }
+    match brief.open.len() {
+        0 => {}
+        1 => said.push_str(" 1 open question."),
+        n => said.push_str(&format!(" {n} open questions.")),
+    }
+    said
+}
+
+/// Checks the brief in `input` and saves it as the chat's next version. An invalid brief saves
+/// nothing and says what to fix.
+pub async fn save_design_brief(conn: &mut PgConnection, session_id: Uuid, agent_session_id: Uuid, user_id: Uuid, input: &Value) -> Result<String, String> {
+    let brief = DesignBrief::parse(input)?;
+    let version = design_brief::save(conn, session_id, agent_session_id, user_id, &brief).await.map_err(|e| {
+        tracing::error!(error = %e, "design brief: save failed");
+        "the brief couldn't be saved right now".to_string()
+    })?;
+    Ok(saved_message(version, &brief))
 }
 
 /// What Rena is told for an app or site request: her app-building playbook as it always was, and
@@ -147,8 +189,31 @@ mod tests {
     }
 
     #[test]
+    fn the_brief_tool_takes_the_briefs_sections() {
+        let tool = save_design_brief_definition();
+        assert_eq!(tool.name, SAVE_DESIGN_BRIEF);
+        assert_eq!(tool.input_schema, nomi_agent_core::design_brief::brief_input_schema());
+        assert!(tool.description.contains("new version"));
+    }
+
+    #[test]
+    fn saving_reports_the_version_and_what_was_left_unspecified() {
+        let brief = nomi_agent_core::design_brief::DesignBrief::parse(&json!({
+            "company": [{"value": "Roti Pagi", "source": "confirmed"}],
+            "audience": [{"value": "Neighbours", "source": "assumed"}],
+            "objectives": [{"value": "Pre-orders", "source": "confirmed"}],
+            "open": ["Is there a logo?"]
+        }))
+        .unwrap();
+        let said = saved_message(2, &brief);
+        assert!(said.starts_with("Design brief saved as version 2."), "{said}");
+        assert!(said.contains("Not specified: positioning, brand_personality, visual_preferences, features, assets, references"));
+        assert!(said.contains("1 open question"));
+    }
+
+    #[test]
     fn discovery_tells_rena_to_research_ask_little_and_keep_facts_apart() {
-        for said in ["read_web_page", "## Confirmed", "## From research", "## Recommended", "## Assumed", "## Open", "Already asked", "replaces step (1)"] {
+        for said in ["save_design_brief", "read_web_page", "## Confirmed", "## From research", "## Recommended", "## Assumed", "## Open", "Already asked", "replaces step (1)"] {
             assert!(PLANNING_DESIGN_DISCOVERY.contains(said), "discovery still says {said:?}");
         }
         for topic in ["audience", "brand", "competitors", "objectives", "features", "assets"] {

@@ -104,7 +104,9 @@ pub const PLANNING_DESIGN_DISCOVERY: &str =
      you, in their terms), '## From research' (what you found, each with the page it came from), \
      '## Recommended' (what you propose, each with its reason), '## Assumed' (what you decided without asking) \
      and '## Open' (what is still unspecified and doesn't block the design). Never present a recommendation or \
-     an assumption as something the person said. When nothing that matters is open, go on to step (2).";
+     an assumption as something the person said. When nothing that matters is open, save what you know with \
+     save_design_brief (each entry marked confirmed, research, recommended or assumed; send the whole brief \
+     again whenever something in it changes), then go on to step (2).";
 
 pub const DESIGN_SYSTEM_PROMPT: &str =
     "You are Sora, the designer in Nomi's crew. You work out how a site or app should look and feel before Koda \
