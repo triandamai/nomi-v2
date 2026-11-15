@@ -8,10 +8,11 @@ use sqlx::pool::PoolConnection;
 use sqlx::Postgres;
 use uuid::Uuid;
 
-use nomi_agent_core::prompts::{PLANNING_APP_PLAYBOOK, PLANNING_SYSTEM_PROMPT};
+use nomi_agent_core::prompts::PLANNING_SYSTEM_PROMPT;
 use nomi_agent_core::SubAgent;
 use nomi_llm::{ContentBlock, LlmMessage, LlmRole, ToolDefinition};
 
+pub mod discovery;
 pub mod tools;
 
 pub use tools::catalog_tools;
@@ -81,13 +82,14 @@ impl PlanningAgent {
 impl SubAgent for PlanningAgent {
     /// The app-building playbook (questions, create_project, the plan, handing it to Koda) only
     /// when this is about building something: a project chat, or a conversation where the person
-    /// asked for an app, site or the like. Trips, schedules and other plans don't get it.
+    /// asked for an app, site or the like. Trips, schedules and other plans don't get it. Where
+    /// the design workflow is rolled out to the person, design discovery comes with it.
     async fn domain_context(
         &self,
         conn: &mut PoolConnection<Postgres>,
         _s3: Option<&nomi_storage::S3Config>,
         session_id: Uuid,
-        _user_id: Uuid,
+        user_id: Uuid,
         messages: &[LlmMessage],
     ) -> Option<String> {
         let asked_to_build = messages
@@ -96,14 +98,17 @@ impl SubAgent for PlanningAgent {
             .flat_map(|m| m.content.iter())
             .any(|block| matches!(block, ContentBlock::Text { text } if nomi_agent_core::build_intent::wants_to_build(text)));
         if asked_to_build {
-            return Some(PLANNING_APP_PLAYBOOK.to_string());
+            return Some(discovery::app_context_for(&mut **conn, session_id, user_id).await);
         }
         let project_chat: bool = sqlx::query_scalar("SELECT chat_project($1) IS NOT NULL")
             .bind(session_id)
             .fetch_one(&mut **conn)
             .await
             .unwrap_or(false);
-        project_chat.then(|| PLANNING_APP_PLAYBOOK.to_string())
+        if !project_chat {
+            return None;
+        }
+        Some(discovery::app_context_for(&mut **conn, session_id, user_id).await)
     }
 
     /// Remembers durable facts the user mentions here and recalls them in later turns.

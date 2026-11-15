@@ -84,3 +84,58 @@ async fn the_playbook_stays_for_the_rest_of_an_app_conversation(pool: PgPool) {
     let messages = vec![said(LlmRole::User, "Editorial")];
     assert!(PlanningAgent::new().domain_context(&mut conn, None, project_chat, Uuid::nil(), &messages).await.is_some());
 }
+
+/// The `design` setting is read through the process-wide settings cache and pool, so the tests
+/// that set it take turns.
+static GLOBALS: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+/// Switches the design workflow on for everyone, or off, as the admin page would.
+async fn design(pool: &PgPool, on: bool) {
+    let key: String = nomi_test_support::TEST_SETTINGS_KEY.iter().map(|b| format!("{b:02x}")).collect();
+    std::env::set_var("SETTINGS_ENCRYPTION_KEY", key);
+    nomi_settings::config::install(pool.clone());
+    let admin: Uuid = sqlx::query_scalar("INSERT INTO users DEFAULT VALUES RETURNING id").fetch_one(pool).await.unwrap();
+    let values = [("enabled".to_string(), if on { "on" } else { "off" }.to_string())].into_iter().collect();
+    nomi_settings::config::save(pool, &nomi_test_support::TEST_SETTINGS_KEY, &nomi_settings::config::DESIGN, &values, admin).await.unwrap();
+    nomi_settings::config::forget();
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn without_design_an_app_request_gets_exactly_the_playbook_it_always_did(pool: PgPool) {
+    let _g = GLOBALS.lock().await;
+    design(&pool, false).await;
+    let session_id = chat(&pool).await;
+    let mut conn = pool.acquire().await.unwrap();
+    let messages = vec![said(LlmRole::User, "Can you build me a website for my bakery?")];
+    let context = PlanningAgent::new().domain_context(&mut conn, None, session_id, Uuid::new_v4(), &messages).await;
+    assert_eq!(context.as_deref(), Some(nomi_agent_core::prompts::PLANNING_APP_PLAYBOOK));
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn with_design_an_app_request_also_gets_discovery_and_what_this_chat_already_asked(pool: PgPool) {
+    let _g = GLOBALS.lock().await;
+    design(&pool, true).await;
+    let session_id = chat(&pool).await;
+    let other_chat = chat(&pool).await;
+    for (chat, question) in [(session_id, "Who is the bakery for?"), (other_chat, "Asked somewhere else?")] {
+        sqlx::query("INSERT INTO messages (session_id, sender_channel_identity_id, content, content_blocks, agent_display_name) VALUES ($1, NULL, $2, $3, 'Rena')")
+            .bind(chat)
+            .bind(question)
+            .bind(serde_json::json!([{"kind": "questions", "intro": null, "questions": [{"question": question, "options": []}]}]))
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    let mut conn = pool.acquire().await.unwrap();
+    let messages = vec![said(LlmRole::User, "Can you build me a website for my bakery?")];
+    let context = PlanningAgent::new().domain_context(&mut conn, None, session_id, Uuid::new_v4(), &messages).await.expect("a build request");
+    assert!(context.starts_with(nomi_agent_core::prompts::PLANNING_APP_PLAYBOOK));
+    assert!(context.contains(nomi_agent_core::prompts::PLANNING_DESIGN_DISCOVERY));
+    assert!(context.contains("- Who is the bakery for?") && !context.contains("Asked somewhere else?"));
+
+    // A trip is still planned as a trip.
+    let trip = vec![said(LlmRole::User, "Plan a 3-day trip to Bali for two")];
+    assert_eq!(PlanningAgent::new().domain_context(&mut conn, None, chat(&pool).await, Uuid::new_v4(), &trip).await, None);
+    drop(conn);
+    design(&pool, false).await;
+}

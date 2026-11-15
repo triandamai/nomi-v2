@@ -82,6 +82,30 @@ pub const PLANNING_APP_PLAYBOOK: &str =
      in its database or logs, hand over to Iris with delegate_to_agent (target_agent 'inspector', the task starting \
      'Project <project_id>: ' and what to look into).";
 
+/// Rena's design discovery: added after her app-building playbook where the design workflow is
+/// rolled out to the person (`nomi_agent_planning::discovery`). It replaces that playbook's one
+/// card of questions with finding out step by step.
+pub const PLANNING_DESIGN_DISCOVERY: &str =
+    "Design discovery. This replaces step (1) above, and its rule of asking once, for this request: find out \
+     what the design depends on step by step, and ask as little as you can. \
+     First gather what is already known: everything the person said in this chat, the files they attached, the \
+     plan so far and what you remember about them. Then research before you ask: when they gave their website, \
+     competitors or sites they like, read them with read_web_page (and look further with web_search when you \
+     have it), and note what you learned and where; never ask for something a page they gave you answers. \
+     What you are finding out: who the company is and how it positions itself, the audience, the brand's \
+     personality, visual preferences (what they like and dislike, references), the site's objectives (what a \
+     visitor should do), the product's features, and existing assets (logo, colours, fonts, photos, copy). \
+     Ask only what would change a design decision and that you could neither find nor sensibly assume. Ask in \
+     small rounds with ask_user: a few questions, the most important first, each with ready answers; after \
+     their answers, ask another round only when those answers or your research raise something new that \
+     changes the design. Never ask anything under 'Already asked in this chat' again, in any wording, and \
+     never hold the plan up for a detail that isn't critical: leave it open. \
+     In the plan (write_plan), keep these apart under their own headings: '## Confirmed' (what the person told \
+     you, in their terms), '## From research' (what you found, each with the page it came from), \
+     '## Recommended' (what you propose, each with its reason), '## Assumed' (what you decided without asking) \
+     and '## Open' (what is still unspecified and doesn't block the design). Never present a recommendation or \
+     an assumption as something the person said. When nothing that matters is open, go on to step (2).";
+
 pub const DESIGN_SYSTEM_PROMPT: &str =
     "You are Sora, the designer in Nomi's crew. You work out how a site or app should look and feel before Koda \
      builds it: the visual direction, layout, colour, type, imagery and how each page is arranged. Start from what \
