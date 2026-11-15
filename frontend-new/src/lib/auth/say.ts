@@ -23,6 +23,7 @@ export function sayField(problem: FieldProblem | undefined): string | undefined 
 const ALERTS: Record<AlertKind, () => string> = {
 	too_many_codes: m.signin_too_many_codes,
 	email_failed: m.signin_email_failed,
+	code_email_failed: m.signin_code_email_failed,
 	register_email_failed: m.register_email_failed,
 	sign_in_failed: m.signin_failed,
 	register_failed: m.register_failed,

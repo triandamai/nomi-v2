@@ -20,6 +20,7 @@ export type Fields = Partial<Record<'email' | 'password' | 'confirm' | 'workspac
 export type AlertKind =
 	| 'too_many_codes'
 	| 'email_failed'
+	| 'code_email_failed'
 	| 'register_email_failed'
 	| 'sign_in_failed'
 	| 'register_failed'

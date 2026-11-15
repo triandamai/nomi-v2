@@ -354,6 +354,11 @@ hard. Add to this list instead of deviating silently.
   a 6-digit code…" under the title, a "Name Field" label with a mail icon): the page uses the
   design system's FirstRun (Build → First run) in the sign-in layout's form column instead,
   without the greeting above it (FirstRun has its own mascot).
+- Sign in or create (vDaAQ) is the pen's one step: the email alone and "Continue with email", whose
+  code signs an address with an account in, or makes the account for a new one (then First run).
+  "Use a password instead", which the pen draws as a link to nowhere, is the email and password
+  form (`?with=password`), which adds what the pen leaves off: "Email me a code instead", "New to
+  Nomi? Create an account" (the register form, with a workspace name) and "Forgot password?".
 
 The app shell (App / Home `Vr4nn`, the account menu `LkJLt`, the workspace switcher `t24cE`)
 leaves out what v2 or the backend can't do yet, rather than draw it dead:
@@ -418,8 +423,10 @@ drawn dead:
   replies), the Reminders push, Crew updates and Quiet hours rows, and Delete account: the backend
   has none of them (BACKEND_TODO.md). Reduce motion is left out too: the app follows the device's
   own setting.
-- The password row leads to the emailed reset (changing it while signed in has no endpoint), so
-  its button is "Change" or "Set password" with the arrow out.
+- The password row's "Change" (or "Set password", for an account made with a code or Google) opens
+  a dialog the pen doesn't draw, built from the design system's Dialog and fields: the current
+  password when there is one, the new one twice, and "Forgot it? Reset it by email" for the emailed
+  reset. Other devices stay signed in, as the backend keeps them.
 - The Google row shows "connected" with Disconnect beside it (the pen shows no way to remove it);
   it's hidden when this Nomi doesn't offer Google.
 - Group names are sentence case ("Account & sign-in"): the pen writes most in capitals in sans,
