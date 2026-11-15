@@ -1,4 +1,5 @@
 import { CREW_TYPE_BY_NAME } from '$lib/crewNames';
+import type { AvatarDefinition } from 'open-bot-avatar';
 // M3 Expressive shape library + the agent → (shape, gradient) identity mapping.
 //
 // Every shape is a "polar" outline r(θ) = R·(1 + amplitude·cos(lobes·θ)) sampled at the same
@@ -206,3 +207,62 @@ export function agentLook(agent: string | null | undefined): AgentLook {
 	if (key === 'inspector') return { shape: 'clover3', tone: 'dusk', motion: 'orbit' };
 	return NOMI_LOOK;
 }
+
+// ── The live (interactive) avatar ───────────────────────────────────────────────────────────────
+// open-bot-avatar (https://dominikscholz.github.io/open-bot-avatar/) turns a flat silhouette + an eye
+// pair into a character with volume, blinking, gaze and moods. Its contract is one path in a
+// 0 0 100 100 view (geometry inside 8..92) and one solid body colour, so the live avatar is the same
+// outline scaled into that view, painted in the tone's middle colour (the engine adds its own shading).
+
+/** open-bot-avatar's view side. */
+const LIVE_VIEW = 100;
+const LIVE_CENTER = LIVE_VIEW / 2;
+// The biggest lobe (amplitude 0.2) reaches 34·1.2 = 40.8 from the centre: inside the 8..92 safe area.
+const LIVE_RADIUS = 34;
+const LIVE_SCALE = LIVE_RADIUS / RADIUS;
+// Fewer points than the flat outline: the engine slices the path into many cross-sections.
+const LIVE_POINTS = 72;
+
+/** The outline of a shape as an SVG path in open-bot-avatar's 100×100 view. */
+export function livePath(name: ShapeName): string {
+	const { lobes, amplitude, phase = 0 } = SPECS[name];
+	const points: string[] = [];
+	for (let i = 0; i < LIVE_POINTS; i++) {
+		const theta = (2 * Math.PI * i) / LIVE_POINTS;
+		const r = LIVE_RADIUS * (1 + amplitude * Math.cos(lobes * (theta - phase)));
+		points.push(`${(LIVE_CENTER + r * Math.cos(theta)).toFixed(2)} ${(LIVE_CENTER + r * Math.sin(theta)).toFixed(2)}`);
+	}
+	return `M${points.join(' L')}Z`;
+}
+
+/** Each tone as one solid colour (the middle of its gradient), for the live avatar. */
+export const TONE_BODY: Record<GradientTone, string> = {
+	glow: '#5be08f',
+	ember: '#ffa462',
+	tide: '#82d6d9',
+	sky: '#a8ceff',
+	bloom: '#ffb4c5',
+	dusk: '#c1abff',
+	citrus: '#ffdb70',
+	slate: '#adbcc8',
+};
+
+/** The two-dot face placed as open-bot-avatar's eye pair: the flat face, scaled into its view. */
+export const LIVE_EYES = {
+	x: LIVE_CENTER,
+	y: LIVE_CENTER + (22 - CENTER) * LIVE_SCALE,
+	spacing: (29 - 19) * LIVE_SCALE,
+	scale: 1,
+};
+
+/** An agent's open-bot-avatar definition (contract v1). */
+export function liveDefinition(shape: ShapeName, name: string): AvatarDefinition {
+	return {
+		version: 1,
+		id: shape,
+		name,
+		body: { path: livePath(shape) },
+		eyes: { ...LIVE_EYES },
+	};
+}
+

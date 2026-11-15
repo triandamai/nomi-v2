@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { agentLook, registerAgentLooks, SHAPE_NAMES, shapePath, shapePoints } from './shapes';
+import { validateAvatar } from 'open-bot-avatar';
+import { agentLook, liveDefinition, registerAgentLooks, SHAPE_NAMES, shapePath, shapePoints } from './shapes';
 
 const SHAPES = SHAPE_NAMES;
 
@@ -22,6 +23,13 @@ describe('shapes', () => {
 
 	it('builds a closed SVG path', () => {
 		expect(shapePath('cookie9')).toMatch(/^M[\d.]+ [\d.]+( L[\d.]+ [\d.]+)+Z$/);
+	});
+
+	it('produces a valid open-bot-avatar definition for every shape', () => {
+		for (const name of SHAPES) {
+			const res = validateAvatar(liveDefinition(name, name));
+			expect(res.ok ? [] : res.errors, name).toEqual([]);
+		}
 	});
 });
 

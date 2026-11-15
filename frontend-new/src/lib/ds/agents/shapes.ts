@@ -4,6 +4,7 @@
 // doesn't take `working` yet, since frontend's twin would have to take it too. The pen's flat
 // mascots are kept in $lib/rollback/PenMascot.svelte (with ./mascots.ts) to roll back to.
 
+import type { AvatarDefinition } from 'open-bot-avatar';
 import type { CrewId } from './crew';
 
 export type AgentShapeName = 'cookie9' | 'cookie6' | 'sunny8' | 'sunny12' | 'clover3' | 'clover4' | 'flower5' | 'puffy7' | 'burst16' | 'soft-square';
@@ -66,6 +67,67 @@ export const FACE_EYES = [
 	{ cx: 19, cy: 22, r: 2.6 },
 	{ cx: 29, cy: 22, r: 2.6 },
 ] as const;
+
+// ── The live (interactive) mascot ────────────────────────────────────────────────────────────────
+// open-bot-avatar (https://dominikscholz.github.io/open-bot-avatar/) turns a flat silhouette + an eye
+// pair into a character with volume, blinking, gaze and moods. Its contract is one path in a
+// 0 0 100 100 view (geometry inside 8..92) and one solid body colour, so the live mascot is the same
+// outline scaled into that view, painted in the tone's middle colour (the engine adds its own shading).
+
+/** open-bot-avatar's view side. */
+const LIVE_VIEW = 100;
+const LIVE_CENTER = LIVE_VIEW / 2;
+// The biggest lobe (amplitude 0.2) reaches 34·1.2 = 40.8 from the centre: inside the 8..92 safe area.
+const LIVE_RADIUS = 34;
+const LIVE_SCALE = LIVE_RADIUS / RADIUS;
+// Fewer points than the flat outline: the engine slices the path into many cross-sections.
+const LIVE_POINTS = 72;
+
+/** The outline of a shape as an SVG path in open-bot-avatar's 100×100 view. */
+export function livePath(name: AgentShapeName): string {
+	const { lobes, amplitude, phase = 0 } = SPECS[name];
+	const points: string[] = [];
+	for (let i = 0; i < LIVE_POINTS; i++) {
+		const theta = (2 * Math.PI * i) / LIVE_POINTS;
+		const r = LIVE_RADIUS * (1 + amplitude * Math.cos(lobes * (theta - phase)));
+		points.push(`${(LIVE_CENTER + r * Math.cos(theta)).toFixed(DECIMALS)} ${(LIVE_CENTER + r * Math.sin(theta)).toFixed(DECIMALS)}`);
+	}
+	return `M${points.join(' L')}Z`;
+}
+
+/** Each tone as one solid colour (the middle of its gradient), for the live mascot. */
+export const TONE_BODY: Record<AgentTone, string> = {
+	glow: '#5be08f',
+	ember: '#ffa462',
+	tide: '#82d6d9',
+	sky: '#a8ceff',
+	bloom: '#ffb4c5',
+	dusk: '#c1abff',
+	citrus: '#ffdb70',
+	slate: '#adbcc8',
+};
+
+/** The two-dot face placed as open-bot-avatar's eye pair: the flat face, scaled into its view. */
+const LIVE_EYES = (() => {
+	const [left, right] = FACE_EYES;
+	return {
+		x: LIVE_CENTER + ((left.cx + right.cx) / 2 - CENTER) * LIVE_SCALE,
+		y: LIVE_CENTER + (left.cy - CENTER) * LIVE_SCALE,
+		spacing: (right.cx - left.cx) * LIVE_SCALE,
+		scale: 1,
+	};
+})();
+
+/** A crew member's open-bot-avatar definition (contract v1). */
+export function liveDefinition(agent: CrewId, name: string): AvatarDefinition {
+	return {
+		version: 1,
+		id: agent,
+		name,
+		body: { path: livePath(CREW_LOOKS[agent].shape) },
+		eyes: { ...LIVE_EYES },
+	};
+}
 
 /** Who wears what: frontend's agentLook for each member's agent (Dana is money, Kala reminders…). */
 export const CREW_LOOKS: Record<CrewId, AgentLook> = {

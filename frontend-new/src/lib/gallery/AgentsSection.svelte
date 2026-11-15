@@ -65,14 +65,14 @@
 				<div data-size="96" class="grid min-w-204 grid-cols-10 px-1.5">
 					{#each mascots as member (member.id)}
 						<div class="flex flex-col items-center gap-3">
-							<Mascot agent={member.id} />
+							<Mascot agent={member.id} live={false} />
 							<span class="text-ui whitespace-nowrap text-text-2">{member.name}</span>
 						</div>
 					{/each}
 				</div>
 				<div data-size="32" class="flex items-center gap-4">
 					<span class="w-16 shrink-0 font-mono text-label text-text-3">32px</span>
-					{#each mascots as member (member.id)}<Mascot agent={member.id} size={32} />{/each}
+					{#each mascots as member (member.id)}<Mascot agent={member.id} size={32} live={false} />{/each}
 				</div>
 				<div data-size="20" class="flex items-center gap-4">
 					<span class="w-16 shrink-0 font-mono text-label text-text-3">20px</span>
