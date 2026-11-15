@@ -58,12 +58,12 @@ export async function seedUsage(email: string, usage: { model: string; input: nu
 }
 
 /** A memory the crew kept, as its turn would have (a zero vector stands in for the embedding). */
-export async function seedMemory(email: string, memory: { content: string; kind: string; weight?: number }): Promise<string> {
+export async function seedMemory(email: string, memory: { content: string; kind: string; weight?: number; learnedBy?: string }): Promise<string> {
 	const sql = postgres(DATABASE_URL, { max: 1, onnotice: () => {} });
 	try {
 		const [row] = await sql`
-			INSERT INTO memory_items (user_id, content, kind, weight, embedding)
-			SELECT user_id, ${memory.content}, ${memory.kind}, ${memory.weight ?? 1}, array_fill(0::real, ARRAY[1536])::vector
+			INSERT INTO memory_items (user_id, content, kind, weight, embedding, learned_by)
+			SELECT user_id, ${memory.content}, ${memory.kind}, ${memory.weight ?? 1}, array_fill(0::real, ARRAY[1536])::vector, ${memory.learnedBy ?? null}
 			FROM web_credentials WHERE email = ${email}
 			RETURNING id`;
 		return row.id as string;
