@@ -135,6 +135,11 @@ describe('sign in: the page', () => {
 		expect(await page('http://localhost/sign-in?reset=1')).toMatchObject({ googleError: null, passwordChanged: true });
 	});
 
+	it('says an account was closed, after closing it', async () => {
+		expect(await page('http://localhost/sign-in?closed=1')).toMatchObject({ accountClosed: true, method: 'code' });
+		expect(await page('http://localhost/sign-in')).toMatchObject({ accountClosed: false });
+	});
+
 	it('starts with the email alone; the password form is the way it says', async () => {
 		expect(await page('http://localhost/sign-in')).toMatchObject({ method: 'code' });
 		expect(await page('http://localhost/sign-in?with=password')).toMatchObject({ method: 'password' });

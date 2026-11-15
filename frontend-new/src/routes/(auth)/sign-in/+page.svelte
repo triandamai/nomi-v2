@@ -43,6 +43,7 @@
 </div>
 
 {#if data.passwordChanged}<AuthNote text={m.signin_reset_done()} announce />{/if}
+{#if data.accountClosed}<AuthNote text={m.signin_account_closed()} announce />{/if}
 {#if data.googleError}<ErrorCallout title={sayGoogle(data.googleError)} code="google · {data.googleError}" />{/if}
 
 {#if data.google}
