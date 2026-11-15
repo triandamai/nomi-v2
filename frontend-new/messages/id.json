@@ -2695,5 +2695,11 @@
 	"database_edit_cell": "Edit {column} di baris {row}",
 	"database_edit_failed": "Baris tidak bisa disimpan",
 	"database_saved": "Tersimpan",
-	"database_editing_note": "Mengedit {table} di database {database}. Enter menyimpan sel; Esc mengembalikannya."
+	"database_editing_note": "Mengedit {table} di database {database}. Enter menyimpan sel; Esc mengembalikannya.",
+	"monitor_form_sends": "Formulir terkirim",
+	"monitor_form_share": "{share} dari kunjungan",
+	"monitor_uptime": "Uptime",
+	"monitor_uptime_for": "dipantau selama {time}",
+	"monitor_sources": "Asal kunjungan",
+	"monitor_sources_none": "Belum diukur: situs melaporkan asal kunjungannya setelah diterbitkan lagi."
 }

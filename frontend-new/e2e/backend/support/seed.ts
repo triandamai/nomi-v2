@@ -115,3 +115,23 @@ export async function setProjectStatus(id: string, status: 'planning' | 'buildin
 		await sql.end();
 	}
 }
+
+/** Marks a project as published on Shipyard (its app named), as a first publish would. */
+export async function markPublished(projectId: string): Promise<void> {
+	const sql = postgres(DATABASE_URL, { max: 1, onnotice: () => {} });
+	try {
+		await sql`UPDATE projects SET shipyard_app = ${`e2e-${projectId.slice(0, 8)}`} WHERE id = ${projectId}`;
+	} finally {
+		await sql.end();
+	}
+}
+
+/** What a published site has reported about itself: its visits (with where from) and forms sent. */
+export async function siteHits(projectId: string): Promise<{ kind: string; referrer_host: string | null }[]> {
+	const sql = postgres(DATABASE_URL, { max: 1, onnotice: () => {} });
+	try {
+		return (await sql`SELECT kind, referrer_host FROM site_hits WHERE project_id = ${projectId} ORDER BY id`) as unknown as { kind: string; referrer_host: string | null }[];
+	} finally {
+		await sql.end();
+	}
+}
