@@ -14,6 +14,7 @@ import { chatHref } from './shell';
 
 const BY_NAME = new Map<string, CrewId>(CREW.map((member) => [member.name.toLowerCase(), member.id]));
 BY_NAME.set('inspector', 'iris');
+BY_NAME.set('design', 'sora');
 
 /** The mascot a message wears, from the name it carries ("Dana"); Nomi's for anyone else. */
 export function crewIdOf(name: string | null | undefined): CrewId {

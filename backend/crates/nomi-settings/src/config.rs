@@ -5,7 +5,7 @@
 //! shown back. The server and the worker read the saved values (cached for a few seconds), so a
 //! save takes effect without a restart.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::{Mutex, OnceLock, RwLock};
 use std::time::{Duration, Instant};
 
@@ -210,21 +210,15 @@ pub const SANDBOX: SectionDef = SectionDef {
     ],
 };
 
-/// Sora and the design workflow. `enabled` is the kill switch: anything but "on" (including
-/// nothing saved) keeps the crew and Rena exactly as they were; `rollout` then says who gets it.
-pub const DESIGN: SectionDef = SectionDef {
-    name: "design",
-    fields: &[
-        saved_only("enabled", Kind::Choice(&["off", "on"])),
-        saved_only("rollout", Kind::Choice(&["off", "allowlist", "percent", "all"])),
-        // Comma-separated user ids, for the `allowlist` rollout.
-        saved_only("rollout_allowlist", Kind::Text),
-        // 1 to 100, for the `percent` rollout.
-        saved_only("rollout_percent", Kind::Number),
-    ],
-};
+/// The built-in crew members an admin switched off for everyone (Admin → Agents): `off` is their
+/// agent types, comma-separated. Nothing saved: every member is on. Not one of `SECTIONS`: it
+/// has its own page, not a form in Admin → Configuration.
+pub const CREW: SectionDef = SectionDef { name: "crew", fields: &[saved_only("off", Kind::Text)] };
 
-pub const SECTIONS: [&SectionDef; 12] = [&ATTACHMENTS, &STORAGE, &GOOGLE, &GITHUB, &SMTP, &AGENT_LOOP, &RELAY, &DOMAINS, &XENDIT, &BILLING, &SANDBOX, &DESIGN];
+/// The field of `CREW` that lists the members switched off.
+const CREW_OFF: &str = "off";
+
+pub const SECTIONS: [&SectionDef; 11] = [&ATTACHMENTS, &STORAGE, &GOOGLE, &GITHUB, &SMTP, &AGENT_LOOP, &RELAY, &DOMAINS, &XENDIT, &BILLING, &SANDBOX];
 
 pub fn section_named(name: &str) -> Option<&'static SectionDef> {
     SECTIONS.into_iter().find(|s| s.name == name)
@@ -492,7 +486,7 @@ const PERCENT_MAX: u8 = 100;
 /// The share of users a percentage rollout is spread over.
 const PERCENT_BUCKETS: u32 = 100;
 
-/// Who gets a feature that is being rolled out (the sandbox runtime, the design workflow).
+/// Who gets a feature that is being rolled out (the sandbox runtime).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Rollout {
     Off,
@@ -531,15 +525,55 @@ impl Rollout {
     }
 }
 
-/// Whether `section` (the `design` section) gives `user_id` Sora and the design workflow: the
-/// switch is on and the rollout includes them.
-pub fn design_enabled(section: &Section, user_id: Uuid) -> bool {
-    section.get("enabled").as_deref() == Some("on") && Rollout::from_section(section).includes(user_id)
+/// The members `section` (the `crew` section) has switched off for everyone.
+pub fn agents_off(section: &Section) -> BTreeSet<String> {
+    section.get(CREW_OFF).unwrap_or_default().split(',').map(|t| t.trim().to_string()).filter(|t| !t.is_empty()).collect()
 }
 
-/// `design_enabled` for what is saved now.
-pub async fn design_enabled_for(user_id: Uuid) -> bool {
-    design_enabled(&current(&DESIGN).await, user_id)
+/// `agents_off` for what is saved now.
+pub async fn agents_off_now() -> BTreeSet<String> {
+    agents_off(&current(&CREW).await)
+}
+
+/// Whether the crew member `agent_type` is on for everyone (the default) as saved now.
+pub async fn agent_on(agent_type: &str) -> bool {
+    !agents_off_now().await.contains(agent_type)
+}
+
+/// `off` with `agent_type` switched on or off, as the `crew` section saves it.
+pub fn with_agent(mut off: BTreeSet<String>, agent_type: &str, on: bool) -> String {
+    if on {
+        off.remove(agent_type);
+    } else {
+        off.insert(agent_type.to_string());
+    }
+    off.into_iter().collect::<Vec<_>>().join(",")
+}
+
+/// Switches the crew member `agent_type` on or off for everyone (Admin → Agents).
+pub async fn set_agent_on(pool: &PgPool, agent_type: &str, on: bool, user: Uuid) -> Result<(), sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    let saved: Option<String> =
+        sqlx::query_scalar("SELECT value FROM app_config WHERE section = $1 AND field = $2 FOR UPDATE").bind(CREW.name).bind(CREW_OFF).fetch_optional(&mut *tx).await?.flatten();
+    let off = saved.unwrap_or_default().split(',').map(|t| t.trim().to_string()).filter(|t| !t.is_empty()).collect();
+    let value = with_agent(off, agent_type, on);
+    if value.is_empty() {
+        sqlx::query("DELETE FROM app_config WHERE section = $1 AND field = $2").bind(CREW.name).bind(CREW_OFF).execute(&mut *tx).await?;
+    } else {
+        sqlx::query(
+            "INSERT INTO app_config (section, field, value, updated_by) VALUES ($1, $2, $3, $4) \
+             ON CONFLICT (section, field) DO UPDATE SET value = $3, value_encrypted = NULL, updated_by = $4, updated_at = now()",
+        )
+        .bind(CREW.name)
+        .bind(CREW_OFF)
+        .bind(&value)
+        .bind(user)
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await?;
+    forget();
+    Ok(())
 }
 
 /// Where a new project for `user_id` runs (`"sandbox"` when the sandbox switch is on, a key is
@@ -588,21 +622,29 @@ mod tests {
         }
     }
 
-    fn design(values: &[(&'static str, &str)]) -> Section {
-        Saved { def: &DESIGN, values: values.iter().map(|(k, v)| (*k, v.to_string())).collect() }.with_env(|_| None)
+    fn crew(off: Option<&str>) -> Section {
+        Saved { def: &CREW, values: off.map(|v| ("off", v.to_string())).into_iter().collect() }.with_env(|_| None)
     }
 
     #[test]
-    fn design_is_off_until_switched_on_and_then_follows_its_rollout() {
-        let someone = Uuid::from_u128(1);
-        let other = Uuid::from_u128(2);
-        assert!(!design_enabled(&design(&[]), someone), "nothing saved: off");
-        assert!(!design_enabled(&design(&[("enabled", "off"), ("rollout", "all")]), someone));
-        assert!(design_enabled(&design(&[("enabled", "on")]), someone), "on with no rollout: everyone");
-        assert!(!design_enabled(&design(&[("enabled", "on"), ("rollout", "off")]), someone));
-        let allowlist = design(&[("enabled", "on"), ("rollout", "allowlist"), ("rollout_allowlist", &someone.to_string())]);
-        assert!(design_enabled(&allowlist, someone));
-        assert!(!design_enabled(&allowlist, other));
+    fn every_member_is_on_until_an_admin_switches_it_off() {
+        assert!(agents_off(&crew(None)).is_empty(), "nothing saved: everyone is on");
+        let off = agents_off(&crew(Some("design, money,,")));
+        assert_eq!(off.iter().map(String::as_str).collect::<Vec<_>>(), ["design", "money"]);
+    }
+
+    #[test]
+    fn switching_a_member_keeps_the_others_as_they_were() {
+        let off = agents_off(&crew(Some("money")));
+        assert_eq!(with_agent(off.clone(), "design", false), "design,money");
+        assert_eq!(with_agent(off.clone(), "money", true), "", "nobody off: nothing is saved");
+        assert_eq!(with_agent(off, "money", false), "money", "switching off twice changes nothing");
+    }
+
+    #[test]
+    fn the_crew_switches_are_not_a_form_in_configuration() {
+        assert!(section_named(CREW.name).is_none());
+        assert!(section_named("design").is_none(), "Sora has no configuration of her own");
     }
 
     #[test]

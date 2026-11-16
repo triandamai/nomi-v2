@@ -293,6 +293,43 @@ pub async fn finish_run(conn: &mut PgConnection, project_id: Uuid, run_id: Uuid,
     Ok(updated > 0)
 }
 
+/// What decides whether a project's preview may start: who is making it and how far Koda is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BuildState {
+    /// The crew is building it: Rena has worked in its chat or written its plan. A project
+    /// brought in from elsewhere isn't.
+    pub planned: bool,
+    /// Work of Koda's in its chat has ended before (finished, failed or stopped).
+    pub build_ended: bool,
+}
+
+impl BuildState {
+    /// Whether there is something worth previewing. A project the crew is building starts its
+    /// preview (the sandbox, or the browser's runtime) when Koda's first build has ended, never
+    /// while it is still being planned, designed or first built. A project brought in from
+    /// elsewhere previews as it always did.
+    pub fn ready_to_preview(self) -> bool {
+        !self.planned || self.build_ended
+    }
+}
+
+/// `BuildState` for a project as things are saved now.
+pub async fn build_state(conn: &mut PgConnection, project_id: Uuid) -> Result<BuildState, sqlx::Error> {
+    let (planned, build_ended): (bool, bool) = sqlx::query_as(
+        "SELECT \
+           EXISTS(SELECT 1 FROM agent_plans a WHERE a.session_id = p.session_id) \
+             OR EXISTS(SELECT 1 FROM agent_sessions s WHERE s.session_id = p.session_id AND s.agent_type = $3), \
+           EXISTS(SELECT 1 FROM agent_delegations d WHERE d.session_id = p.session_id AND d.target_agent_type = $2 AND d.status NOT IN ('pending', 'claimed', 'processing')) \
+         FROM projects p WHERE p.id = $1",
+    )
+    .bind(project_id)
+    .bind(CODING_AGENT_TYPE)
+    .bind(nomi_agent_core::crew::PLANNING_AGENT_TYPE)
+    .fetch_one(conn)
+    .await?;
+    Ok(BuildState { planned, build_ended })
+}
+
 /// What to hand Koda after a failed check: the chat it belongs to and the task.
 #[derive(Debug, PartialEq)]
 pub struct FixRequest {
@@ -304,6 +341,12 @@ pub struct FixRequest {
 /// already working on the project, and this version wasn't handed over before, returns the task
 /// to give him.
 pub async fn record_check(conn: &mut PgConnection, project_id: Uuid, files_version: i64, ok: bool, output: &str) -> Result<Option<FixRequest>, sqlx::Error> {
+    // A project that isn't ready to preview (still being planned, designed or first built) has
+    // nothing to check: a failure there is no work for Koda, and nothing is recorded, so the
+    // check runs for real once his first build is done.
+    if !build_state(&mut *conn, project_id).await?.ready_to_preview() {
+        return Ok(None);
+    }
     let output = tail(output, OUTPUT_KEPT);
     let (session_id, current_version, already_requested): (Uuid, i64, Option<i64>) = sqlx::query_as(
         "UPDATE projects SET checked_version = $2, check_ok = $3, check_output = $4 WHERE id = $1 \
@@ -343,6 +386,18 @@ pub async fn record_check(conn: &mut PgConnection, project_id: Uuid, files_versi
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_project_the_crew_is_building_previews_only_after_kodas_first_build() {
+        assert!(!BuildState { planned: true, build_ended: false }.ready_to_preview(), "still planned, designed or first built");
+        assert!(BuildState { planned: true, build_ended: true }.ready_to_preview(), "his first build ended; later changes keep it");
+    }
+
+    #[test]
+    fn a_project_brought_in_from_elsewhere_previews_as_it_always_did() {
+        assert!(BuildState { planned: false, build_ended: false }.ready_to_preview());
+        assert!(BuildState { planned: false, build_ended: true }.ready_to_preview());
+    }
 
     #[test]
     fn commands_split_like_a_shell_without_its_operators() {

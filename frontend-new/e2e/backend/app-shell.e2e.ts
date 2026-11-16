@@ -60,11 +60,11 @@ test('the sidebar shows the person, their workspace, their counts and recents, a
 	const [, working = '0', idle] = (await head.textContent())!.match(/^(?:(\d+) working · )?(\d+) idle$/)!;
 	expect(Number(working) + Number(idle)).toBe(agents.length);
 	await expect(crew.getByRole('listitem')).toHaveCount(agents.length);
-	for (const name of ['Nomi', 'Dana', 'Kala', 'Maya', 'Rena', 'Koda', 'Tara', 'Raga', 'Personality', 'Supervisor', 'Iris']) {
+	for (const name of ['Nomi', 'Dana', 'Kala', 'Maya', 'Rena', 'Koda', 'Tara', 'Raga', 'Personality', 'Supervisor', 'Iris', 'Sora']) {
 		await expect(crew.getByText(name, { exact: true })).toHaveCount(1);
 	}
-	// The eleven the design has a mascot for wear it.
-	await expect(crew.locator('li svg')).toHaveCount(11);
+	// The twelve the design has a mascot for wear it.
+	await expect(crew.locator('li svg')).toHaveCount(12);
 });
 
 test('the theme picked in the account menu applies at once and stays after a reload', async ({ page, context }) => {

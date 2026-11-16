@@ -82,6 +82,7 @@ export const MASCOT: Record<string, CrewId> = {
 	supervisor: 'supervisor',
 	inspector: 'iris',
 	iris: 'iris',
+	design: 'sora',
 };
 
 /** The mascot a built-in agent wears; none for a custom one. */

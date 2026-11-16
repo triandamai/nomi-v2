@@ -322,6 +322,8 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/admin/shipyard/events", get(crate::routes::admin_shipyard::list_events))
         .route("/api/admin/shipyard/events/catch-up", post(crate::routes::admin_shipyard::catch_up))
         .route("/api/admin/shipyard/webhook", post(crate::routes::deploy::admin_register_webhook))
+        .route("/api/admin/crew", get(crate::routes::admin_crew::list))
+        .route("/api/admin/crew/:agent_type", put(crate::routes::admin_crew::set_enabled))
         .route("/api/admin/agents", get(admin_dashboard_routes::get_agents))
         .route("/api/admin/agents/ws", get(admin_dashboard_routes::admin_agents_stream))
         .route("/api/admin/agent-events", get(admin_dashboard_routes::list_agent_events))

@@ -10,10 +10,11 @@ import { CREW_LOOKS, FACE_COLOR, TONE_STOPS, liveDefinition, shapePath } from '.
 // two-dot face, at 96, 32, 20 or 16px.
 
 describe('Mascot', () => {
-	it('has one for each of the eleven crew members', () => {
-		expect(CREW.map((member) => member.id)).toEqual(['nomi', 'koda', 'dana', 'kala', 'rena', 'tara', 'maya', 'raga', 'personality', 'supervisor', 'iris']);
+	it('has one for each of the twelve crew members', () => {
+		expect(CREW.map((member) => member.id)).toEqual(['nomi', 'koda', 'dana', 'kala', 'rena', 'tara', 'maya', 'raga', 'personality', 'supervisor', 'iris', 'sora']);
 		expect(CREW.find((member) => member.id === 'personality')?.name).toBe('Personality');
 		expect(CREW.find((member) => member.id === 'iris')?.name).toBe('Iris');
+		expect(CREW.find((member) => member.id === 'sora')?.name).toBe('Sora');
 	});
 
 	it('draws each member in their own shape and gradient, with the two-dot face', async () => {
@@ -39,6 +40,7 @@ describe('Mascot', () => {
 		expect(CREW_LOOKS.rena.shape).toBe('clover4');
 		expect(CREW_LOOKS.supervisor).toEqual({ shape: 'sunny12', tone: 'dusk', motion: 'orbit' });
 		expect(CREW_LOOKS.iris).toEqual({ shape: 'clover3', tone: 'dusk', motion: 'orbit' });
+		expect(CREW_LOOKS.sora).toEqual({ shape: 'wave10', tone: 'dusk', motion: 'spin' });
 	});
 
 	it('keeps each gradient to its own mascot when several are on a page', async () => {

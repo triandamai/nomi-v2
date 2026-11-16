@@ -30,6 +30,7 @@
 		personality: undefined,
 		supervisor: 'Stops the crew’s running tasks and says what finished, what stopped and what never started. “Supervisor stopped 3 tasks.”',
 		iris: 'Looks into what went wrong: inspects issues, finds causes and suggests fixes.',
+		sora: 'Designs the app before Koda builds it: directions to pick from, then the design system, components and flows.',
 	};
 
 	const swatches = ['nm-accent', 'nm-accent-ink', 'nm-bg', 'nm-surface', 'nm-text'] as const;

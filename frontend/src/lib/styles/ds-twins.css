@@ -40,6 +40,9 @@
 	--crew-iris: light-dark(#6d4fd8, #9b7bff);
 	--crew-iris-bg: color-mix(in srgb, var(--crew-iris) 16%, var(--md-sys-color-surface-container-lowest));
 	--crew-iris-ink: var(--md-sys-color-on-surface);
+	--crew-sora: light-dark(#4a5bd6, #8f9dff);
+	--crew-sora-bg: color-mix(in srgb, var(--crew-sora) 16%, var(--md-sys-color-surface-container-lowest));
+	--crew-sora-ink: var(--md-sys-color-on-surface);
 }
 
 @theme inline {
@@ -118,6 +121,9 @@
 	--color-crew-iris: var(--crew-iris);
 	--color-crew-iris-bg: var(--crew-iris-bg);
 	--color-crew-iris-ink: var(--crew-iris-ink);
+	--color-crew-sora: var(--crew-sora);
+	--color-crew-sora-bg: var(--crew-sora-bg);
+	--color-crew-sora-ink: var(--crew-sora-ink);
 
 	--font-sans: var(--md-sys-typescale-body-medium-font);
 	--font-mono: var(--md-ref-typeface-mono);

@@ -5,6 +5,7 @@ pub mod tool_catalog;
 pub mod admin_access;
 pub mod admin_billing;
 pub mod admin_configuration;
+pub mod admin_crew;
 pub mod admin_payment;
 pub mod admin_dashboard;
 pub mod admin_shipyard;

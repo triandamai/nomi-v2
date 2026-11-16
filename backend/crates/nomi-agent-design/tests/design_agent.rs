@@ -130,6 +130,23 @@ async fn chat(pool: &PgPool) -> (Uuid, Uuid) {
     (session_id, user_id)
 }
 
+/// The person answers the directions in the chat (their pick), which is what lets Sora build
+/// the first preview.
+async fn picked(pool: &PgPool, session_id: Uuid, user_id: Uuid) {
+    let identity: Uuid = sqlx::query_scalar("INSERT INTO channel_identities (user_id, channel, channel_user_id) VALUES ($1, 'telegram', $2) RETURNING id")
+        .bind(user_id)
+        .bind(Uuid::new_v4().to_string())
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO messages (session_id, sender_channel_identity_id, content, created_at) VALUES ($1, $2, 'Editorial', clock_timestamp())")
+        .bind(session_id)
+        .bind(identity)
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
 fn directions() -> serde_json::Value {
     let direction = |id: &str, name: &str, accent: &str, font: &str| {
         json!({
@@ -158,6 +175,9 @@ async fn a_preview_is_of_a_direction_sora_proposed(pool: PgPool) {
     assert!(early.unwrap_err().starts_with("propose directions with propose_directions first"));
 
     sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "propose_directions", directions()).await.unwrap();
+    let waiting = sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "save_preview", preview("editorial", HERO_ONLY)).await;
+    assert_eq!(waiting.unwrap_err(), nomi_agent_core::prompts::FLOW_DIRECTION_NOT_PICKED, "the first preview waits for the person's pick");
+    picked(&pool, session_id, user_id).await;
     let unknown = sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "save_preview", preview("brutalist", HERO_ONLY)).await;
     assert_eq!(unknown.unwrap_err(), "there is no direction \"brutalist\": the directions are editorial, swiss");
     let broken = sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "save_preview", preview("editorial", "<h1>No ids</h1>")).await;
@@ -171,6 +191,7 @@ async fn previews_are_saved_as_versions_even_when_nothing_publishes_them(pool: P
     let mut conn = pool.acquire().await.unwrap();
     let sora = DesignAgent::new();
     sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "propose_directions", directions()).await.unwrap();
+    picked(&pool, session_id, user_id).await;
 
     let first = sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "save_preview", preview("editorial", HERO_AND_MENU)).await.unwrap();
     assert!(first.display_text.starts_with("Preview saved as version 1 of direction editorial: 1 page, 2 element ids."), "{}", first.display_text);
@@ -201,6 +222,7 @@ async fn a_publisher_gets_the_files_and_its_address_is_kept(pool: PgPool) {
     let publisher = FakePublisher::answering(Ok("https://previews.example/roti"));
     let sora = DesignAgent::new().with_static_publisher(publisher.clone());
     sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "propose_directions", directions()).await.unwrap();
+    picked(&pool, session_id, user_id).await;
 
     let saved = sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "save_preview", preview("editorial", HERO_ONLY)).await.unwrap();
     assert!(saved.display_text.contains("It is also published at https://previews.example/roti"), "{}", saved.display_text);
@@ -218,6 +240,8 @@ async fn a_publisher_that_fails_or_answers_badly_doesnt_lose_the_preview(pool: P
     for (answer, said) in [(Err("the service is down"), "(the service is down)"), (Ok("http://previews.example/roti"), "(fake gave an address that can't be used)")] {
         let sora = DesignAgent::new().with_static_publisher(FakePublisher::answering(answer));
         sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "propose_directions", directions()).await.unwrap();
+        picked(&pool, session_id, user_id).await;
+    picked(&pool, session_id, user_id).await;
         let saved = sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "save_preview", preview("editorial", HERO_ONLY)).await.unwrap();
         assert!(saved.display_text.contains("It isn't published outside Nomi") && saved.display_text.contains(said), "{}", saved.display_text);
         assert!(!saved.display_text.contains("previews.example"), "a refused address is never passed on");
@@ -236,6 +260,7 @@ async fn sora_reads_her_preview_back_and_a_new_version_marks_the_feedback_it_dea
     assert_eq!(nothing, "there is no preview in this chat yet: build one with save_preview");
 
     sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "propose_directions", directions()).await.unwrap();
+    picked(&pool, session_id, user_id).await;
     sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "save_preview", preview("editorial", HERO_ONLY)).await.unwrap();
     let read = sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "read_preview", json!({})).await.unwrap().display_text;
     assert!(read.starts_with("# Design preview (version 1, direction: editorial)") && read.contains("## index.html\n"), "{read}");
@@ -288,6 +313,7 @@ async fn a_handoff_is_written_only_for_a_version_the_person_approved(pool: PgPoo
         "decisions": [{"decision": "Serif headings", "reason": "Warmth"}]
     });
     sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "propose_directions", directions()).await.unwrap();
+    picked(&pool, session_id, user_id).await;
     sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "save_preview", preview("editorial", HERO_AND_MENU)).await.unwrap();
     sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "save_preview", preview("editorial", HERO_ONLY)).await.unwrap();
 
@@ -345,6 +371,7 @@ async fn a_build_is_checked_against_the_handoff_it_was_built_from(pool: PgPool) 
     assert!(early.starts_with("there is no handoff in this chat yet"), "{early}");
 
     sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "propose_directions", directions()).await.unwrap();
+    picked(&pool, session_id, user_id).await;
     sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "save_preview", preview("editorial", HERO_ONLY)).await.unwrap();
     design_approval::approve(&mut conn, session_id, user_id, 1, None).await.unwrap();
     let spec = json!({

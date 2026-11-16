@@ -98,6 +98,9 @@
 	--crew-iris: #A587F2;
 	--crew-iris-bg: light-dark(#EDE7FC, #221D2E);
 	--crew-iris-ink: light-dark(#5B3FB0, #BFA9F5);
+	--crew-sora: #7F8FF4;
+	--crew-sora-bg: light-dark(#E6E9FD, #1C1F30);
+	--crew-sora-ink: light-dark(#3B4CB8, #A9B4F8);
 
 	/* Type */
 	--nm-sans: "Geist Variable", "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
