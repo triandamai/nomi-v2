@@ -45,9 +45,19 @@ impl Level {
     }
 }
 
-/// The members `user_id` switched off.
+/// `off` plus Sora unless the design workflow is rolled out to the person (`design_on`): until
+/// then she is never routed to, delegated to or asked, like a member they switched off.
+pub fn with_design_gate(mut off: HashSet<String>, design_on: bool) -> HashSet<String> {
+    if !design_on {
+        off.insert(crate::crew::DESIGN_AGENT_TYPE.to_string());
+    }
+    off
+}
+
+/// The members that are off for `user_id`: the ones they switched off, and Sora while the design
+/// workflow isn't rolled out to them.
 pub async fn disabled_agent_types(conn: &mut PgConnection, user_id: Uuid) -> HashSet<String> {
-    sqlx::query_scalar::<_, String>(
+    let off = sqlx::query_scalar::<_, String>(
         "SELECT agent_type FROM user_agent_settings WHERE user_id = $1 AND NOT enabled",
     )
     .bind(user_id)
@@ -55,11 +65,16 @@ pub async fn disabled_agent_types(conn: &mut PgConnection, user_id: Uuid) -> Has
     .await
     .unwrap_or_default()
     .into_iter()
-    .collect()
+    .collect();
+    with_design_gate(off, nomi_settings::config::design_enabled_for(user_id).await)
 }
 
-/// Whether `agent_type` is on for `user_id` (no row: on).
+/// Whether `agent_type` is on for `user_id` (no row: on). Sora is on only where the design
+/// workflow is rolled out to them.
 pub async fn is_enabled(conn: &mut PgConnection, user_id: Uuid, agent_type: &str) -> bool {
+    if agent_type == crate::crew::DESIGN_AGENT_TYPE && !nomi_settings::config::design_enabled_for(user_id).await {
+        return false;
+    }
     let enabled: Option<bool> = sqlx::query_scalar(
         "SELECT enabled FROM user_agent_settings WHERE user_id = $1 AND agent_type = $2",
     )
@@ -575,6 +590,14 @@ mod tests {
         let switches = ToolSwitches::default();
         assert!(check_tool_names(&catalog, &switches, &[]).is_ok());
         assert_eq!(check_tool_names(&catalog, &switches, &["made_up".to_string()]).unwrap_err(), "unknown tool made_up");
+    }
+
+    #[test]
+    fn sora_counts_as_switched_off_while_design_is_not_rolled_out_to_the_person() {
+        let off: HashSet<String> = ["money".to_string()].into();
+        let gated = with_design_gate(off.clone(), false);
+        assert!(gated.contains(crate::crew::DESIGN_AGENT_TYPE) && gated.contains("money"));
+        assert_eq!(with_design_gate(off.clone(), true), off, "rolled out: only what the person switched off");
     }
 
     #[test]

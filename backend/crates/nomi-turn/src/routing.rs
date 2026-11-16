@@ -300,9 +300,13 @@ pub async fn mentioned_agent(
         return None;
     }
     let off = nomi_agent_core::personal_crew::disabled_agent_types(conn, user_id).await;
+    let design_on = nomi_settings::config::design_enabled_for(user_id).await;
     let dynamic = nomi_agent_core::dynamic_agent::fetch_visible_dynamic_agents(conn, user_id).await.unwrap_or_default();
     for name in names {
-        if let Some(agent) = registry.agents().iter().find(|a| a.display_name().eq_ignore_ascii_case(name)) {
+        // Sora isn't there to be addressed until the design workflow is rolled out to this person
+        // (a member of their own may carry her name).
+        let addressable = |a: &&Arc<dyn SubAgent>| design_on || a.agent_type().as_ref() != nomi_agent_core::crew::DESIGN_AGENT_TYPE;
+        if let Some(agent) = registry.agents().iter().filter(addressable).find(|a| a.display_name().eq_ignore_ascii_case(name)) {
             if off.contains(agent.agent_type().as_ref()) {
                 tracing::info!(%name, agent = %agent.agent_type(), "addressed a switched-off agent by mention");
                 return Some(Mentioned::SwitchedOff(agent.display_name().into_owned()));

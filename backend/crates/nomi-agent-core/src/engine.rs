@@ -720,7 +720,9 @@ async fn run_agent_turn_in_reply(
         tools.extend(crate::records::record_tool_definitions());
     }
     if agent.supports_reminders() {
-        let targets = registry.reminder_target_agent_types();
+        let mut targets = registry.reminder_target_agent_types();
+        // Sora takes no reminders until the design workflow is rolled out to this person.
+        targets.retain(|t| t != crate::crew::DESIGN_AGENT_TYPE || !off.contains(t));
         tools.push(create_reminder_tool_definition(&targets));
         tools.push(list_reminders_tool_definition());
         tools.push(cancel_reminder_tool_definition());

@@ -18,6 +18,7 @@ pub mod connections_catalog;
 pub mod deploy;
 pub mod github;
 pub mod publish_requests;
+pub mod design_studio;
 pub mod devices;
 pub mod domain;
 pub mod dynamic_agents;

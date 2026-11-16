@@ -7,6 +7,7 @@ pub mod billing_worker;
 pub mod bootstrap;
 pub mod chat_events;
 pub mod delegation_worker;
+pub mod design_project_source;
 pub mod dns;
 pub mod github;
 pub mod routes;
@@ -16,6 +17,7 @@ pub mod notifications;
 pub mod presence;
 pub mod project_events;
 pub mod problem;
+pub mod mcp_ops;
 pub mod project_ops;
 pub mod public_url;
 pub mod project_relays;
@@ -37,6 +39,7 @@ pub mod sandbox_usage;
 pub mod sandbox_worker;
 pub mod scheduler_worker;
 pub mod shipyard;
+pub mod static_publisher;
 pub mod sign_in_codes;
 pub mod user_events;
 pub mod worker;
@@ -51,6 +54,7 @@ pub mod worker;
 pub fn build_agent_registry(pool: &sqlx::PgPool, project_storage: nomi_storage::ProjectStore, catalog: std::sync::Arc<nomi_agent_core::ToolCatalog>) -> nomi_agent_core::AgentRegistry {
     let project_ops = project_ops::ServerProjectOps::shared(pool.clone(), project_storage.clone());
     let relay_ops = relay_ops::ServerRelayOps::shared(pool.clone(), project_storage.clone());
+    let project_source = design_project_source::StoreProjectSource::shared(pool.clone(), project_storage.clone());
     nomi_agent_core::AgentRegistry::new(vec![
         Box::new(nomi_agent_chitchat::ChitchatAgent),
         Box::new(nomi_agent_money::MoneyAgent),
@@ -63,6 +67,13 @@ pub fn build_agent_registry(pool: &sqlx::PgPool, project_storage: nomi_storage::
         Box::new(nomi_agent_planning::PlanningAgent::new().with_project_ops(project_ops.clone()).with_relay_ops(relay_ops.clone())),
         Box::new(nomi_agent_coding::CodingAgent::new(project_storage).with_project_ops(project_ops.clone()).with_relay_ops(relay_ops).with_sandbox_ops(sandbox_ops::ServerSandboxOps::shared(pool.clone()))),
         Box::new(nomi_agent_inspector::InspectorAgent::new().with_project_ops(project_ops)),
+        // Sora: off for everyone until Admin → Configuration → Design rolls her out.
+        Box::new(
+            nomi_agent_design::DesignAgent::new()
+                .with_mcp_ops(mcp_ops::ServerMcpOps::shared(pool.clone()))
+                .with_static_publisher(static_publisher::ShipyardStaticPublisher::shared(pool.clone()))
+                .with_project_source(project_source),
+        ),
     ])
     .with_tool_catalog(catalog)
 }

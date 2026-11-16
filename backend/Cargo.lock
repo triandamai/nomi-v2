@@ -3027,6 +3027,7 @@ dependencies = [
  "chrono",
  "nomi-agent-core",
  "nomi-llm",
+ "nomi-settings",
  "nomi-storage",
  "nomi-test-support",
  "nomi-usage",
@@ -3064,6 +3065,23 @@ dependencies = [
  "sha2 0.10.9",
  "sqlx",
  "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "nomi-agent-design"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "nomi-agent-core",
+ "nomi-llm",
+ "nomi-storage",
+ "nomi-test-support",
+ "serde_json",
+ "sqlx",
  "tokio",
  "tracing",
  "uuid",
@@ -3160,6 +3178,7 @@ dependencies = [
  "serde_json",
  "sqlx",
  "tokio",
+ "tracing",
  "uuid",
 ]
 
@@ -3321,6 +3340,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "nomi-mcp"
+version = "0.1.0"
+dependencies = [
+ "reqwest",
+ "serde_json",
+ "tokio",
+ "wiremock",
+]
+
+[[package]]
 name = "nomi-payment"
 version = "0.1.0"
 dependencies = [
@@ -3397,6 +3426,7 @@ dependencies = [
  "nomi-agent-chitchat",
  "nomi-agent-coding",
  "nomi-agent-core",
+ "nomi-agent-design",
  "nomi-agent-files",
  "nomi-agent-health",
  "nomi-agent-inspector",
@@ -3412,6 +3442,7 @@ dependencies = [
  "nomi-i18n",
  "nomi-llm",
  "nomi-mail",
+ "nomi-mcp",
  "nomi-payment",
  "nomi-realtime",
  "nomi-relay-client",
