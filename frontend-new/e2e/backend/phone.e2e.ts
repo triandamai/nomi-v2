@@ -120,3 +120,63 @@ test('a chat on a phone: New chat, the nav bar, the bubble, the action bar, and 
 	await page.getByRole('button', { name: 'Back' }).click();
 	await expect(page).toHaveURL(/\/chats$/);
 });
+
+test('Projects on a phone: the header, New project from its sheet, the card’s sheet, and Sort', async ({ page, context }) => {
+	const account = await createAccount();
+	await signInAs(context, account);
+	await page.goto('/projects', { waitUntil: 'networkidle' });
+	await expect(page.getByRole('heading', { level: 1, name: 'Projects' })).toBeVisible();
+	await expect(page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Projects' })).toHaveAttribute('aria-current', 'page');
+	await expect(page.getByText('No projects yet')).toBeVisible();
+
+	// New: the sheet's composer starts it, and it opens where Koda builds it.
+	await page.getByRole('button', { name: 'New', exact: true }).click();
+	const sheet = page.getByRole('dialog', { name: 'New project' });
+	await sheet.getByRole('textbox', { name: 'Describe an app to build' }).fill('A one-page menu for Warung Kopi');
+	await sheet.getByRole('button', { name: 'Start building' }).click();
+	await expect(page).toHaveURL(/\/projects\/[0-9a-f-]{36}$/);
+	const original = page.url().split('/').pop()!;
+
+	// Back on the list: the phone card, its ⋯ sheet, Duplicate.
+	await page.goto('/projects', { waitUntil: 'networkidle' });
+	const card = page.getByRole('article').first();
+	await expect(card).toBeVisible();
+	const name = (await card.getAttribute('aria-label'))!;
+	await card.getByRole('button', { name: `${name} actions` }).click();
+	const actions = page.getByRole('dialog', { name });
+	await expect(actions.getByRole('button', { name: 'Rename' })).toBeVisible();
+	await actions.getByRole('button', { name: 'Duplicate' }).click();
+	type Projects = { projects: unknown[] };
+	await expect.poll(async () => ((await (await api(account, '/api/projects')).json()) as Projects).projects.length).toBe(2);
+
+	// Stop: an action sheet; Keep building leaves it be.
+	const stopping = page.getByRole('button', { name: 'Stop' }).first();
+	if (await stopping.isVisible()) {
+		await stopping.click();
+		const ask = page.getByRole('dialog', { name: /Stop building/ });
+		await expect(ask.getByRole('button', { name: 'Stop building' })).toBeVisible();
+		await ask.getByRole('button', { name: 'Keep building' }).click();
+		await expect(ask).toHaveCount(0);
+	}
+
+	// Delete the copy: its sheet wants the name typed.
+	await page.goto('/projects', { waitUntil: 'networkidle' });
+	type Listed = { projects: { id: string; name: string }[] };
+	const copyRow = ((await (await api(account, '/api/projects')).json()) as Listed).projects.find((one) => one.id !== original)!;
+	const copyName = copyRow.name;
+	const copy = page.locator(`[data-project="${copyRow.id}"]`).getByRole('article');
+	await copy.getByRole('button', { name: `${copyName} actions` }).click();
+	await page.getByRole('dialog', { name: copyName }).getByRole('button', { name: 'Delete project' }).click();
+	const remove = page.getByRole('dialog', { name: `Delete ${copyName}?` });
+	await expect(remove.getByRole('button', { name: 'Delete project' })).toBeDisabled();
+	await remove.getByRole('textbox', { name: `Type ${copyName} to confirm` }).fill(copyName);
+	await remove.getByRole('button', { name: 'Delete project' }).click();
+	await expect.poll(async () => ((await (await api(account, '/api/projects')).json()) as Projects).projects.length).toBe(1);
+
+	// Sort: a sheet, the chosen one checked.
+	await page.getByRole('button', { name: 'Sort' }).click();
+	const sort = page.getByRole('dialog', { name: 'Sort projects' });
+	await sort.getByRole('button', { name: /Name/ }).click();
+	await page.getByRole('button', { name: 'Sort' }).click();
+	await expect(page.getByRole('dialog', { name: 'Sort projects' }).getByRole('button', { name: /Name/ })).toHaveAttribute('aria-pressed', 'true');
+});

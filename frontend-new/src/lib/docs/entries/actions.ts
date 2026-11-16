@@ -2,6 +2,15 @@ import type { ComponentDoc } from '../types';
 
 export default [
 	{
+		file: 'actions/PhonePill.svelte',
+		summary: 'A phone’s button: 40 tall and fully round, its label at 14. Inverse when it needs the person, secondary to open or resume, ghost to stop or cancel.',
+		use: ['A card’s one action on a phone (Open, Ask Koda to fix, Stop).', 'A phone screen’s actions (Open workspace, Visit).'],
+		avoid: ['Wider screens: Button.'],
+		dos: ['Keep one inverse pill per card: the thing that needs the person.'],
+		accessibility: ['A real button, or a link where it goes somewhere; busy while its action runs.'],
+		related: ['actions/Button.svelte', 'projects/ProjectCard.svelte'],
+	},
+	{
 		file: 'actions/Button.svelte',
 		summary:
 			'The button for doing something: starting a build, adding credits, deleting a project. It comes in six variants, all 30px tall. Primary (mint) marks the one thing to act on in a view; inverse is the main action inside a panel.',

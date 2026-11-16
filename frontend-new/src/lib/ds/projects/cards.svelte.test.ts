@@ -5,6 +5,11 @@ import ProjectCard from './ProjectCard.svelte';
 import ProjectCardLoading from './ProjectCardLoading.svelte';
 import ProjectCardMenu, { projectMenu } from './ProjectCardMenu.svelte';
 import ProjectMenuPanel from './ProjectMenuPanel.svelte';
+import PhoneProjectsHeader from './PhoneProjectsHeader.svelte';
+import PhoneProjectSearch from './PhoneProjectSearch.svelte';
+import PhoneFilters from './PhoneFilters.svelte';
+import ProjectComposer from './ProjectComposer.svelte';
+import PhoneProjectDetail from './PhoneProjectDetail.svelte';
 import { tokenBackground, tokenColor } from '../test-utils';
 
 // Design System / Projects → Cards & overlays (DLQ3G): the project card in each of its states
@@ -197,5 +202,122 @@ describe('ProjectMenuPanel (uA0lh) and ProjectCardMenu', () => {
 		await userEvent.keyboard('{Enter}');
 		expect(onduplicate).toHaveBeenCalledOnce();
 		await expect.element(button).toHaveFocus();
+	});
+});
+
+describe('ProjectCard on a phone (Mobile / Project Card)', () => {
+	it('is the column’s width: 14 corners, a 40 tile, the name at 16, ⋯ opening the sheet, the action a 40 pill', async () => {
+		await page.viewport(390, 844);
+		const onmore = vi.fn();
+		const onaction = vi.fn();
+		await render(ProjectCard, { ...base, name: 'invoice-sinar-jaya', status: 'failed', meta: 'deploy #6', detail: 'build error in src/lib/pdf.ts · #5 still live', phone: true, onmore, onaction });
+		const card = page.getByRole('article', { name: 'invoice-sinar-jaya' }).element();
+		expect([Math.round(box(card).width), style(card).borderRadius, style(card).paddingTop]).toEqual([390, '14px', '16px']);
+		expect(box(card.querySelector('span')!).width).toBe(40);
+		expect(style(page.getByRole('heading', { name: 'invoice-sinar-jaya' }).element()).fontSize).toBe('16px');
+		const zone = page.getByTestId('status-zone').element();
+		expect([style(zone).borderRadius, style(zone).paddingTop, style(zone).backgroundColor]).toEqual(['10px', '10px', tokenBackground('nm-danger-bg')]);
+		const fix = page.getByRole('button', { name: 'Ask Koda to fix' });
+		expect(box(fix.element()).height).toBe(40);
+		await fix.click();
+		expect(onaction).toHaveBeenCalledOnce();
+		await page.getByRole('button', { name: /invoice-sinar-jaya/ }).click();
+		expect(onmore).toHaveBeenCalledOnce();
+	});
+});
+
+
+describe('Projects on a phone: the header, the search and the filters', () => {
+	it('is the pen’s header: the workspace pill, people, Invite, the large title and New', async () => {
+		await page.viewport(390, 844);
+		const onworkspace = vi.fn();
+		const onnew = vi.fn();
+		await render(PhoneProjectsHeader, {
+			title: 'Projects',
+			workspace: "Trian's space",
+			members: 3,
+			labels: { workspace: 'Workspace: Trian’s space', members: 'People', invite: 'Invite people', new: 'New' },
+			onworkspace,
+			oninvite: () => {},
+			onnew,
+		});
+		const pill = page.getByRole('button', { name: 'Workspace: Trian’s space' }).element();
+		expect([box(pill).height, style(pill).backgroundColor]).toEqual([36, tokenBackground('nm-surface-2')]);
+		expect(style(page.getByRole('heading', { level: 1, name: 'Projects' }).element()).fontSize).toBe('32px');
+		const create = page.getByRole('button', { name: 'New' }).element();
+		expect([box(create).height, style(create).backgroundColor]).toEqual([36, tokenBackground('nm-accent')]);
+		await page.getByRole('button', { name: 'New' }).click();
+		await page.getByRole('button', { name: 'Workspace: Trian’s space' }).click();
+		expect([onnew, onworkspace].map((fn) => fn.mock.calls.length)).toEqual([1, 1]);
+		await expect.element(page.getByRole('button', { name: 'Invite people' })).toBeVisible();
+	});
+
+	it('searches in a 40 field with Sort beside it', async () => {
+		const onsort = vi.fn();
+		await render(PhoneProjectSearch, { placeholder: 'Search projects', sortLabel: 'Sort', onsort });
+		const field = page.getByRole('searchbox', { name: 'Search projects' }).element();
+		expect([box(field.closest('label')!).height, style(field).fontSize]).toEqual([40, '16px']);
+		await page.getByRole('button', { name: 'Sort' }).click();
+		expect(onsort).toHaveBeenCalledOnce();
+	});
+
+	it('filters with 34 chips, the chosen one filled, the arrows moving the choice', async () => {
+		const onchange = vi.fn();
+		await render(PhoneFilters, { label: 'Show', value: 'all', options: [{ value: 'attention', label: 'Needs you', count: 1 }, { value: 'all', label: 'All', count: 4 }, { value: 'live', label: 'Live', count: 2 }], onchange });
+		const all = page.getByRole('radio', { name: /All/ });
+		await expect.element(all).toHaveAttribute('aria-checked', 'true');
+		expect([box(all.element()).height, style(all.element()).backgroundColor]).toEqual([34, tokenBackground('nm-text')]);
+		await page.getByRole('radio', { name: /Live/ }).click();
+		expect(onchange).toHaveBeenLastCalledWith('live');
+		(all.element() as HTMLElement).focus();
+		await userEvent.keyboard('{ArrowLeft}');
+		expect(onchange).toHaveBeenLastCalledWith('attention');
+	});
+});
+
+describe('ProjectComposer on a phone (New project sheet)', () => {
+	it('sets the text at 16 in a 14-round box, wraps the chips, and starts with the inverse pill', async () => {
+		await page.viewport(390, 844);
+		const onbuild = vi.fn();
+		await render(ProjectComposer, { phone: true, value: 'Order tracker for my laundry', domain: 'trian.space', database: 'for orders', onbuild });
+		const field = page.getByRole('textbox', { name: 'Describe an app to build' }).element();
+		expect([style(field).fontSize, style(field.parentElement!).borderRadius]).toEqual(['16px', '14px']);
+		const start = page.getByRole('button', { name: 'Start building' }).element();
+		expect([box(start).height, style(start).backgroundColor]).toEqual([40, tokenBackground('nm-text')]);
+		await page.getByRole('button', { name: 'Start building' }).click();
+		expect(onbuild).toHaveBeenCalledWith('Order tracker for my laundry');
+	});
+});
+
+describe('PhoneProjectDetail (Mobile / Project Detail)', () => {
+	const parts = { code: '41 files · Svelte', url: 'invoice-sinar-jaya.trian.space', data: 'Postgres · 3 tables', deploys: '6 · last built in 41s', members: 'Trian (owner), you' };
+	it('is the pen’s screen: back, the 56 hero, what broke with its action, the 46 buttons and the 52 rows', async () => {
+		await page.viewport(390, 844);
+		const onback = vi.fn();
+		const onfix = vi.fn();
+		await render(PhoneProjectDetail, {
+			name: 'invoice-sinar-jaya',
+			tone: 'kala',
+			status: 'deploy #6 failed · #5 still live',
+			dot: 'failed',
+			alert: { title: 'Deploy failed', detail: 'build error in src/lib/pdf.ts', action: { label: 'Ask Koda to fix', onclick: onfix } },
+			workspaceHref: '/projects/p1',
+			url: 'invoice-sinar-jaya.trian.space',
+			parts,
+			onexport: () => {},
+			chats: [{ title: 'Build an invoice tracker', age: '5d', href: '/projects/p1' }],
+			backLabel: 'Projects',
+			onback,
+		});
+		expect(style(page.getByRole('heading', { level: 1, name: 'invoice-sinar-jaya' }).element()).fontSize).toBe('20px');
+		const tile = page.getByRole('heading', { level: 1 }).element().closest('div')!.previousElementSibling!;
+		expect([box(tile).width, style(tile).borderRadius]).toEqual([56, '14px']);
+		await page.getByRole('button', { name: 'Ask Koda to fix' }).click();
+		expect(onfix).toHaveBeenCalledOnce();
+		const open = page.getByRole('link', { name: 'Open workspace' }).element();
+		expect([box(open).height, style(open).borderRadius]).toEqual([46, '12px']);
+		expect(box(page.getByText('Code', { exact: true }).element().parentElement!).height).toBe(52);
+		await page.getByRole('button', { name: 'Projects' }).click();
+		expect(onback).toHaveBeenCalledOnce();
 	});
 });

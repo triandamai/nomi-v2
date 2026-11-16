@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Building2, CalendarCheck, FileText, FolderSearch, SearchX, Store } from '@lucide/svelte';
+	import { Activity, ArrowDownAZ, Building2, Calendar, FolderPlus, MessageCircle, Wrench, CalendarCheck, CircleAlert, Clock, FileText, FolderSearch, Plus, SearchX, Settings, Store } from '@lucide/svelte';
 	import { onMount, tick } from 'svelte';
 	import { goto, invalidate } from '$app/navigation';
 	import { page } from '$app/state';
@@ -16,6 +16,22 @@
 	import ProjectToolbar, { type ProjectFilter } from '$lib/ds/projects/ProjectToolbar.svelte';
 	import type { ProjectSort } from '$lib/ds/projects/SortMenu.svelte';
 	import ProjectCard from '$lib/ds/projects/ProjectCard.svelte';
+	import { projectMenu, type ProjectActions } from '$lib/ds/projects/ProjectCardMenu.svelte';
+	import { SORTS, sortLabel } from '$lib/ds/projects/SortMenu.svelte';
+	import PhoneProjectsHeader from '$lib/ds/projects/PhoneProjectsHeader.svelte';
+	import PhoneProjectSearch from '$lib/ds/projects/PhoneProjectSearch.svelte';
+	import PhoneFilters from '$lib/ds/projects/PhoneFilters.svelte';
+	import PhoneProjectDetail from '$lib/ds/projects/PhoneProjectDetail.svelte';
+	import PhoneComposer from '$lib/ds/thread/PhoneComposer.svelte';
+	import ActionSheet from '$lib/ds/overlays/ActionSheet.svelte';
+	import DeploySheet from '$lib/ds/projects/DeploySheet.svelte';
+	import DeleteProjectSheet from '$lib/ds/projects/DeleteProjectSheet.svelte';
+	import ProjectMoveSheet from '$lib/ds/projects/ProjectMoveSheet.svelte';
+	import BottomSheet from '$lib/ds/overlays/BottomSheet.svelte';
+	import SheetRow from '$lib/ds/mobile/SheetRow.svelte';
+	import SheetOption from '$lib/ds/overlays/SheetOption.svelte';
+	import { phoneView } from '$lib/phone.svelte';
+	import { phoneScreen } from '$lib/ds/shells/phoneScreen.svelte';
 	import ProjectCardLoading from '$lib/ds/projects/ProjectCardLoading.svelte';
 	import ProjectEmpty from '$lib/ds/projects/ProjectEmpty.svelte';
 	import FirstProject from '$lib/ds/projects/FirstProject.svelte';
@@ -310,11 +326,149 @@
 		return undefined;
 	}
 	const workspace = (card: ProjectCardData, open: string) => () => goto(`${card.href}?open=${open}`);
+	/** What a card's menu (a desktop) or its sheet (a phone) can do to it. */
+	function cardActions(card: ProjectCardData): ProjectActions {
+		return {
+			onopen: () => goto(card.href),
+			...(card.url && { onvisit: () => window.open(`https://${card.url}`, '_blank', 'noopener') }),
+			onrename: () => (renamingId = card.id),
+			onduplicate: () => void duplicate(card),
+			...(canMove && { onmove: () => void askMove(card) }),
+			...(card.liveUrl && { onshare: workspace(card, 'share') }),
+			onexport: workspace(card, 'export'),
+			onsettings: workspace(card, 'settings'),
+			...(card.url && { ontakedown: workspace(card, 'takedown') }),
+			ondelete: () => (deleting = card),
+		};
+	}
+
+	// On a phone it's Flow / Mobile Projects: the header (the workspace, its people, Invite, the large
+	// title and New), the search with Sort, the filters as chips (Needs you first when something
+	// does), and each project a Mobile / Project Card, whose ⋯ opens its sheet. New, Sort and the
+	// workspace open sheets too. The detail screen and the dialogs' sheets come with the next flows.
+	const phoneGuess = () => Boolean(page.data.phone);
+	const phone = phoneView(phoneGuess());
+	type PhoneSheet = { kind: 'card'; card: ProjectCardData } | { kind: 'new' } | { kind: 'sort' } | { kind: 'workspace' };
+	let phoneSheet = $state<PhoneSheet | null>(null);
+	// A project's own screen is inside the Projects tab: no tab bar under it (the pen draws none).
+	const screen = phoneScreen();
+	$effect(() => {
+		screen.inside = phone.current && selectedId !== null;
+		return () => (screen.inside = false);
+	});
+	const sheetClosed = (kind: PhoneSheet['kind']) => () => phoneSheet?.kind === kind && (phoneSheet = null);
+	const filterOptions = $derived([
+		...(counts.attention > 0 ? [{ value: 'attention', label: m.projects_phone_needs_you(), count: counts.attention }] : []),
+		{ value: 'all', label: m.projects_filter_all(), count: counts.all },
+		{ value: 'live', label: m.projects_filter_live(), count: counts.live },
+		{ value: 'building', label: m.projects_filter_building(), count: counts.building },
+		...(counts.attention > 0 ? [] : [{ value: 'attention', label: m.projects_phone_needs_you(), count: counts.attention }]),
+	]);
+	const workspaceHref = $derived(orgId ? `/settings/workspaces/${orgId}` : null);
+	type WorkspaceRow = { id: string; name: string; meta: string; chosen: boolean };
+	const SORT_ICON = { updated: Clock, status: CircleAlert, name: ArrowDownAZ, created: Calendar } as const;
+	const workspaces = $derived((page.data.workspaces ?? []) as WorkspaceRow[]);
+	async function chooseWorkspace(id: string) {
+		const name = workspaces.find((one) => one.id === id)?.name ?? '';
+		const response = await fetch('/preferences/project-org', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ org_id: id }) }).catch(() => null);
+		if (!response?.ok) return void toasts.show({ kind: 'error', title: m.workspace_choose_failed() });
+		await Promise.all([invalidate('app:shell'), invalidate('app:projects')]);
+		toasts.show({ kind: 'success', title: m.workspace_chosen({ name }) });
+	}
 </script>
 
 <svelte:head><title>{m.nav_projects()} · {m.app_name()}</title></svelte:head>
 <svelte:window {onkeydown} />
 
+{#snippet phoneEmpty()}
+	{#if query.trim()}
+		<ProjectEmpty
+			icon={SearchX}
+			title={m.projects_no_match_title({ query: query.trim() })}
+			body={m.projects_no_match_body({ workspace: workspaceName })}
+			action={{ label: m.projects_clear_search(), onclick: () => (query = '') }}
+		/>
+	{:else}
+		<ProjectEmpty icon={FolderSearch} title={TAB_EMPTY[filter].title()} body={TAB_EMPTY[filter].body()} />
+	{/if}
+{/snippet}
+
+{#if phone.current && selected}
+	{@render phoneDetail(selected)}
+	{@render phoneSheets()}
+{:else if phone.current}
+	<div class="h-full overflow-y-auto pb-6">
+		<PhoneProjectsHeader
+			title={m.nav_projects()}
+			workspace={workspaceName}
+			members={(page.data.members as unknown[] | undefined)?.length}
+			labels={{ workspace: m.projects_phone_workspace({ name: workspaceName }), members: m.projects_phone_people(), invite: m.projects_phone_invite(), new: m.projects_phone_new() }}
+			onworkspace={workspaces.length ? () => (phoneSheet = { kind: 'workspace' }) : undefined}
+			oninvite={workspaceHref ? () => goto(workspaceHref!) : undefined}
+			onnew={orgId ? () => (phoneSheet = { kind: 'new' }) : undefined}
+		/>
+		{#if !orgId}
+			<div class="px-4">
+				<ProjectEmpty
+					icon={Building2}
+					title={m.projects_no_workspace_title()}
+					body={m.projects_no_workspace_body()}
+					action={{ label: m.projects_choose_workspace(), onclick: () => goto('/settings/workspaces') }}
+				/>
+			</div>
+		{:else if retrying || !data.list}
+			<!-- Loading and couldn't load keep the search and filters, waiting (Mobile Projects — Loading, offline & errors). -->
+			<PhoneProjectSearch placeholder={m.projects_search()} sortLabel={m.projects_phone_sort()} bind:value={query} />
+			<PhoneFilters label={m.projects_filter()} options={filterOptions.map(({ count: _, ...option }) => option)} value={filter} onchange={(value) => (filter = value as ProjectFilter)} />
+			{#if retrying}
+				<ul class="flex flex-col gap-3 px-4">
+					{#each { length: 3 }, index (index)}<li><ProjectCardLoading phone /></li>{/each}
+				</ul>
+			{:else}
+				<LoadError phone reason={m.projects_load_failed_reason({ status: data.failure?.status ?? 503, time: failedAt })} onretry={retry} />
+			{/if}
+		{:else if cards.length}
+			<PhoneProjectSearch placeholder={m.projects_search()} sortLabel={m.projects_phone_sort()} bind:value={query} onsort={() => (phoneSheet = { kind: 'sort' })} />
+			<PhoneFilters label={m.projects_filter()} options={filterOptions} value={filter} onchange={(value) => (filter = value as ProjectFilter)} />
+			{#if shown.length}
+				<ul class="flex flex-col gap-3 px-4">
+					{#each shown as card (card.id)}
+						<li data-project={card.id}>
+							<ProjectCard
+								phone
+								name={card.name}
+								description={card.description}
+								tone={card.tone}
+								status={card.status}
+								statusLabel={card.statusLabel}
+								meta={card.meta}
+								detail={card.detail}
+								url={card.url}
+								footer={card.footer}
+								href={card.href}
+								questions={card.questions}
+								onaction={action(card)}
+								renaming={renamingId === card.id}
+								onrename={(name) => void rename(card, name)}
+								oncancelrename={() => (renamingId = null)}
+								onmore={() => (phoneSheet = { kind: 'card', card })}
+								selected={card.id === selectedId}
+								onselect={() => select(card)}
+							/>
+						</li>
+					{/each}
+				</ul>
+			{:else}
+				<div class="px-4">{@render phoneEmpty()}</div>
+			{/if}
+		{:else}
+			<div class="px-4 pt-2">
+				<ProjectEmpty icon={FolderPlus} title={m.projects_phone_first_title()} body={m.projects_phone_first_body()} action={{ label: m.projects_phone_new_title(), onclick: () => (phoneSheet = { kind: 'new' }) }} />
+			</div>
+		{/if}
+	</div>
+	{@render phoneSheets()}
+{:else}
 <div class="flex h-full">
 	<div class="min-w-0 flex-1 overflow-y-auto">
 		<div class="flex flex-col gap-6 px-4 pt-8 pb-6 lg:px-8">
@@ -358,18 +512,7 @@
 										oncancelrename={() => (renamingId = null)}
 										selected={card.id === selectedId}
 										onselect={() => select(card)}
-										actions={{
-											onopen: () => goto(card.href),
-											...(card.url && { onvisit: () => window.open(`https://${card.url}`, '_blank', 'noopener') }),
-											onrename: () => (renamingId = card.id),
-											onduplicate: () => void duplicate(card),
-											...(canMove && { onmove: () => void askMove(card) }),
-											...(card.liveUrl && { onshare: workspace(card, 'share') }),
-											onexport: workspace(card, 'export'),
-											onsettings: workspace(card, 'settings'),
-											...(card.url && { ontakedown: workspace(card, 'takedown') }),
-											ondelete: () => (deleting = card),
-										}}
+										actions={cardActions(card)}
 									/>
 								</li>
 							{/each}
@@ -390,33 +533,115 @@
 			{/if}
 		</div>
 	</div>
-	{#if selected}
-		{@const card = selected}
-		{@const read = about[card.id]}
-		<div class="fixed inset-y-0 right-0 z-30 flex w-full overflow-y-auto bg-bg shadow-float sm:w-95 xl:static xl:z-auto xl:shadow-none">
-			<ProjectDetailPanel
-				docked
-				name={card.name}
-				tone={card.tone}
-				live={liveLine(card, read, now)}
-				workspaceHref={card.href}
-				url={card.liveUrl}
-				parts={panelParts(card, read)}
-				onexport={workspace(card, 'export')}
-				chats={projectChats(data.chats, card, now)}
-				onask={startAsking}
-				ask={asking ? asker : undefined}
-				onclose={closePanel}
-			>
-				{#snippet preview()}
-					<div class="flex h-full items-center justify-center" style="background: var(--crew-{card.tone}-bg)">
-						<span aria-hidden="true" class="font-app text-display font-semibold" style="color: var(--crew-{card.tone}-ink)">{card.name.charAt(0).toUpperCase()}</span>
-					</div>
-				{/snippet}
-			</ProjectDetailPanel>
-		</div>
-	{/if}
+	{@render detailPanel()}
 </div>
+{/if}
+
+{#snippet phoneDetail(card: ProjectCardData)}
+	{@const read = about[card.id]}
+	{@const broke = card.status === 'failed' || card.status === 'down' || card.status === 'attention'}
+	{@const run = action(card)}
+	<PhoneProjectDetail
+		name={card.name}
+		tone={card.tone}
+		status={liveLine(card, read, now) ?? card.footer}
+		dot={card.status === 'live' ? 'live' : card.status === 'failed' || card.status === 'down' ? 'failed' : 'idle'}
+		alert={broke
+			? {
+					title: card.statusLabel ?? (card.status === 'failed' ? m.projects_status_failed() : card.status === 'down' ? m.projects_status_down() : card.questions === 1 ? m.projects_status_question() : m.projects_status_questions({ count: card.questions ?? 0 })),
+					detail: card.detail,
+					...(run && {
+						action: {
+							label: card.status === 'failed' ? m.projects_action_fix() : card.status === 'down' ? m.projects_action_check() : m.projects_action_answer(),
+							icon: card.status === 'failed' ? Wrench : card.status === 'down' ? Activity : MessageCircle,
+							onclick: run,
+						},
+					}),
+				}
+			: undefined}
+		workspaceHref={card.href}
+		url={card.liveUrl}
+		parts={panelParts(card, read)}
+		onexport={workspace(card, 'export')}
+		chats={projectChats(data.chats, card, now)}
+		backLabel={m.nav_projects()}
+		onback={closePanel}
+		onmore={() => (phoneSheet = { kind: 'card', card })}
+	>
+		{#snippet ask()}
+			<PhoneComposer placeholder={m.projects_phone_ask()} bind:value={question} onsend={(text) => void sendAsk(card, text)} />
+		{/snippet}
+	</PhoneProjectDetail>
+{/snippet}
+
+{#snippet phoneSheets()}
+{#if phoneSheet?.kind === 'card'}
+	{@const card = phoneSheet.card}
+	<BottomSheet open title={card.name} subtitle={card.footer} onclose={sheetClosed('card')}>
+		{#each projectMenu(cardActions(card), card.status === 'live') as entry, index (index)}
+			{#if entry === 'divider'}
+				<span class="h-px bg-border"></span>
+			{:else if 'label' in entry && entry.icon && entry.onselect}
+				{@const run = entry.onselect}
+				<SheetRow icon={entry.icon} label={entry.label} danger={entry.danger} onclick={() => ((phoneSheet = null), run())} />
+			{/if}
+		{/each}
+	</BottomSheet>
+{/if}
+<BottomSheet open={phoneSheet?.kind === 'new'} title={m.projects_phone_new_title()} subtitle={m.projects_phone_new_body()} onclose={sheetClosed('new')}>
+	<div class="px-4 pb-2">
+		<ProjectComposer phone bind:value={description} domain={data.list?.base_domain ?? ''} onbuild={(text) => ((phoneSheet = null), void build(text))} />
+	</div>
+</BottomSheet>
+<BottomSheet open={phoneSheet?.kind === 'sort'} title={m.projects_phone_sort_title()} onclose={sheetClosed('sort')}>
+	{#each SORTS as option (option)}
+		<SheetOption icon={SORT_ICON[option]} label={sortLabel(option)} chosen={option === sort} onclick={() => ((sort = option), (phoneSheet = null))} />
+	{/each}
+</BottomSheet>
+<BottomSheet open={phoneSheet?.kind === 'workspace'} title={m.projects_phone_workspaces()} subtitle={m.projects_phone_workspaces_body()} onclose={sheetClosed('workspace')}>
+	{#each workspaces as one (one.id)}
+		<SheetOption label={one.name} detail={one.meta} chosen={one.id === orgId} onclick={() => ((phoneSheet = null), one.id !== orgId && void chooseWorkspace(one.id))}>
+			{#snippet lead()}
+				<span aria-hidden="true" class="inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-surface-2 text-body font-semibold text-text">{one.name.charAt(0).toUpperCase()}</span>
+			{/snippet}
+		</SheetOption>
+	{/each}
+	<span class="h-px bg-border"></span>
+	<SheetRow icon={Plus} label={m.workspace_create_title()} more onclick={() => ((phoneSheet = null), void goto('/settings/workspaces'))} />
+	{#if workspaceHref}
+		<SheetRow icon={Settings} label={m.projects_phone_workspace_settings()} more onclick={() => ((phoneSheet = null), void goto(workspaceHref!))} />
+	{/if}
+</BottomSheet>
+{/snippet}
+
+{#snippet detailPanel()}
+{#if selected}
+	{@const card = selected}
+	{@const read = about[card.id]}
+	<div class="fixed inset-y-0 right-0 z-30 flex w-full overflow-y-auto bg-bg shadow-float sm:w-95 xl:static xl:z-auto xl:shadow-none">
+		<ProjectDetailPanel
+			docked
+			name={card.name}
+			tone={card.tone}
+			live={liveLine(card, read, now)}
+			workspaceHref={card.href}
+			url={card.liveUrl}
+			parts={panelParts(card, read)}
+			onexport={workspace(card, 'export')}
+			chats={projectChats(data.chats, card, now)}
+			onask={startAsking}
+			ask={asking ? asker : undefined}
+			onclose={closePanel}
+		>
+			{#snippet preview()}
+				<div class="flex h-full items-center justify-center" style="background: var(--crew-{card.tone}-bg)">
+					<span aria-hidden="true" class="font-app text-display font-semibold" style="color: var(--crew-{card.tone}-ink)">{card.name.charAt(0).toUpperCase()}</span>
+				</div>
+			{/snippet}
+		</ProjectDetailPanel>
+	</div>
+{/if}
+{/snippet}
 
 {#snippet asker()}
 	{#if selected}
@@ -427,6 +652,35 @@
 	{/if}
 {/snippet}
 
+{#if phone.current}
+	<!-- A phone's confirmations (Flow / Mobile Projects — Act from the card, Card menu). -->
+	<ActionSheet
+		bind:open={stopOpen}
+		title={m.projects_stop_title({ name: stopCard?.name ?? '' })}
+		body={m.projects_stop_body_plain()}
+		actions={[
+			...(stopCard ? [{ label: m.projects_stop_export_first(), onclick: () => stopCard && workspace(stopCard, 'export')() }] : []),
+			{ label: m.projects_stop_building(), danger: true, onclick: () => stopCard && void stop(stopCard) },
+		]}
+		cancel={m.projects_keep_building()}
+	/>
+	<DeploySheet
+		bind:open={deployOpen}
+		name={deployCard?.name ?? ''}
+		files={deployCard?.files ?? 0}
+		url={data.list?.base_domain ? m.projects_deploy_new_url({ domain: data.list.base_domain }) : m.projects_deploy_new_url_plain()}
+		data={deployData}
+		ondeploy={() => deployCard && void deploy(deployCard)}
+	/>
+	<DeleteProjectSheet
+		open={deleting !== null}
+		name={deleting?.name ?? ''}
+		{busy}
+		onexport={deleting ? workspace(deleting, 'export') : undefined}
+		ondelete={remove}
+		onclose={() => (deleting = null)}
+	/>
+{:else}
 <StopDialog bind:open={stopOpen} name={stopCard?.name ?? ''} onstop={() => stopCard && void stop(stopCard)} />
 
 <DeployDialog
@@ -437,7 +691,18 @@
 	data={deployData}
 	ondeploy={() => deployCard && void deploy(deployCard)}
 />
+{/if}
 
+{#if phone.current}
+	<ProjectMoveSheet
+		bind:open={moveOpen}
+		bind:value={moveValue}
+		name={moveCard?.name ?? ''}
+		chats={moveCard ? data.chats.filter((chat) => chat.project === moveCard?.id).length : 0}
+		workspaces={moveChoices}
+		onmove={(target) => moveCard && void move(moveCard, target)}
+	/>
+{:else}
 <ProjectMoveDialog
 	bind:open={moveOpen}
 	bind:value={moveValue}
@@ -446,7 +711,9 @@
 	workspaces={moveChoices}
 	onmove={(target) => moveCard && void move(moveCard, target)}
 />
+{/if}
 
+{#if !phone.current}
 <ProjectDialog
 	open={deleting !== null}
 	title={m.projects_delete_title({ name: deleting?.name ?? '' })}
@@ -459,3 +726,4 @@
 		<Button variant="danger" label={m.projects_delete()} loading={busy} onclick={remove} />
 	{/snippet}
 </ProjectDialog>
+{/if}

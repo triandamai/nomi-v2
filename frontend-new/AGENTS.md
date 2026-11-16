@@ -408,6 +408,23 @@ leaves out what v2 or the backend can't do yet, rather than draw it dead:
   sent without them on a phone), editing your message and its versions, the share dialog, and
   Export's PDF (the pen's "md · pdf": markdown only). The thinking level isn't on the phone's
   toolbar (the pen draws the model and the crew).
+- Projects on a phone (Flow / Mobile Projects) is the pen's list: `PhoneProjectsHeader` (the
+  workspace pill opening the Workspaces sheet, how many people are in it, Invite to the workspace's
+  page, the large title and New), `PhoneProjectSearch` with Sort (a sheet of `SheetOption`s), the
+  filters as `PhoneFilters` chips (Needs you first while anything needs the person), and each project
+  a phone `ProjectCard` whose ⋯ opens its sheet (the desktop menu's items, from `projectMenu`). New
+  opens the New project sheet with the phone `ProjectComposer`. Tapping a project opens its own
+  screen (`PhoneProjectDetail`: back to Projects, the hero, what broke with its action, Open
+  workspace and Visit, what's in it, its chats, and asking Koda at the foot) with no tab bar under
+  it (`phoneScreen`); the pen's picture of the app's own data ("Next prayer") is left out, as on a
+  desktop. Stopping asks in an `ActionSheet` (Export first, Stop building, Keep building), a draft
+  deploys from the `DeploySheet`, and deleting a project wants its name typed in the
+  `DeleteProjectSheet`, and moving it picks among workspace cards in the `ProjectMoveSheet`, as the
+  pen draws them. Loading and a list that couldn't load keep the search and filters (counts left
+  out while there are none) over phone loading cards or the centred error with Retry. Not yet:
+  offline (the desktop has none either), Koda checking an app that's down from its own flow, and
+  Import from GitHub (BACKEND_TODO.md). The sort isn't saved per workspace (the pen's "Saved for Trian's space"):
+  nothing keeps it. The Workspaces sheet's "Join" for an invitation waits for that flow.
 - The crew column lists every agent the backend has, so eleven: Iris (the inspector), whom the pen
   doesn't draw, shows her initial in place of a mascot.
 

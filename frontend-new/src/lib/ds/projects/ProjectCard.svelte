@@ -4,10 +4,11 @@
 
 <script lang="ts">
 	import { tick } from 'svelte';
-	import { Activity, ArrowRight, ArrowUpRight, MessageCircle, Play, Rocket, Square, Wrench, X } from '@lucide/svelte';
+	import { Activity, ArrowRight, ArrowUpRight, Ellipsis, MessageCircle, Play, Rocket, Square, Wrench, X } from '@lucide/svelte';
 	import { m } from '$lib/paraglide/messages';
 	import Icon from '../foundations/Icon.svelte';
 	import Button from '../actions/Button.svelte';
+	import PhonePill from '../actions/PhonePill.svelte';
 	import Status from '../status/Status.svelte';
 	import ProjectCardMenu, { type ProjectActions } from './ProjectCardMenu.svelte';
 	import type { CrewId } from '../agents/crew';
@@ -31,6 +32,10 @@
 	// `statusLabel` says what Koda is doing where the building card's own words don't fit: "Koda is
 	// changing it" (a live project), "Koda is deploying" (Act from the card, step 7).
 	// The description is cut short where the pen lets a long one run past its column (§9).
+	// `phone` is Mobile / Project Card (Flow / Mobile Projects): the column's width, 14 corners, the
+	// 40 tile (10 corners, the initial at 17), the name at 16 and its line at 13 on up to two lines,
+	// ⋯ (36, round) opening the page's sheet (`onmore`), the status box sized by its two lines
+	// ([10,12], 10 corners), and the action a Mobile Pill (40, round).
 	type Props = {
 		name: string;
 		description: string;
@@ -60,6 +65,9 @@
 		renaming?: boolean;
 		onrename?: (name: string) => void;
 		oncancelrename?: () => void;
+		phone?: boolean;
+		/** On a phone, ⋯ opens the page's sheet of the card's actions. */
+		onmore?: () => void;
 	};
 	let {
 		name,
@@ -80,6 +88,8 @@
 		renaming = false,
 		onrename,
 		oncancelrename,
+		phone = false,
+		onmore,
 	}: Props = $props();
 
 	const initial = () => name;
@@ -164,14 +174,15 @@
 	{onkeydown}
 	{onclick}
 	class={[
-		'flex h-48 w-96 max-w-full shrink-0 flex-col gap-3 rounded-md bg-surface p-4 outline',
+		'flex max-w-full shrink-0 flex-col gap-3 bg-surface p-4 outline',
+		phone ? 'w-full rounded-xl' : 'h-48 w-96 rounded-md',
 		onselect && 'cursor-pointer',
 		selected ? '-outline-offset-2 outline-2 outline-text-2' : '-outline-offset-1 outline-border-strong',
 	]}
 >
-	<div class="flex h-9 items-center gap-3">
-		<span class="inline-flex size-9 shrink-0 items-center justify-center rounded-sm" style="background: var(--crew-{tone}-bg)">
-			<span aria-hidden="true" class="font-app text-body font-semibold" style="color: var(--crew-{tone}-ink)">{name.charAt(0).toUpperCase()}</span>
+	<div class={['flex items-center gap-3', !phone && 'h-9']}>
+		<span class={['inline-flex shrink-0 items-center justify-center', phone ? 'size-10 rounded-md' : 'size-9 rounded-sm']} style="background: var(--crew-{tone}-bg)">
+			<span aria-hidden="true" class={['font-app font-semibold', phone ? 'text-phone-title' : 'text-body']} style="color: var(--crew-{tone}-ink)">{name.charAt(0).toUpperCase()}</span>
 		</span>
 		<div class="flex min-w-0 flex-1 flex-col gap-0.5">
 			{#if renaming}
@@ -187,22 +198,27 @@
 				</span>
 				<span class="truncate font-mono text-label text-text-3">{m.projects_rename_hint()}</span>
 			{:else}
-				<h3 class="truncate text-ui font-medium text-text">
+				<h3 class={['truncate font-medium text-text', phone ? 'text-phone' : 'text-ui']}>
 					{#if onselect}
 						<button type="button" aria-pressed={selected} onclick={onselect} class="block max-w-full cursor-pointer truncate rounded-xs text-left outline-offset-2">{name}</button>
 					{:else}
 						{name}
 					{/if}
 				</h3>
-				<p class="truncate text-caption text-text-3">{description}</p>
+				<p class={['text-text-3', phone ? 'line-clamp-2 text-ui' : 'truncate text-caption']}>{description}</p>
 			{/if}
 		</div>
-		{#if actions}<ProjectCardMenu {name} {actions} live={status === 'live'} />{/if}
+		{#if phone && onmore}
+			<button type="button" aria-label={m.projects_actions({ name })} class="inline-flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-text-3 outline-offset-1" onclick={onmore}>
+				<Icon icon={Ellipsis} size={20} />
+			</button>
+		{:else if actions && !phone}<ProjectCardMenu {name} {actions} live={status === 'live'} />{/if}
 	</div>
 	<div
 		data-testid="status-zone"
 		class={[
-			'flex h-14.5 shrink-0 flex-col justify-center gap-1.5 rounded-sm px-3',
+			'flex shrink-0 flex-col justify-center gap-1.5 px-3',
+			phone ? 'rounded-md py-2.5' : 'h-14.5 rounded-sm',
 			status === 'failed' || status === 'down' ? 'bg-danger-bg' : status === 'attention' ? 'bg-warning-bg' : 'bg-bg',
 		]}
 	>
@@ -226,7 +242,13 @@
 	</div>
 	<div class="flex items-center gap-2 border-t border-border pt-2.75">
 		<p class="min-w-0 flex-1 truncate font-mono text-label text-text-3">{footer}</p>
-		{#if status === 'live' && href}
+		{#if phone}
+			{#if status === 'live' && href}
+				<PhonePill label={action.label} icon={ArrowRight} {href} />
+			{:else if onaction}
+				<PhonePill variant={action.variant} label={action.label} icon={'iconStart' in action ? action.iconStart : action.iconEnd} onclick={onaction} />
+			{/if}
+		{:else if status === 'live' && href}
 			<Button variant="secondary" label={action.label} iconEnd={ArrowRight} {href} />
 		{:else if onaction}
 			<Button variant={action.variant} label={action.label} iconStart={'iconStart' in action ? action.iconStart : undefined} iconEnd={'iconEnd' in action ? action.iconEnd : undefined} onclick={onaction} />

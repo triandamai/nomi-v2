@@ -22,6 +22,7 @@
 	import { setPanelPlacement } from '$lib/ds/shells/panelPlacement';
 	import { setMainLayout } from '$lib/ds/shells/mainLayout';
 	import { setPhoneChrome } from '$lib/ds/shells/phoneChrome';
+	import { PhoneScreen, setPhoneScreen } from '$lib/ds/shells/phoneScreen.svelte';
 	import { phoneView } from '$lib/phone.svelte';
 	import Sidebar from '$lib/ds/chrome/Sidebar.svelte';
 	import NavItem from '$lib/ds/navigation/NavItem.svelte';
@@ -104,15 +105,18 @@
 	// The server's guess is only for the first paint; the width decides from then on.
 	const guess = () => data.phone;
 	const phone = phoneView(guess());
+	// A screen inside a tab (a project opened from Projects) hides the tab bar as a chat does.
+	const phoneScreenState = new PhoneScreen();
+	setPhoneScreen(phoneScreenState);
 	setPhoneChrome({
 		get phone() {
 			return phone.current;
 		},
 		get tabs() {
-			return inThread ? null : { label: m.nav_main(), tabs };
+			return inThread || phoneScreenState.inside ? null : { label: m.nav_main(), tabs };
 		},
 		get ownTitle() {
-			return isChats || isHome || inThread;
+			return isChats || isHome || inThread || isProjects;
 		},
 	});
 	// What the chat page says about itself as it changes (renamed, pinned, moved, deleted).

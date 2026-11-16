@@ -4,6 +4,8 @@ import { page, userEvent } from 'vitest/browser';
 import { FolderOpen, House, Inbox, MessageCircle, Plus, SquarePen, User } from '@lucide/svelte';
 import TabBar from './TabBar.svelte';
 import Fab from './Fab.svelte';
+import PhonePill from '../actions/PhonePill.svelte';
+import SheetOption from '../overlays/SheetOption.svelte';
 import LargeTitle from './LargeTitle.svelte';
 import BottomSheetFixture from '../overlays/BottomSheetFixture.svelte';
 import { tokenBackground, tokenColor } from '../test-utils';
@@ -104,5 +106,37 @@ describe('Fab as a button', () => {
 		expect(button.element().querySelector('svg')!.getBoundingClientRect().width).toBe(24);
 		await button.click();
 		expect(onclick).toHaveBeenCalledOnce();
+	});
+});
+
+describe('PhonePill', () => {
+	it('is the pen’s 40 round pill at 14 / 500: inverse fills with text, secondary strokes, ghost leads with its icon', async () => {
+		const onclick = vi.fn();
+		await render(PhonePill, { label: 'Ask Koda to fix', variant: 'inverse', icon: SquarePen, onclick });
+		const pill = page.getByRole('button', { name: 'Ask Koda to fix' });
+		const style = getComputedStyle(pill.element());
+		expect([pill.element().getBoundingClientRect().height, style.backgroundColor, style.fontSize, style.fontWeight]).toEqual([40, tokenBackground('nm-text'), '14px', '500']);
+		await pill.click();
+		expect(onclick).toHaveBeenCalledOnce();
+		document.body.innerHTML = '';
+		await render(PhonePill, { label: 'Open', href: '/projects/1' });
+		const open = page.getByRole('link', { name: 'Open' }).element();
+		expect([open.getBoundingClientRect().height, getComputedStyle(open).borderTopColor]).toEqual([40, tokenColor('nm-border-strong')]);
+	});
+});
+
+describe('SheetOption', () => {
+	it('is a sheet row with its icon, a second line where there is one, and the chosen one checked in accent', async () => {
+		const onclick = vi.fn();
+		await render(SheetOption, { label: 'Updated', icon: SquarePen, chosen: true, onclick });
+		const option = page.getByRole('button', { name: 'Updated' });
+		await expect.element(option).toHaveAttribute('aria-pressed', 'true');
+		expect([option.element().getBoundingClientRect().height, getComputedStyle(option.element().querySelector(':scope > span:last-child')!).color]).toEqual([52, tokenColor('nm-accent')]);
+		await option.click();
+		expect(onclick).toHaveBeenCalledOnce();
+		document.body.innerHTML = '';
+		await render(SheetOption, { label: "Trian's space", detail: 'Admin · 3 members · 4 projects', onclick });
+		await expect.element(page.getByText('Admin · 3 members · 4 projects')).toBeVisible();
+		await expect.element(page.getByRole('button', { name: /Trian/ })).toHaveAttribute('aria-pressed', 'false');
 	});
 });

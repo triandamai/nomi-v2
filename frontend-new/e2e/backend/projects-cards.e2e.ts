@@ -108,24 +108,29 @@ test('a card’s next action, the detail panel and the card menu', async ({ page
 	expect(moved.org_name).toBe('Kopi Kita');
 });
 
-test('on a phone, the detail panel opens over the list, and Export opens the workspace’s', async ({ page, context }) => {
+test('on a phone, a project opens its own screen (Mobile / Project Detail), and Export opens the workspace’s', async ({ page, context }) => {
 	await page.setViewportSize({ width: 390, height: 844 });
 	const account = await createAccount();
 	await signInAs(context, account);
 	const made = await newProject(account, await orgOf(account), [{ path: 'index.html', content: '<h1>Menu</h1>' }]);
 
 	await page.goto('/projects', { waitUntil: 'networkidle' });
-	const panel = page.getByRole('complementary', { name: 'New project' });
-	await expect(panel).toBeHidden();
+	const screen = page.getByRole('region', { name: 'New project' });
+	await expect(screen).toBeHidden();
 	const card = page.getByRole('article', { name: 'New project' });
 	await card.getByRole('button', { name: 'New project', exact: true }).click();
-	await expect(panel).toBeVisible();
-	expect((await panel.boundingBox())?.width).toBe(390);
-	await panel.getByRole('button', { name: 'Close' }).click();
-	await expect(panel).toBeHidden();
+	await expect(screen.getByRole('heading', { level: 1, name: 'New project' })).toBeVisible();
+	await expect(screen.getByRole('link', { name: 'Open workspace' })).toHaveAttribute('href', `/projects/${made.project_id}`);
+	await expect(screen.getByText('What’s in this project')).toBeVisible();
+	// A screen inside the Projects tab: no tab bar under it, as the pen draws it.
+	await expect(page.getByRole('navigation', { name: 'Main' })).toHaveCount(0);
+	await screen.getByRole('button', { name: 'Projects' }).click();
+	await expect(screen).toBeHidden();
+	await expect(page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Projects' })).toHaveAttribute('aria-current', 'page');
 
+	// On a phone the card's ⋯ is a sheet (Flow / Mobile Projects — Card menu).
 	await card.getByRole('button', { name: 'New project actions' }).click();
-	await page.getByRole('menuitem', { name: /Export repo/ }).click();
+	await page.getByRole('dialog', { name: 'New project' }).getByRole('button', { name: /Export repo/ }).click();
 	await expect(page).toHaveURL(new RegExp(`/projects/${made.project_id}$`));
 	await expect(page.getByRole('dialog')).toBeVisible();
 });
