@@ -2,6 +2,14 @@ import type { ComponentDoc } from '../types';
 
 export default [
 	{
+		file: 'overlays/SheetOption.svelte',
+		summary: 'One choice in a phone’s sheet (a sort, a workspace): its icon or tile, its name and a second line, the chosen one checked in accent.',
+		use: ['Sheets that pick one of several (Sort projects, Workspaces).'],
+		avoid: ['An action: SheetRow.'],
+		accessibility: ['A button that says whether it’s the chosen one (aria-pressed).'],
+		related: ['overlays/BottomSheet.svelte', 'mobile/SheetRow.svelte'],
+	},
+	{
 		file: 'overlays/BottomSheet.svelte',
 		summary: 'What a phone uses in place of a menu or popover: a sheet from the bottom, with its title, what it’s about, a close and its rows.',
 		use: ['A chat’s or a project’s actions on a phone (long-press, More).'],

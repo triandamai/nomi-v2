@@ -408,6 +408,16 @@ leaves out what v2 or the backend can't do yet, rather than draw it dead:
   sent without them on a phone), editing your message and its versions, the share dialog, and
   Export's PDF (the pen's "md · pdf": markdown only). The thinking level isn't on the phone's
   toolbar (the pen draws the model and the crew).
+- Projects on a phone (Flow / Mobile Projects) is the pen's list: `PhoneProjectsHeader` (the
+  workspace pill opening the Workspaces sheet, how many people are in it, Invite to the workspace's
+  page, the large title and New), `PhoneProjectSearch` with Sort (a sheet of `SheetOption`s), the
+  filters as `PhoneFilters` chips (Needs you first while anything needs the person), and each project
+  a phone `ProjectCard` whose ⋯ opens its sheet (the desktop menu's items, from `projectMenu`). New
+  opens the New project sheet with the phone `ProjectComposer`. Not yet the pen's phone screens
+  (they come next): the project's detail (the desktop panel opens over the list, full width), the
+  deploy, stop, move and delete confirmations (the desktop dialogs), loading and errors, and
+  Import from GitHub. The sort isn't saved per workspace (the pen's "Saved for Trian's space"):
+  nothing keeps it. The Workspaces sheet's "Join" for an invitation waits for that flow.
 - The crew column lists every agent the backend has, so eleven: Iris (the inspector), whom the pen
   doesn't draw, shows her initial in place of a mascot.
 

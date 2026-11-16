@@ -25,8 +25,8 @@ export default [
 	},
 	{
 		file: 'projects/ProjectComposer.svelte',
-		summary: 'Where a project starts: describe the app to Koda, see what it will get (a git repo, its address, a database), then Start building or import from GitHub.',
-		use: ['Under the projects page header, always two grid columns wide.'],
+		summary: 'Where a project starts: describe the app to Koda, see what it will get (a git repo, its address, a database), then Start building or import from GitHub. On a phone (`phone`), the New project sheet’s: the text at 16, the chips wrapping, Start building as an inverse pill.',
+		use: ['Under the projects page header, always two grid columns wide.', 'In the New project sheet on a phone (`phone`).'],
 		avoid: ['Chat: use Composer, which picks an agent and a model.'],
 		dos: ['Light the database chip with Koda’s reason ("for orders") once it knows the app needs one.'],
 		donts: ['List provisions the project won’t really get.'],
@@ -101,9 +101,32 @@ export default [
 		related: ['projects/ProjectSectionHead.svelte', 'projects/ProjectCard.svelte'],
 	},
 	{
+		file: 'projects/PhoneProjectsHeader.svelte',
+		summary: 'The top of Projects on a phone: the workspace pill, how many people are in it and Invite, then the large title and New.',
+		use: ['Projects on a phone.'],
+		avoid: ['Wider screens: the projects top bar and the page header.'],
+		accessibility: ['The workspace pill and Invite are named buttons; the title is the screen’s h1.'],
+		related: ['projects/PhoneProjectSearch.svelte', 'projects/PhoneFilters.svelte'],
+	},
+	{
+		file: 'projects/PhoneProjectSearch.svelte',
+		summary: 'Searching projects on a phone: a 40 field at 16pt and Sort beside it.',
+		use: ['Projects on a phone.'],
+		accessibility: ['A search field named by its placeholder; Sort is a named button that opens the sort sheet.'],
+		related: ['projects/PhoneFilters.svelte', 'overlays/BottomSheet.svelte'],
+	},
+	{
+		file: 'projects/PhoneFilters.svelte',
+		summary: 'The phone’s filters as round chips with counts, in a row that scrolls sideways; the chosen one filled.',
+		use: ['Projects on a phone (Needs you, All, Live, Building, Drafts).'],
+		dos: ['Put Needs you first when something needs the person.'],
+		accessibility: ['A radio group: one chip is checked; the arrow keys move the choice.'],
+		related: ['projects/PhoneProjectSearch.svelte'],
+	},
+	{
 		file: 'projects/ProjectCard.svelte',
 		summary:
-			'One project in the grid, 384 × 192: who it is, a status zone of exactly two lines (status and step or time, then one detail), and a footer with its chats and its one next action.',
+			'One project in the grid, 384 × 192: who it is, a status zone of exactly two lines (status and step or time, then one detail), and a footer with its chats and its one next action. On a phone (`phone`) it’s Mobile / Project Card: the column’s width, the name at 16, ⋯ opening the page’s sheet, and the action a phone pill.',
 		use: ['Each project on the projects page, in a left-aligned grid of fixed columns.'],
 		avoid: ['A dense list: use ProjectRow.'],
 		dos: [

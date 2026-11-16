@@ -2811,5 +2811,19 @@
 	"regen_only_latest": "Only the latest reply can be asked for again, once the crew is done.",
 	"composer_model_title": "Model",
 	"composer_crew_title": "Ask someone on the crew",
-	"chat_nav_working": "{name} · thinking"
+	"chat_nav_working": "{name} · thinking",
+	"projects_phone_workspace": "Workspace: {name}",
+	"projects_phone_people": "People in this workspace",
+	"projects_phone_invite": "Invite people",
+	"projects_phone_new": "New",
+	"projects_phone_new_title": "New project",
+	"projects_phone_new_body": "Koda builds it and gives it a URL",
+	"projects_phone_sort": "Sort",
+	"projects_phone_workspaces": "Workspaces",
+	"projects_phone_workspace_settings": "Workspace settings & members",
+	"projects_phone_sort_title": "Sort projects",
+	"projects_phone_workspaces_body": "Projects and their chats live in a workspace",
+	"projects_phone_needs_you": "Needs you",
+	"projects_phone_first_title": "No projects yet",
+	"projects_phone_first_body": "Describe an app and Koda builds it, with its own code, URL and chats."
 }

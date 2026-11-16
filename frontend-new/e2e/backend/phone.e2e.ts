@@ -120,3 +120,38 @@ test('a chat on a phone: New chat, the nav bar, the bubble, the action bar, and 
 	await page.getByRole('button', { name: 'Back' }).click();
 	await expect(page).toHaveURL(/\/chats$/);
 });
+
+test('Projects on a phone: the header, New project from its sheet, the card’s sheet, and Sort', async ({ page, context }) => {
+	const account = await createAccount();
+	await signInAs(context, account);
+	await page.goto('/projects', { waitUntil: 'networkidle' });
+	await expect(page.getByRole('heading', { level: 1, name: 'Projects' })).toBeVisible();
+	await expect(page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Projects' })).toHaveAttribute('aria-current', 'page');
+	await expect(page.getByText('No projects yet')).toBeVisible();
+
+	// New: the sheet's composer starts it, and it opens where Koda builds it.
+	await page.getByRole('button', { name: 'New', exact: true }).click();
+	const sheet = page.getByRole('dialog', { name: 'New project' });
+	await sheet.getByRole('textbox', { name: 'Describe an app to build' }).fill('A one-page menu for Warung Kopi');
+	await sheet.getByRole('button', { name: 'Start building' }).click();
+	await expect(page).toHaveURL(/\/projects\/[0-9a-f-]{36}$/);
+
+	// Back on the list: the phone card, its ⋯ sheet, Duplicate.
+	await page.goto('/projects', { waitUntil: 'networkidle' });
+	const card = page.getByRole('article').first();
+	await expect(card).toBeVisible();
+	const name = (await card.getAttribute('aria-label'))!;
+	await card.getByRole('button', { name: `${name} actions` }).click();
+	const actions = page.getByRole('dialog', { name });
+	await expect(actions.getByRole('button', { name: 'Rename' })).toBeVisible();
+	await actions.getByRole('button', { name: 'Duplicate' }).click();
+	type Projects = { projects: unknown[] };
+	await expect.poll(async () => ((await (await api(account, '/api/projects')).json()) as Projects).projects.length).toBe(2);
+
+	// Sort: a sheet, the chosen one checked.
+	await page.getByRole('button', { name: 'Sort' }).click();
+	const sort = page.getByRole('dialog', { name: 'Sort projects' });
+	await sort.getByRole('button', { name: /Name/ }).click();
+	await page.getByRole('button', { name: 'Sort' }).click();
+	await expect(page.getByRole('dialog', { name: 'Sort projects' }).getByRole('button', { name: /Name/ })).toHaveAttribute('aria-pressed', 'true');
+});

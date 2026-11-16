@@ -2811,5 +2811,19 @@
 	"regen_only_latest": "Hanya balasan terakhir yang bisa diminta ulang, setelah kru selesai.",
 	"composer_model_title": "Model",
 	"composer_crew_title": "Tanya anggota kru",
-	"chat_nav_working": "{name} · berpikir"
+	"chat_nav_working": "{name} · berpikir",
+	"projects_phone_workspace": "Workspace: {name}",
+	"projects_phone_people": "Orang di workspace ini",
+	"projects_phone_invite": "Undang orang",
+	"projects_phone_new": "Baru",
+	"projects_phone_new_title": "Proyek baru",
+	"projects_phone_new_body": "Koda membangunnya dan memberinya URL",
+	"projects_phone_sort": "Urutkan",
+	"projects_phone_workspaces": "Workspace",
+	"projects_phone_workspace_settings": "Pengaturan & anggota workspace",
+	"projects_phone_sort_title": "Urutkan proyek",
+	"projects_phone_workspaces_body": "Proyek dan obrolannya ada di sebuah workspace",
+	"projects_phone_needs_you": "Butuh kamu",
+	"projects_phone_first_title": "Belum ada proyek",
+	"projects_phone_first_body": "Jelaskan sebuah aplikasi dan Koda membangunnya, lengkap dengan kode, URL, dan obrolannya."
 }

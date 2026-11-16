@@ -124,8 +124,9 @@ test('on a phone, the detail panel opens over the list, and Export opens the wor
 	await panel.getByRole('button', { name: 'Close' }).click();
 	await expect(panel).toBeHidden();
 
+	// On a phone the card's ⋯ is a sheet (Flow / Mobile Projects — Card menu).
 	await card.getByRole('button', { name: 'New project actions' }).click();
-	await page.getByRole('menuitem', { name: /Export repo/ }).click();
+	await page.getByRole('dialog', { name: 'New project' }).getByRole('button', { name: /Export repo/ }).click();
 	await expect(page).toHaveURL(new RegExp(`/projects/${made.project_id}$`));
 	await expect(page.getByRole('dialog')).toBeVisible();
 });
