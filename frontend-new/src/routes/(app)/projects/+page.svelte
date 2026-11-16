@@ -26,6 +26,7 @@
 	import ActionSheet from '$lib/ds/overlays/ActionSheet.svelte';
 	import DeploySheet from '$lib/ds/projects/DeploySheet.svelte';
 	import DeleteProjectSheet from '$lib/ds/projects/DeleteProjectSheet.svelte';
+	import ProjectMoveSheet from '$lib/ds/projects/ProjectMoveSheet.svelte';
 	import BottomSheet from '$lib/ds/overlays/BottomSheet.svelte';
 	import SheetRow from '$lib/ds/mobile/SheetRow.svelte';
 	import SheetOption from '$lib/ds/overlays/SheetOption.svelte';
@@ -415,12 +416,17 @@
 					action={{ label: m.projects_choose_workspace(), onclick: () => goto('/settings/workspaces') }}
 				/>
 			</div>
-		{:else if retrying}
-			<ul class="flex flex-col gap-3 px-4 pt-2">
-				{#each { length: 3 }, index (index)}<li><ProjectCardLoading /></li>{/each}
-			</ul>
-		{:else if !data.list}
-			<div class="px-4 pt-2"><LoadError reason={m.projects_load_failed_reason({ status: data.failure?.status ?? 503, time: failedAt })} onretry={retry} /></div>
+		{:else if retrying || !data.list}
+			<!-- Loading and couldn't load keep the search and filters, waiting (Mobile Projects — Loading, offline & errors). -->
+			<PhoneProjectSearch placeholder={m.projects_search()} sortLabel={m.projects_phone_sort()} bind:value={query} />
+			<PhoneFilters label={m.projects_filter()} options={filterOptions.map(({ count: _, ...option }) => option)} value={filter} onchange={(value) => (filter = value as ProjectFilter)} />
+			{#if retrying}
+				<ul class="flex flex-col gap-3 px-4">
+					{#each { length: 3 }, index (index)}<li><ProjectCardLoading phone /></li>{/each}
+				</ul>
+			{:else}
+				<LoadError phone reason={m.projects_load_failed_reason({ status: data.failure?.status ?? 503, time: failedAt })} onretry={retry} />
+			{/if}
 		{:else if cards.length}
 			<PhoneProjectSearch placeholder={m.projects_search()} sortLabel={m.projects_phone_sort()} bind:value={query} onsort={() => (phoneSheet = { kind: 'sort' })} />
 			<PhoneFilters label={m.projects_filter()} options={filterOptions} value={filter} onchange={(value) => (filter = value as ProjectFilter)} />
@@ -687,6 +693,16 @@
 />
 {/if}
 
+{#if phone.current}
+	<ProjectMoveSheet
+		bind:open={moveOpen}
+		bind:value={moveValue}
+		name={moveCard?.name ?? ''}
+		chats={moveCard ? data.chats.filter((chat) => chat.project === moveCard?.id).length : 0}
+		workspaces={moveChoices}
+		onmove={(target) => moveCard && void move(moveCard, target)}
+	/>
+{:else}
 <ProjectMoveDialog
 	bind:open={moveOpen}
 	bind:value={moveValue}
@@ -695,6 +711,7 @@
 	workspaces={moveChoices}
 	onmove={(target) => moveCard && void move(moveCard, target)}
 />
+{/if}
 
 {#if !phone.current}
 <ProjectDialog

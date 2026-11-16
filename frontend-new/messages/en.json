@@ -2832,5 +2832,9 @@
 	"projects_delete_sheet_field": "Type {name} to confirm",
 	"projects_delete_export_first": "Export repo first",
 	"projects_stop_export_first": "Export first",
-	"projects_stop_building": "Stop building"
+	"projects_stop_building": "Stop building",
+	"projects_phone_load_error_title": "Couldn’t load your projects",
+	"projects_phone_load_error_body": "Your apps are still live; only this list failed.",
+	"projects_phone_move_sub": "To another workspace",
+	"projects_phone_move_current": "current · {meta}"
 }

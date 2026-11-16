@@ -419,8 +419,11 @@ leaves out what v2 or the backend can't do yet, rather than draw it dead:
   it (`phoneScreen`); the pen's picture of the app's own data ("Next prayer") is left out, as on a
   desktop. Stopping asks in an `ActionSheet` (Export first, Stop building, Keep building), a draft
   deploys from the `DeploySheet`, and deleting a project wants its name typed in the
-  `DeleteProjectSheet`, as the pen draws them. Not yet the pen's phone screens: moving a project
-  (the desktop's Move dialog), loading, offline and errors, and Import from GitHub. The sort isn't saved per workspace (the pen's "Saved for Trian's space"):
+  `DeleteProjectSheet`, and moving it picks among workspace cards in the `ProjectMoveSheet`, as the
+  pen draws them. Loading and a list that couldn't load keep the search and filters (counts left
+  out while there are none) over phone loading cards or the centred error with Retry. Not yet:
+  offline (the desktop has none either), Koda checking an app that's down from its own flow, and
+  Import from GitHub (BACKEND_TODO.md). The sort isn't saved per workspace (the pen's "Saved for Trian's space"):
   nothing keeps it. The Workspaces sheet's "Join" for an invitation waits for that flow.
 - The crew column lists every agent the backend has, so eleven: Iris (the inspector), whom the pen
   doesn't draw, shows her initial in place of a mascot.

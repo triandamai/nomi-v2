@@ -4,6 +4,9 @@ import { page, userEvent } from 'vitest/browser';
 import ActionSheet from '../overlays/ActionSheet.svelte';
 import DeploySheet from './DeploySheet.svelte';
 import DeleteProjectSheet from './DeleteProjectSheet.svelte';
+import ProjectMoveSheet from './ProjectMoveSheet.svelte';
+import ProjectCardLoading from './ProjectCardLoading.svelte';
+import LoadError from './LoadError.svelte';
 import { tokenBackground, tokenColor } from '../test-utils';
 
 // Flow / Mobile Projects' confirmations on a phone: the action sheet that stops a build, the sheet
@@ -67,5 +70,43 @@ describe('DeleteProjectSheet', () => {
 		await userEvent.keyboard('{Enter}');
 		expect(ondelete).toHaveBeenCalledOnce();
 		await expect.element(page.getByRole('button', { name: 'Export repo first' })).toBeVisible();
+	});
+});
+
+describe('ProjectMoveSheet', () => {
+	const workspaces = [
+		{ id: 'o1', name: 'Mario', meta: 'personal · only you', tone: 'plain' as const, members: 1 },
+		{ id: 'o2', name: "Trian's space", meta: '3 members', tone: 'plain' as const, members: 3, current: true },
+		{ id: 'o3', name: 'Kopi Kita', meta: 'Admin · 5 members', tone: 'plain' as const, members: 5, owner: 'Andi' },
+	];
+	it('moves to the workspace chosen among the cards, the current one not choosable', async () => {
+		await page.viewport(390, 844);
+		const onmove = vi.fn();
+		await render(ProjectMoveSheet, { open: true, name: 'salah-tracker', chats: 2, workspaces, onmove });
+		const move = page.getByRole('button', { name: 'Move project' });
+		await expect.element(move).toBeDisabled();
+		await expect.element(page.getByRole('radio', { name: /Trian/ })).toHaveAttribute('aria-disabled', 'true');
+		await page.getByRole('radio', { name: /Kopi Kita/ }).click();
+		await expect.element(page.getByRole('radio', { name: /Kopi Kita/ })).toHaveAttribute('aria-checked', 'true');
+		expect(box(move.element()).height).toBe(46);
+		await move.click();
+		expect(onmove).toHaveBeenCalledWith('o3');
+	});
+});
+
+describe('Loading and couldn’t load, on a phone', () => {
+	it('draws phone loading cards, and the centred error with Retry as a pill', async () => {
+		await page.viewport(390, 844);
+		await render(ProjectCardLoading, { phone: true });
+		const card = page.getByRole('status', { name: 'Loading a project' }).element();
+		expect([Math.round(box(card).width), getComputedStyle(card).borderRadius]).toEqual([390, '14px']);
+		document.body.innerHTML = '';
+		const onretry = vi.fn();
+		await render(LoadError, { phone: true, reason: '503 from api.nomi.app · 09:14', onretry });
+		await expect.element(page.getByText('Couldn’t load your projects')).toBeVisible();
+		const retry = page.getByRole('button', { name: 'Retry' });
+		expect(box(retry.element()).height).toBe(40);
+		await retry.click();
+		expect(onretry).toHaveBeenCalledOnce();
 	});
 });

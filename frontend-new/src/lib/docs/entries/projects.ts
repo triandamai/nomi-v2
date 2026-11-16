@@ -117,6 +117,14 @@ export default [
 		related: ['overlays/BottomSheet.svelte'],
 	},
 	{
+		file: 'projects/ProjectMoveSheet.svelte',
+		summary: 'Moving a project to another workspace on a phone: the workspaces as radio cards (the current one not choosable), what changes for whom, and Move project.',
+		use: ['Move to workspace from a card’s sheet on a phone.'],
+		avoid: ['Wider screens: ProjectMoveDialog.'],
+		accessibility: ['A radio group; the current workspace is aria-disabled; Move project waits for a choice.'],
+		related: ['projects/ProjectMoveDialog.svelte', 'overlays/BottomSheet.svelte'],
+	},
+	{
 		file: 'projects/PhoneProjectDetail.svelte',
 		summary: 'A project on a phone, its own screen: back to Projects, who it is and how it stands, what broke with the one thing to do, Open workspace and Visit, what’s in it, its chats, and asking Koda at the foot.',
 		use: ['Tapping a project on a phone.'],
@@ -171,7 +179,7 @@ export default [
 	},
 	{
 		file: 'projects/ProjectCardLoading.svelte',
-		summary: 'A project card’s place while the list loads: the card’s size, still blocks, a quieter stroke.',
+		summary: 'A project card’s place while the list loads: the card’s size, still blocks, a quieter stroke. On a phone (`phone`), the phone card’s shape.',
 		use: ['As many as the list will likely hold, while it loads.'],
 		donts: ['Animate it: honest states, no shimmer.'],
 		accessibility: ['A busy status named "Loading a project".'],
@@ -258,7 +266,7 @@ export default [
 	},
 	{
 		file: 'projects/LoadError.svelte',
-		summary: 'The projects list couldn’t load: that the apps are still live, the server’s own reason, and Retry.',
+		summary: 'The projects list couldn’t load: that the apps are still live, the server’s own reason, and Retry. On a phone (`phone`) it’s centred under the filters with Retry as a pill.',
 		use: ['In place of the grid when the list fails to load.'],
 		content: ['Quote what failed and when: "503 from api.nomi.app · 09:14".'],
 		accessibility: ['An alert, so it is said when it appears.'],
