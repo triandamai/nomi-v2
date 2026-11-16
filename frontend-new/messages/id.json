@@ -2802,5 +2802,7 @@
 	"nav_you": "Kamu",
 	"chat_more_for": "Lainnya untuk {title}",
 	"chat_pin_top": "Sematkan di atas",
-	"chat_unpin_top": "Lepas sematan"
+	"chat_unpin_top": "Lepas sematan",
+	"composer_model": "Model: {model}",
+	"composer_crew": "Kru"
 }

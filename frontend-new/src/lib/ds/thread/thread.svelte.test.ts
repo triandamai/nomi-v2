@@ -5,6 +5,7 @@ import { MessageSquare, RotateCcw } from '@lucide/svelte';
 import Prose from './Prose.svelte';
 import ChatComposer from './ChatComposer.svelte';
 import PhoneChatRow from './PhoneChatRow.svelte';
+import PhoneComposer from './PhoneComposer.svelte';
 import ChatComposerFixture from './ChatComposerFixture.svelte';
 import Starters from './Starters.svelte';
 import TodayStrip from './TodayStrip.svelte';
@@ -373,5 +374,54 @@ describe('PhoneChatRow', () => {
 		await expect.element(more).toBeVisible();
 		await userEvent.keyboard('{Enter}');
 		expect(onmore).toHaveBeenCalledTimes(2);
+	});
+});
+
+describe('PhoneComposer', () => {
+	const crew = [
+		{ kind: 'crew' as const, agent: 'dana' as const, name: 'Dana', role: 'Money and subscriptions' },
+		{ kind: 'crew' as const, agent: 'kala' as const, name: 'Kala', role: 'Reminders on time' },
+	];
+
+	it('is the pen’s pill: 16pt, Send only once there’s text, the toolbar only while writing', async () => {
+		await page.viewport(390, 844);
+		const onsend = vi.fn();
+		await render(PhoneComposer, { placeholder: 'Message Nomi', onsend, model: 'deepseek-flash', onmodel: () => {}, oncrew: () => {} });
+		const field = page.getByRole('textbox', { name: 'Message' });
+		expect(getComputedStyle(field.element()).fontSize).toBe('16px');
+		const bar = document.querySelector<HTMLElement>('[data-phone-composer]')!;
+		expect([getComputedStyle(bar).paddingLeft, getComputedStyle(bar).borderTopWidth]).toEqual(['12px', '1px']);
+		expect(page.getByRole('button', { name: 'Send' }).elements()).toHaveLength(0);
+		expect(page.getByRole('button', { name: 'Model: deepseek-flash' }).elements()).toHaveLength(0);
+		await field.click();
+		await expect.element(page.getByRole('button', { name: 'Model: deepseek-flash' })).toBeVisible();
+		await field.fill('Berapa belanja makan Oktober?');
+		await page.getByRole('button', { name: 'Send' }).click();
+		expect(onsend).toHaveBeenCalledWith('Berapa belanja makan Oktober?');
+		await expect.element(field).toHaveValue('');
+	});
+
+	it('picks a crew member after "@"', async () => {
+		await render(PhoneComposer, { placeholder: 'Message Nomi', onsend: () => {}, crew });
+		const field = page.getByRole('textbox', { name: 'Message' });
+		await field.click();
+		await userEvent.keyboard('Berapa makan? @da');
+		await expect.element(page.getByRole('option', { name: /Dana/ })).toBeVisible();
+		await userEvent.keyboard('{Enter}');
+		await expect.element(field).toHaveValue('Berapa makan? @Dana ');
+	});
+
+	it('doesn’t stop the reply it just sent on the second tap of a double tap', async () => {
+		const onsend = vi.fn();
+		const onstop = vi.fn();
+		const screen = await render(PhoneComposer, { placeholder: 'Message Nomi', value: 'Halo', onsend, onstop });
+		const send = page.getByRole('button', { name: 'Send' });
+		await send.click();
+		await screen.rerender({ placeholder: 'Message Nomi', streaming: true, onsend, onstop });
+		await page.getByRole('button', { name: 'Stop reply' }).click();
+		expect(onstop).not.toHaveBeenCalled();
+		await new Promise((resolve) => setTimeout(resolve, 600));
+		await page.getByRole('button', { name: 'Stop reply' }).click();
+		expect(onstop).toHaveBeenCalledOnce();
 	});
 });

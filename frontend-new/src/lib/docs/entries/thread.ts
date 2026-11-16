@@ -37,6 +37,16 @@ export default [
 		related: ['inputs/Composer.svelte', 'chat/MentionPicker.svelte', 'chat/StopHint.svelte', 'inputs/Chip.svelte'],
 	},
 	{
+		file: 'thread/PhoneComposer.svelte',
+		summary: 'Where a message is written on a phone: attach, the round pill at 16pt with the mic, Send once there’s text (Stop while a reply streams), and while writing the model chip and “@ Crew”.',
+		use: ['A chat on a phone.'],
+		avoid: ['Wider screens: ChatComposer.'],
+		dos: ['Keep the text at 16pt so iOS doesn’t zoom the page.', 'Open the page’s sheet from the model chip and “@ Crew”: phones use sheets, not menus.'],
+		donts: ['Let a double tap on Send also stop the reply it started: Stop takes a tap of its own.'],
+		accessibility: ['The field is labelled; “@” opens the crew picker, driven from the field (arrows move, Enter or Tab picks, Escape closes).'],
+		related: ['thread/ChatComposer.svelte', 'chat/MentionPicker.svelte', 'overlays/BottomSheet.svelte'],
+	},
+	{
 		file: 'thread/PhoneChatRow.svelte',
 		summary: 'A chat in the phone’s Chats list: its avatar, title, time and last line; a long press (or More, for the keyboard) opens its sheet.',
 		use: ['Chats on a phone.'],
