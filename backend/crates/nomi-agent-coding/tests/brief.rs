@@ -203,9 +203,7 @@ async fn design(pool: &PgPool, on: bool) {
     std::env::set_var("SETTINGS_ENCRYPTION_KEY", key);
     nomi_settings::config::install(pool.clone());
     let admin: Uuid = sqlx::query_scalar("INSERT INTO users DEFAULT VALUES RETURNING id").fetch_one(pool).await.unwrap();
-    let pairs: &[(&str, &str)] = if on { &[("enabled", "on"), ("rollout", "all")] } else { &[("enabled", "off")] };
-    let values = pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
-    nomi_settings::config::save(pool, &nomi_test_support::TEST_SETTINGS_KEY, &nomi_settings::config::DESIGN, &values, admin).await.unwrap();
+    nomi_settings::config::set_agent_on(pool, nomi_agent_core::crew::DESIGN_AGENT_TYPE, on, admin).await.unwrap();
     nomi_settings::config::forget();
 }
 

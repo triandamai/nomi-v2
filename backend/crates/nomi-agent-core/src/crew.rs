@@ -2,9 +2,12 @@
 //! `agent_type` ("money", "reminders"…) everywhere in code and data; these are what the chat,
 //! the crew page, emails and hand-off messages call them.
 
-/// Sora, the designer (nomi-agent-design). Here because the crew switches gate her on the
-/// `design` setting (see `personal_crew`).
+/// Sora, the designer (nomi-agent-design).
 pub const DESIGN_AGENT_TYPE: &str = "design";
+/// Rena, the planner (nomi-agent-planning).
+pub const PLANNING_AGENT_TYPE: &str = "planning";
+/// Koda, the developer (nomi-agent-coding).
+pub const CODING_AGENT_TYPE: &str = "coding";
 
 /// The name of a built-in crew member, by `agent_type`.
 pub fn crew_name(agent_type: &str) -> Option<&'static str> {
@@ -13,8 +16,8 @@ pub fn crew_name(agent_type: &str) -> Option<&'static str> {
         "money" => "Dana",
         "reminders" => "Kala",
         "files" => "Maya",
-        "planning" => "Rena",
-        "coding" => "Koda",
+        PLANNING_AGENT_TYPE => "Rena",
+        CODING_AGENT_TYPE => "Koda",
         "workspace" => "Tara",
         "health" => "Raga",
         "inspector" => "Iris",

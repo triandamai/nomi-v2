@@ -333,6 +333,8 @@ impl Tool for SavePreview {
         };
         let directions = design_directions::latest(&mut **conn, session_id).await.map_err(unsaved)?;
         known_direction(directions.as_ref().map(|(_, _, set)| set), &artifact.manifest.direction_id)?;
+        // The first preview waits for the person to pick a direction.
+        nomi_agent_core::build_flow::facts(&mut **conn, session_id).await.map_err(unsaved)?.preview_allowed()?;
         let before = design_artifact::latest_of_direction(&mut **conn, session_id, &artifact.manifest.direction_id).await.map_err(unsaved)?;
         let missing = before.map(|(_, earlier)| artifact.manifest.missing_since(&earlier)).unwrap_or_default();
         let feedback = design_feedback::list(&mut **conn, session_id).await.map_err(unsaved)?;

@@ -4,7 +4,6 @@
 
 mod support;
 
-use std::collections::BTreeMap;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
@@ -21,9 +20,7 @@ static GLOBALS: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 async fn design_on(pool: &PgPool, admin: Uuid, on: bool) {
     std::env::set_var("SETTINGS_ENCRYPTION_KEY", hex::encode(nomi_test_support::TEST_SETTINGS_KEY));
     nomi_settings::config::install(pool.clone());
-    let pairs: &[(&str, &str)] = if on { &[("enabled", "on"), ("rollout", "all")] } else { &[("enabled", "off")] };
-    let values: BTreeMap<String, String> = pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
-    nomi_settings::config::save(pool, &nomi_test_support::TEST_SETTINGS_KEY, &nomi_settings::config::DESIGN, &values, admin).await.unwrap();
+    nomi_settings::config::set_agent_on(pool, nomi_agent_core::crew::DESIGN_AGENT_TYPE, on, admin).await.unwrap();
     nomi_settings::config::forget();
 }
 
@@ -221,6 +218,11 @@ async fn the_person_approves_a_version_and_the_newest_approval_stands(pool: PgPo
     assert_eq!(status, StatusCode::CREATED, "{first}");
     assert_eq!((first["version"].as_i64(), first["note"].as_str()), (Some(1), Some("Go with this")));
     assert_eq!(app.get(&studio, &ada).await.1["approval"]["version"], 1);
+    // Approving is the go-ahead: Sora is handed the handoff without a word in the chat.
+    let tasks: Vec<(String, String)> = sqlx::query_as("SELECT target_agent_type, task FROM agent_delegations WHERE session_id = $1").bind(session_id).fetch_all(&pool).await.unwrap();
+    assert_eq!(tasks.len(), 1, "{tasks:?}");
+    assert_eq!(tasks[0].0, "design");
+    assert!(tasks[0].1.contains("approved version 1") && tasks[0].1.contains("create_handoff"), "{}", tasks[0].1);
 
     assert_eq!(app.send("POST", &uri, &ada, json!({"version": 2})).await.0, StatusCode::CREATED);
     let (_, body) = app.get(&studio, &ada).await;

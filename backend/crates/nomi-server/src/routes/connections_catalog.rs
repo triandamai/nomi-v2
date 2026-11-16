@@ -3,7 +3,7 @@
 //!
 //! The catalog is kept here in code: only Google Workspace (when this server has Google sign-in
 //! set up), GitHub and Hevy can be connected today; the rest are listed as coming. MCP servers
-//! are called only by Sora, where the design workflow is rolled out, and only remote (http/https)
+//! are called only by Sora, while she is on, and only remote (http/https)
 //! servers are accepted. Nomi never runs a local command for anyone.
 
 use axum::extract::{Path, State};
@@ -132,8 +132,8 @@ pub struct McpServer {
 #[derive(Serialize)]
 pub struct McpServers {
     pub servers: Vec<McpServer>,
-    /// Whether anyone in this person's crew can call MCP tools: Sora can, where the design
-    /// workflow is rolled out to them. Otherwise servers are kept for when it is.
+    /// Whether anyone in this person's crew can call MCP tools: Sora can, while she
+    /// is on. Otherwise servers are kept for when it is.
     pub callable: bool,
 }
 
@@ -162,7 +162,7 @@ pub async fn list_mcp(
     .map_err(server_error)?;
     Ok(Json(McpServers {
         servers,
-        callable: nomi_settings::config::design_enabled_for(claims.sub).await,
+        callable: nomi_settings::config::agent_on(nomi_agent_core::crew::DESIGN_AGENT_TYPE).await,
     }))
 }
 

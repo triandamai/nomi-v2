@@ -262,7 +262,7 @@ The person stored these for the published app, read on the server from the envir
         ),
     }
 
-    // Only where Design is rolled out to this person and Sora handed a design over: without
+    // Only while Sora is on and handed a design over: without
     // one the brief is what it always was.
     if let Some((version, package)) = nomi_agent_core::design_handoff::for_builder(&mut **conn, session_id, user_id).await {
         let files = nomi_agent_core::design_artifact::files(&mut **conn, session_id, package.artifact_version).await.unwrap_or_default();

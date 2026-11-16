@@ -83,7 +83,7 @@ impl SubAgent for PlanningAgent {
     /// The app-building playbook (questions, create_project, the plan, handing it to Koda) only
     /// when this is about building something: a project chat, or a conversation where the person
     /// asked for an app, site or the like. Trips, schedules and other plans don't get it. Where
-    /// the design workflow is rolled out to the person, design discovery comes with it.
+    /// Sora is on, design discovery comes with it.
     async fn domain_context(
         &self,
         conn: &mut PoolConnection<Postgres>,
@@ -95,13 +95,18 @@ impl SubAgent for PlanningAgent {
         if !is_app_chat(conn, session_id, messages).await {
             return None;
         }
-        Some(discovery::app_context_for(&mut **conn, session_id, user_id).await)
+        let playbook = discovery::app_context_for(&mut **conn, session_id, user_id).await;
+        // Where the build stands, so she knows whether to ask, wait or hand over.
+        Some(match nomi_agent_core::build_flow::context_for(&mut **conn, session_id).await {
+            Some(flow) => format!("{playbook}\n\n{flow}"),
+            None => playbook,
+        })
     }
 
-    /// The structured design brief (`save_design_brief`), for an app or site where the design
-    /// workflow is rolled out to the person.
-    async fn chat_tools(&self, conn: &mut PoolConnection<Postgres>, session_id: Uuid, user_id: Uuid, messages: &[LlmMessage]) -> Vec<ToolDefinition> {
-        if is_app_chat(conn, session_id, messages).await && nomi_settings::config::design_enabled_for(user_id).await {
+    /// The structured design brief (`save_design_brief`), for an app or site while Sora
+    /// is on.
+    async fn chat_tools(&self, conn: &mut PoolConnection<Postgres>, session_id: Uuid, _user_id: Uuid, messages: &[LlmMessage]) -> Vec<ToolDefinition> {
+        if is_app_chat(conn, session_id, messages).await && nomi_settings::config::agent_on(nomi_agent_core::crew::DESIGN_AGENT_TYPE).await {
             vec![discovery::save_design_brief_definition()]
         } else {
             Vec::new()
@@ -140,7 +145,7 @@ impl SubAgent for PlanningAgent {
                 let tool = tools::CreateProject { relay: self.relay_ops.clone() };
                 nomi_agent_core::Tool::execute(&tool, conn, session_id, agent_session_id, user_id, input).await
             }
-            discovery::SAVE_DESIGN_BRIEF if nomi_settings::config::design_enabled_for(user_id).await => {
+            discovery::SAVE_DESIGN_BRIEF if nomi_settings::config::agent_on(nomi_agent_core::crew::DESIGN_AGENT_TYPE).await => {
                 discovery::save_design_brief(&mut **conn, session_id, agent_session_id, user_id, &input).await.map(nomi_agent_core::ToolOutcome::text)
             }
             PUBLISH_TOOL_NAME => publish_from_tool(self.project_ops.as_ref(), user_id, &self.display_name(), &input).await.map(nomi_agent_core::ToolOutcome::text),

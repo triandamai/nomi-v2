@@ -97,7 +97,8 @@ pub async fn sandbox_check_in(
         return Ok(None);
     }
     let found = availability(conn, project_id, Some(user_id), config).await?;
-    if found.is_some_and(|a| a.runtime == RUNTIME_SANDBOX && a.available) {
+    // An open page keeps the sandbox awake only once there is a build to preview.
+    if found.is_some_and(|a| a.runtime == RUNTIME_SANDBOX && a.available) && nomi_agent_coding::runtime::build_state(conn, project_id).await?.ready_to_preview() {
         store::want_running(conn, project_id, PROVIDER_NAME).await?;
     }
     Ok(Some(nomi_agent_coding::runtime::files_version(conn, project_id).await?))

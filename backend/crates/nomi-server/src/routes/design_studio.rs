@@ -1,5 +1,5 @@
 //! The Design Studio's routes. A chat's previews are listed for the people who can open the
-//! chat, where Design is rolled out. A version's files are served to the Studio's frame by the
+//! chat, while Sora is on. A version's files are served to the Studio's frame by the
 //! version's unguessable name alone: the frame is sandboxed into an origin of its own, so it
 //! sends no sign-in and can reach nothing of Nomi's, and the response says so again in case the
 //! address is opened outside the Studio.
@@ -11,6 +11,7 @@ use axum::{
     Json,
 };
 use chrono::{DateTime, Utc};
+use nomi_agent_core::crew::DESIGN_AGENT_TYPE;
 use nomi_agent_core::design_approval::{self, Approval};
 use nomi_agent_core::design_artifact::{self, Element, Page, ENTRY_PAGE, PREVIEW_TOKEN_CHARS};
 use nomi_agent_core::design_feedback::{self, Feedback, NewFeedback, MAX_OPEN_PER_CHAT};
@@ -33,6 +34,8 @@ const PREVIEW_MAX_AGE_SECS: u32 = 3600;
 const BRIDGE: &str = include_str!("design_bridge.js");
 const BODY_END: &str = "</body>";
 const HTML_TYPE: &str = "text/html";
+/// Who Sora's task comes from when the person approves a version: Nomi, on their behalf.
+const APPROVED_BY: &str = "chitchat";
 
 #[derive(Serialize)]
 pub struct StudioPreview {
@@ -57,7 +60,7 @@ pub struct StudioResponse {
 
 /// `GET /api/sessions/:id/design`: the chat's preview versions, oldest first.
 pub async fn list(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(session_id): Path<Uuid>) -> Result<Json<StudioResponse>, (StatusCode, &'static str)> {
-    if !nomi_settings::config::design_enabled_for(claims.sub).await {
+    if !nomi_settings::config::agent_on(DESIGN_AGENT_TYPE).await {
         return Err((StatusCode::NOT_FOUND, "not found"));
     }
     authorize_session_access(&state.pool, claims.sub, session_id).await?;
@@ -96,7 +99,7 @@ fn refused(status: StatusCode, why: &str) -> Refused {
 
 /// Whether this person may use the Studio for this chat; the refusal otherwise.
 async fn studio_access(state: &AppState, user_id: Uuid, session_id: Uuid) -> Result<(), Refused> {
-    if !nomi_settings::config::design_enabled_for(user_id).await {
+    if !nomi_settings::config::agent_on(DESIGN_AGENT_TYPE).await {
         return Err(refused(StatusCode::NOT_FOUND, "not found"));
     }
     authorize_session_access(&state.pool, user_id, session_id).await.map_err(|(status, why)| refused(status, why))
@@ -151,6 +154,12 @@ pub async fn approve(
         return Err(refused(StatusCode::NOT_FOUND, "no such version"));
     }
     let approval = design_approval::approve(&mut conn, session_id, claims.sub, version, note.as_deref()).await.map_err(unavailable)?;
+    // Approving is the go-ahead to build: Sora writes the handoff and passes it to Koda without
+    // the person having to say so in the chat too.
+    let task = nomi_agent_core::prompts::DESIGN_APPROVED_TASK.replace("{version}", &version.to_string());
+    if let Err(why) = nomi_agent_core::delegation::create_delegation(&mut conn, None, session_id, APPROVED_BY, DESIGN_AGENT_TYPE, &task, claims.sub).await {
+        tracing::warn!(error = %why, %session_id, "design studio: the approval didn't reach Sora");
+    }
     Ok((StatusCode::CREATED, Json(approval)))
 }
 

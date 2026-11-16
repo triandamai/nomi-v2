@@ -228,7 +228,12 @@ impl SubAgent for CodingAgent {
         user_id: Uuid,
         messages: &[nomi_llm::LlmMessage],
     ) -> Option<String> {
-        brief::task_brief(conn, s3, session_id, user_id, messages, self.relay_ops.as_ref()).await
+        let brief = brief::task_brief(conn, s3, session_id, user_id, messages, self.relay_ops.as_ref()).await?;
+        // Where the build stands, so he knows what he was handed and when he is done.
+        Some(match nomi_agent_core::build_flow::context_for(&mut **conn, session_id).await {
+            Some(flow) => format!("{brief}\n\n{flow}"),
+            None => brief,
+        })
     }
 
     fn intent_label(&self) -> Cow<'static, str> {

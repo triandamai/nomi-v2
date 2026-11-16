@@ -124,7 +124,8 @@ async fn mcp_servers_are_kept_by_address_and_never_as_commands(pool: PgPool) {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body, json!({ "servers": [], "callable": false }));
+    // Sora, who calls these servers, is on unless an admin switched her off.
+    assert_eq!(body, json!({ "servers": [], "callable": true }));
 
     let (status, added) = request(
         router.clone(),
