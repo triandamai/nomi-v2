@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, tick, untrack, type Snippet } from 'svelte';
-	import { ArrowUpRight, Cpu, Download, FilePlus2, Hourglass, KeyRound, LogIn, RotateCcw, Sparkles, Trash2, Unplug, Undo2 } from '@lucide/svelte';
+	import { ArrowUpRight, Check, Cpu, Download, FilePlus2, FolderInput, Hourglass, KeyRound, List, LogIn, Maximize2, Minimize2, Pencil, Pin, PinOff, RefreshCw, RotateCcw, Share, Sparkles, Trash2, Unplug, Undo2 } from '@lucide/svelte';
 	import { goto, invalidate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { m } from '$lib/paraglide/messages';
@@ -43,6 +43,15 @@
 	import FailedReply from '$lib/ds/thread/FailedReply.svelte';
 	import TurnNote from '$lib/ds/thread/TurnNote.svelte';
 	import ChatComposer from '$lib/ds/thread/ChatComposer.svelte';
+	import PhoneComposer from '$lib/ds/thread/PhoneComposer.svelte';
+	import NavBar from '$lib/ds/mobile/NavBar.svelte';
+	import Mascot from '$lib/ds/agents/Mascot.svelte';
+	import PhoneUserMessage from '$lib/ds/mobile/UserMessage.svelte';
+	import ActionBar from '$lib/ds/mobile/ActionBar.svelte';
+	import SheetRow from '$lib/ds/mobile/SheetRow.svelte';
+	import BottomSheet from '$lib/ds/overlays/BottomSheet.svelte';
+	import TextField from '$lib/ds/inputs/TextField.svelte';
+	import { phoneView } from '$lib/phone.svelte';
 	import { replyBlocks } from '$lib/adapters/blocks';
 	import ReplyBlocks from '$lib/chat/ReplyBlocks.svelte';
 	import CodeQuote from '$lib/ds/build/CodeQuote.svelte';
@@ -73,6 +82,27 @@
 		after?: Snippet;
 	};
 	let { data, pane = false, quote = null, onunquote, onactivity, after }: Props = $props();
+
+	// On a phone (Flow / Mobile Chat — Start & answer, steps 2–7) the chat is the pen's phone screen:
+	// the nav bar (back to Chats, the title, who answers, the chat's sheet), the thread padded
+	// [16,16,20,16] with messages 24 apart, your messages in the 18-round bubble, each reply under the
+	// Mobile byline with its prose at 16 and the round action bar (More: regenerate), and the phone's
+	// composer, whose model chip and "@ Crew" open sheets. The workspace's chat pane comes with the
+	// phone's Build screens (Mobile Build).
+	const phoneGuess = () => Boolean(page.data.phone);
+	const phoneWidth = phoneView(phoneGuess());
+	const phone = $derived(phoneWidth.current && !pane);
+	type Sheet = { kind: 'chat' } | { kind: 'rename' } | { kind: 'reply'; message: RenderedMessage; latest: boolean } | { kind: 'model' } | { kind: 'crew' };
+	let sheet = $state<Sheet | null>(null);
+	// What the phone's action bar shows at once, before the reload brings the saved feedback (the
+	// desktop's reply bar keeps its own): put back if saving fails.
+	let feedbackShown = $state<Record<string, 'liked' | 'disliked' | null>>({});
+	async function ratePhone(message: RenderedMessage, next: 'liked' | 'disliked' | null) {
+		const before = feedbackShown[message.id];
+		feedbackShown = { ...feedbackShown, [message.id]: next };
+		if (!(await rate(message, next === 'liked' ? 'up' : next === 'disliked' ? 'down' : null))) feedbackShown = { ...feedbackShown, [message.id]: before };
+	}
+	let newName = $state('');
 
 	const header = chatHeader();
 	const time = appClock();
@@ -461,6 +491,11 @@
 	}
 
 	const shownTitle = $derived(header.shown(chatId, 'title', data.chat.title));
+	// Who answers in this chat, for the phone's nav bar: whoever is at it, else the last to reply.
+	const answering = $derived.by(() => {
+		const name = working ? (turn.agent ?? 'Nomi') : (messages.findLast((message) => message.sender === 'assistant' && message.agent_display_name)?.agent_display_name ?? 'Nomi');
+		return { agent: crewIdOf(name), name: working ? m.chat_nav_working({ name }) : name };
+	});
 	const pinned = $derived(header.shown(chatId, 'pinned', data.chat.pinned));
 
 	async function patch(body: Record<string, unknown>): Promise<boolean> {
@@ -698,6 +733,9 @@
 	{@const shown = viewing[message.id] ? versions[message.id]?.[viewing[message.id] - 1] : undefined}
 	{#if editing === message.id}
 		<MessageEditor value={message.content} version="{total} / {total + 1}" onsave={(text) => saveEdit(message, text)} oncancel={() => (editing = null)} />
+	{:else if phone}
+		<PhoneUserMessage text={shown?.text ?? message.content} />
+		{#if lateNotes[message.id]}<TurnNote icon={LogIn} align="end" text={lateNotes[message.id]} />{/if}
 	{:else}
 		<MessageUser
 			text={shown?.text ?? message.content}
@@ -711,8 +749,10 @@
 {/snippet}
 
 <div class="flex h-full flex-col">
-	<div bind:this={scroller} {onscroll} class={['min-h-0 flex-1 overflow-y-auto', pane ? 'px-5 pt-5' : 'px-4 pt-6 lg:px-12 lg:pt-10']}>
-		<div class="mx-auto flex w-full max-w-180 flex-col gap-8 pb-8">
+	{#if phone}<NavBar title={shownTitle ?? m.nav_new_chat()} who={answering} onback={() => void goto('/chats')} onmenu={() => (sheet = { kind: 'chat' })} />{/if}
+	<div bind:this={scroller} {onscroll} class={['min-h-0 flex-1 overflow-y-auto', phone ? 'px-4 pt-4' : pane ? 'px-5 pt-5' : 'px-4 pt-6 lg:px-12 lg:pt-10']}>
+		<!-- On a phone a short thread sits at the bottom, over the composer, as the pen draws it. -->
+		<div class={['mx-auto flex w-full max-w-180 flex-col', phone ? 'min-h-full justify-end gap-6 pb-5' : 'gap-8 pb-8']}>
 			{#if !online}
 				<Banner kind="offline" text={m.banner_offline()} action={{ label: m.banner_retry_now(), onclick: () => void flushOutbox() }} />
 			{:else if backOnline}
@@ -768,6 +808,7 @@
 					{:else}
 						<div data-message-id={message.id} class="flex flex-col">
 							<AgentReply
+								{phone}
 								agent={crewIdOf(message.agent_display_name)}
 								name={nameOf(message)}
 								meta={replyMeta(message, entry.turnStart, cutOff === message.id ? m.meta_stopped() : continued && message.created_at > continued.after ? m.meta_continued() : undefined)}
@@ -788,7 +829,7 @@
 									{@const view = failureActions(message, entry.failure)}
 									<FailedReply text={entry.failure.text} title={view.title} actions={view.actions} />
 								{:else}
-									<Prose html={message.content_html} />
+									<Prose {phone} html={message.content_html} />
 									<ReplyBlocks
 										blocks={replyBlocks(message, { language })}
 										{api}
@@ -802,14 +843,26 @@
 										onsend={(text) => send(text)}
 									/>
 									{#if continued && message.created_at > continued.after}<TurnNote icon={Unplug} text={m.continued_note({ elapsed: continued.elapsed })} />{/if}
-									<ReplyBar
-										text={message.content}
-										feedback={message.my_feedback === 'up' ? 'liked' : message.my_feedback === 'down' ? 'disliked' : null}
-										onfeedback={(rating) => rate(message, rating)}
-										ondislike={(feedback) => dislike(message, feedback)}
-										onregenerate={entry.latest && !working ? (style) => regenerate(message.id, style) : undefined}
-										onshare={() => share(message.id)}
-									/>
+									{#if phone}
+										{@const feedback = message.id in feedbackShown ? feedbackShown[message.id] : message.my_feedback === 'up' ? 'liked' : message.my_feedback === 'down' ? 'disliked' : null}
+										<ActionBar
+											text={message.content}
+											{feedback}
+											onlike={() => void ratePhone(message, feedback === 'liked' ? null : 'liked')}
+											ondislike={() => void ratePhone(message, feedback === 'disliked' ? null : 'disliked')}
+											onshare={() => void share(message.id)}
+											onmore={() => (sheet = { kind: 'reply', message, latest: entry.latest })}
+										/>
+									{:else}
+										<ReplyBar
+											text={message.content}
+											feedback={message.my_feedback === 'up' ? 'liked' : message.my_feedback === 'down' ? 'disliked' : null}
+											onfeedback={(rating) => rate(message, rating)}
+											ondislike={(feedback) => dislike(message, feedback)}
+											onregenerate={entry.latest && !working ? (style) => regenerate(message.id, style) : undefined}
+											onshare={() => share(message.id)}
+										/>
+									{/if}
 									{#if entry.followUps.length > 0 && !working}<FollowUps items={entry.followUps} onpick={(item) => send(item)} />{/if}
 								{/if}
 							</AgentReply>
@@ -819,18 +872,22 @@
 			{/each}
 
 			{#each pending as item (item.key)}
-				<MessageUser
-					text={item.text}
-					status={item.status}
-					oncancel={item.status === 'queued' ? () => cancelQueued(item) : undefined}
-					onretry={item.status === 'failed' ? () => retryPending(item) : undefined}
-					onedit={item.status === 'failed' ? () => editPending(item) : undefined}
-				/>
+				{#if phone && item.status !== 'queued'}
+					<PhoneUserMessage text={item.text} status={item.status === 'failed' ? 'failed' : 'sent'} onretry={item.status === 'failed' ? () => retryPending(item) : undefined} />
+				{:else}
+					<MessageUser
+						text={item.text}
+						status={item.status}
+						oncancel={item.status === 'queued' ? () => cancelQueued(item) : undefined}
+						onretry={item.status === 'failed' ? () => retryPending(item) : undefined}
+						onedit={item.status === 'failed' ? () => editPending(item) : undefined}
+					/>
+				{/if}
 				{#if item.reason}<TurnNote icon={Hourglass} align="end" tone="danger" text={item.reason} />{/if}
 			{/each}
 
 			{#if (working || turn.end) && !cutOff && (turn.reply.text || turn.reply.thinking || working)}
-				<AgentReply agent={crewIdOf(turn.agent)} name={turn.agent ?? 'Nomi'} meta={[clock(new Date(turn.startedAt ?? Date.now()), time.timeZone), turn.end?.status === 'stopped' ? m.meta_stopped() : undefined].filter(Boolean).join(' · ')}>
+				<AgentReply {phone} agent={crewIdOf(turn.agent)} name={turn.agent ?? 'Nomi'} meta={[clock(new Date(turn.startedAt ?? Date.now()), time.timeZone), turn.end?.status === 'stopped' ? m.meta_stopped() : undefined].filter(Boolean).join(' · ')}>
 					{#if retrying}
 						<TurnNote kind="box" icon={Hourglass} text={m.retry_note({ attempt: retrying.attempt, max: retrying.max })} />
 					{/if}
@@ -855,10 +912,24 @@
 		</div>
 	</div>
 
-	<div class={['relative px-4 pb-4', !pane && 'lg:px-12 lg:pb-6']}>
+	<div class={['relative', !phone && 'px-4 pb-4', !phone && !pane && 'lg:px-12 lg:pb-6']}>
 		{#if !atLatest && entries.length > 0}
 			<div class="absolute -top-12 left-1/2 -translate-x-1/2"><JumpToLatest count={unseen} onclick={() => jumpToLatest(true)} /></div>
 		{/if}
+		{#if phone}
+			<PhoneComposer
+				bind:value={draft}
+				bind:field
+				placeholder={m.mobile_message()}
+				streaming={working}
+				{crew}
+				model={modelLabel}
+				onsend={(text) => void send(text)}
+				onstop={stop}
+				onmodel={models.length ? () => (sheet = { kind: 'model' }) : undefined}
+				oncrew={crew.length ? () => (sheet = { kind: 'crew' }) : undefined}
+			/>
+		{:else}
 		<div class="mx-auto flex w-full max-w-180 flex-col gap-2">
 			{#if quote}<CodeQuote file={quote.file} range={quote.range} snippet={quote.snippet} onremove={() => onunquote?.()} />{/if}
 			<ChatComposer
@@ -882,8 +953,78 @@
 				onthinking={(level) => void useThinking(level)}
 			/>
 		</div>
+		{/if}
 	</div>
 </div>
+
+{#if phone}
+	<!-- The phone's sheets: the chat's (from the nav bar's More), renaming it, a reply's More, the
+	     composer's model and crew. -->
+	{@const close = () => (sheet = null)}
+	<!-- A sheet closing clears the state only while it's still the one showing (Rename follows the chat's). -->
+	{@const closed = (kind: Sheet['kind']) => () => sheet?.kind === kind && (sheet = null)}
+	<BottomSheet open={sheet?.kind === 'chat'} title={shownTitle ?? m.nav_new_chat()} subtitle={answering.name} onclose={closed('chat')}>
+		<SheetRow icon={Pencil} label={m.chat_rename()} onclick={() => ((newName = shownTitle ?? ''), (sheet = { kind: 'rename' }))} />
+		<SheetRow icon={pinned ? PinOff : Pin} label={pinned ? m.chat_unpin_top() : m.chat_pin_top()} onclick={() => (close(), onMenu('pin'))} />
+		{#if data.projects.length}<SheetRow icon={FolderInput} label={m.chat_move()} more onclick={() => (close(), onMenu('move'))} />{/if}
+		<SheetRow icon={Download} label={m.chat_export()} meta="md" onclick={() => (close(), onMenu('export'))} />
+		<SheetRow icon={Share} label={m.chat_share_whole()} onclick={() => (close(), onMenu('share'))} />
+		<span class="h-px bg-border"></span>
+		<SheetRow icon={Trash2} label={m.chat_delete()} danger onclick={() => (close(), onMenu('delete'))} />
+	</BottomSheet>
+	<BottomSheet open={sheet?.kind === 'rename'} title={m.chat_rename()} onclose={closed('rename')}>
+		<form
+			class="flex flex-col gap-3 px-4 pt-1 pb-2"
+			onsubmit={(event) => {
+				event.preventDefault();
+				close();
+				void rename(newName);
+			}}
+		>
+			<TextField label={m.chat_rename_field()} bind:value={newName} required />
+			<Button type="submit" variant="inverse" label={m.chat_rename_save()} />
+		</form>
+	</BottomSheet>
+	{#if sheet?.kind === 'reply'}
+		{@const reply = sheet}
+		<BottomSheet open title={nameOf(reply.message)} subtitle={clock(reply.message.created_at, time.timeZone)} onclose={closed('reply')}>
+			{#if reply.latest && !working}
+				{#each [{ style: 'again', label: m.regen_again(), icon: RefreshCw }, { style: 'shorter', label: m.regen_shorter(), icon: Minimize2 }, { style: 'longer', label: m.regen_longer(), icon: Maximize2 }, { style: 'list', label: m.regen_list(), icon: List }] as const as option (option.style)}
+					<SheetRow icon={option.icon} label={option.label} onclick={() => (close(), void regenerate(reply.message.id, option.style))} />
+				{/each}
+			{:else}
+				<p class="px-5 py-3 text-phone-sm text-text-3">{m.regen_only_latest()}</p>
+			{/if}
+		</BottomSheet>
+	{/if}
+	<BottomSheet open={sheet?.kind === 'model'} title={m.composer_model_title()} onclose={closed('model')}>
+		{#each models as group (group.group)}
+			<p class="px-5 pt-3 pb-1 font-mono text-label tracking-label text-text-3 uppercase">{group.group}</p>
+			{#each group.models as option (option.key)}
+				<SheetRow icon={option.chosen ? Check : option.source === m.models_nomi_credits() ? Sparkles : Cpu} label={option.label} meta={option.source} onclick={() => (close(), void useModel(option.key))} />
+			{/each}
+		{/each}
+	</BottomSheet>
+	<BottomSheet open={sheet?.kind === 'crew'} title={m.composer_crew_title()} onclose={closed('crew')}>
+		{#each crew as option (option.name)}
+			{#if option.kind === 'crew'}
+				<button
+					type="button"
+					class="flex h-13 w-full cursor-pointer items-center gap-3.5 px-5 text-left -outline-offset-2"
+					onclick={() => {
+						close();
+						draft = `${draft.trim() ? `${draft.trimEnd()} ` : ''}@${option.name} `;
+						requestAnimationFrame(() => field?.focus());
+					}}
+				>
+					<Mascot agent={option.agent} size={20} />
+					<span class="text-phone text-text">{option.name}</span>
+					<span class="min-w-0 flex-1 truncate text-phone-sm text-text-3">{option.role}</span>
+				</button>
+			{/if}
+		{/each}
+	</BottomSheet>
+{/if}
 
 {#if shareLink}
 	<ShareDialog

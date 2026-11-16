@@ -7,9 +7,9 @@ import type { ComponentDoc } from '../types';
 export default [
 	{
 		file: 'thread/AgentReply.svelte',
-		summary: 'One reply in a chat: who answered and when in the byline, the version arrows once it was asked for again, then its parts (reasoning, prose, notes, the action bar) 16 apart.',
+		summary: 'One reply in a chat: who answered and when in the byline, the version arrows once it was asked for again, then its parts (reasoning, prose, notes, the action bar) 16 apart; on a phone (`phone`), the Mobile byline and 12 apart.',
 		use: ['Every reply of the crew in a chat, finished or streaming.'],
-		avoid: ['What the person said: use MessageUser.', 'A reply on a phone screen in the gallery: use the Mobile byline.'],
+		avoid: ['What the person said: use MessageUser.'],
 		dos: ['Put the time first in the byline, then how long it took: "14:02 · 9s".', 'Dim it while the person edits the message it answers.'],
 		donts: ['Put a model name or a token count in the byline the backend didn’t report.'],
 		content: ['The byline’s meta is mono, parts joined with " · ".'],
@@ -35,6 +35,16 @@ export default [
 			'Stop has aria-keyshortcuts="Escape"; its "Stop reply esc" hint shows on hover and focus.',
 		],
 		related: ['inputs/Composer.svelte', 'chat/MentionPicker.svelte', 'chat/StopHint.svelte', 'inputs/Chip.svelte'],
+	},
+	{
+		file: 'thread/PhoneComposer.svelte',
+		summary: 'Where a message is written on a phone: attach, the round pill at 16pt with the mic, Send once there’s text (Stop while a reply streams), and while writing the model chip and “@ Crew”.',
+		use: ['A chat on a phone.'],
+		avoid: ['Wider screens: ChatComposer.'],
+		dos: ['Keep the text at 16pt so iOS doesn’t zoom the page.', 'Open the page’s sheet from the model chip and “@ Crew”: phones use sheets, not menus.'],
+		donts: ['Let a double tap on Send also stop the reply it started: Stop takes a tap of its own.'],
+		accessibility: ['The field is labelled; “@” opens the crew picker, driven from the field (arrows move, Enter or Tab picks, Escape closes).'],
+		related: ['thread/ChatComposer.svelte', 'chat/MentionPicker.svelte', 'overlays/BottomSheet.svelte'],
 	},
 	{
 		file: 'thread/PhoneChatRow.svelte',
@@ -80,7 +90,7 @@ export default [
 	},
 	{
 		file: 'thread/Prose.svelte',
-		summary: 'A reply’s prose, from markdown the server rendered and sanitised: body 15 at 1.6 in text-2, with lists, quotes, tables and code in the design’s quiet styles.',
+		summary: 'A reply’s prose, from markdown the server rendered and sanitised: body 15 at 1.6 in text-2 (on a phone, `phone`: 16 at 1.55 in text), with lists, quotes, tables and code in the design’s quiet styles.',
 		use: ['The text of every finished reply.'],
 		avoid: ['Text still streaming: use ReplyText, which shows the caret.', 'Anything the server didn’t sanitise.'],
 		dos: ['Render the markdown on the server (src/lib/server/markdown.ts).'],

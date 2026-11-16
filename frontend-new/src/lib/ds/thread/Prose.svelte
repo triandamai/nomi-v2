@@ -5,11 +5,12 @@
 	// page's theme (the server sends both themes as --shiki-light / --shiki-dark). The HTML is
 	// trusted only because the server sanitises it (src/lib/server/markdown.ts): never hand this
 	// anything else.
-	type Props = { html: string; dimmed?: boolean };
-	let { html, dimmed = false }: Props = $props();
+	// `phone` is a phone's (Flow / Mobile Chat — Start & answer → Answer): 16 at 1.55, in text.
+	type Props = { html: string; dimmed?: boolean; phone?: boolean };
+	let { html, dimmed = false, phone = false }: Props = $props();
 </script>
 
-<div class={['prose w-full min-w-0 text-body leading-relaxed text-text-2 transition-opacity', dimmed && 'opacity-40']}>
+<div class={['prose w-full min-w-0 transition-opacity', phone ? 'text-phone leading-phone text-text' : 'text-body leading-relaxed text-text-2', dimmed && 'opacity-40']}>
 	<!-- eslint-disable-next-line svelte/no-at-html-tags -- sanitised on the server -->
 	{@html html}
 </div>

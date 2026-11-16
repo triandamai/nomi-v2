@@ -2802,5 +2802,14 @@
 	"nav_you": "Kamu",
 	"chat_more_for": "Lainnya untuk {title}",
 	"chat_pin_top": "Sematkan di atas",
-	"chat_unpin_top": "Lepas sematan"
+	"chat_unpin_top": "Lepas sematan",
+	"composer_model": "Model: {model}",
+	"composer_crew": "Kru",
+	"chat_share_whole": "Bagikan seluruh obrolan",
+	"chat_rename_field": "Nama obrolan",
+	"chat_rename_save": "Simpan nama",
+	"regen_only_latest": "Hanya balasan terakhir yang bisa diminta ulang, setelah kru selesai.",
+	"composer_model_title": "Model",
+	"composer_crew_title": "Tanya anggota kru",
+	"chat_nav_working": "{name} · berpikir"
 }

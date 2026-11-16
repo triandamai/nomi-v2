@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import AgentByline from '../identity/AgentByline.svelte';
+	import Byline from '../mobile/Byline.svelte';
 	import VersionSwitcher from '../chat/VersionSwitcher.svelte';
 	import type { CrewId } from '../agents/crew';
 
@@ -9,21 +10,23 @@
 	// version arrows once it was asked for again (Like & dislike, step 4: "‹ 2 / 2 ›"). Under it go
 	// the reasoning, the prose or the live text, notes, the action bar and what opens from it, as
 	// children. While the person edits the message it answers, the reply dims: it belongs to the
-	// old version (Message controls, step 4).
+	// old version (Message controls, step 4). `phone` is a phone's (Mobile Chat → Answer): the
+	// Mobile Byline (14, 600) and the parts 12 apart.
 	type Props = {
 		agent: CrewId;
 		name: string;
 		meta?: string;
 		version?: { current: number; total: number; onprev: () => void; onnext: () => void };
 		dimmed?: boolean;
+		phone?: boolean;
 		children?: Snippet;
 	};
-	let { agent, name, meta, version, dimmed = false, children }: Props = $props();
+	let { agent, name, meta, version, dimmed = false, phone = false, children }: Props = $props();
 </script>
 
-<article class={['flex w-full min-w-0 flex-col gap-4 transition-opacity', dimmed && 'opacity-40']} aria-label={name}>
+<article class={['flex w-full min-w-0 flex-col transition-opacity', phone ? 'gap-3' : 'gap-4', dimmed && 'opacity-40']} aria-label={name}>
 	<span class="flex flex-wrap items-center gap-2">
-		<AgentByline {agent} {name} {meta} />
+		{#if phone}<Byline {agent} {name} {meta} />{:else}<AgentByline {agent} {name} {meta} />{/if}
 		{#if version}<VersionSwitcher {...version} />{/if}
 	</span>
 	{@render children?.()}

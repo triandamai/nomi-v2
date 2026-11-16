@@ -11,7 +11,7 @@ export type PhoneChrome = {
 	readonly phone: boolean;
 	/** The tab bar's label and tabs; null on a screen inside a tab (a chat), which keeps the bar. */
 	readonly tabs: { label: string; tabs: Tab[] } | null;
-	/** The screen draws its own large title, so the top bar is left out on a phone. */
+	/** The screen draws its own top on a phone (a large title, a chat's nav bar): no top bar. */
 	readonly ownTitle: boolean;
 };
 

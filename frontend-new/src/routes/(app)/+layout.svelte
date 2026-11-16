@@ -112,7 +112,7 @@
 			return inThread ? null : { label: m.nav_main(), tabs };
 		},
 		get ownTitle() {
-			return isChats || isHome;
+			return isChats || isHome || inThread;
 		},
 	});
 	// What the chat page says about itself as it changes (renamed, pinned, moved, deleted).

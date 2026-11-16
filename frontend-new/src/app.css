@@ -134,6 +134,9 @@
 	/* A phone tab's large title (Flow / Mobile Chat — Start & answer → Chats: 32, 600, −0.6). */
 	--text-phone-large: 32px;
 	--text-phone-large--line-height: 42px;
+	/* A blank chat's question on a phone (Mobile Chat → New chat: "What should the crew pick up?"). */
+	--text-phone-display: 22px;
+	--text-phone-display--line-height: 29px;
 	/* A plan's summary on a phone (Mobile / Build Plan). */
 	--text-phone-heading: 18px;
 	--text-phone-heading--line-height: 23px;
@@ -152,6 +155,8 @@
 	--leading-normal: round(1.5em, 1px);
 	--leading-relaxed: round(1.6em, 1px);
 	--leading-code: round(1.7em, 1px);
+	/* A reply's prose on a phone (Mobile Chat → Answer: 16 at 1.55). */
+	--leading-phone: round(1.55em, 1px);
 
 	--tracking-*: initial;
 	--tracking-display: -0.4px;

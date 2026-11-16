@@ -2802,5 +2802,14 @@
 	"nav_you": "You",
 	"chat_more_for": "More for {title}",
 	"chat_pin_top": "Pin to top",
-	"chat_unpin_top": "Unpin"
+	"chat_unpin_top": "Unpin",
+	"composer_model": "Model: {model}",
+	"composer_crew": "Crew",
+	"chat_share_whole": "Share whole chat",
+	"chat_rename_field": "Chat name",
+	"chat_rename_save": "Save name",
+	"regen_only_latest": "Only the latest reply can be asked for again, once the crew is done.",
+	"composer_model_title": "Model",
+	"composer_crew_title": "Ask someone on the crew",
+	"chat_nav_working": "{name} · thinking"
 }
