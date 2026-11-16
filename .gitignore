@@ -1,5 +1,10 @@
 # AI tooling workspace/config — kept local, never pushed
-.claude/
+.claude/*
+# The harness is shared: its settings, agents, hooks and skills (worktrees, local settings and state stay ignored).
+!.claude/settings.json
+!.claude/agents/
+!.claude/hooks/
+!.claude/skills/
 .junie/
 .superpowers/
 .worktrees/
@@ -21,3 +26,6 @@ native/iosApp/**/xcuserdata/
 # Backend coverage (cargo llvm-cov report)
 backend/coverage/
 backend/coverage.json
+
+# Nomi harness
+.claude/state/

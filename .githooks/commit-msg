@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Strips AI attribution from every commit message, whoever writes it.
+set -euo pipefail
+msg_file="$1"
+"$(git rev-parse --show-toplevel)/scripts/check-no-ai-attribution.sh" --strip "$msg_file"
