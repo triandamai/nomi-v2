@@ -400,13 +400,17 @@ leaves out what v2 or the backend can't do yet, rather than draw it dead:
   Chats, the title, who answers, "· thinking" while they work, and More for the chat's sheet:
   Rename, Pin to top, Move to a project, Export, Share whole chat, Delete chat), the thread padded
   [16,16,20,16] and sitting at the bottom while it's short, your messages in the 18-round bubble,
-  each reply under the Mobile byline with its prose at 16 / 1.55 and the round action bar (More:
-  regenerate, as on a desktop), and `PhoneComposer` (the model chip and "@ Crew" open sheets).
-  New chat is the pen's step 2: Nomi's mascot, the question at 22, the line and the starters.
-  Still the desktop's, until their phone flows are built: the crew picker's 300 width (the pen runs
-  it the screen's width; MentionPicker is the old app's twin), a dislike's reasons (a dislike is
-  sent without them on a phone), editing your message and its versions, the share dialog, and
-  Export's PDF (the pen's "md · pdf": markdown only). The thinking level isn't on the phone's
+  each reply under the Mobile byline with its prose at 16 / 1.55 and the round action bar, and
+  `PhoneComposer` (the model chip and "@ Crew" open sheets). New chat is the pen's step 2: Nomi's
+  mascot, the question at 22, the line and the starters.
+- A chat's controls on a phone (Like & dislike `M0VaJC`, Share & delete `yoVD6`, Message controls
+  `ctP7Q`): a reply's More (or a long press on it) opens its sheet, the quick tiles (`SheetTiles`:
+  Good, Bad, Copy, Share) over Regenerate (its own sheet of styles) and Edit question; Bad opens
+  `PhoneDislikeSheet` with the reasons; Share opens `PhoneShareSheet`; deleting asks in an
+  `ActionSheet`. A long press on your own message opens its sheet (Edit, Copy), and editing is
+  `PhoneMessageEditor` in place of the bubble. Still the desktop's: the crew picker's 300 width (the
+  pen runs it the screen's width; MentionPicker is the old app's twin) and Export's PDF (the pen's
+  "md · pdf": markdown only). The thinking level isn't on the phone's
   toolbar (the pen draws the model and the crew).
 - Projects on a phone (Flow / Mobile Projects) is the pen's list: `PhoneProjectsHeader` (the
   workspace pill opening the Workspaces sheet, how many people are in it, Invite to the workspace's

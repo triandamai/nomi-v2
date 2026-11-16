@@ -100,9 +100,12 @@ test('a chat on a phone: New chat, the nav bar, the bubble, the action bar, and 
 	await page.reload({ waitUntil: 'networkidle' });
 	await expect(reply.getByRole('button', { name: 'Good reply' })).toHaveAttribute('aria-pressed', 'true');
 
-	// More: try again, from a sheet.
+	// More: the reply's sheet, then Regenerate's own sheet, then try again (which asks the backend).
 	await reply.getByRole('button', { name: 'More' }).click();
+	await page.getByRole('dialog').getByRole('button', { name: 'Regenerate' }).click();
+	const regenerated = page.waitForResponse((response) => response.url().endsWith('/regenerate') && response.request().method() === 'POST');
 	await page.getByRole('dialog').getByRole('button', { name: 'Try again' }).click();
+	expect((await regenerated).ok()).toBe(true);
 	await expect(page.getByRole('dialog')).toHaveCount(0);
 
 	// The nav bar's More is the chat's sheet: rename, then pin.
