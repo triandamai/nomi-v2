@@ -25,6 +25,7 @@ const page = () =>
 			'cache-control': 'private, max-age=3600',
 			'access-control-allow-origin': '*',
 			'cross-origin-resource-policy': 'cross-origin',
+			'x-robots-tag': 'noindex, nofollow',
 			'set-cookie': 'sneaky=1',
 		},
 	});
@@ -49,6 +50,7 @@ describe('design preview files', () => {
 		expect(response.headers.get('x-content-type-options')).toBe('nosniff');
 		expect(response.headers.get('cache-control')).toBe('private, max-age=3600');
 		expect(response.headers.get('cross-origin-resource-policy')).toBe('cross-origin');
+		expect(response.headers.get('x-robots-tag')).toBe('noindex, nofollow');
 		expect(response.headers.get('set-cookie')).toBeNull();
 	});
 
@@ -56,6 +58,8 @@ describe('design preview files', () => {
 		const response = await request('index.html', new Response('<html>', { status: 200, headers: { 'content-type': 'text/html' } })).call;
 		expect(response.headers.get('content-security-policy')).toMatch(/^sandbox allow-scripts/);
 		expect(response.headers.get('content-security-policy')).not.toContain('allow-same-origin');
+		expect(response.headers.get('content-security-policy')).toContain("frame-ancestors 'self'");
+		expect(response.headers.get('x-robots-tag')).toBe('noindex, nofollow');
 	});
 
 	it('passes a missing file on as missing', async () => {

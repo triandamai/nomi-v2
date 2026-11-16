@@ -11,7 +11,9 @@ export const trailingSlash = 'ignore';
 
 const TOKEN = /^[0-9a-f]{64}$/;
 /** Used when the answer has no policy of its own: no page of a preview is ever served unfenced. */
-const FALLBACK_POLICY = "sandbox allow-scripts; connect-src 'none'; form-action 'none'; base-uri 'none'; object-src 'none'; frame-src 'none'";
+const FALLBACK_POLICY = "sandbox allow-scripts; connect-src 'none'; form-action 'none'; base-uri 'none'; object-src 'none'; frame-src 'none'; frame-ancestors 'self'";
+/** A preview's address is passed on by hand, never found by searching. */
+const ROBOTS = 'noindex, nofollow';
 /** The answer's headers that are passed on. */
 const KEPT = ['content-type', 'referrer-policy', 'x-content-type-options', 'cache-control', 'access-control-allow-origin', 'cross-origin-resource-policy'];
 
@@ -24,5 +26,6 @@ export const GET: RequestHandler = async ({ params, fetch }) => {
 		if (value) headers.set(name, value);
 	}
 	headers.set('content-security-policy', answer.headers.get('content-security-policy') ?? FALLBACK_POLICY);
+	headers.set('x-robots-tag', ROBOTS);
 	return new Response(answer.body, { status: answer.status, headers });
 };

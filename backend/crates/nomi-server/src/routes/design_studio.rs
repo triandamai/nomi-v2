@@ -23,8 +23,10 @@ use crate::routes::sessions::authorize_session_access;
 
 /// What a preview page may do. `sandbox` without `allow-same-origin` gives it an origin of its
 /// own (no cookies, no storage, nothing of Nomi's), and it can't call out, post forms or frame
-/// anything.
-pub const PREVIEW_POLICY: &str = "sandbox allow-scripts; connect-src 'none'; form-action 'none'; base-uri 'none'; object-src 'none'; frame-src 'none'";
+/// anything. Only a page from the address it is served at (Nomi's own) can put it in a frame.
+pub const PREVIEW_POLICY: &str = "sandbox allow-scripts; connect-src 'none'; form-action 'none'; base-uri 'none'; object-src 'none'; frame-src 'none'; frame-ancestors 'self'";
+/// A preview's address is a link to pass on by hand, not something to be found by searching.
+pub const PREVIEW_ROBOTS: &str = "noindex, nofollow";
 /// How long a version's files may be kept by the browser, in seconds: a version never changes.
 const PREVIEW_MAX_AGE_SECS: u32 = 3600;
 /// The script that lets a page tell the Studio what was pointed at.
@@ -204,6 +206,7 @@ async fn serve(state: &AppState, token: &str, requested: &str) -> Response {
             (header::CONTENT_SECURITY_POLICY, HeaderValue::from_static(PREVIEW_POLICY)),
             (header::REFERRER_POLICY, HeaderValue::from_static("no-referrer")),
             (header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff")),
+            (HeaderName::from_static("x-robots-tag"), HeaderValue::from_static(PREVIEW_ROBOTS)),
             // The page's own origin is opaque, so its fonts and module scripts are cross-origin
             // loads; the address is already the whole permission.
             (header::ACCESS_CONTROL_ALLOW_ORIGIN, HeaderValue::from_static("*")),
@@ -262,6 +265,8 @@ mod tests {
         assert!(PREVIEW_POLICY.starts_with("sandbox allow-scripts;"));
         assert!(!PREVIEW_POLICY.contains("allow-same-origin") && !PREVIEW_POLICY.contains("allow-top-navigation") && !PREVIEW_POLICY.contains("allow-popups"));
         assert!(PREVIEW_POLICY.contains("connect-src 'none'"));
+        assert!(PREVIEW_POLICY.contains("frame-ancestors 'self'"), "only Nomi's own pages can frame it");
+        assert_eq!(PREVIEW_ROBOTS, "noindex, nofollow", "an address that got out isn't indexed");
     }
 
     #[test]

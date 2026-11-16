@@ -112,6 +112,8 @@ async fn a_versions_files_are_served_by_name_into_a_sandbox_with_no_sign_in(pool
         assert!(policy.starts_with("sandbox allow-scripts;"), "its own origin, apart from Nomi's: {policy}");
         assert!(!policy.contains("allow-same-origin"));
         assert!(policy.contains("connect-src 'none'") && policy.contains("form-action 'none'"));
+        assert!(policy.contains("frame-ancestors 'self'"), "another site can't put it in a frame");
+        assert_eq!(headers["x-robots-tag"], "noindex, nofollow");
         assert_eq!(headers["referrer-policy"], "no-referrer", "the name in the address isn't passed on");
         assert_eq!(headers["x-content-type-options"], "nosniff");
         assert!(headers.get("set-cookie").is_none());
