@@ -100,9 +100,12 @@ test('a chat on a phone: New chat, the nav bar, the bubble, the action bar, and 
 	await page.reload({ waitUntil: 'networkidle' });
 	await expect(reply.getByRole('button', { name: 'Good reply' })).toHaveAttribute('aria-pressed', 'true');
 
-	// More: try again, from a sheet.
+	// More: the reply's sheet, then Regenerate's own sheet, then try again (which asks the backend).
 	await reply.getByRole('button', { name: 'More' }).click();
+	await page.getByRole('dialog').getByRole('button', { name: 'Regenerate' }).click();
+	const regenerated = page.waitForResponse((response) => response.url().endsWith('/regenerate') && response.request().method() === 'POST');
 	await page.getByRole('dialog').getByRole('button', { name: 'Try again' }).click();
+	expect((await regenerated).ok()).toBe(true);
 	await expect(page.getByRole('dialog')).toHaveCount(0);
 
 	// The nav bar's More is the chat's sheet: rename, then pin.
@@ -179,4 +182,57 @@ test('Projects on a phone: the header, New project from its sheet, the card’s 
 	await sort.getByRole('button', { name: /Name/ }).click();
 	await page.getByRole('button', { name: 'Sort' }).click();
 	await expect(page.getByRole('dialog', { name: 'Sort projects' }).getByRole('button', { name: /Name/ })).toHaveAttribute('aria-pressed', 'true');
+});
+
+test('a chat’s controls on a phone: your message’s sheet and editing, a reply’s sheet and dislike, share, delete', async ({ page, context }) => {
+	const account = await createAccount();
+	await signInAs(context, account);
+	await page.goto('/chat/new', { waitUntil: 'networkidle' });
+	await page.getByRole('textbox', { name: 'Message' }).fill('How much did I spend on food in October?');
+	await page.getByRole('button', { name: 'Send' }).click();
+	await expect(page).toHaveURL(/\/chat\/[0-9a-f-]{36}$/);
+	const id = page.url().split('/').pop()!;
+	await page.goto(`/chat/${id}`, { waitUntil: 'networkidle' });
+	const reply = page.getByRole('article', { name: 'Nomi' });
+	await expect(reply.getByText('This is a fake response for local development and testing.')).toBeVisible();
+
+	// Long-pressing your message: its sheet, then editing it in place.
+	const mine = page.getByText('How much did I spend on food in October?');
+	const at = (await mine.boundingBox())!;
+	await page.mouse.move(at.x + 20, at.y + at.height / 2);
+	await page.mouse.down();
+	await page.waitForTimeout(650);
+	await page.mouse.up();
+	const yours = page.getByRole('dialog', { name: 'Your message' });
+	await yours.getByRole('button', { name: 'Edit and resend' }).click();
+	const editor = page.getByRole('textbox', { name: 'Your message' });
+	await expect(editor).toBeFocused();
+	await expect(page.getByText('saves as version 2')).toBeVisible();
+	await editor.fill('How much did I spend on food in October, without office lunches?');
+	await page.getByRole('button', { name: 'Send' }).first().click();
+	await expect(page.getByText('How much did I spend on food in October, without office lunches?')).toBeVisible();
+
+	// A reply's sheet: Bad opens the dislike sheet, sent with a reason.
+	await page.reload({ waitUntil: 'networkidle' });
+	await page.getByRole('article', { name: 'Nomi' }).last().getByRole('button', { name: 'More' }).click();
+	const sheet = page.getByRole('dialog', { name: 'Reply' });
+	await expect(sheet.getByRole('button', { name: 'Good' })).toBeVisible();
+	await sheet.getByRole('button', { name: 'Bad' }).click();
+	const why = page.getByRole('dialog', { name: 'What went wrong?' });
+	await why.getByRole('button', { name: 'Not accurate' }).click();
+	await why.getByRole('button', { name: 'Send feedback' }).click();
+	await expect(page.getByText('Thanks. The crew learns from this.')).toBeVisible();
+
+	// Share: the phone's sheet.
+	await page.getByRole('article', { name: 'Nomi' }).last().getByRole('button', { name: 'Share' }).click();
+	await expect(page.getByRole('dialog', { name: 'Share' }).getByRole('button', { name: 'Copy link' })).toBeVisible();
+	await page.keyboard.press('Escape');
+
+	// Delete asks in an action sheet; Cancel keeps the chat.
+	await page.getByRole('button', { name: 'Chat options' }).click();
+	await page.getByRole('dialog').getByRole('button', { name: 'Delete chat' }).click();
+	const ask = page.getByRole('dialog', { name: 'Delete this chat?' });
+	await expect(ask.getByRole('button', { name: 'Delete chat' })).toBeVisible();
+	await ask.getByRole('button', { name: 'Cancel' }).click();
+	await expect(page).toHaveURL(new RegExp(`/chat/${id}$`));
 });

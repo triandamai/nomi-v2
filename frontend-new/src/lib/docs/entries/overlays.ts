@@ -2,6 +2,13 @@ import type { ComponentDoc } from '../types';
 
 export default [
 	{
+		file: 'overlays/SheetTiles.svelte',
+		summary: 'A phone sheet’s quick actions as equal tiles (Good, Bad, Copy, Share), one that’s on in accent.',
+		use: ['The top of a reply’s sheet on a phone.'],
+		accessibility: ['Buttons named by their label; one that toggles says whether it’s on.'],
+		related: ['overlays/BottomSheet.svelte', 'mobile/SheetRow.svelte'],
+	},
+	{
 		file: 'overlays/ActionSheet.svelte',
 		summary: 'A phone’s confirmation: the question and what it means over its actions, the destructive one in danger, and the way out on its own.',
 		use: ['Confirming something on a phone that has a short answer (Stop building).'],

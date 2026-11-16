@@ -408,10 +408,10 @@ test.describe('tools', () => {
 		const name = (await switchable.getAttribute('aria-label'))!.replace('Turn off ', '');
 		try {
 			await switchable.click();
-			await expect(page.getByRole('button', { name: `Turn on ${name}` })).toBeVisible();
+			await expect(page.getByRole('button', { name: `Turn on ${name}`, exact: true })).toBeVisible();
 			expect((await tools(admin)).find((tool) => tool.name === name)?.enabled).toBe(false);
-			await page.getByRole('button', { name: `Turn on ${name}` }).click();
-			await expect(page.getByRole('button', { name: `Turn off ${name}` })).toBeVisible();
+			await page.getByRole('button', { name: `Turn on ${name}`, exact: true }).click();
+			await expect(page.getByRole('button', { name: `Turn off ${name}`, exact: true })).toBeVisible();
 		} finally {
 			await api(admin, `/api/admin/tools/${name}`, { method: 'PUT', body: JSON.stringify({ enabled: true }) });
 		}
