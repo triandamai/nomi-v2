@@ -13,6 +13,7 @@ use nomi_agent_core::design_artifact::{self, ArtifactFile, DesignArtifact, Manif
 use nomi_agent_core::design_approval;
 use nomi_agent_core::design_feedback::{self, Status};
 use nomi_agent_core::design_handoff::{self, FeedbackOutcome, Package, Spec};
+use nomi_agent_core::design_review::{self, Review, SharedProjectSource};
 use nomi_agent_core::design_brief;
 use nomi_agent_core::static_publish::{self, PublishRequest, Published, SharedStaticPublisher};
 use nomi_agent_core::design_directions::{self, DesignDirections};
@@ -23,6 +24,7 @@ pub const PROPOSE_DIRECTIONS: &str = "propose_directions";
 pub const SAVE_PREVIEW: &str = "save_preview";
 pub const READ_PREVIEW: &str = "read_preview";
 pub const CREATE_HANDOFF: &str = "create_handoff";
+pub const REVIEW_BUILD: &str = "review_build";
 /// What Sora is told when she tries to hand over a design the person hasn't approved.
 pub const NOT_APPROVED_YET: &str = "the person hasn't approved a version yet: ask them to approve the one they want built with Approve in the Design Studio, then hand it over";
 pub const LIST_CONNECTED_TOOLS: &str = "list_connected_tools";
@@ -424,13 +426,72 @@ impl Tool for CreateHandoff {
     }
 }
 
+/// What Sora is told after a build was checked: the review, and what to do about it.
+pub fn review_message(review: &str, project_id: Uuid, deviations: usize) -> String {
+    let next = if deviations == 0 {
+        "There is nothing to fix from this check: tell the person the build has the design's colours, fonts and parts, and what the check can't see.".to_string()
+    } else {
+        format!(
+            "Tell the person in plain words what differs from the design they approved. If they want it put right, hand it to Koda: \
+             delegate_to_agent with target coding and a task that starts exactly \"Project {project_id}: \" and lists what to fix."
+        )
+    };
+    format!("{review}\n\n{next}")
+}
+
+/// `review_build`: checks the project Koda built against the handoff he built it from.
+pub struct ReviewBuild {
+    pub source: SharedProjectSource,
+}
+
+#[async_trait]
+impl Tool for ReviewBuild {
+    fn definition(&self) -> ToolDefinition {
+        ToolDefinition {
+            name: REVIEW_BUILD.to_string(),
+            description: "Check what Koda built against the design that was handed over: it looks for the handoff's colours, fonts and \
+                          element ids in the project's files and says which are there and which aren't. It can't judge spacing or \
+                          feel. Checks this chat's project unless you name another."
+                .to_string(),
+            input_schema: json!({"type": "object", "properties": {"project_id": {"type": "string", "description": "The project to check; this chat's project when left out"}}}),
+        }
+    }
+
+    fn group(&self) -> &'static str {
+        GROUP
+    }
+
+    fn keywords(&self) -> &'static [&'static str] {
+        &["design", "review", "build"]
+    }
+
+    async fn execute(&self, conn: &mut PoolConnection<Postgres>, session_id: Uuid, agent_session_id: Uuid, user_id: Uuid, input: Value) -> Result<ToolOutcome, String> {
+        let unsaved = |e: sqlx::Error| {
+            tracing::error!(error = %e, "design review: failed");
+            "the build couldn't be checked right now".to_string()
+        };
+        let (handoff_version, package) =
+            design_handoff::latest(&mut **conn, session_id).await.map_err(unsaved)?.ok_or(format!("there is no handoff in this chat yet: a build is checked against the handoff it was built from ({CREATE_HANDOFF})"))?;
+        let named = match input.get("project_id").and_then(Value::as_str).map(str::trim).filter(|v| !v.is_empty()) {
+            Some(id) => Some(id.parse::<Uuid>().map_err(|_| "project_id isn't a project's id".to_string())?),
+            None => sqlx::query_scalar("SELECT id FROM projects WHERE id = chat_project($1)").bind(session_id).fetch_optional(&mut **conn).await.map_err(unsaved)?,
+        };
+        let project_id = named.ok_or("there is no project in this chat to check")?;
+        let files = self.source.files(user_id, project_id).await.map_err(|why| format!("the build couldn't be checked: {why}"))?;
+        let review = Review::of(&package, &files);
+        let version = design_review::save(&mut **conn, session_id, agent_session_id, user_id, handoff_version, project_id, &review).await.map_err(unsaved)?;
+        Ok(ToolOutcome::text(review_message(&review.to_markdown(version, handoff_version), project_id, review.deviations().len())))
+    }
+}
+
 /// Sora's own tools.
-pub fn own_tools(mcp: &SharedMcpOps, publisher: &SharedStaticPublisher) -> Vec<Box<dyn Tool>> {
+pub fn own_tools(mcp: &SharedMcpOps, publisher: &SharedStaticPublisher, source: &SharedProjectSource) -> Vec<Box<dyn Tool>> {
     vec![
         Box::new(ProposeDirections),
         Box::new(SavePreview { publisher: publisher.clone() }),
         Box::new(ReadPreview),
         Box::new(CreateHandoff),
+        Box::new(ReviewBuild { source: source.clone() }),
         Box::new(ListConnectedTools { mcp: mcp.clone() }),
         Box::new(UseConnectedTool { mcp: mcp.clone() }),
     ]
@@ -576,6 +637,24 @@ pub(crate) mod tests {
         assert_eq!(tool.name, CREATE_HANDOFF);
         assert_eq!(tool.input_schema, nomi_agent_core::design_handoff::handoff_input_schema());
         assert!(tool.description.contains("approved"));
+    }
+
+    #[test]
+    fn a_review_tells_sora_what_to_do_about_what_it_found() {
+        let project = Uuid::parse_str("0193309a-4f5b-7b00-8cb5-123456789abc").unwrap();
+        let off = review_message("# Design check (version 1, against handoff version 1)", project, 2);
+        assert!(off.starts_with("# Design check (version 1, against handoff version 1)\n\n"), "{off}");
+        assert!(off.contains("delegate_to_agent") && off.contains("\"Project 0193309a-4f5b-7b00-8cb5-123456789abc: "), "{off}");
+        let clean = review_message("# Design check", project, 0);
+        assert!(clean.contains("nothing to fix") && !clean.contains("delegate_to_agent"), "{clean}");
+    }
+
+    #[test]
+    fn the_review_tool_checks_the_chats_project_unless_told_another() {
+        let tool = ReviewBuild { source: std::sync::Arc::new(nomi_agent_core::design_review::NoProjectSource) }.definition();
+        assert_eq!(tool.name, REVIEW_BUILD);
+        assert!(tool.input_schema["properties"]["project_id"].is_object() && tool.input_schema.get("required").is_none());
+        assert!(tool.description.contains("colours, fonts and element ids"));
     }
 
     #[test]

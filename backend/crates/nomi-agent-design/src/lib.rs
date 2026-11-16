@@ -17,6 +17,7 @@ use nomi_agent_core::design_artifact::{self, Manifest};
 use nomi_agent_core::design_brief::{self, DesignBrief};
 use nomi_agent_core::design_directions::{self, DesignDirections};
 use nomi_agent_core::design_feedback::{self, Feedback};
+use nomi_agent_core::design_review::{NoProjectSource, SharedProjectSource};
 use nomi_agent_core::mcp_ops::{NoMcpOps, SharedMcpOps};
 use nomi_agent_core::static_publish::{self, NoStaticPublisher, Published, SharedStaticPublisher};
 use nomi_agent_core::{find_tool, tool_definitions, SubAgent};
@@ -77,16 +78,23 @@ pub fn approval_context(approval: &Approval, newest: i32) -> String {
 pub struct DesignAgent {
     mcp: SharedMcpOps,
     publisher: SharedStaticPublisher,
+    source: SharedProjectSource,
 }
 
 impl DesignAgent {
     pub fn new() -> Self {
-        Self { mcp: std::sync::Arc::new(NoMcpOps), publisher: std::sync::Arc::new(NoStaticPublisher) }
+        Self { mcp: std::sync::Arc::new(NoMcpOps), publisher: std::sync::Arc::new(NoStaticPublisher), source: std::sync::Arc::new(NoProjectSource) }
     }
 
     /// Where previews are published, when the server has somewhere.
     pub fn with_static_publisher(mut self, publisher: SharedStaticPublisher) -> Self {
         self.publisher = publisher;
+        self
+    }
+
+    /// Where a build is read from, to check it against the design.
+    pub fn with_project_source(mut self, source: SharedProjectSource) -> Self {
+        self.source = source;
         self
     }
 
@@ -116,7 +124,7 @@ impl SubAgent for DesignAgent {
     /// Proposing directions, building previews and the person's connected tools; the rest of what she uses (read_plan, ask_user, the web)
     /// is the engine's.
     fn tools(&self) -> Vec<ToolDefinition> {
-        tool_definitions(&tools::own_tools(&self.mcp, &self.publisher))
+        tool_definitions(&tools::own_tools(&self.mcp, &self.publisher, &self.source))
     }
 
     async fn execute_tool(
@@ -128,7 +136,7 @@ impl SubAgent for DesignAgent {
         name: &str,
         input: Value,
     ) -> Result<nomi_agent_core::ToolOutcome, String> {
-        let own = tools::own_tools(&self.mcp, &self.publisher);
+        let own = tools::own_tools(&self.mcp, &self.publisher, &self.source);
         match find_tool(&own, name) {
             Some(tool) => tool.execute(conn, session_id, agent_session_id, user_id, input).await,
             None => Err(format!("unknown tool: {name}")),
@@ -249,7 +257,7 @@ mod tests {
     #[test]
     fn soras_own_tools_are_directions_previews_and_the_persons_connected_tools() {
         let names: Vec<String> = DesignAgent::new().tools().into_iter().map(|t| t.name).collect();
-        assert_eq!(names, [tools::PROPOSE_DIRECTIONS, tools::SAVE_PREVIEW, tools::READ_PREVIEW, tools::CREATE_HANDOFF, tools::LIST_CONNECTED_TOOLS, tools::USE_CONNECTED_TOOL]);
+        assert_eq!(names, [tools::PROPOSE_DIRECTIONS, tools::SAVE_PREVIEW, tools::READ_PREVIEW, tools::CREATE_HANDOFF, tools::REVIEW_BUILD, tools::LIST_CONNECTED_TOOLS, tools::USE_CONNECTED_TOOL]);
     }
 
     #[test]
@@ -371,6 +379,14 @@ mod tests {
         let prompt = sora.system_prompt();
         assert!(prompt.contains("create_handoff") && prompt.contains("delegate_to_agent"), "{prompt}");
         assert!(!sora.tool_needs_approval(tools::CREATE_HANDOFF), "the person already approved the design");
+    }
+
+    #[test]
+    fn sora_checks_the_build_against_the_design_and_says_what_she_couldnt_see() {
+        let sora = DesignAgent::new();
+        let prompt = sora.system_prompt();
+        assert!(prompt.contains("review_build") && prompt.contains("never say a build matches the design"), "{prompt}");
+        assert!(!sora.tool_needs_approval(tools::REVIEW_BUILD), "reading the build changes nothing");
     }
 
     #[test]

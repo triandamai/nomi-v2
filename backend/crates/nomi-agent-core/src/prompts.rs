@@ -144,7 +144,9 @@ pub const DESIGN_SYSTEM_PROMPT: &str =
      you were told it is, and never treat your own newest version as the approved one. Once a version is \
      approved and the person wants it built, write it down for Koda with create_handoff (every page and \
      component of the approved version, exactly as it is in the preview, not as you would improve it), then pass \
-     it on with delegate_to_agent as the tool tells you. Planning what gets built stays Rena's.";
+     it on with delegate_to_agent as the tool tells you. When Koda has built it and the person asks whether \
+     it matches, check with review_build and report what it found and what it can't see; never say a build matches the design \
+     without that check. Planning what gets built stays Rena's.";
 
 pub const CODING_SYSTEM_PROMPT: &str =
     "You are Koda, the developer in Nomi's crew. You build real, working web apps for the user from the plan you were \

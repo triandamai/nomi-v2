@@ -315,3 +315,61 @@ async fn a_handoff_is_written_only_for_a_version_the_person_approved(pool: PgPoo
     assert_eq!(package.feedback.iter().map(|f| (f.number, f.body.as_str(), f.resolved_in_version)).collect::<Vec<_>>(), [(1, "Warmer", None)]);
     assert_eq!((package.brief, package.published_url), (None, None));
 }
+
+/// A built project as a test wants it.
+struct FakeSource(Result<Vec<nomi_agent_core::design_review::SourceFile>, String>);
+
+#[async_trait::async_trait]
+impl nomi_agent_core::design_review::ProjectSource for FakeSource {
+    async fn files(&self, _user_id: Uuid, _project_id: Uuid) -> Result<Vec<nomi_agent_core::design_review::SourceFile>, String> {
+        self.0.clone()
+    }
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_build_is_checked_against_the_handoff_it_was_built_from(pool: PgPool) {
+    use nomi_agent_core::design_review::{self, SourceFile};
+    use nomi_agent_core::{design_approval, design_handoff};
+    let (session_id, user_id) = chat(&pool).await;
+    let project_id: Uuid = sqlx::query_scalar("INSERT INTO projects (user_id, session_id, name, stack) VALUES ($1, $2, 'Bakery', 'sveltekit') RETURNING id")
+        .bind(user_id)
+        .bind(session_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let built = vec![SourceFile { path: "src/app.css".into(), content: "h1 { color: #b5532a }".into() }, SourceFile { path: "src/routes/+page.svelte".into(), content: "<h1 data-design-id=\"hero\">Hi</h1>".into() }];
+    let sora = DesignAgent::new().with_project_source(std::sync::Arc::new(FakeSource(Ok(built))));
+    let mut conn = pool.acquire().await.unwrap();
+
+    let early = sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "review_build", json!({})).await.unwrap_err();
+    assert!(early.starts_with("there is no handoff in this chat yet"), "{early}");
+
+    sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "propose_directions", directions()).await.unwrap();
+    sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "save_preview", preview("editorial", HERO_ONLY)).await.unwrap();
+    design_approval::approve(&mut conn, session_id, user_id, 1, None).await.unwrap();
+    let spec = json!({
+        "design_system": {"colors": [{"name": "Accent", "value": "#B5532A"}], "typography": [{"role": "Heading", "font": "Fraunces"}]},
+        "sitemap": [{"path": "index.html", "title": "Home", "purpose": "Landing"}],
+        "user_flows": [{"name": "Read", "steps": ["Open Home"]}],
+        "pages": [{"path": "index.html", "purpose": "Landing", "sections": ["hero"]}],
+        "components": [{"id": "hero", "name": "Hero", "description": "Headline"}],
+        "responsive": ["One column under 720px"],
+        "accessibility": ["Contrast at least 4.5:1"],
+        "decisions": [{"decision": "Serif headings", "reason": "Warmth"}]
+    });
+    let handed = sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "create_handoff", spec).await.unwrap().display_text;
+    assert!(handed.contains(&format!("\"Project {project_id}: ")), "the chat's project is named for the delegation: {handed}");
+    assert_eq!(design_handoff::latest(&mut conn, session_id).await.unwrap().unwrap().0, 1);
+
+    let said = sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "review_build", json!({})).await.unwrap().display_text;
+    assert!(said.starts_with("# Design check (version 1, against handoff version 1)\n2 of 3 checks match."), "{said}");
+    assert!(said.contains("- Font Fraunces (Heading): not named in the project's files"), "{said}");
+    assert!(said.contains(&format!("\"Project {project_id}: ")), "what differs goes back to Koda");
+    let (version, handoff_version, review) = design_review::latest(&mut conn, session_id).await.unwrap().unwrap();
+    assert_eq!((version, handoff_version, review.deviations().len()), (1, 1, 1));
+
+    let unreadable = DesignAgent::new().with_project_source(std::sync::Arc::new(FakeSource(Err("no connection".into()))));
+    let failed = unreadable.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "review_build", json!({})).await.unwrap_err();
+    assert_eq!(failed, "the build couldn't be checked: no connection");
+    assert_eq!(design_review::latest(&mut conn, session_id).await.unwrap().unwrap().0, 1, "a check that couldn't read the build isn't kept");
+}

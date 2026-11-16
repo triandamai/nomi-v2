@@ -15,6 +15,7 @@ pub mod design_brief;
 pub mod design_directions;
 pub mod design_feedback;
 pub mod design_handoff;
+pub mod design_review;
 pub mod dynamic_agent;
 pub mod engine;
 pub mod error;

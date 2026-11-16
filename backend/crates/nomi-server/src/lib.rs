@@ -7,6 +7,7 @@ pub mod billing_worker;
 pub mod bootstrap;
 pub mod chat_events;
 pub mod delegation_worker;
+pub mod design_project_source;
 pub mod dns;
 pub mod github;
 pub mod routes;
@@ -53,6 +54,7 @@ pub mod worker;
 pub fn build_agent_registry(pool: &sqlx::PgPool, project_storage: nomi_storage::ProjectStore, catalog: std::sync::Arc<nomi_agent_core::ToolCatalog>) -> nomi_agent_core::AgentRegistry {
     let project_ops = project_ops::ServerProjectOps::shared(pool.clone(), project_storage.clone());
     let relay_ops = relay_ops::ServerRelayOps::shared(pool.clone(), project_storage.clone());
+    let project_source = design_project_source::StoreProjectSource::shared(pool.clone(), project_storage.clone());
     nomi_agent_core::AgentRegistry::new(vec![
         Box::new(nomi_agent_chitchat::ChitchatAgent),
         Box::new(nomi_agent_money::MoneyAgent),
@@ -69,7 +71,8 @@ pub fn build_agent_registry(pool: &sqlx::PgPool, project_storage: nomi_storage::
         Box::new(
             nomi_agent_design::DesignAgent::new()
                 .with_mcp_ops(mcp_ops::ServerMcpOps::shared(pool.clone()))
-                .with_static_publisher(static_publisher::ShipyardStaticPublisher::shared(pool.clone())),
+                .with_static_publisher(static_publisher::ShipyardStaticPublisher::shared(pool.clone()))
+                .with_project_source(project_source),
         ),
     ])
     .with_tool_catalog(catalog)
