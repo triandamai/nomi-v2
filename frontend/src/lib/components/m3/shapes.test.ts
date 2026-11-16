@@ -43,6 +43,8 @@ describe('agentLook', () => {
 		expect(agentLook('Supervisor')).toEqual({ shape: 'sunny12', tone: 'dusk', motion: 'orbit' });
 		expect(agentLook('Iris')).toEqual({ shape: 'clover3', tone: 'dusk', motion: 'orbit' });
 		expect(agentLook('inspector')).toEqual({ shape: 'clover3', tone: 'dusk', motion: 'orbit' });
+		expect(agentLook('design')).toEqual({ shape: 'wave10', tone: 'dusk', motion: 'spin' });
+		expect(agentLook('Sora')).toEqual({ shape: 'wave10', tone: 'dusk', motion: 'spin' });
 	});
 
 	it('falls back to Nomi for chitchat, unknown agents and missing names', () => {

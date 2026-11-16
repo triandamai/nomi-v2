@@ -11,6 +11,8 @@ describe('crewIdOf', () => {
 		expect(crewIdOf('supervisor')).toBe('supervisor');
 		expect(crewIdOf(null)).toBe('nomi');
 		expect(crewIdOf('Iris')).toBe('iris');
+		expect(crewIdOf('Sora')).toBe('sora');
+		expect(crewIdOf('design')).toBe('sora');
 	});
 });
 

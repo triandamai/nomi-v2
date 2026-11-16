@@ -7,7 +7,7 @@
 import type { AvatarDefinition } from 'open-bot-avatar';
 import type { CrewId } from './crew';
 
-export type AgentShapeName = 'cookie9' | 'cookie6' | 'sunny8' | 'sunny12' | 'clover3' | 'clover4' | 'flower5' | 'puffy7' | 'burst16' | 'soft-square';
+export type AgentShapeName = 'cookie9' | 'cookie6' | 'sunny8' | 'sunny12' | 'clover3' | 'clover4' | 'flower5' | 'puffy7' | 'burst16' | 'wave10' | 'soft-square';
 export type AgentTone = 'glow' | 'ember' | 'tide' | 'sky' | 'bloom' | 'dusk' | 'citrus' | 'slate';
 export type AgentMotion = 'spin' | 'wobble' | 'bounce' | 'pulse' | 'orbit';
 export type AgentLook = { shape: AgentShapeName; tone: AgentTone; motion: AgentMotion };
@@ -32,6 +32,7 @@ const SPECS: Record<AgentShapeName, { lobes: number; amplitude: number; phase?: 
 	flower5: { lobes: 5, amplitude: 0.16 },
 	puffy7: { lobes: 7, amplitude: 0.13 },
 	burst16: { lobes: 16, amplitude: 0.055 },
+	wave10: { lobes: 10, amplitude: 0.08 },
 	'soft-square': { lobes: 4, amplitude: 0.075, phase: EIGHTH_TURN },
 };
 
@@ -142,4 +143,5 @@ export const CREW_LOOKS: Record<CrewId, AgentLook> = {
 	personality: { shape: 'flower5', tone: 'bloom', motion: 'spin' },
 	supervisor: { shape: 'sunny12', tone: 'dusk', motion: 'orbit' },
 	iris: { shape: 'clover3', tone: 'dusk', motion: 'orbit' },
+	sora: { shape: 'wave10', tone: 'dusk', motion: 'spin' },
 };
