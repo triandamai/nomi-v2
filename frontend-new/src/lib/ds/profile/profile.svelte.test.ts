@@ -85,7 +85,7 @@ describe('the breakdowns', () => {
 
 	it('draws each crew member’s bar in their own colour', async () => {
 		await render(CrewUsage, { crew: [{ agent: 'dana', name: 'Dana', count: '31', share: 1 }], empty: 'None yet' });
-		const bar = page.getByRole('listitem').element().querySelector('span[style]')!;
+		const bar = page.getByRole('listitem').element().querySelector('span.h-2')!;
 		expect(box(bar).height).toBe(8);
 		expect(getComputedStyle(bar).backgroundColor).toBe(tokenBackground('crew-dana-bg'));
 		expect(getComputedStyle(page.getByText('31').element()).color).toBe(tokenColor('nm-text-2'));

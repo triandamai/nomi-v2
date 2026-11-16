@@ -6,16 +6,18 @@ describe('crewId', () => {
 		expect(crewId('coding')).toBe('koda');
 		expect(crewId('money')).toBe('dana');
 		expect(crewId('reminders')).toBe('kala');
+		expect(crewId('inspector')).toBe('iris');
 	});
 
 	it('takes a crew name as it is', () => {
 		expect(crewId('Koda')).toBe('koda');
 		expect(crewId('supervisor')).toBe('supervisor');
+		expect(crewId('Iris')).toBe('iris');
 	});
 
 	it('falls back to Nomi for chitchat, unknown agents and none', () => {
 		expect(crewId('chitchat')).toBe('nomi');
-		expect(crewId('inspector')).toBe('nomi');
+		expect(crewId('unknown-agent')).toBe('nomi');
 		expect(crewId(null)).toBe('nomi');
 	});
 });

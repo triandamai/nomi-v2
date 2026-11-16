@@ -34,7 +34,7 @@
 			kind === 'agent' ? 'pr-2 pl-1.5' : 'px-2',
 		]}
 	>
-		{#if kind === 'agent' && agent}<Mascot {agent} size={20} />{/if}
+		{#if kind === 'agent' && agent}<Mascot {agent} size={20} live />{/if}
 		{#if kind === 'option' && icon}<span class="inline-flex text-text-3"><Icon {icon} size={14} /></span>{/if}
 		<span class={['text-text-2', kind === 'model' && 'font-mono text-caption', kind === 'option' && 'text-caption', kind === 'agent' && 'text-ui']}>{label}</span>
 		<span class="inline-flex text-text-3"><Icon icon={ChevronDown} size={12} /></span>

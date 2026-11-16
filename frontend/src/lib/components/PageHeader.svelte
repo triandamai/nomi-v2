@@ -18,7 +18,7 @@
 		{#if lede}<p class="md-body-large page-header__lede">{lede}</p>{/if}
 		{#if actions}<div class="page-header__actions">{@render actions()}</div>{/if}
 	</div>
-	{#if agent}<AgentShape {agent} size={72} class="page-header__mark" />{/if}
+	{#if agent}<AgentShape {agent} size={72} face class="page-header__mark" />{/if}
 </header>
 
 <style>

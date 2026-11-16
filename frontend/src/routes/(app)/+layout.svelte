@@ -102,7 +102,7 @@
 				<IconMenu />
 			</IconButton>
 			<a href="/" class="flex items-center gap-2" style="color: var(--md-sys-color-on-surface); text-decoration: none">
-				<AgentShape size={28} face />
+				<AgentShape size={28} face live />
 				<span style="font-family: var(--md-ref-typeface-brand); font-size: 1.3125rem; font-weight: 800; letter-spacing: -0.045em">nomi</span>
 			</a>
 			<IconButton onclick={() => (searchDialog.open = true)} aria-label={m.search_title()} class="ml-auto">

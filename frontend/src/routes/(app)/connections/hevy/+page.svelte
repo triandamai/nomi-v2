@@ -37,7 +37,7 @@
 			{m.conn_title()}
 		</a>
 		<header class="head">
-			<AgentShape agent="health" size={56} />
+			<AgentShape agent="health" size={56} face />
 			<div>
 				<h1 class="md-display-small title">Hevy</h1>
 				<p class="md-body-large lede">{m.hevy_lede()}</p>

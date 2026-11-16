@@ -35,7 +35,7 @@
 
 {#snippet bubble(agent: 'kala' | 'dana' | 'koda', text: string, when: string)}
 	<p class="flex items-center gap-2 rounded-md bg-bg py-2 pr-3 pl-2 whitespace-nowrap shadow-float outline -outline-offset-1 outline-border-strong">
-		<Mascot {agent} size={20} />
+		<Mascot {agent} size={20} live />
 		<span class="text-ui font-medium text-text">{CREW.find((member) => member.id === agent)?.name}</span>
 		<span class="text-ui text-text-2">{text}</span>
 		<span class="font-mono text-label text-text-3">{when}</span>
@@ -49,7 +49,7 @@
 			class="hidden shrink-0 flex-col gap-7 overflow-hidden rounded-md bg-crew-nomi-bg px-10 pt-10 @5xl:flex @5xl:w-1/2 @7xl:w-190"
 		>
 			<p class="flex items-center gap-2.5">
-				<Mascot agent="nomi" size={32} />
+				<Mascot agent="nomi" size={32} live />
 				<span class="text-display font-semibold tracking-logo text-text">nomi</span>
 			</p>
 			<div class="flex flex-col gap-3 pt-6">
@@ -89,7 +89,7 @@
 			<div class="flex w-95 max-w-full flex-col gap-5">
 				{#if line}
 					<div class="flex items-center gap-2.5">
-						<Mascot agent="nomi" size={32} />
+						<Mascot agent="nomi" size={32} live />
 						<p class="rounded-md bg-surface-2 px-2.5 py-1.5 text-caption text-text-2">{line}</p>
 					</div>
 				{/if}

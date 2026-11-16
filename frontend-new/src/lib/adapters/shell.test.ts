@@ -96,13 +96,13 @@ describe('crewRows', () => {
 			{ agent: 'nomi', name: 'Nomi', role: 'Talks with you and routes the work' },
 			{ agent: 'dana', name: 'Dana', role: 'Transactions, budgets, subscriptions', state: 'working' },
 			{ agent: 'rena', name: 'Rena', role: 'Plans', state: 'waiting on you' },
-			{ name: 'Iris', role: 'Looks into issues' },
+			{ agent: 'iris', name: 'Iris', role: 'Looks into issues' },
 		]);
 	});
 
 	it('maps every crew member the design has a mascot for', () => {
-		const types = ['chitchat', 'money', 'reminders', 'files', 'planning', 'coding', 'workspace', 'health', 'personality', 'supervisor'];
-		expect(crewRows(types.map((agent_type) => crew({ agent_type }))).map((row) => row.agent)).toEqual(['nomi', 'dana', 'kala', 'maya', 'rena', 'koda', 'tara', 'raga', 'personality', 'supervisor']);
+		const types = ['chitchat', 'money', 'reminders', 'files', 'planning', 'coding', 'workspace', 'health', 'personality', 'supervisor', 'inspector'];
+		expect(crewRows(types.map((agent_type) => crew({ agent_type }))).map((row) => row.agent)).toEqual(['nomi', 'dana', 'kala', 'maya', 'rena', 'koda', 'tara', 'raga', 'personality', 'supervisor', 'iris']);
 	});
 });
 

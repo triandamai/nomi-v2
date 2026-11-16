@@ -48,6 +48,7 @@
 					member.id === 'raga' && 'bg-crew-raga-bg text-crew-raga-ink',
 					member.id === 'personality' && 'bg-crew-personality-bg text-crew-personality-ink',
 					member.id === 'supervisor' && 'bg-crew-supervisor-bg text-crew-supervisor-ink',
+					member.id === 'iris' && 'bg-crew-iris-bg text-crew-iris-ink',
 				]}
 			>
 				<span class="flex items-center gap-2">
@@ -66,6 +67,7 @@
 							member.id === 'raga' && 'bg-crew-raga',
 							member.id === 'personality' && 'bg-crew-personality',
 							member.id === 'supervisor' && 'bg-crew-supervisor',
+							member.id === 'iris' && 'bg-crew-iris',
 						]}
 					></span>
 				</span>

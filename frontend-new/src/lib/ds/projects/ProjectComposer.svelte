@@ -58,7 +58,7 @@
 	]}
 >
 	<div class="flex items-center gap-3 px-4 py-3.5">
-		<Mascot agent="koda" size={20} />
+		<Mascot agent="koda" size={20} live />
 		<textarea
 			bind:this={field}
 			bind:value

@@ -125,7 +125,7 @@
 		</p>
 		{#each chats as chat (chat.href)}
 			<a href={chat.href} class="flex items-center gap-2.5 rounded-sm border border-border px-2.25 py-1.75 outline-offset-1 hover:bg-surface">
-				<Mascot agent="koda" size={20} />
+				<Mascot agent="koda" size={20} live />
 				<span class="min-w-0 flex-1 truncate text-ui text-text">{chat.title}</span>
 				<span class="shrink-0 font-mono text-label text-text-3">{chat.age}</span>
 			</a>

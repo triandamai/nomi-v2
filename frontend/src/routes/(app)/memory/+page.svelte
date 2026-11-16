@@ -165,7 +165,7 @@
 					{m.mem_lede()}
 				</p>
 			</div>
-			<AgentShape agent="memory" size={72} working={forgetting} class="memory__mark" />
+			<AgentShape agent="memory" size={72} face working={forgetting} class="memory__mark" />
 		</header>
 
 		{#if data.loadFailed}
@@ -173,10 +173,10 @@
 		{:else if memories.length === 0}
 			<section class="empty" aria-labelledby="empty-heading">
 				<div class="empty__art" aria-hidden="true">
-					<AgentShape agent="memory" size={132} working />
-					<span class="empty__orbit empty__orbit--a"><AgentShape agent="nomi" size={40} /></span>
-					<span class="empty__orbit empty__orbit--b"><AgentShape agent="planning" size={30} /></span>
-					<span class="empty__orbit empty__orbit--c"><AgentShape agent="money" size={24} /></span>
+					<AgentShape agent="memory" size={132} face working />
+					<span class="empty__orbit empty__orbit--a"><AgentShape agent="nomi" size={40} face /></span>
+					<span class="empty__orbit empty__orbit--b"><AgentShape agent="planning" size={30} face /></span>
+					<span class="empty__orbit empty__orbit--c"><AgentShape agent="money" size={24} face /></span>
 				</div>
 				<div class="empty__text">
 					<h2 id="empty-heading" class="md-headline-small empty__title">{m.mem_empty_title()}</h2>
@@ -373,11 +373,11 @@
 					<span><strong>{m.mem_how2_title()}</strong> {m.mem_how2()}</span>
 				</li>
 				<li>
-					<AgentShape agent="planning" size={40} />
+					<AgentShape agent="planning" size={40} face />
 					<span><strong>{m.mem_how3_title()}</strong> {m.mem_how3()}</span>
 				</li>
 				<li>
-					<AgentShape agent="supervisor" size={40} />
+					<AgentShape agent="supervisor" size={40} face />
 					<span><strong>{m.mem_how4_title()}</strong> {m.mem_how4()}</span>
 				</li>
 			</ol>

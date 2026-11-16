@@ -204,7 +204,7 @@ export function agentLook(agent: string | null | undefined): AgentLook {
 	if (key === 'files') return { shape: 'soft-square', tone: 'slate', motion: 'wobble' };
 	if (key === 'workspace') return { shape: 'puffy7', tone: 'sky', motion: 'bounce' };
 	if (key === 'health') return { shape: 'burst16', tone: 'bloom', motion: 'pulse' };
-	if (key === 'inspector') return { shape: 'clover3', tone: 'dusk', motion: 'orbit' };
+	if (key === 'inspector' || key === 'iris') return { shape: 'clover3', tone: 'dusk', motion: 'orbit' };
 	return NOMI_LOOK;
 }
 

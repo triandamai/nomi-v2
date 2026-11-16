@@ -141,7 +141,7 @@
 				<p class="md-body-large head__lede">{m.rem_lede()}</p>
 			</div>
 			<div class="head__actions">
-				<AgentShape agent="reminders" size={64} class="head__mark" />
+				<AgentShape agent="reminders" size={64} face class="head__mark" />
 				<Button variant="gradient" size="m" onclick={openSheet}>
 					<IconPlus size={20} />
 					{m.rem_new()}
@@ -159,7 +159,7 @@
 				</div>
 				{#if groups.length === 0}
 					<div class="empty">
-						<AgentShape agent="reminders" size={88} working />
+						<AgentShape agent="reminders" size={88} face working />
 						<div>
 							<p class="md-title-medium empty__title">{m.rem_empty_title()}</p>
 							<p class="md-body-medium empty__body">{m.rem_empty_body()}</p>
@@ -254,7 +254,7 @@
 								supportingText={[shortWhen(task.run_at), agentName(task.agent), repeatText(task)].filter(Boolean).join(' · ')}
 							>
 								{#snippet leading()}
-									<AgentShape agent={task.agent} size={36} />
+									<AgentShape agent={task.agent} size={36} face />
 								{/snippet}
 								{#snippet trailing()}
 									<form
@@ -321,7 +321,7 @@
 		}}
 	>
 		<div class="sheet__head">
-			<AgentShape agent="reminders" size={36} />
+			<AgentShape agent="reminders" size={36} face />
 			<h2 class="md-headline-small-emphasized sheet__title">{m.rem_new()}</h2>
 		</div>
 		<TextField id="reminder-title" name="title" label={m.rem_remind_me()} bind:value={title} required maxlength={200} />

@@ -141,4 +141,5 @@ export const CREW_LOOKS: Record<CrewId, AgentLook> = {
 	raga: { shape: 'burst16', tone: 'bloom', motion: 'pulse' },
 	personality: { shape: 'flower5', tone: 'bloom', motion: 'spin' },
 	supervisor: { shape: 'sunny12', tone: 'dusk', motion: 'orbit' },
+	iris: { shape: 'clover3', tone: 'dusk', motion: 'orbit' },
 };

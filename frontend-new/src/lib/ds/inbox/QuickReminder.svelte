@@ -47,7 +47,7 @@
 		]}
 	>
 		<div class="flex items-center gap-2">
-			<Mascot agent="kala" size={20} />
+			<Mascot agent="kala" size={20} live />
 			<input
 				{id}
 				bind:value
