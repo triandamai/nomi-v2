@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { Bell, CheckCheck, Download, Folder, House, Inbox, MessageSquare, Plus } from '@lucide/svelte';
+	import { Bell, CheckCheck, Download, Folder, House, Inbox, MessageCircle, MessageSquare, Plus, User } from '@lucide/svelte';
 	import { goto, invalidate } from '$app/navigation';
 	import { navigating, page } from '$app/state';
 	import { m } from '$lib/paraglide/messages';
@@ -21,6 +21,8 @@
 	import AppShell from '$lib/ds/shells/AppShell.svelte';
 	import { setPanelPlacement } from '$lib/ds/shells/panelPlacement';
 	import { setMainLayout } from '$lib/ds/shells/mainLayout';
+	import { setPhoneChrome } from '$lib/ds/shells/phoneChrome';
+	import { phoneView } from '$lib/phone.svelte';
 	import Sidebar from '$lib/ds/chrome/Sidebar.svelte';
 	import NavItem from '$lib/ds/navigation/NavItem.svelte';
 	import NavGroupLabel from '$lib/ds/navigation/NavGroupLabel.svelte';
@@ -87,6 +89,30 @@
 	setMainLayout({
 		get bleed() {
 			return inThread || isInbox || isSettings || isProjects;
+		},
+	});
+	// On a phone the top-level screens share the tab bar (Flow / Mobile Chat → Chats); a chat or a
+	// new one is a screen inside Chats, with its own bar. Chats draws its own large title.
+	const isChats = $derived(page.route.id === '/(app)/chats' && !page.error);
+	const tabs = $derived([
+		{ href: '/', label: m.nav_home(), icon: House, current: isHome },
+		{ href: '/chats', label: m.nav_chats(), icon: MessageCircle, current: isChats },
+		{ href: '/projects', label: m.nav_projects(), icon: Folder, current: isProjects },
+		{ href: '/inbox', label: m.nav_inbox(), icon: Inbox, current: isInbox },
+		{ href: '/settings', label: m.nav_you(), icon: User, current: isSettings },
+	]);
+	// The server's guess is only for the first paint; the width decides from then on.
+	const guess = () => data.phone;
+	const phone = phoneView(guess());
+	setPhoneChrome({
+		get phone() {
+			return phone.current;
+		},
+		get tabs() {
+			return inThread ? null : { label: m.nav_main(), tabs };
+		},
+		get ownTitle() {
+			return isChats || isHome;
 		},
 	});
 	// What the chat page says about itself as it changes (renamed, pinned, moved, deleted).

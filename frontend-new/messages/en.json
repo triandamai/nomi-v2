@@ -2798,5 +2798,9 @@
 	"memory_budget_range": "Between {min} and {max} tokens.",
 	"memory_settings_unloaded": "Your memory settings couldn’t load. Reload to try again.",
 	"memory_settings_saved_failed": "Couldn’t save that setting.",
-	"memory_settings_label": "Memory settings"
+	"memory_settings_label": "Memory settings",
+	"nav_you": "You",
+	"chat_more_for": "More for {title}",
+	"chat_pin_top": "Pin to top",
+	"chat_unpin_top": "Unpin"
 }

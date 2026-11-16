@@ -137,6 +137,13 @@ pen sets an explicit line height use the leading token, rounded the same way: `l
   480), **Focus** (one column 480–720: onboarding, dialogs, checkout).
 - Phones: one column, sheets instead of popovers, 44pt targets (`pointer-coarse:`), 16pt body,
   the composer above the keyboard, banners at the top.
+- Below 768 a screen the pen draws for the phone (Flow / Mobile Chat, Mobile Build) is that screen,
+  not the desktop one squeezed: `phoneView` (`lib/phone.svelte.ts`) says which to render, from the
+  server's guess by the browser (so a phone's first paint is already right) and then the window's
+  width; render one or the other, never both (hidden copies trip tests and screen readers). The
+  top-level screens share the tab bar (`TabBar`: Home, Chats, Projects, Inbox, You) in place of
+  the drawer, set through `phoneChrome`; a screen inside a tab (a chat) keeps its own bar. Phone
+  menus are `BottomSheet`s of `SheetRow`s.
 
 ### Interaction and states
 
@@ -381,6 +388,14 @@ leaves out what v2 or the backend can't do yet, rather than draw it dead:
 - The switcher's note says "Projects and their chats" are shared; the pen adds "shared crew
   templates", which Nomi doesn't have. Choosing a workspace there picks where projects come from,
   and nothing else (the active workspace can't be switched: BACKEND_TODO.md).
+- On a phone (Flow / Mobile Chat — Start & answer, step 1) the tab bar replaces the sidebar and
+  Chats is the pen's: the large title, the search pill, the days in mono, phone rows and New chat
+  floating above the tab bar. Each row's avatar is the chat glyph and there are no crew filters
+  (All, Dana, Kala…): both are who last answered, which the chat list doesn't say
+  (BACKEND_TODO.md). The pen's sheet for a chat comes from a long press (or More, for the
+  keyboard) with Pin to top and Delete chat, the two things the desktop row does; You is Settings.
+  The pen draws no phone Home, Projects, Inbox or Settings yet: they keep their own layout under
+  the tab bar, and Home leaves out its empty top bar.
 - The crew column lists every agent the backend has, so eleven: Iris (the inspector), whom the pen
   doesn't draw, shows her initial in place of a mascot.
 
