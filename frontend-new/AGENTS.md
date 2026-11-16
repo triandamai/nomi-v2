@@ -396,6 +396,18 @@ leaves out what v2 or the backend can't do yet, rather than draw it dead:
   keyboard) with Pin to top and Delete chat, the two things the desktop row does; You is Settings.
   The pen draws no phone Home, Projects, Inbox or Settings yet: they keep their own layout under
   the tab bar, and Home leaves out its empty top bar.
+- A chat on a phone (Mobile Chat — Start & answer, steps 2–7) is the pen's: the nav bar (back to
+  Chats, the title, who answers, "· thinking" while they work, and More for the chat's sheet:
+  Rename, Pin to top, Move to a project, Export, Share whole chat, Delete chat), the thread padded
+  [16,16,20,16] and sitting at the bottom while it's short, your messages in the 18-round bubble,
+  each reply under the Mobile byline with its prose at 16 / 1.55 and the round action bar (More:
+  regenerate, as on a desktop), and `PhoneComposer` (the model chip and "@ Crew" open sheets).
+  New chat is the pen's step 2: Nomi's mascot, the question at 22, the line and the starters.
+  Still the desktop's, until their phone flows are built: the crew picker's 300 width (the pen runs
+  it the screen's width; MentionPicker is the old app's twin), a dislike's reasons (a dislike is
+  sent without them on a phone), editing your message and its versions, the share dialog, and
+  Export's PDF (the pen's "md · pdf": markdown only). The thinking level isn't on the phone's
+  toolbar (the pen draws the model and the crew).
 - The crew column lists every agent the backend has, so eleven: Iris (the inspector), whom the pen
   doesn't draw, shows her initial in place of a mascot.
 
