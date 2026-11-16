@@ -1,0 +1,28 @@
+name: no-ai-attribution
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: PR title and description
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: printf '%s\n%s\n' "$PR_TITLE" "$PR_BODY" | ./scripts/check-no-ai-attribution.sh --check -
+
+      - name: Commit messages in this PR
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: git log --format='%B' "$BASE..$HEAD" | ./scripts/check-no-ai-attribution.sh --check -
