@@ -137,6 +137,9 @@
 	/* A blank chat's question on a phone (Mobile Chat → New chat: "What should the crew pick up?"). */
 	--text-phone-display: 22px;
 	--text-phone-display--line-height: 29px;
+	/* A phone action sheet's actions (Mobile / Action Sheet: "Stop building", "Keep building"). */
+	--text-phone-action: 18px;
+	--text-phone-action--line-height: 23px;
 	/* A plan's summary on a phone (Mobile / Build Plan). */
 	--text-phone-heading: 18px;
 	--text-phone-heading--line-height: 23px;

@@ -101,6 +101,22 @@ export default [
 		related: ['projects/ProjectSectionHead.svelte', 'projects/ProjectCard.svelte'],
 	},
 	{
+		file: 'projects/DeploySheet.svelte',
+		summary: 'Before a draft’s first deploy on a phone: what happens, its facts (URL, data, uses) and Deploy.',
+		use: ['Deploy from a draft’s card on a phone.'],
+		avoid: ['Wider screens: DeployDialog.'],
+		accessibility: ['A sheet named by its question; the facts are a description list.'],
+		related: ['projects/DeployDialog.svelte', 'overlays/BottomSheet.svelte'],
+	},
+	{
+		file: 'projects/DeleteProjectSheet.svelte',
+		summary: 'Deleting a project on a phone: what goes, Export repo first, and the name typed to confirm before Delete project works.',
+		use: ['Delete project from a card’s sheet on a phone.'],
+		dos: ['Offer the export before the field.'],
+		accessibility: ['The field is named by what to type; Delete project stays disabled until it matches.'],
+		related: ['overlays/BottomSheet.svelte'],
+	},
+	{
 		file: 'projects/PhoneProjectDetail.svelte',
 		summary: 'A project on a phone, its own screen: back to Projects, who it is and how it stands, what broke with the one thing to do, Open workspace and Visit, what’s in it, its chats, and asking Koda at the foot.',
 		use: ['Tapping a project on a phone.'],

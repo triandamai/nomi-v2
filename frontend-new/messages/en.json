@@ -2826,5 +2826,11 @@
 	"projects_phone_needs_you": "Needs you",
 	"projects_phone_first_title": "No projects yet",
 	"projects_phone_first_body": "Describe an app and Koda builds it, with its own code, URL and chats.",
-	"projects_phone_ask": "Ask Koda to change something"
+	"projects_phone_ask": "Ask Koda to change something",
+	"projects_deploy_sheet_time": "About a minute · you can close the app",
+	"projects_delete_sheet_type": "Type the name to confirm",
+	"projects_delete_sheet_field": "Type {name} to confirm",
+	"projects_delete_export_first": "Export repo first",
+	"projects_stop_export_first": "Export first",
+	"projects_stop_building": "Stop building"
 }

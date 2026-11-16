@@ -135,6 +135,7 @@ test('Projects on a phone: the header, New project from its sheet, the card’s 
 	await sheet.getByRole('textbox', { name: 'Describe an app to build' }).fill('A one-page menu for Warung Kopi');
 	await sheet.getByRole('button', { name: 'Start building' }).click();
 	await expect(page).toHaveURL(/\/projects\/[0-9a-f-]{36}$/);
+	const original = page.url().split('/').pop()!;
 
 	// Back on the list: the phone card, its ⋯ sheet, Duplicate.
 	await page.goto('/projects', { waitUntil: 'networkidle' });
@@ -147,6 +148,30 @@ test('Projects on a phone: the header, New project from its sheet, the card’s 
 	await actions.getByRole('button', { name: 'Duplicate' }).click();
 	type Projects = { projects: unknown[] };
 	await expect.poll(async () => ((await (await api(account, '/api/projects')).json()) as Projects).projects.length).toBe(2);
+
+	// Stop: an action sheet; Keep building leaves it be.
+	const stopping = page.getByRole('button', { name: 'Stop' }).first();
+	if (await stopping.isVisible()) {
+		await stopping.click();
+		const ask = page.getByRole('dialog', { name: /Stop building/ });
+		await expect(ask.getByRole('button', { name: 'Stop building' })).toBeVisible();
+		await ask.getByRole('button', { name: 'Keep building' }).click();
+		await expect(ask).toHaveCount(0);
+	}
+
+	// Delete the copy: its sheet wants the name typed.
+	await page.goto('/projects', { waitUntil: 'networkidle' });
+	type Listed = { projects: { id: string; name: string }[] };
+	const copyRow = ((await (await api(account, '/api/projects')).json()) as Listed).projects.find((one) => one.id !== original)!;
+	const copyName = copyRow.name;
+	const copy = page.locator(`[data-project="${copyRow.id}"]`).getByRole('article');
+	await copy.getByRole('button', { name: `${copyName} actions` }).click();
+	await page.getByRole('dialog', { name: copyName }).getByRole('button', { name: 'Delete project' }).click();
+	const remove = page.getByRole('dialog', { name: `Delete ${copyName}?` });
+	await expect(remove.getByRole('button', { name: 'Delete project' })).toBeDisabled();
+	await remove.getByRole('textbox', { name: `Type ${copyName} to confirm` }).fill(copyName);
+	await remove.getByRole('button', { name: 'Delete project' }).click();
+	await expect.poll(async () => ((await (await api(account, '/api/projects')).json()) as Projects).projects.length).toBe(1);
 
 	// Sort: a sheet, the chosen one checked.
 	await page.getByRole('button', { name: 'Sort' }).click();

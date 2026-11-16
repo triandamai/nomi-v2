@@ -23,6 +23,9 @@
 	import PhoneFilters from '$lib/ds/projects/PhoneFilters.svelte';
 	import PhoneProjectDetail from '$lib/ds/projects/PhoneProjectDetail.svelte';
 	import PhoneComposer from '$lib/ds/thread/PhoneComposer.svelte';
+	import ActionSheet from '$lib/ds/overlays/ActionSheet.svelte';
+	import DeploySheet from '$lib/ds/projects/DeploySheet.svelte';
+	import DeleteProjectSheet from '$lib/ds/projects/DeleteProjectSheet.svelte';
 	import BottomSheet from '$lib/ds/overlays/BottomSheet.svelte';
 	import SheetRow from '$lib/ds/mobile/SheetRow.svelte';
 	import SheetOption from '$lib/ds/overlays/SheetOption.svelte';
@@ -643,6 +646,35 @@
 	{/if}
 {/snippet}
 
+{#if phone.current}
+	<!-- A phone's confirmations (Flow / Mobile Projects — Act from the card, Card menu). -->
+	<ActionSheet
+		bind:open={stopOpen}
+		title={m.projects_stop_title({ name: stopCard?.name ?? '' })}
+		body={m.projects_stop_body_plain()}
+		actions={[
+			...(stopCard ? [{ label: m.projects_stop_export_first(), onclick: () => stopCard && workspace(stopCard, 'export')() }] : []),
+			{ label: m.projects_stop_building(), danger: true, onclick: () => stopCard && void stop(stopCard) },
+		]}
+		cancel={m.projects_keep_building()}
+	/>
+	<DeploySheet
+		bind:open={deployOpen}
+		name={deployCard?.name ?? ''}
+		files={deployCard?.files ?? 0}
+		url={data.list?.base_domain ? m.projects_deploy_new_url({ domain: data.list.base_domain }) : m.projects_deploy_new_url_plain()}
+		data={deployData}
+		ondeploy={() => deployCard && void deploy(deployCard)}
+	/>
+	<DeleteProjectSheet
+		open={deleting !== null}
+		name={deleting?.name ?? ''}
+		{busy}
+		onexport={deleting ? workspace(deleting, 'export') : undefined}
+		ondelete={remove}
+		onclose={() => (deleting = null)}
+	/>
+{:else}
 <StopDialog bind:open={stopOpen} name={stopCard?.name ?? ''} onstop={() => stopCard && void stop(stopCard)} />
 
 <DeployDialog
@@ -653,6 +685,7 @@
 	data={deployData}
 	ondeploy={() => deployCard && void deploy(deployCard)}
 />
+{/if}
 
 <ProjectMoveDialog
 	bind:open={moveOpen}
@@ -663,6 +696,7 @@
 	onmove={(target) => moveCard && void move(moveCard, target)}
 />
 
+{#if !phone.current}
 <ProjectDialog
 	open={deleting !== null}
 	title={m.projects_delete_title({ name: deleting?.name ?? '' })}
@@ -675,3 +709,4 @@
 		<Button variant="danger" label={m.projects_delete()} loading={busy} onclick={remove} />
 	{/snippet}
 </ProjectDialog>
+{/if}

@@ -2,6 +2,15 @@ import type { ComponentDoc } from '../types';
 
 export default [
 	{
+		file: 'overlays/ActionSheet.svelte',
+		summary: 'A phone’s confirmation: the question and what it means over its actions, the destructive one in danger, and the way out on its own.',
+		use: ['Confirming something on a phone that has a short answer (Stop building).'],
+		avoid: ['Anything that needs typing or facts: a BottomSheet (Deploy, Delete).', 'Wider screens: a Dialog.'],
+		dos: ['Name the way out by what stays (“Keep building”), not “Cancel”.'],
+		accessibility: ['A modal dialog named by its question; Escape and a tap on the scrim keep things as they are.'],
+		related: ['overlays/BottomSheet.svelte', 'overlays/Dialog.svelte'],
+	},
+	{
 		file: 'overlays/SheetOption.svelte',
 		summary: 'One choice in a phone’s sheet (a sort, a workspace): its icon or tile, its name and a second line, the chosen one checked in accent.',
 		use: ['Sheets that pick one of several (Sort projects, Workspaces).'],
