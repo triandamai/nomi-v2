@@ -34,7 +34,7 @@
 	// a chat does; leaving the app sends them at once (the layout flushes them).
 	// Left out (AGENTS.md §9): the pen's snooze on reminders still ahead (the backend's snooze moves
 	// one to N minutes from now, which would bring it forward), and its Push for reminders and Quiet
-	// hours settings (the backend has neither: BACKEND_TODO.md).
+	// hours settings, which live in Settings › General.
 	let { data } = $props();
 
 	const time = clock();

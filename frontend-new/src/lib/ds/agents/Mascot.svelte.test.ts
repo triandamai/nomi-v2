@@ -10,9 +10,10 @@ import { CREW_LOOKS, FACE_COLOR, TONE_STOPS, liveDefinition, shapePath } from '.
 // two-dot face, at 96, 32, 20 or 16px.
 
 describe('Mascot', () => {
-	it('has one for each of the ten crew members', () => {
-		expect(CREW.map((member) => member.id)).toEqual(['nomi', 'koda', 'dana', 'kala', 'rena', 'tara', 'maya', 'raga', 'personality', 'supervisor']);
+	it('has one for each of the eleven crew members', () => {
+		expect(CREW.map((member) => member.id)).toEqual(['nomi', 'koda', 'dana', 'kala', 'rena', 'tara', 'maya', 'raga', 'personality', 'supervisor', 'iris']);
 		expect(CREW.find((member) => member.id === 'personality')?.name).toBe('Personality');
+		expect(CREW.find((member) => member.id === 'iris')?.name).toBe('Iris');
 	});
 
 	it('draws each member in their own shape and gradient, with the two-dot face', async () => {
@@ -37,6 +38,7 @@ describe('Mascot', () => {
 		expect(CREW_LOOKS.dana.shape).toBe('sunny8');
 		expect(CREW_LOOKS.rena.shape).toBe('clover4');
 		expect(CREW_LOOKS.supervisor).toEqual({ shape: 'sunny12', tone: 'dusk', motion: 'orbit' });
+		expect(CREW_LOOKS.iris).toEqual({ shape: 'clover3', tone: 'dusk', motion: 'orbit' });
 	});
 
 	it('keeps each gradient to its own mascot when several are on a page', async () => {
@@ -68,13 +70,17 @@ describe('Mascot', () => {
 		}
 	});
 
-	it('comes to life at 96 and 32, and stays flat at 20 and 16', async () => {
+	it('comes to life at 96, 32 and 20, and stays flat at 16', async () => {
 		const big = await render(Mascot, { agent: 'koda' });
 		const root = big.container.querySelector('[data-live]')!;
 		expect(root.getAttribute('data-shape')).toBe('cookie6');
 		await expect.poll(() => root.getAttribute('data-live')).toBe('mounted');
 		expect(root.querySelector('canvas, svg')).not.toBeNull();
-		const small = await render(Mascot, { agent: 'koda', size: 20 });
+		const mid = await render(Mascot, { agent: 'koda', size: 20 });
+		const midRoot = mid.container.querySelector('[data-live]')!;
+		expect(midRoot).not.toBeNull();
+		await expect.poll(() => midRoot.getAttribute('data-live')).toBe('mounted');
+		const small = await render(Mascot, { agent: 'koda', size: 16 });
 		expect(small.container.querySelector('[data-live]')).toBeNull();
 		expect(small.container.querySelector('svg [data-part="body"]')).not.toBeNull();
 	});

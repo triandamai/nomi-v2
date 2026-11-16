@@ -58,7 +58,7 @@
 					{:else}
 						<article class="flex flex-col gap-4" aria-label={message.by ?? 'Nomi'}>
 							<span class="flex items-center gap-2">
-								<Mascot agent={crewIdOf(message.by)} size={20} />
+								<Mascot agent={crewIdOf(message.by)} size={20} live />
 								<span class="text-ui font-medium text-text">{message.by ?? 'Nomi'}</span>
 								<span class="font-mono text-label text-text-3">{clock(message.at, timeZone)}</span>
 							</span>

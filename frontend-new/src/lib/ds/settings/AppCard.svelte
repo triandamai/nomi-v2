@@ -47,7 +47,7 @@
 	<p class="text-caption leading-comfy text-text-2">{caption}</p>
 	<div class="flex-1" aria-hidden="true"></div>
 	<div class="flex items-center gap-1.5">
-		<Mascot {agent} size={20} />
+		<Mascot {agent} size={20} live />
 		<span class="min-w-0 flex-1 truncate font-mono text-label text-text-3">{forLabel}</span>
 		<span class="shrink-0 font-mono text-label text-text-3">{access}</span>
 	</div>

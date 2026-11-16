@@ -354,13 +354,23 @@ hard. Add to this list instead of deviating silently.
   a 6-digit code…" under the title, a "Name Field" label with a mail icon): the page uses the
   design system's FirstRun (Build → First run) in the sign-in layout's form column instead,
   without the greeting above it (FirstRun has its own mascot).
+- Sign in or create (vDaAQ) is the pen's one step: the email alone and "Continue with email", whose
+  code signs an address with an account in, or makes the account for a new one (then First run).
+  "Use a password instead", which the pen draws as a link to nowhere, is the email and password
+  form (`?with=password`), which adds what the pen leaves off: "Email me a code instead", "New to
+  Nomi? Create an account" (the register form, with a workspace name) and "Forgot password?".
 
 The app shell (App / Home `Vr4nn`, the account menu `LkJLt`, the workspace switcher `t24cE`)
 leaves out what v2 or the backend can't do yet, rather than draw it dead:
 
 - The sidebar's LIFE › Money group: Money isn't part of v2 yet.
-- The top bar's search ("Search chats, memory, files ⌘K"): the backend has no search to call
-  (BACKEND_TODO.md). ⌘K stays New chat's, as the sidebar shows.
+- The top bar's search ("Search chats, memory, files ⌘K") is in Home's top bar and the app's list
+  pages' (`QuickSearch`): the person's chats, memory and project files, found as they type, in
+  groups, each opening where it lives (a file in its project's code view). The pen draws no
+  results: they float under the field in the menu's style. The pen marks both the search and the
+  sidebar's New chat ⌘K: ⌘K is search's (it reaches the field from any page, by way of Home where
+  the page has none), as the old app's was, and New chat is ⌘⇧O. On a phone the field is left out
+  of the bar.
 - The sidebar's collapse button: the shell has no collapsed layout yet.
 - The account menu's "Help & docs" (Nomi has no help site to open) and What's new's "new" dot
   (there are no release notes to be new); What's new shows the version, as drawn.
@@ -382,8 +392,8 @@ reminders, with the work agents will do later beside them.
   (Accept/Decline an invite, "Ask Koda to fix", "Open log") have nothing to call.
 - No snooze on a reminder that's still ahead (the pen's alarm-clock tool): the backend's snooze
   moves a reminder to N minutes from now, which would bring an upcoming one forward.
-- How it reaches you: "Push for reminders" and "Quiet hours" are left out (the backend has neither:
-  BACKEND_TODO.md), and so is "All notification settings" (there's no such page). The two email
+- How it reaches you: "Push for reminders" and "Quiet hours" live in Settings › General, so they're
+  kept in one place; "All notification settings" is left out (there's no such page). The two email
   settings the backend has are shown instead: account changes, and news and offers.
 - "Earlier this week · 5 read" is "Earlier" with its count: it holds everything before today the
   pages loaded so far reach, with "Show older" for the next page of notifications.
@@ -409,12 +419,28 @@ that exist, so it never links to a page that isn't there. On Profile (`U9Gnrg`):
 On General (`m7lvY1`), every row is one the backend can keep; the rest are left out rather than
 drawn dead:
 
-- Changing the email, Formats, the Chat group (who new chats start with, Enter sends, tokens under
-  replies), the Reminders push, Crew updates and Quiet hours rows, and Delete account: the backend
-  has none of them (BACKEND_TODO.md). Reduce motion is left out too: the app follows the device's
-  own setting.
-- The password row leads to the emailed reset (changing it while signed in has no endpoint), so
-  its button is "Change" or "Set password" with the arrow out.
+- The email row's Change and the Delete account row's Delete open dialogs the pen doesn't draw,
+  from the design system's Dialog, fields and the code boxes. Change: the new address, then the
+  code sent to it (nothing changes until it goes in; a used-up code starts over). Delete says what
+  goes and asks for the password, or an emailed code ("Email me a code instead", the only way for
+  an account without a password); a workspace only they own with others in it is named, linked to
+  its page, to hand over first. Closed, this device is signed out and sign in says so. The pen's
+  "Export first in Data & privacy" is left out (v2 has no such page). Formats and "Show tokens under
+  replies" are left out: the backend keeps both, but nothing in v2 formats by region or shows tokens
+  under replies yet, so the rows would do nothing. Crew updates has nothing to keep it, and Reduce
+  motion is left out because the app follows the device's own setting.
+- The Chat group: "New chats start with" picks who Home's To starts on (Nomi or a built-in crew
+  member; the backend keeps it as `default_agent`), with that member's mascot in the select as
+  drawn. "Enter sends" off makes Enter a new line and ⌘ or Ctrl+Enter send, in every composer, and
+  the keys under Home's say so.
+- Notifications: Reminders switches the reminder pushes. Quiet hours is the pen's select and switch:
+  the select offers the usual nights (21:00–06:00 to 00:00–08:00, a saved other one kept first)
+  and waits while they're off. Its line says what they do ("reminders wait until they end"), not
+  the pen's "learned from your routines", which nothing works out.
+- The password row's "Change" (or "Set password", for an account made with a code or Google) opens
+  a dialog the pen doesn't draw, built from the design system's Dialog and fields: the current
+  password when there is one, the new one twice, and "Forgot it? Reset it by email" for the emailed
+  reset. Other devices stay signed in, as the backend keeps them.
 - The Google row shows "connected" with Disconnect beside it (the pen shows no way to remove it);
   it's hidden when this Nomi doesn't offer Google.
 - Group names are sentence case ("Account & sign-in"): the pen writes most in capitals in sans,
@@ -455,9 +481,18 @@ On Memory & context (`hANTE`):
 - Topics are the backend's kinds of memory (Preferences, People, Routines, Goals, Facts), not the
   pen's subjects (Communication, Money, Work); each opens to its memories, to correct, confirm or
   forget. Strength is five steps of a memory's weight.
-- Left out, with nothing to keep them (BACKEND_TODO.md): the "You" profile row, the Learned by
-  column, and the whole settings column (Learn from chats, Keep a profile, Search past chats, the
-  Memory and Profile budgets, Storage). The page is one column.
+- You is the profile every agent reads (`MemoryProfile`): its size against the profile budget
+  ("312 / 1,375 tok"), the person's initials, when it last changed, Edit in place (its size counted
+  as it's typed, Save refused past the budget) and Clear, with Undo. Empty, it says Nomi writes it
+  about daily; with Keep a profile off, that it's off.
+- Learned by is the member who learned most of a topic (the latest of a tie), a dash where none of
+  its memories says; each memory's line says who learned it too. The column is shown once any
+  memory says, and left off on a phone (each memory says it there).
+- The settings column (`MemorySettings`) is beside the topics from 1280 and under them below it:
+  Learning's three switches and the Memory and Profile budgets, each saved as it changes; a budget
+  only once it's in the backend's range, which the field says otherwise. Storage (Provider),
+  Context & compression, Import from another AI and Forget everything are left out: nothing in the
+  backend is behind them.
 - The search sits in the page's header, not the top bar. Export downloads the memories as JSON.
 - Telling Nomi to remember or forget starts a chat with it, where the crew keeps or drops it.
 

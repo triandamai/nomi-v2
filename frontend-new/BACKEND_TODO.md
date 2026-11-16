@@ -120,12 +120,14 @@ Found while planning the working v2 (sign in, chat and build against the real AP
   - `POST /api/auth/verify` now also returns `is_new`. A new account has no password (`password_login` off), its email confirmed, and a personal workspace ("{name}'s space", `is_personal`), or the invite's workspace.
   - Password `login` and `register` work as before. Migration `0109_email_code_sign_in.sql`.
   - `frontend/`: the login page has "Email me a code instead"; `/verify` finishes it and sends new accounts to first run.
+  - v2: `/sign-in` starts with the email alone; "Use a password instead" keeps the password form.
 
 ### Change the password while signed in — done
 - **Needed by:** *Settings / General*: "Password · Not set. Add one to sign in without Google".
 - **Built:** `PUT /api/auth/password {current_password?, new_password}` → 204. `current_password` is required when a password is set (403 `wrong_password`; 400 `too_short` under 8 characters). Setting one turns password sign-in on; other devices stay signed in.
   - The emailed reset now turns password sign-in on too.
   - `frontend/`: Account › Sign-in methods has a set/change password form.
+  - v2: Settings › General's password row opens a dialog to set or change it.
 
 ### Switch the active workspace — done
 - **Needed by:** *Workspace switcher* (`pKiO2`) and the account menu.
@@ -178,6 +180,7 @@ Found while building sign in and create account (Phase 1, 2026-11-10).
   - The reminders worker pushes each reminder as it goes off (`kind: "reminder"`, opens its chat) unless `push_reminders` is off.
   - A reminder due inside quiet hours is held (`reminders.held_until`) until they end, then goes off; its schedule (`due_at`) doesn't move. Changing quiet hours lets held reminders go by the new ones.
   - `frontend/`: the Inbox's settings have "Push for reminders" and "Quiet hours" with From and Until.
+  - v2: Settings › General's Notifications has Reminders and Quiet hours.
 
 Found while building the Inbox (2026-11-12).
 
@@ -198,6 +201,9 @@ Found while building Settings › Profile (2026-11-12).
   - `DELETE /api/account` with `{ password }` or `{ challenge_id, code }` (from `POST /api/account/delete/code`) → `204`. The account is kept as a row (chats, projects and usage others share point at it), with `users.deleted_at` set and its sign-in, refresh tokens, devices (each hears `DeviceSignedOut`), memberships, profile, memories, reminders, connections and own keys removed; the address is free again. A workspace only they're in closes with it; one they're the only owner of with other people in it answers `409 { error: "sole_owner", orgs: [{ id, name }] }` until it's handed over or closed.
   - `frontend/`: Account has Change email (with the code step), Formats and the chat rows (the composer follows Enter sends), and Delete account with a confirmation and the password or an emailed code.
   - **Still open:** the old frontend shows no tokens under replies, so `show_reply_tokens` is kept but nothing reads it there; a closed account's live apps aren't taken down.
+  - v2: General's Chat group has "New chats start with" (Home's To) and "Enter sends" (every composer). Formats and tokens under replies wait for v2 to follow them.
+  - v2: General's Email row changes the address with the code; Delete account closes it with the password or an emailed code, naming workspaces to hand over.
+  - **Still open (backend):** the turn's routing doesn't read `default_agent`, so a chat started elsewhere (a phone app, the API) still starts with Nomi.
 
 Found while building Settings › General (2026-11-12).
 
@@ -233,6 +239,7 @@ Found while building Settings › Models & providers (2026-11-13).
   - `GET|PUT /api/memory/profile` → `{ text, tokens, updated_at }`. Nothing kept a summary of the person before (personality is how Nomi talks), so it's new: every agent that uses memory reads it while `keep_profile` is on, the memory worker rewrites it about daily from the profile so far and the strongest memories (prompt in `prompts.rs`, so the person's own edits carry over), and PUT is the person's wording (`400 too_long` past the budget; empty clears it).
   - Each memory in `GET /api/memory` has `learned_by` (the agent type whose reply it came from; null for older ones).
   - `frontend/`: Memory has a "You" profile editor with its size, and Memory settings (the three switches, both budgets with a use bar); each memory says "Learned by Raga".
+  - v2: Memory & context has You (the profile, edited in place), Learned by on each topic and memory, and the Learning and Budget column.
 
 Found while building Settings › Memory & context (2026-11-13).
 

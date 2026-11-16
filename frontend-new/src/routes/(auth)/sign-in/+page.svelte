@@ -1,7 +1,8 @@
 <script lang="ts">
-	// Auth / Sign in or create (vDaAQ), following the backend as it is: Google first, then email
-	// and password, which go on to the emailed code. The pen's one-step email start isn't in the API
-	// yet (BACKEND_TODO.md), so the form asks for the password and "No password to remember" is out.
+	// Auth / Sign in or create (vDaAQ): Google first, then the email alone, "Continue with email",
+	// which emails a code that signs in or sets a new address up. "Use a password instead" is the
+	// email and password form (?with=password), with the ways back: the code, a new account, a
+	// forgotten password.
 	import { enhance } from '$app/forms';
 	import { ArrowRight, KeyRound, LockKeyhole, Mail } from '@lucide/svelte';
 	import AuthButton from '$lib/ds/auth/AuthButton.svelte';
@@ -19,16 +20,30 @@
 	let { data, form } = $props();
 	let busy = $state(false);
 	let toGoogle = $state(false);
+	const method = $derived(form?.method ?? data.method);
+	const password = $derived(method === 'password');
+	/** The other form, keeping where the person is going and the email typed so far. */
+	function otherWay(typed: string): string {
+		const params = new URLSearchParams();
+		if (!password) params.set('with', 'password');
+		if (data.redirectTo) params.set('redirect_to', data.redirectTo);
+		if (typed.trim()) params.set('email', typed.trim());
+		const query = params.toString();
+		return query ? `/sign-in?${query}` : '/sign-in';
+	}
+	const initial = () => form?.email ?? data.email;
+	let email = $state(initial());
 </script>
 
 <svelte:head><title>{m.signin_page_title()}</title></svelte:head>
 
 <div class="flex flex-col gap-1.5">
-	<h1 class="text-display font-medium text-text">{m.signin_title()}</h1>
-	<p class="text-body leading-normal text-text-2">{m.signin_sub()}</p>
+	<h1 class="text-display font-medium text-text">{password ? m.signin_title() : m.signin_create_title()}</h1>
+	<p class="text-body leading-normal text-text-2">{password ? m.signin_sub() : m.signin_create_sub()}</p>
 </div>
 
 {#if data.passwordChanged}<AuthNote text={m.signin_reset_done()} announce />{/if}
+{#if data.accountClosed}<AuthNote text={m.signin_account_closed()} announce />{/if}
 {#if data.googleError}<ErrorCallout title={sayGoogle(data.googleError)} code="google · {data.googleError}" />{/if}
 
 {#if data.google}
@@ -51,6 +66,7 @@
 		};
 	}}
 >
+	<input type="hidden" name="method" value={method} />
 	{#if form?.alert}<ErrorCallout title={sayAlert(form.alert)} code={alertCode(form.alert)} />{/if}
 	<AuthField
 		label={m.auth_email()}
@@ -59,18 +75,27 @@
 		icon={Mail}
 		placeholder={m.auth_email_placeholder()}
 		autocomplete="email"
-		value={form?.email ?? data.email}
+		bind:value={email}
 		error={sayField(form?.fields.email)}
 	/>
-	<AuthField label={m.auth_password()} type="password" name="password" icon={LockKeyhole} autocomplete="current-password" error={sayField(form?.fields.password)} />
-	<AuthButton label={m.signin_submit()} iconEnd={ArrowRight} loading={busy} />
+	{#if password}
+		<AuthField label={m.auth_password()} type="password" name="password" icon={LockKeyhole} autocomplete="current-password" error={sayField(form?.fields.password)} />
+	{/if}
+	<AuthButton label={password ? m.signin_submit() : m.signin_continue_email()} iconEnd={ArrowRight} loading={busy} />
 	<p class="flex items-center gap-2 text-caption text-text-3">
 		<span class="inline-flex shrink-0"><Icon icon={KeyRound} size={14} /></span>
-		<span>{m.signin_hint()}</span>
+		<span>{password ? m.signin_hint() : m.signin_code_hint()}</span>
 	</p>
 </form>
 
-<p class="flex flex-wrap gap-x-4">
-	<AuthLink label={m.signin_new()} href={withRedirect('/register', data.redirectTo)} />
-	<AuthLink label={m.signin_forgot()} href="/forgot-password" quiet />
-</p>
+{#if password}
+	<p class="flex flex-wrap gap-x-4">
+		<AuthLink label={m.signin_use_code()} href={otherWay(email)} />
+		<AuthLink label={m.signin_new()} href={withRedirect('/register', data.redirectTo)} quiet />
+		<AuthLink label={m.signin_forgot()} href="/forgot-password" quiet />
+	</p>
+{:else}
+	<p class="flex">
+		<AuthLink label={m.signin_use_password()} href={otherWay(email)} />
+	</p>
+{/if}

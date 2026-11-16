@@ -10,7 +10,7 @@ describe('crewIdOf', () => {
 		expect(crewIdOf('Dana')).toBe('dana');
 		expect(crewIdOf('supervisor')).toBe('supervisor');
 		expect(crewIdOf(null)).toBe('nomi');
-		expect(crewIdOf('Iris')).toBe('nomi');
+		expect(crewIdOf('Iris')).toBe('iris');
 	});
 });
 
@@ -28,7 +28,7 @@ describe('starters', () => {
 
 describe('mentions', () => {
 	it('offers the crew the design draws to mention, Nomi first', () => {
-		const rows = [{ agent: 'nomi' as const, name: 'Nomi', role: 'Talks with you' }, { name: 'Iris', role: 'Inspects' }];
+		const rows = [{ agent: 'nomi' as const, name: 'Nomi', role: 'Talks with you' }, { name: 'Custom Bot', role: 'Inspects' }];
 		expect(mentionOptions(rows)).toEqual([{ kind: 'crew', agent: 'nomi', name: 'Nomi', role: 'Talks with you' }]);
 	});
 

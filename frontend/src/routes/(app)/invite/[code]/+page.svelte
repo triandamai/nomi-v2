@@ -26,47 +26,59 @@
 			<Button href="/projects" variant="tonal" size="m">{m.invite_open_projects()}</Button>
 		{:else}
 			{@const invite = data.invite}
-			<h1 class="invite__title">{m.org_join_title({ org: invite.org_name })}</h1>
-			{#if invite.state === 'open' && invite.project}
-				<!-- An invite to build a project together (Build together → Invite): what you get, then join. -->
-				<BuildInvite
-					from={invite.inviter}
-					project={invite.project.name}
-					detail={invite.project.description ?? invite.org_name}
-					role={invite.project.role}
-					href="#join"
-					sentTo={invite.email ?? ''}
-					expires={invite.expires_at ? new Date(invite.expires_at).toLocaleDateString(getLocale(), { dateStyle: 'medium' }) : ''}
-				/>
-			{/if}
-			{#if invite.state === 'open'}
-				<p class="invite__lede">{m.invite_lede({ inviter: invite.inviter, org: invite.org_name, role: ROLE[invite.role]().toLowerCase() })}</p>
-				{#if form?.error}<p class="invite__error" role="alert">{form.error}</p>{/if}
-				<form
-					method="POST"
-					action="?/accept"
-					id="join"
-					class="invite__actions"
-					use:enhance={() => {
-						busy = true;
-						return async ({ update }) => {
-							await update();
-							busy = false;
-						};
-					}}
-				>
-					<Button type="submit" variant="filled" size="m" disabled={busy}>{m.invite_accept({ org: invite.org_name })}</Button>
-					<Button href="/" variant="text" size="m">{m.invite_decline()}</Button>
-				</form>
+			{@const isOther = invite.state === 'other_address' || form?.isOther}
+			{#if isOther}
+				<h1 class="invite__title">{m.invite_failed_join_title({ org: invite.org_name })}</h1>
+				<p class="invite__lede">{m.invite_failed_other_account({ email: invite.email ?? '' })}</p>
+				<div class="invite__actions">
+					<form method="POST" action="/logout?redirect_to={encodeURIComponent('/invite/' + (data.code ?? ''))}">
+						<Button type="submit" variant="filled" size="m">{m.invite_switch_account()}</Button>
+					</form>
+					<Button href="/projects" variant="tonal" size="m">{m.invite_open_projects()}</Button>
+				</div>
 			{:else}
-				<p class="invite__lede">
-					{#if invite.state === 'member'}{m.invite_state_member({ org: invite.org_name })}
-					{:else if invite.state === 'used'}{m.invite_state_used({ inviter: invite.inviter })}
-					{:else if invite.state === 'expired'}{m.invite_state_expired({ inviter: invite.inviter })}
-					{:else if invite.state === 'declined'}{m.invite_state_declined({ inviter: invite.inviter })}
-					{:else}{m.invite_state_other_address({ email: invite.email ?? '' })}{/if}
-				</p>
-				<Button href="/projects" variant="tonal" size="m">{m.invite_open_projects()}</Button>
+				<h1 class="invite__title">{m.org_join_title({ org: invite.org_name })}</h1>
+				{#if invite.state === 'open' && invite.project}
+					<!-- An invite to build a project together (Build together → Invite): what you get, then join. -->
+					<BuildInvite
+						from={invite.inviter}
+						project={invite.project.name}
+						detail={invite.project.description ?? invite.org_name}
+						role={invite.project.role}
+						href="#join"
+						sentTo={invite.email ?? ''}
+						expires={invite.expires_at ? new Date(invite.expires_at).toLocaleDateString(getLocale(), { dateStyle: 'medium' }) : ''}
+					/>
+				{/if}
+				{#if invite.state === 'open'}
+					<p class="invite__lede">{m.invite_lede({ inviter: invite.inviter, org: invite.org_name, role: ROLE[invite.role]().toLowerCase() })}</p>
+					{#if form?.error}<p class="invite__error" role="alert">{form.error}</p>{/if}
+					<form
+						method="POST"
+						action="?/accept"
+						id="join"
+						class="invite__actions"
+						use:enhance={() => {
+							busy = true;
+							return async ({ update }) => {
+								await update();
+								busy = false;
+							};
+						}}
+					>
+						<Button type="submit" variant="filled" size="m" disabled={busy}>{m.invite_accept({ org: invite.org_name })}</Button>
+						<Button href="/" variant="text" size="m">{m.invite_decline()}</Button>
+					</form>
+				{:else}
+					<p class="invite__lede">
+						{#if invite.state === 'member'}{m.invite_state_member({ org: invite.org_name })}
+						{:else if invite.state === 'used'}{m.invite_state_used({ inviter: invite.inviter })}
+						{:else if invite.state === 'expired'}{m.invite_state_expired({ inviter: invite.inviter })}
+						{:else if invite.state === 'declined'}{m.invite_state_declined({ inviter: invite.inviter })}
+						{/if}
+					</p>
+					<Button href="/projects" variant="tonal" size="m">{m.invite_open_projects()}</Button>
+				{/if}
 			{/if}
 		{/if}
 	</section>

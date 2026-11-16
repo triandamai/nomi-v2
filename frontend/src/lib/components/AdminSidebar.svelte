@@ -96,7 +96,7 @@
 >
 	<div class="flex w-full items-center gap-2 px-4 pt-5 pb-3" class:justify-center={rail} class:justify-between={!rail}>
 		<a href="/admin" class="brand" aria-label={m.admin_brand()} onclick={() => (mobileOpen = false)}>
-			<AgentShape size={40} face />
+			<AgentShape size={40} face live />
 			{#if !rail}
 				<span class="brand__word">nomi</span>
 				<span class="brand__tag">{m.admin_tag()}</span>

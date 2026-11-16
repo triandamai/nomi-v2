@@ -80,10 +80,15 @@ export const MASCOT: Record<string, CrewId> = {
 	health: 'raga',
 	personality: 'personality',
 	supervisor: 'supervisor',
+	inspector: 'iris',
+	iris: 'iris',
 };
 
 /** The mascot a built-in agent wears; none for a custom one. */
 export const crewOf = (agentType: string): CrewId | undefined => MASCOT[agentType];
+
+/** The backend's `agent_type` of a built-in crew member. */
+export const agentTypeOf = (crew: CrewId): string | undefined => Object.keys(MASCOT).find((type) => MASCOT[type] === crew);
 
 export type CrewRowProps = { agent?: CrewId; name: string; role: string; state?: string };
 

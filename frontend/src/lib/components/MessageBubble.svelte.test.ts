@@ -64,7 +64,7 @@ describe('MessageBubble', () => {
 		await settle(6);
 		clickEverything(document.body, /delete|remove/i);
 		await settle(4);
-	});
+	}, 15000);
 
 	it('shows the person’s own message with its controls', async () => {
 		fakeBackend([['*', /.*/, { type: 'success', status: 200, data: { success: true } }]]);

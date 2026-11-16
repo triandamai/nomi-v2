@@ -12,16 +12,16 @@
 	// Identity, not decoration: only where that agent speaks or works. Decorative next to their
 	// name; give it a label when it stands alone.
 	//
-	// `live` (on by default at 96 and 32) brings the same outline to life with open-bot-avatar: it
+	// `live` (on by default at 96, 32 and 20) brings the same outline to life with open-bot-avatar: it
 	// gains volume, blinks, follows the pointer with its eyes and turns toward it, and plays `mood`
 	// (idle, thinking while it works, happy). Hovering it cheers it up. The flat SVG is drawn first
-	// (server render, no JS, before the engine mounts), so nothing jumps. At 20 and 16 it stays flat:
+	// (server render, no JS, before the engine mounts), so nothing jumps. At 16 it stays flat:
 	// the eyes would be too small to read and a list can hold dozens. Reduced motion is followed.
 	let {
 		agent,
 		size = 96,
 		label,
-		live = size >= 32,
+		live = size >= 20,
 		mood = 'idle',
 	}: { agent: CrewId; size?: 96 | 32 | 20 | 16; label?: string; live?: boolean; mood?: AvatarMotion } = $props();
 

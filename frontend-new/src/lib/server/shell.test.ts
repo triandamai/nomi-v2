@@ -92,6 +92,16 @@ describe('loadShell', () => {
 		expect(shell.projectsWorkspace).toEqual({ id: 'o2', name: "Trian's space", projects: 4 });
 		expect(shell.deviceId).toBe('7d1f0c2e-3b0a-4c55-9a5e-1f2a3b4c5d6e');
 		expect(shell.now).toBe(now.toISOString());
+		// Nothing saved: Enter sends, and new chats start with Nomi.
+		expect(shell.chat).toEqual({ enterSends: true, startsWith: null });
+	});
+
+	it('carries the chat preferences: whether Enter sends, and who new chats start with', async () => {
+		const prefs = { theme: 'dark', timezone: 'Asia/Jakarta', language: 'en', has_stored_timezone: true, enter_sends: false, default_agent: 'money' };
+		expect((await loadShell(event({ ...healthy, 'GET /api/preferences': { body: prefs } }).event, now)).chat).toEqual({ enterSends: false, startsWith: 'dana' });
+		// A custom member (or one this app doesn't know) starts with Nomi.
+		const custom = { ...prefs, default_agent: 'dyn_tax_helper' };
+		expect((await loadShell(event({ ...healthy, 'GET /api/preferences': { body: custom } }).event, now)).chat.startsWith).toBeNull();
 	});
 
 	it('loads it all at once, and puts this browser in the device list', async () => {
@@ -132,5 +142,6 @@ describe('loadShell', () => {
 		expect(shell.crew.rows).toEqual([]);
 		expect(shell.workspaces).toEqual([]);
 		expect(shell.projectsWorkspace).toBeNull();
+		expect(shell.chat).toEqual({ enterSends: true, startsWith: null });
 	});
 });

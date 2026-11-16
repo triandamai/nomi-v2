@@ -77,6 +77,19 @@ describe('savePreferences', () => {
 		expect(api.calls).toHaveLength(1);
 	});
 
+	it('saves who new chats start with and whether Enter sends, as the backend names them', async () => {
+		const api = backend(() => Response.json({}));
+		const { cookies } = cookieJar();
+		const event = { fetch: api.fetch, cookies, locals: { accessToken: 'a1' } };
+		expect(await savePreferences(event, { default_agent: 'money' })).toEqual({ ok: true });
+		expect(await savePreferences(event, { default_agent: '' })).toEqual({ ok: true });
+		expect(await savePreferences(event, { enter_sends: false })).toEqual({ ok: true });
+		expect(api.calls.map((call) => call.body)).toEqual([{ default_agent: 'money' }, { default_agent: '' }, { enter_sends: false }]);
+		expect(await savePreferences(event, { default_agent: 'Robert"); DROP' })).toEqual({ ok: false, status: 400 });
+		expect(await savePreferences(event, { enter_sends: 'yes' })).toEqual({ ok: false, status: 400 });
+		expect(api.calls).toHaveLength(3);
+	});
+
 	it('saves the language and makes the next page use it', async () => {
 		const api = backend(() => Response.json({ language: 'id' }));
 		const { jar, cookies } = cookieJar();

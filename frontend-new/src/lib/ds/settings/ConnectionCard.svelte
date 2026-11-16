@@ -52,7 +52,7 @@
 	<div class="flex-1" aria-hidden="true"></div>
 	<div class="flex items-center gap-2 border-t border-border pt-2.75">
 		<span class="flex min-w-0 flex-1 items-center gap-1">
-			{#each usedBy as member (member.agent)}<Mascot agent={member.agent} size={20} />{/each}
+			{#each usedBy as member (member.agent)}<Mascot agent={member.agent} size={20} live />{/each}
 			<span class="truncate text-caption text-text-2">{usedBy.map((member) => member.name).join(', ')}</span>
 			{#if when}<span class="shrink-0 font-mono text-label text-text-3">· {when}</span>{/if}
 		</span>

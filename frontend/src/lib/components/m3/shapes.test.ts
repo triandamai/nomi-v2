@@ -41,6 +41,8 @@ describe('agentLook', () => {
 		expect(agentLook('Planning')).toMatchObject({ shape: 'clover4', tone: 'sky' });
 		expect(agentLook('personality')).toMatchObject({ shape: 'flower5', tone: 'bloom' });
 		expect(agentLook('Supervisor')).toEqual({ shape: 'sunny12', tone: 'dusk', motion: 'orbit' });
+		expect(agentLook('Iris')).toEqual({ shape: 'clover3', tone: 'dusk', motion: 'orbit' });
+		expect(agentLook('inspector')).toEqual({ shape: 'clover3', tone: 'dusk', motion: 'orbit' });
 	});
 
 	it('falls back to Nomi for chitchat, unknown agents and missing names', () => {

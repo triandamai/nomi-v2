@@ -40,7 +40,7 @@
 		{#each preview.shown as member (member.agent_type)}
 			{@const key = rosterKey(member.agent_type)}
 			<li class="crew__item" data-state={member.state}>
-				<AgentShape agent={key} size={style === 'strip' ? 40 : 44} face={key === 'nomi'} working={member.state === 'working'} />
+				<AgentShape agent={key} size={style === 'strip' ? 40 : 44} face working={member.state === 'working'} />
 				<span class="crew__text">
 					<span class="crew__name">{member.name}</span>
 					<span class="crew__role" title={member.role}>

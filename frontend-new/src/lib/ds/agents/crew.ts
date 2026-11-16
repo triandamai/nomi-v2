@@ -13,6 +13,7 @@ export const CREW = [
 	{ id: 'raga', name: 'Raga' },
 	{ id: 'personality', name: 'Personality' },
 	{ id: 'supervisor', name: 'Supervisor' },
+	{ id: 'iris', name: 'Iris' },
 ] as const;
 
 export type CrewId = (typeof CREW)[number]['id'];

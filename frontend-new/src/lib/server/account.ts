@@ -50,18 +50,36 @@ function knownZone(zone: unknown): zone is string {
 	}
 }
 
-/** Saves the theme, the language or the time zone with the person's preferences; the theme and the
- * language are kept on this device too. */
-export async function savePreferences(event: ApiEvent, change: { theme?: unknown; language?: unknown; timezone?: unknown }): Promise<Outcome> {
+/** An `agent_type` as the backend names one ("money", "dyn_tax_helper"), or '' for Nomi. */
+const AGENT_TYPE = /^[a-z][a-z0-9_]{0,63}$|^$/;
+
+export type PreferenceChange = { theme?: unknown; language?: unknown; timezone?: unknown; default_agent?: unknown; enter_sends?: unknown };
+
+/** Saves the theme, the language, the time zone, who new chats start with or whether Enter sends,
+ * with the person's preferences; the theme and the language are kept on this device too. */
+export async function savePreferences(event: ApiEvent, change: PreferenceChange): Promise<Outcome> {
 	const theme = typeof change.theme === 'string' && THEMES.has(change.theme) ? (change.theme as 'light' | 'dark' | 'system') : undefined;
 	const language = typeof change.language === 'string' && isLocale(change.language) ? change.language : undefined;
 	const timezone = knownZone(change.timezone) ? change.timezone : undefined;
-	const unknown = (change.theme !== undefined && !theme) || (change.language !== undefined && !language) || (change.timezone !== undefined && !timezone);
-	if (unknown || (!theme && !language && !timezone)) return { ok: false, status: 400 };
+	const agent = typeof change.default_agent === 'string' && AGENT_TYPE.test(change.default_agent) ? change.default_agent : undefined;
+	const enterSends = typeof change.enter_sends === 'boolean' ? change.enter_sends : undefined;
+	const unknown =
+		(change.theme !== undefined && !theme) ||
+		(change.language !== undefined && !language) ||
+		(change.timezone !== undefined && !timezone) ||
+		(change.default_agent !== undefined && agent === undefined) ||
+		(change.enter_sends !== undefined && enterSends === undefined);
+	if (unknown || (!theme && !language && !timezone && agent === undefined && enterSends === undefined)) return { ok: false, status: 400 };
 
 	const response = await apiFetch(event, '/api/preferences', {
 		method: 'PUT',
-		body: JSON.stringify({ ...(theme && { theme }), ...(language && { language }), ...(timezone && { timezone }) }),
+		body: JSON.stringify({
+			...(theme && { theme }),
+			...(language && { language }),
+			...(timezone && { timezone }),
+			...(agent !== undefined && { default_agent: agent }),
+			...(enterSends !== undefined && { enter_sends: enterSends }),
+		}),
 	});
 	if (!response.ok) return { ok: false, status: response.status };
 	if (theme) setThemeCookie(event.cookies, theme);

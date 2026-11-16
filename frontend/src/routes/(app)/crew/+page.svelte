@@ -27,7 +27,7 @@
 	{@const key = rosterKey(member.agent_type)}
 	<li class="card" data-state={member.state}>
 		<a class="card__link" href="/crew/{encodeURIComponent(member.agent_type)}" aria-label={member.name}></a>
-		<AgentShape agent={key} size={56} face={key === 'nomi'} working={member.state === 'working'} />
+		<AgentShape agent={key} size={56} face working={member.state === 'working'} />
 		<div class="card__text">
 			<div class="card__top">
 				<h3 class="card__name">{member.name}</h3>

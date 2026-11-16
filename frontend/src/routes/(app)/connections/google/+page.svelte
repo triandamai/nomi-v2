@@ -86,7 +86,7 @@
 			<p class="notice" role="alert">{m.conn_load_failed()}</p>
 		{:else if welcome && !connection}
 			<section class="welcome" aria-labelledby="welcome-title">
-				<AgentShape agent="nomi" size={56} />
+				<AgentShape agent="nomi" size={56} face />
 				<div class="welcome__text">
 					<h2 id="welcome-title" class="welcome__title">{m.conn_welcome_title()}</h2>
 					<p class="welcome__body">
@@ -107,7 +107,7 @@
 		{:else if connection}
 			<section class="card card--connected" aria-labelledby="google-title">
 				<div class="card__top">
-					<AgentShape agent="workspace" size={52} />
+					<AgentShape agent="workspace" size={52} face />
 					<div class="card__titles">
 						<h2 id="google-title" class="card__title">Google Workspace</h2>
 						<span class="card__sub">{connection.email}</span>
@@ -157,7 +157,7 @@
 		{:else}
 			<section class="card" aria-labelledby="google-title">
 				<div class="card__top">
-					<AgentShape agent="workspace" size={52} />
+					<AgentShape agent="workspace" size={52} face />
 					<div class="card__titles">
 						<h2 id="google-title" class="card__title">Google Workspace</h2>
 						<span class="card__sub">{m.conn_for_workspace()}</span>
