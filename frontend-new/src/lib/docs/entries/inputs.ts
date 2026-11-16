@@ -95,6 +95,14 @@ export default [
 		related: ['mobile/Composer.svelte', 'inputs/Chip.svelte', 'actions/KeyHint.svelte', 'actions/IconButton.svelte'],
 	},
 	{
+		file: 'inputs/PhoneSearch.svelte',
+		summary: 'A phone list’s search: a 38 pill on surface-2 at 16pt, so iOS doesn’t zoom the page.',
+		use: ['Chats on a phone.'],
+		avoid: ['Wider screens: Search.'],
+		accessibility: ['A search field named by its placeholder or label.'],
+		related: ['inputs/Search.svelte'],
+	},
+	{
 		file: 'inputs/Search.svelte',
 		summary:
 			'A quiet 30px search box with a magnifier and, if there is one, its shortcut (⌘K). The plain version, used in the settings nav, sits 10px in and shows the shortcut as mono text instead of a key.',

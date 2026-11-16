@@ -2,6 +2,7 @@ import { isRedirect, redirect } from '@sveltejs/kit';
 import { SIGN_IN_PATH } from '$lib/server/api';
 import { getMaintenance } from '$lib/server/maintenance';
 import { loadShell } from '$lib/server/shell';
+import { looksLikePhone } from '$lib/phone';
 import type { LayoutServerLoad } from './$types';
 
 /**
@@ -19,7 +20,9 @@ export const load: LayoutServerLoad = async ({ locals, cookies, fetch, url, requ
 	if (!locals.accessToken) redirect(303, signIn);
 
 	try {
-		return await loadShell({ fetch, cookies, locals, userAgent: request.headers.get('user-agent') ?? '' });
+		const userAgent = request.headers.get('user-agent') ?? '';
+		// The phone's own screens on the first paint (lib/phone.ts); the page then follows the width.
+		return { ...(await loadShell({ fetch, cookies, locals, userAgent })), phone: looksLikePhone(userAgent, request.headers.get('sec-ch-ua-mobile')) };
 	} catch (error) {
 		// The sign-in couldn't be renewed: sign in again and come back to this page.
 		if (isRedirect(error) && error.location === SIGN_IN_PATH) redirect(303, signIn);

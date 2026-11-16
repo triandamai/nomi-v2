@@ -2,6 +2,15 @@ import type { ComponentDoc } from '../types';
 
 export default [
 	{
+		file: 'overlays/BottomSheet.svelte',
+		summary: 'What a phone uses in place of a menu or popover: a sheet from the bottom, with its title, what it’s about, a close and its rows.',
+		use: ['A chat’s or a project’s actions on a phone (long-press, More).'],
+		avoid: ['Wider screens: use a Menu or a Dialog there.'],
+		dos: ['Put the destructive row last, after a divider, in the danger colour.'],
+		accessibility: ['A modal dialog named by its title: focus stays inside, Escape closes it, and so do the close button and a tap on the scrim.'],
+		related: ['mobile/SheetHeader.svelte', 'mobile/SheetRow.svelte', 'overlays/Menu.svelte'],
+	},
+	{
 		file: 'overlays/Dialog.svelte',
 		summary:
 			'A modal dialog on the overlay scrim, for a decision that needs full attention, such as deleting a project. 420px wide (440 for a picker), with the title and description over the content and the actions in a footer.',

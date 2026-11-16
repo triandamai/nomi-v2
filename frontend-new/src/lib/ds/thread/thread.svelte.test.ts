@@ -4,6 +4,7 @@ import { page, userEvent } from 'vitest/browser';
 import { MessageSquare, RotateCcw } from '@lucide/svelte';
 import Prose from './Prose.svelte';
 import ChatComposer from './ChatComposer.svelte';
+import PhoneChatRow from './PhoneChatRow.svelte';
 import ChatComposerFixture from './ChatComposerFixture.svelte';
 import Starters from './Starters.svelte';
 import TodayStrip from './TodayStrip.svelte';
@@ -334,5 +335,43 @@ describe('Send, then Stop in its place', () => {
 		await new Promise((resolve) => setTimeout(resolve, 600));
 		await page.getByRole('button', { name: 'Stop reply' }).last().click();
 		expect(onstop).toHaveBeenCalledOnce();
+	});
+});
+
+describe('PhoneChatRow', () => {
+	it('is the pen’s phone row: [12,20], a 40 avatar, the title at 16 and the last line at 14', async () => {
+		await page.viewport(390, 844);
+		await render(PhoneChatRow, { href: '/chat/1', title: 'Food spending in October', time: '09:41', preview: 'Rp 2,1 jt on food', agent: 'dana' });
+		const row = page.getByRole('link', { name: /Food spending in October/ }).element();
+		const style = getComputedStyle(row);
+		expect([row.getBoundingClientRect().width, style.paddingTop, style.paddingLeft, style.columnGap]).toEqual([390, '12px', '20px', '12px']);
+		expect(row.querySelector('span')!.getBoundingClientRect().width).toBe(40);
+		expect(getComputedStyle(page.getByText('Food spending in October').element()).fontSize).toBe('16px');
+		expect(getComputedStyle(page.getByText('Rp 2,1 jt on food').element()).fontSize).toBe('14px');
+	});
+
+	it('wears the chat glyph where who answered isn’t known, and says when the crew is at work', async () => {
+		await render(PhoneChatRow, { href: '/chat/1', title: 'Weekly groceries', time: '17:02', working: 'working' });
+		await expect.element(page.getByText('working')).toBeVisible();
+		expect(page.getByText('17:02').elements()).toHaveLength(0);
+	});
+
+	it('opens its sheet on a long press or its More, and a long press isn’t also a tap', async () => {
+		const onmore = vi.fn();
+		await render(PhoneChatRow, { href: '#chat', title: 'Weekly groceries', time: '17:02', more: 'More for Weekly groceries', onmore });
+		const row = page.getByRole('link', { name: /Weekly groceries/ });
+		row.element().dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+		await new Promise((resolve) => setTimeout(resolve, 600));
+		row.element().dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+		expect(onmore).toHaveBeenCalledOnce();
+		const click = new MouseEvent('click', { bubbles: true, cancelable: true });
+		row.element().dispatchEvent(click);
+		expect(click.defaultPrevented).toBe(true);
+		// For the keyboard: More shows once it has focus.
+		const more = page.getByRole('button', { name: 'More for Weekly groceries' });
+		(more.element() as HTMLElement).focus();
+		await expect.element(more).toBeVisible();
+		await userEvent.keyboard('{Enter}');
+		expect(onmore).toHaveBeenCalledTimes(2);
 	});
 });

@@ -2798,5 +2798,9 @@
 	"memory_budget_range": "Antara {min} dan {max} token.",
 	"memory_settings_unloaded": "Pengaturan memori tidak bisa dimuat. Muat ulang untuk mencoba lagi.",
 	"memory_settings_saved_failed": "Pengaturan itu tidak bisa disimpan.",
-	"memory_settings_label": "Pengaturan memori"
+	"memory_settings_label": "Pengaturan memori",
+	"nav_you": "Kamu",
+	"chat_more_for": "Lainnya untuk {title}",
+	"chat_pin_top": "Sematkan di atas",
+	"chat_unpin_top": "Lepas sematan"
 }

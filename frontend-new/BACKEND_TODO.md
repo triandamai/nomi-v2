@@ -349,3 +349,12 @@ Found while building Invite & build together (2026-11-14).
 - **Until then:** a running ask says "running" without its time; a request's meta is its note, the project's waiting files (where publishing is set up) and when it was asked; the "built in the preview" event isn't drawn.
 
 Found while building Invite & build together, steps 9–10 (2026-11-15).
+
+### Who last answered in each chat
+- **Needed by:** *Flow / Mobile Chat — Start & answer* (FvlVs) step 1, Chats on a phone: each row's avatar is the crew member who last answered, in their tint, its line starts with their name ("Dana: Rp 2,1 jt on food…"), and the filters above the list (All, Dana, Kala, Tara) narrow the list to the chats each one answered in.
+- **What exists today:** `GET /api/sessions` gives each chat's `last_message` as `{ content, created_at }`, without who wrote it.
+- **Proposed contract:** `last_message.agent_type` (the agent whose reply it is; null for the person's own message), and `agents: string[]` on each chat (the crew who have answered in it, for the filters).
+- **Until then:** a phone row wears the chat glyph, its line has no name, and there are no crew filters.
+
+Found while building the phone's Chats (2026-11-16).
+

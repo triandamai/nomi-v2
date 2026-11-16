@@ -37,6 +37,15 @@ export default [
 		related: ['inputs/Composer.svelte', 'chat/MentionPicker.svelte', 'chat/StopHint.svelte', 'inputs/Chip.svelte'],
 	},
 	{
+		file: 'thread/PhoneChatRow.svelte',
+		summary: 'A chat in the phone’s Chats list: its avatar, title, time and last line; a long press (or More, for the keyboard) opens its sheet.',
+		use: ['Chats on a phone.'],
+		avoid: ['Wider screens: ChatListRow, with pin and delete on the row.'],
+		dos: ['Wear who last answered where it’s known; the chat glyph where it isn’t.'],
+		accessibility: ['A link named by the chat; More is a real button, shown when it has focus.'],
+		related: ['thread/ChatListRow.svelte', 'overlays/BottomSheet.svelte'],
+	},
+	{
 		file: 'thread/ChatListRow.svelte',
 		summary: 'A chat in the Chats list: its name and last line, its time in mono, whether it’s pinned or the crew is working in it, and pin and delete on hover.',
 		use: ['The Chats page, grouped under Pinned and the days.'],

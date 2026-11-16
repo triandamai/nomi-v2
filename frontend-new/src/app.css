@@ -131,6 +131,9 @@
 	--text-phone--line-height: 21px;
 	--text-phone-sm: 14px;
 	--text-phone-sm--line-height: 18px;
+	/* A phone tab's large title (Flow / Mobile Chat — Start & answer → Chats: 32, 600, −0.6). */
+	--text-phone-large: 32px;
+	--text-phone-large--line-height: 42px;
 	/* A plan's summary on a phone (Mobile / Build Plan). */
 	--text-phone-heading: 18px;
 	--text-phone-heading--line-height: 23px;
@@ -160,6 +163,8 @@
 	--tracking-hero: -1.2px;
 	/* The big mono figures of Settings › Profile's stats strip (App / Settings / Profile U9Gnrg). */
 	--tracking-stat: -0.6px;
+	/* A phone tab's large title ("Chats", Mobile Chat — Start & answer). */
+	--tracking-phone-large: -0.6px;
 
 	--radius-*: initial;
 	--radius-sm: var(--nm-radius-sm);
@@ -182,6 +187,8 @@
 	--radius-xl: 14px;
 	--radius-2xl: 16px;
 	--radius-3xl: 18px;
+	/* A phone's bottom sheet, its top corners (Mobile Chat → Chat sheet, Project menu). */
+	--radius-sheet: 22px;
 	/* The phone preview's corners. */
 	--radius-device: 44px;
 
@@ -191,11 +198,25 @@
 	/* The larger panels that float off the sidebar, as the pen draws them: the account menu
 	   (LkJLt) and the workspace switcher (HF1zn), 0 12 32. */
 	--shadow-float-lg: 0 12px 32px var(--nm-shadow);
+	/* The phone's floating New chat button (Mobile Chat → Chats), 0 6 16. */
+	--shadow-fab: 0 6px 16px var(--nm-shadow);
 	/* Not elevation: the soft glow around a focused field, as the pen draws it. */
 	--shadow-focus: 0 0 8px var(--nm-focus);
 	--inset-shadow-*: initial;
 	--drop-shadow-*: initial;
 	--text-shadow-*: initial;
+}
+
+/* Room for a phone's home indicator under what sits on the bottom edge (the tab bar, a sheet):
+   0 in a browser tab, which keeps its own toolbar there; the indicator's height when the app is
+   added to the home screen (viewport-fit=cover). */
+@utility pb-safe {
+	padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* A row a long press opens a sheet on (a phone's chat list): iOS would show its link preview. */
+@utility touch-callout-none {
+	-webkit-touch-callout: none;
 }
 
 @layer base {
