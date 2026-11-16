@@ -1,6 +1,7 @@
 pub mod agent_permissions;
 pub mod attachments;
 pub mod background;
+pub mod build_flow;
 pub mod build_intent;
 pub mod chat_project;
 pub mod chat_title;

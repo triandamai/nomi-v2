@@ -73,8 +73,8 @@ pub fn approval_context(approval: &Approval, newest: i32) -> String {
     approval.to_markdown(newest)
 }
 
-/// Sora. She is registered for everyone, and reachable only where the `design` setting is
-/// rolled out (see `nomi_agent_core::personal_crew::with_design_gate`).
+/// Sora. She is registered for everyone, and reachable unless an admin switched her off
+/// (Admin → Agents; see `nomi_agent_core::personal_crew::with_admin_switches`).
 pub struct DesignAgent {
     mcp: SharedMcpOps,
     publisher: SharedStaticPublisher,
@@ -186,7 +186,8 @@ impl SubAgent for DesignAgent {
             None => None,
         };
         let feedback = design_feedback::list(&mut **conn, session_id).await.ok().and_then(|all| feedback_context(&all));
-        let parts: Vec<String> = [brief, directions, preview, feedback, approval].into_iter().flatten().collect();
+        let flow = nomi_agent_core::build_flow::context_for(&mut **conn, session_id).await;
+        let parts: Vec<String> = [brief, directions, preview, feedback, approval, flow].into_iter().flatten().collect();
         (!parts.is_empty()).then(|| parts.join("\n\n"))
     }
 

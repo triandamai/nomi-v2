@@ -721,7 +721,7 @@ async fn run_agent_turn_in_reply(
     }
     if agent.supports_reminders() {
         let mut targets = registry.reminder_target_agent_types();
-        // Sora takes no reminders until the design workflow is rolled out to this person.
+        // Sora takes no reminders while she is off for this person.
         targets.retain(|t| t != crate::crew::DESIGN_AGENT_TYPE || !off.contains(t));
         tools.push(create_reminder_tool_definition(&targets));
         tools.push(list_reminders_tool_definition());
@@ -1483,7 +1483,12 @@ async fn resolve_tool_batch_in_reply(
                     Some(t) if !crate::personal_crew::is_enabled(conn, user_id, target_agent).await => Some(crate::personal_crew::switched_off_result(&t.display_name())),
                     _ => None,
                 };
-                let rejection = switched_off.or_else(|| target.as_ref().and_then(|t| t.validate_delegation_task(task).err()));
+                let mut rejection = switched_off.or_else(|| target.as_ref().and_then(|t| t.validate_delegation_task(task).err()));
+                // A build moves through the crew in a fixed order: a hand-over that comes too
+                // early goes back to the agent with what is still missing.
+                if rejection.is_none() {
+                    rejection = crate::build_flow::handover_refusal(conn, session_id, agent.agent_type().as_ref(), target_agent).await;
+                }
                 // A specialist that answers right away takes the conversation over in this turn.
                 // Work split across several specialists at once still runs in the background.
                 let hand_offs_in_batch = tool_use_blocks

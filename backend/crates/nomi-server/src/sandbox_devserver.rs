@@ -48,6 +48,23 @@ fn dev_command(stack: &str) -> String {
         format!("npm run dev -- --host 0.0.0.0 --port {DEV_PORT} --strictPort")
     }
 }
+/// What npm says when a dependency is built for another machine than the sandbox's.
+const WRONG_PLATFORM: &str = "EBADPLATFORM";
+
+/// `npm install` in the project's folder, which is made first: a project whose files haven't
+/// been written yet has none. `forced` installs packages built for another machine too.
+fn install_command(forced: bool) -> String {
+    let force = if forced { " --force" } else { "" };
+    format!("mkdir -p {PROJECT_DIR} && cd {PROJECT_DIR} && npm install{force}")
+}
+
+/// Whether a failed install should be tried again with `--force`. Every starter lists Rolldown's
+/// WebAssembly binding, which the browser's runtime needs and which npm refuses on the sandbox's
+/// own processor; forced, npm installs it beside the native one and the project runs on either.
+fn needs_forced_install(exit_code: Option<i32>, output: &str) -> bool {
+    exit_code.is_some_and(|code| code != 0) && output.contains(WRONG_PLATFORM)
+}
+
 /// The files whose contents decide whether dependencies must be installed again.
 const DEPENDENCY_FILES: &[&str] = &["package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "bun.lockb"];
 
@@ -212,7 +229,10 @@ impl ServerSteps {
         if has_modules && stored.as_deref() == Some(stamp.as_str()) {
             return Ok(false);
         }
-        let done = self.provider.exec(sandbox, &format!("cd {PROJECT_DIR} && npm install"), INSTALL_TIMEOUT).await?;
+        let mut done = self.provider.exec(sandbox, &install_command(false), INSTALL_TIMEOUT).await?;
+        if needs_forced_install(done.exit_code, &format!("{}{}", done.stdout, done.stderr)) {
+            done = self.provider.exec(sandbox, &install_command(true), INSTALL_TIMEOUT).await?;
+        }
         if done.exit_code != Some(0) {
             let why = match done.exit_code {
                 Some(code) => format!("npm install exited with {code}: {}", tail(&format!("{}{}", done.stdout, done.stderr))),
@@ -305,6 +325,21 @@ mod tests {
         }
         let names: Vec<&str> = preview_env(None).iter().map(|(k, _)| *k).collect();
         assert_eq!(names, vec!["NOMI_PREVIEW", "NODE_NO_WARNINGS"]);
+    }
+
+    #[test]
+    fn the_install_makes_the_project_folder_and_can_be_forced() {
+        assert_eq!(install_command(false), format!("mkdir -p {PROJECT_DIR} && cd {PROJECT_DIR} && npm install"));
+        assert!(install_command(true).ends_with("npm install --force"));
+    }
+
+    #[test]
+    fn only_a_package_for_another_machine_is_installed_again_by_force() {
+        let refused = "npm error code EBADPLATFORM\nnpm error notsup Unsupported platform for @rolldown/binding-wasm32-wasi@1.2.19: wanted {\"cpu\":\"wasm32\"} (current: {\"cpu\":\"x64\"})";
+        assert!(needs_forced_install(Some(1), refused));
+        assert!(!needs_forced_install(Some(1), "npm error code ERESOLVE"), "any other failure is the project's to fix");
+        assert!(!needs_forced_install(Some(0), refused));
+        assert!(!needs_forced_install(None, refused), "a timeout isn't retried");
     }
 
     #[test]

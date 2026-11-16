@@ -89,14 +89,13 @@ async fn the_playbook_stays_for_the_rest_of_an_app_conversation(pool: PgPool) {
 /// that set it take turns.
 static GLOBALS: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
-/// Switches the design workflow on for everyone, or off, as the admin page would.
+/// Switches Sora on for everyone, or off, as Admin → Agents would.
 async fn design(pool: &PgPool, on: bool) {
     let key: String = nomi_test_support::TEST_SETTINGS_KEY.iter().map(|b| format!("{b:02x}")).collect();
     std::env::set_var("SETTINGS_ENCRYPTION_KEY", key);
     nomi_settings::config::install(pool.clone());
     let admin: Uuid = sqlx::query_scalar("INSERT INTO users DEFAULT VALUES RETURNING id").fetch_one(pool).await.unwrap();
-    let values = [("enabled".to_string(), if on { "on" } else { "off" }.to_string())].into_iter().collect();
-    nomi_settings::config::save(pool, &nomi_test_support::TEST_SETTINGS_KEY, &nomi_settings::config::DESIGN, &values, admin).await.unwrap();
+    nomi_settings::config::set_agent_on(pool, nomi_agent_core::crew::DESIGN_AGENT_TYPE, on, admin).await.unwrap();
     nomi_settings::config::forget();
 }
 
