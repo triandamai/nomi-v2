@@ -10,6 +10,7 @@
 	import { later } from '$lib/chat/later';
 	import { toasts } from '$lib/ds/overlays/toasts.svelte';
 	import Search from '$lib/ds/inputs/Search.svelte';
+	import PhoneSearch from '$lib/ds/inputs/PhoneSearch.svelte';
 	import SectionLabel from '$lib/ds/status/SectionLabel.svelte';
 	import EmptyState from '$lib/ds/lists/EmptyState.svelte';
 	import ChatListRow from '$lib/ds/thread/ChatListRow.svelte';
@@ -92,7 +93,7 @@
 		{#if none}
 			<div class="px-4"><EmptyState icon={MessageSquare} title={m.chats_empty_title()} body={m.chats_empty_body()} action={{ label: m.nav_new_chat(), href: '/chat/new' }} /></div>
 		{:else}
-			<div class="px-4 pb-2.5"><Search phone placeholder={m.chats_search()} bind:value={query} /></div>
+			<div class="px-4 pb-2.5"><PhoneSearch placeholder={m.chats_search()} bind:value={query} /></div>
 			{#if groups.length === 0}
 				<div class="px-4"><EmptyState icon={SearchX} title={m.chats_none_title()} body={m.chats_none_body({ query: query.trim() })} /></div>
 			{:else}

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { page, userEvent } from 'vitest/browser';
 import Search from './Search.svelte';
+import PhoneSearch from './PhoneSearch.svelte';
 import { tokenBackground, tokenColor } from '../test-utils';
 
 describe('Search', () => {
@@ -23,9 +24,9 @@ describe('Search', () => {
 	});
 });
 
-describe('Search on a phone', () => {
+describe('PhoneSearch', () => {
 	it('is the pen’s 38 pill on surface-2 with 16pt text, so iOS doesn’t zoom', async () => {
-		await render(Search, { placeholder: 'Search chats', phone: true });
+		await render(PhoneSearch, { placeholder: 'Search chats' });
 		const field = page.getByRole('searchbox', { name: 'Search chats' }).element();
 		const frame = field.closest('label')!;
 		const style = getComputedStyle(frame);
