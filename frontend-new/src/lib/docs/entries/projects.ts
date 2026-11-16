@@ -101,6 +101,15 @@ export default [
 		related: ['projects/ProjectSectionHead.svelte', 'projects/ProjectCard.svelte'],
 	},
 	{
+		file: 'projects/PhoneProjectDetail.svelte',
+		summary: 'A project on a phone, its own screen: back to Projects, who it is and how it stands, what broke with the one thing to do, Open workspace and Visit, what’s in it, its chats, and asking Koda at the foot.',
+		use: ['Tapping a project on a phone.'],
+		avoid: ['Wider screens: ProjectDetailPanel beside the grid.'],
+		dos: ['Lead with what broke, and its action, when something did.'],
+		accessibility: ['A region named by the project, its name the screen’s h1; back and More are named buttons.'],
+		related: ['projects/ProjectDetailPanel.svelte', 'projects/ProjectCard.svelte'],
+	},
+	{
 		file: 'projects/PhoneProjectsHeader.svelte',
 		summary: 'The top of Projects on a phone: the workspace pill, how many people are in it and Invite, then the large title and New.',
 		use: ['Projects on a phone.'],

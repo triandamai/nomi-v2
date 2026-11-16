@@ -2825,5 +2825,6 @@
 	"projects_phone_workspaces_body": "Projects and their chats live in a workspace",
 	"projects_phone_needs_you": "Needs you",
 	"projects_phone_first_title": "No projects yet",
-	"projects_phone_first_body": "Describe an app and Koda builds it, with its own code, URL and chats."
+	"projects_phone_first_body": "Describe an app and Koda builds it, with its own code, URL and chats.",
+	"projects_phone_ask": "Ask Koda to change something"
 }

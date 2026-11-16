@@ -9,6 +9,7 @@ import PhoneProjectsHeader from './PhoneProjectsHeader.svelte';
 import PhoneProjectSearch from './PhoneProjectSearch.svelte';
 import PhoneFilters from './PhoneFilters.svelte';
 import ProjectComposer from './ProjectComposer.svelte';
+import PhoneProjectDetail from './PhoneProjectDetail.svelte';
 import { tokenBackground, tokenColor } from '../test-utils';
 
 // Design System / Projects → Cards & overlays (DLQ3G): the project card in each of its states
@@ -285,5 +286,38 @@ describe('ProjectComposer on a phone (New project sheet)', () => {
 		expect([box(start).height, style(start).backgroundColor]).toEqual([40, tokenBackground('nm-text')]);
 		await page.getByRole('button', { name: 'Start building' }).click();
 		expect(onbuild).toHaveBeenCalledWith('Order tracker for my laundry');
+	});
+});
+
+describe('PhoneProjectDetail (Mobile / Project Detail)', () => {
+	const parts = { code: '41 files · Svelte', url: 'invoice-sinar-jaya.trian.space', data: 'Postgres · 3 tables', deploys: '6 · last built in 41s', members: 'Trian (owner), you' };
+	it('is the pen’s screen: back, the 56 hero, what broke with its action, the 46 buttons and the 52 rows', async () => {
+		await page.viewport(390, 844);
+		const onback = vi.fn();
+		const onfix = vi.fn();
+		await render(PhoneProjectDetail, {
+			name: 'invoice-sinar-jaya',
+			tone: 'kala',
+			status: 'deploy #6 failed · #5 still live',
+			dot: 'failed',
+			alert: { title: 'Deploy failed', detail: 'build error in src/lib/pdf.ts', action: { label: 'Ask Koda to fix', onclick: onfix } },
+			workspaceHref: '/projects/p1',
+			url: 'invoice-sinar-jaya.trian.space',
+			parts,
+			onexport: () => {},
+			chats: [{ title: 'Build an invoice tracker', age: '5d', href: '/projects/p1' }],
+			backLabel: 'Projects',
+			onback,
+		});
+		expect(style(page.getByRole('heading', { level: 1, name: 'invoice-sinar-jaya' }).element()).fontSize).toBe('20px');
+		const tile = page.getByRole('heading', { level: 1 }).element().closest('div')!.previousElementSibling!;
+		expect([box(tile).width, style(tile).borderRadius]).toEqual([56, '14px']);
+		await page.getByRole('button', { name: 'Ask Koda to fix' }).click();
+		expect(onfix).toHaveBeenCalledOnce();
+		const open = page.getByRole('link', { name: 'Open workspace' }).element();
+		expect([box(open).height, style(open).borderRadius]).toEqual([46, '12px']);
+		expect(box(page.getByText('Code', { exact: true }).element().parentElement!).height).toBe(52);
+		await page.getByRole('button', { name: 'Projects' }).click();
+		expect(onback).toHaveBeenCalledOnce();
 	});
 });

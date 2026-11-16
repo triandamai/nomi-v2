@@ -413,10 +413,12 @@ leaves out what v2 or the backend can't do yet, rather than draw it dead:
   page, the large title and New), `PhoneProjectSearch` with Sort (a sheet of `SheetOption`s), the
   filters as `PhoneFilters` chips (Needs you first while anything needs the person), and each project
   a phone `ProjectCard` whose ⋯ opens its sheet (the desktop menu's items, from `projectMenu`). New
-  opens the New project sheet with the phone `ProjectComposer`. Not yet the pen's phone screens
-  (they come next): the project's detail (the desktop panel opens over the list, full width), the
-  deploy, stop, move and delete confirmations (the desktop dialogs), loading and errors, and
-  Import from GitHub. The sort isn't saved per workspace (the pen's "Saved for Trian's space"):
+  opens the New project sheet with the phone `ProjectComposer`. Tapping a project opens its own
+  screen (`PhoneProjectDetail`: back to Projects, the hero, what broke with its action, Open
+  workspace and Visit, what's in it, its chats, and asking Koda at the foot) with no tab bar under
+  it (`phoneScreen`); the pen's picture of the app's own data ("Next prayer") is left out, as on a
+  desktop. Not yet the pen's phone screens (they come next): the deploy, stop, move and delete
+  confirmations (the desktop dialogs), loading and errors, and Import from GitHub. The sort isn't saved per workspace (the pen's "Saved for Trian's space"):
   nothing keeps it. The Workspaces sheet's "Join" for an invitation waits for that flow.
 - The crew column lists every agent the backend has, so eleven: Iris (the inspector), whom the pen
   doesn't draw, shows her initial in place of a mascot.

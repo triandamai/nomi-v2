@@ -2825,5 +2825,6 @@
 	"projects_phone_workspaces_body": "Proyek dan obrolannya ada di sebuah workspace",
 	"projects_phone_needs_you": "Butuh kamu",
 	"projects_phone_first_title": "Belum ada proyek",
-	"projects_phone_first_body": "Jelaskan sebuah aplikasi dan Koda membangunnya, lengkap dengan kode, URL, dan obrolannya."
+	"projects_phone_first_body": "Jelaskan sebuah aplikasi dan Koda membangunnya, lengkap dengan kode, URL, dan obrolannya.",
+	"projects_phone_ask": "Minta Koda mengubah sesuatu"
 }
