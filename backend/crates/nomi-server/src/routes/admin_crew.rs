@@ -86,7 +86,7 @@ async fn members(state: &AppState, user_id: uuid::Uuid) -> Result<Vec<AdminCrewM
 
 /// `GET /api/admin/crew`: every built-in member and whether it is on.
 pub async fn list(State(state): State<AppState>, AuthClaims(claims): AuthClaims) -> Result<Json<AdminCrewResponse>, (StatusCode, &'static str)> {
-    require_admin(&claims, "agents", "read")?;
+    require_admin(&claims, "agents", "view")?;
     Ok(Json(AdminCrewResponse { agents: members(&state, claims.sub).await? }))
 }
 
