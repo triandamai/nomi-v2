@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { MessageSquare, Pin, PinOff, SearchX, Trash2 } from '@lucide/svelte';
+	import { MessageSquare, Pin, PinOff, SearchX, SquarePen, Trash2 } from '@lucide/svelte';
 	import { invalidate } from '$app/navigation';
 	import { m } from '$lib/paraglide/messages';
 	import { getLocale } from '$lib/paraglide/runtime';
@@ -15,7 +15,7 @@
 	import ChatListRow from '$lib/ds/thread/ChatListRow.svelte';
 	import PhoneChatRow from '$lib/ds/thread/PhoneChatRow.svelte';
 	import LargeTitle from '$lib/ds/chrome/LargeTitle.svelte';
-	import NewChatButton from '$lib/ds/chrome/NewChatButton.svelte';
+	import Fab from '$lib/ds/chrome/Fab.svelte';
 	import BottomSheet from '$lib/ds/overlays/BottomSheet.svelte';
 	import SheetRow from '$lib/ds/mobile/SheetRow.svelte';
 	import { phoneView } from '$lib/phone.svelte';
@@ -114,7 +114,7 @@
 				{/each}
 			{/if}
 		{/if}
-		<div class="fixed right-4 bottom-14"><NewChatButton label={m.nav_new_chat()} href="/chat/new" /></div>
+		<div class="fixed right-4 bottom-14"><Fab label={m.nav_new_chat()} icon={SquarePen} iconSize={22} href="/chat/new" /></div>
 		<BottomSheet open={sheet !== null} title={sheet?.title ?? ''} subtitle={sheet?.time} onclose={() => (sheet = null)}>
 			{#if sheet}
 				{@const row = sheet}

@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { page, userEvent } from 'vitest/browser';
-import { FolderOpen, House, Inbox, MessageCircle, User } from '@lucide/svelte';
+import { FolderOpen, House, Inbox, MessageCircle, Plus, SquarePen, User } from '@lucide/svelte';
 import TabBar from './TabBar.svelte';
-import NewChatButton from './NewChatButton.svelte';
+import Fab from './Fab.svelte';
 import LargeTitle from './LargeTitle.svelte';
 import BottomSheetFixture from '../overlays/BottomSheetFixture.svelte';
 import { tokenBackground, tokenColor } from '../test-utils';
@@ -43,9 +43,9 @@ describe('TabBar', () => {
 	});
 });
 
-describe('NewChatButton', () => {
-	it('is a 56 mint circle with the pen icon, floating, and leads to a new chat', async () => {
-		await render(NewChatButton, { label: 'New chat', href: '/chat/new' });
+describe('Fab', () => {
+	it('is a 56 mint circle with its icon, floating, and leads to a new chat', async () => {
+		await render(Fab, { label: 'New chat', icon: SquarePen, iconSize: 22, href: '/chat/new' });
 		const link = page.getByRole('link', { name: 'New chat' });
 		await expect.element(link).toHaveAttribute('href', '/chat/new');
 		const style = getComputedStyle(link.element());
@@ -93,5 +93,16 @@ describe('BottomSheet', () => {
 		await page.getByRole('button', { name: 'Open' }).click();
 		await userEvent.click(document.body, { position: { x: 195, y: 40 } });
 		await expect.element(sheet).not.toBeInTheDocument();
+	});
+});
+
+describe('Fab as a button', () => {
+	it('opens what it opens, with the 24 plus by default (New project)', async () => {
+		const onclick = vi.fn();
+		await render(Fab, { label: 'New project', icon: Plus, onclick });
+		const button = page.getByRole('button', { name: 'New project' });
+		expect(button.element().querySelector('svg')!.getBoundingClientRect().width).toBe(24);
+		await button.click();
+		expect(onclick).toHaveBeenCalledOnce();
 	});
 });
