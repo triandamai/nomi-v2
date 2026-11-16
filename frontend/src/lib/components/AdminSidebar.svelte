@@ -61,6 +61,7 @@
 			{ href: '/admin', label: m.admin_overview(), icon: IconDashboard, area: 'dashboard' },
 			{ href: '/admin/agents', label: m.admin_live_agents(), icon: IconAgents, area: 'dashboard' },
 			{ href: '/admin/usage', label: m.admin_usage(), icon: IconBarChart, area: 'dashboard' },
+			{ href: '/admin/crew', label: m.admin_agent_switches(), icon: IconAgents, area: 'agents' },
 			{ href: '/admin/dynamic-agents', label: m.admin_custom_agents(), icon: IconSparkle, area: 'agents' },
 			{ href: '/admin/tools', label: m.admin_tools(), icon: IconTool, area: 'tools' },
 			{ href: '/admin/settings/providers', label: m.prov_title(), icon: IconLink, area: 'models' },

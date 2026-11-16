@@ -19,6 +19,8 @@ export interface SandboxStatus {
 	phase: SandboxPhase;
 	preview_url: string | null;
 	error: string | null;
+	/** False while the crew is still planning, designing or first building it: nothing starts yet. */
+	preview_ready?: boolean;
 }
 
 /** The heartbeat that keeps a sandbox awake while the page is open. */

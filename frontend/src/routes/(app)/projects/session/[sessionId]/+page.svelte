@@ -12,7 +12,7 @@
 	import PreviewAddressBar from '$lib/components/project/PreviewAddressBar.svelte';
 	import PreviewDevices from '$lib/components/project/PreviewDevices.svelte';
 	import { PHASE_LABEL } from '$lib/components/project/previewPhase';
-	import { browserRuntimeForced, createRuntime, forceBrowserRuntime, type AnyRuntime } from '$lib/runtimeChooser';
+	import { browserRuntimeForced, createRuntime, forceBrowserRuntime, startWhenReady, type AnyRuntime } from '$lib/runtimeChooser';
 	import { SandboxRuntime } from '$lib/sandboxRuntime.svelte';
 	import IconButton from '$lib/components/m3/IconButton.svelte';
 	import IconClose from '$lib/components/icons/IconClose.svelte';
@@ -285,6 +285,8 @@
 	};
 	const published = $derived(Boolean(deploy?.overview?.app && deploy.overview.publishes.some((p) => p.status === 'succeeded')));
 	let runtime = $state<AnyRuntime | null>(null);
+	// The crew is still planning, designing or first building it: the preview hasn't started.
+	let awaitingFirstBuild = $state(false);
 
 	// Projects with a package.json run in the browser (WebContainer); static ones don't.
 	const projectId = $derived(data.project?.id ?? null);
@@ -302,14 +304,26 @@
 		void runtimeChoice;
 		let live: AnyRuntime | null = null;
 		let cancelled = false;
-		void createRuntime(projectId).then((created) => {
+		let stopWaiting: (() => void) | null = null;
+		const id = projectId;
+		void createRuntime(id).then((created) => {
 			if (cancelled) return;
-			live = created;
-			runtime = created;
-			void created.start();
+			// Nothing starts (no sandbox, no install in the browser) until there is a build to
+			// preview: the crew may still be planning or designing it.
+			stopWaiting = startWhenReady(
+				id,
+				() => {
+					live = created;
+					runtime = created;
+					void created.start();
+				},
+				(waiting) => (awaitingFirstBuild = waiting),
+			);
 		});
 		return () => {
 			cancelled = true;
+			stopWaiting?.();
+			awaitingFirstBuild = false;
 			runtime = null;
 			void live?.stop();
 		};
@@ -1124,6 +1138,11 @@
 					<IconClose size={18} />
 				</IconButton>
 			</div>
+			{#if awaitingFirstBuild}
+				<p class="md-body-small px-4 py-2" style="background: var(--md-sys-color-surface-container); color: var(--md-sys-color-on-surface-variant)">
+					{m.project_preview_waits()}
+				</p>
+			{/if}
 			{#if runtime?.checkFailed}
 				<p class="md-body-small px-4 py-2" style="background: var(--md-sys-color-error-container); color: var(--md-sys-color-on-error-container)">
 					{runtime.handedToKoda ? m.project_check_failed_koda() : m.project_check_failed()}
