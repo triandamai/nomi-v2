@@ -14,7 +14,7 @@
 	// puts it under the top bar (setPanelPlacement: Home's crew column, EXxti). Below 1024px the
 	// sidebar moves into a drawer; the panel shows only where there's room for it (1280px and up).
 	// On a phone (below 768) a top-level screen has the tab bar along the bottom in place of the
-	// drawer, and one with its own large title leaves the top bar out (phoneChrome).
+	// drawer, and one that draws its own top (a large title, a chat's nav bar) leaves the bar out.
 	type Props = { sidebar: Snippet; topbar?: Snippet; panel?: Snippet; children: Snippet };
 	let { sidebar, topbar, panel, children }: Props = $props();
 
@@ -40,7 +40,7 @@
 <div class="flex h-dvh w-full overflow-hidden bg-bg text-text">
 	<div class="h-full max-lg:hidden">{@render sidebar()}</div>
 	<div class="flex min-w-0 flex-1 flex-col">
-		<header class={['flex h-13 shrink-0 items-center gap-3 border-b border-border px-4 lg:px-6', phone.phone && phone.tabs && phone.ownTitle && 'hidden']}>
+		<header class={['flex h-13 shrink-0 items-center gap-3 border-b border-border px-4 lg:px-6', phone.phone && phone.ownTitle && 'hidden']}>
 			<span class={['lg:hidden', phone.phone && phone.tabs && 'hidden']}><IconButton icon={Menu} label={m.shell_open_nav()} variant="ghost" onclick={() => (drawerOpen = true)} /></span>
 			<div class="min-w-0 flex-1">{@render topbar?.()}</div>
 		</header>

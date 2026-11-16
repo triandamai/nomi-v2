@@ -97,7 +97,7 @@ export default [
 	{
 		file: 'inputs/Search.svelte',
 		summary:
-			'A quiet 30px search box with a magnifier and, if there is one, its shortcut (⌘K). The plain version, used in the settings nav, sits 10px in and shows the shortcut as mono text instead of a key.',
+			'A quiet 30px search box with a magnifier and, if there is one, its shortcut (⌘K). The plain version, used in the settings nav, sits 10px in and shows the shortcut as mono text instead of a key. The phone version is a 38 pill on surface-2 at 16pt, so iOS doesn’t zoom (Chats on a phone).',
 		use: ['Searching chats, memory and files.', 'Filtering a list in place, like the settings or the projects in a picker.'],
 		avoid: ['A value people enter and save: use TextField.', 'Writing to the crew: use Composer.'],
 		dos: [

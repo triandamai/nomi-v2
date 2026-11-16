@@ -75,3 +75,48 @@ test.describe('on a desktop', () => {
 		await expect(page.getByText('Every conversation with the crew, pinned ones first.')).toBeVisible();
 	});
 });
+
+test('a chat on a phone: New chat, the nav bar, the bubble, the action bar, and the sheets', async ({ page, context }) => {
+	const account = await createAccount();
+	await signInAs(context, account);
+	await page.goto('/chat/new', { waitUntil: 'networkidle' });
+	await expect(page.getByRole('heading', { level: 1, name: 'What should the crew pick up?' })).toBeVisible();
+	await expect(page.getByRole('navigation', { name: 'Main' })).toHaveCount(0);
+	await page.getByRole('textbox', { name: 'Message' }).fill('How much did I spend on food in October?');
+	await page.getByRole('button', { name: 'Send' }).click();
+	await expect(page).toHaveURL(/\/chat\/[0-9a-f-]{36}$/);
+	const id = page.url().split('/').pop()!;
+	const reply = page.getByRole('article', { name: 'Nomi' });
+	await expect(reply.getByText('This is a fake response for local development and testing.')).toBeVisible();
+
+	// The round action bar: Like shows at once and is kept (opened again so the finished reply is
+	// the one clicked, not the live one it replaces).
+	await page.goto(`/chat/${id}`, { waitUntil: 'networkidle' });
+	const like = reply.getByRole('button', { name: 'Good reply' });
+	const saved = page.waitForResponse((response) => response.url().endsWith('/feedback') && response.request().method() === 'PUT');
+	await like.click();
+	await expect(like).toHaveAttribute('aria-pressed', 'true');
+	expect((await saved).ok()).toBe(true);
+	await page.reload({ waitUntil: 'networkidle' });
+	await expect(reply.getByRole('button', { name: 'Good reply' })).toHaveAttribute('aria-pressed', 'true');
+
+	// More: try again, from a sheet.
+	await reply.getByRole('button', { name: 'More' }).click();
+	await page.getByRole('dialog').getByRole('button', { name: 'Try again' }).click();
+	await expect(page.getByRole('dialog')).toHaveCount(0);
+
+	// The nav bar's More is the chat's sheet: rename, then pin.
+	await page.getByRole('button', { name: 'Chat options' }).click();
+	await page.getByRole('dialog').getByRole('button', { name: 'Rename' }).click();
+	await page.getByRole('textbox', { name: 'Chat name' }).fill('Belanja makan Oktober');
+	await page.getByRole('button', { name: 'Save name' }).click();
+	await expect(page.getByRole('heading', { name: 'Belanja makan Oktober' })).toBeVisible();
+	await page.getByRole('button', { name: 'Chat options' }).click();
+	await page.getByRole('dialog').getByRole('button', { name: 'Pin to top' }).click();
+	type Sessions = { sessions: { id: string; title: string | null; pinned: boolean }[] };
+	await expect.poll(async () => ((await (await api(account, '/api/sessions')).json()) as Sessions).sessions.find((one) => one.id === id)).toMatchObject({ title: 'Belanja makan Oktober', pinned: true });
+
+	// Back is Chats.
+	await page.getByRole('button', { name: 'Back' }).click();
+	await expect(page).toHaveURL(/\/chats$/);
+});

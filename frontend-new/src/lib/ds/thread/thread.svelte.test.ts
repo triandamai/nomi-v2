@@ -3,6 +3,7 @@ import { render } from 'vitest-browser-svelte';
 import { page, userEvent } from 'vitest/browser';
 import { MessageSquare, RotateCcw } from '@lucide/svelte';
 import Prose from './Prose.svelte';
+import AgentReply from './AgentReply.svelte';
 import ChatComposer from './ChatComposer.svelte';
 import PhoneChatRow from './PhoneChatRow.svelte';
 import PhoneComposer from './PhoneComposer.svelte';
@@ -425,3 +426,18 @@ describe('PhoneComposer', () => {
 		expect(onstop).toHaveBeenCalledOnce();
 	});
 });
+
+describe('a reply on a phone', () => {
+	it('sets the prose at 16 on 1.55 in text, and the reply’s parts 12 apart under the mobile byline', async () => {
+		await page.viewport(390, 844);
+		await render(Prose, { html: '<p>Rp 2,1 jt on food in October.</p>', phone: true });
+		const prose = document.querySelector<HTMLElement>('.prose')!;
+		expect([getComputedStyle(prose).fontSize, getComputedStyle(prose).lineHeight, getComputedStyle(prose).color]).toEqual(['16px', '25px', tokenColor('nm-text')]);
+		document.body.innerHTML = '';
+		await render(AgentReply, { agent: 'dana', name: 'Dana', meta: '14:02 · 9s', phone: true });
+		const article = page.getByRole('article', { name: 'Dana' }).element();
+		expect(getComputedStyle(article).rowGap).toBe('12px');
+		expect(getComputedStyle(page.getByText('Dana', { exact: true }).element()).fontSize).toBe('14px');
+	});
+});
+
