@@ -40,7 +40,7 @@ export default [
 		dos: ['Mark the tab the screen belongs to as current.'],
 		content: ['One word per tab.'],
 		accessibility: ['A navigation landmark named Main; the current tab has aria-current="page"; each tab is a link with its name under its icon.'],
-		related: ['chrome/LargeTitle.svelte', 'chrome/NewChatButton.svelte', 'chrome/Sidebar.svelte'],
+		related: ['chrome/LargeTitle.svelte', 'chrome/Fab.svelte', 'chrome/Sidebar.svelte'],
 	},
 	{
 		file: 'chrome/LargeTitle.svelte',
@@ -50,11 +50,11 @@ export default [
 		related: ['chrome/TabBar.svelte'],
 	},
 	{
-		file: 'chrome/NewChatButton.svelte',
-		summary: 'The phone’s floating New chat: a mint circle with the pen icon, above the tab bar.',
-		use: ['Chats on a phone.'],
+		file: 'chrome/Fab.svelte',
+		summary: 'A phone screen’s one floating action: a mint circle with its icon, above the tab bar (New chat on Chats, New project on Projects).',
+		use: ['Chats and Projects on a phone.'],
 		donts: ['Float more than one thing on a screen.'],
-		accessibility: ['A link named New chat.'],
+		accessibility: ['Named by what it does; a link where it goes somewhere, a button where it opens a sheet.'],
 		related: ['chrome/TabBar.svelte'],
 	},
 	{
