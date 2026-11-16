@@ -53,3 +53,49 @@ export async function createRuntime(projectId: string): Promise<AnyRuntime> {
 	if (status?.runtime === 'sandbox') runtime.log = `${m.project_sandbox_unavailable_fallback()}\n`;
 	return runtime;
 }
+
+/** How often the page asks whether there is a build to preview yet. */
+export const READY_POLL_MS = 5_000;
+
+/**
+ * Whether the project has a build to preview. A project the crew is still planning, designing or
+ * building for the first time has none; one whose status can't be read previews as it always did.
+ */
+export async function previewReady(projectId: string): Promise<boolean> {
+	try {
+		const status = await projectApi<SandboxStatus>(projectId, 'sandbox');
+		return status?.preview_ready !== false;
+	} catch {
+		return true;
+	}
+}
+
+/**
+ * Calls `start` once there is a build to preview: at once when there already is one, otherwise
+ * when Koda's first build is done. `onwaiting` hears when the wait begins and ends. Returns what
+ * stops the wait.
+ */
+export function startWhenReady(projectId: string, start: () => void, onwaiting: (waiting: boolean) => void): () => void {
+	let cancelled = false;
+	let waiting = false;
+	let timer: ReturnType<typeof setTimeout> | null = null;
+	const ask = async () => {
+		const ready = await previewReady(projectId);
+		if (cancelled) return;
+		if (ready) {
+			if (waiting) onwaiting(false);
+			start();
+			return;
+		}
+		if (!waiting) {
+			waiting = true;
+			onwaiting(true);
+		}
+		timer = setTimeout(() => void ask(), READY_POLL_MS);
+	};
+	void ask();
+	return () => {
+		cancelled = true;
+		if (timer) clearTimeout(timer);
+	};
+}
