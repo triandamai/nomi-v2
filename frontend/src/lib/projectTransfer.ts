@@ -35,6 +35,7 @@ export const ALLOWED_PROJECT_API_PATHS = new RegExp(
 			'deploy/deployments/[A-Za-z0-9-]+',
 			'deploy/logs',
 			'deploy/usage',
+			'usage',
 			'deploy/events',
 			'deploy/environments/[a-z0-9-]+',
 			'deploy/requests',

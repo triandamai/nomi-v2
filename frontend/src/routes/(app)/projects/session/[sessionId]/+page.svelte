@@ -40,6 +40,7 @@
 	import MembersPanel from '$lib/components/project/MembersPanel.svelte';
 	import SettingsPanel from '$lib/components/project/SettingsPanel.svelte';
 	import DomainPanel from '$lib/components/project/DomainPanel.svelte';
+	import UsagePanel from '$lib/components/project/UsagePanel.svelte';
 	import { ProjectDeploy } from '$lib/projectDeploy.svelte';
 	import { invalidateAll, replaceState } from '$app/navigation';
 	import { isBackendEvent, isIssuesEvent } from '$lib/presenceView';
@@ -66,7 +67,7 @@
 	import DsButton from '$lib/components/ds/actions/Button.svelte';
 	import { ArrowLeft, Download } from '@lucide/svelte';
 	import { projectApi } from '$lib/projectApi';
-	import { Activity, Bug, Database, History, Link2, Settings, Share2, Users } from '@lucide/svelte';
+	import { Activity, Bug, Coins, Database, History, Link2, Settings, Share2, Users } from '@lucide/svelte';
 	import SplitButton from '$lib/components/project/SplitButton.svelte';
 	import type { MenuEntry } from '$lib/components/ds/overlays/MenuPanel.svelte';
 	import type { ActionData, PageData } from './$types';
@@ -101,8 +102,8 @@
 
 	// The project's tools open in full-screen sheets over the project, so its chat, code and
 	// running preview stay as they are underneath (closing one never restarts the install).
-	type Sheet = 'deploy' | 'domain' | 'monitor' | 'database' | 'members' | 'issues' | 'settings';
-	const SHEETS: Sheet[] = ['deploy', 'domain', 'monitor', 'database', 'members', 'issues', 'settings'];
+	type Sheet = 'deploy' | 'domain' | 'monitor' | 'usage' | 'database' | 'members' | 'issues' | 'settings';
+	const SHEETS: Sheet[] = ['deploy', 'domain', 'monitor', 'usage', 'database', 'members', 'issues', 'settings'];
 	let sheet = $state<Sheet | null>(null);
 	let sheetOpen = $state(false);
 	// Sheets open below the toolbar, which stays in view: where its bottom edge is.
@@ -269,15 +270,17 @@
 		{ label: m.pj_tab_deploy(), icon: History, onselect: () => openSheet('deploy') },
 		{ group: m.pj_menu_watch() },
 		{ label: m.pj_tab_monitor(), icon: Activity, onselect: () => openSheet('monitor') },
+		{ label: m.pj_tab_usage(), icon: Coins, onselect: () => openSheet('usage') },
 		{ label: dataTitle(), icon: Database, onselect: () => openSheet('database') },
 		'divider',
 		{ label: m.export_tool(), icon: Download, onselect: openExport },
 	]);
-	const SHEET_ICON = { deploy: History, domain: Link2, monitor: Activity, database: Database, members: Users, issues: Bug, settings: Settings } as const;
+	const SHEET_ICON = { deploy: History, domain: Link2, monitor: Activity, usage: Coins, database: Database, members: Users, issues: Bug, settings: Settings } as const;
 	const SHEET_TITLE: Record<Sheet, () => string> = {
 		deploy: m.pj_tab_deploy,
 		domain: m.pj_tab_domain,
 		monitor: m.pj_tab_monitor,
+		usage: m.pj_tab_usage,
 		database: () => dataTitle(),
 		members: m.pj_tab_members,
 		issues: m.issues_title,
@@ -1302,6 +1305,8 @@
 				<DomainPanel {deploy} />
 			{:else if sheet === 'monitor'}
 				<MonitorPanel projectId={project.id} {published} {deploy} />
+			{:else if sheet === 'usage'}
+				<UsagePanel projectId={project.id} />
 			{:else if sheet === 'database'}
 				{#if project.backend === 'relay'}
 					<RelayPanel projectId={project.id} {published} />
