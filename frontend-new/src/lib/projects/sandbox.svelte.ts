@@ -12,6 +12,8 @@ import { appendOutput, capLog } from './terminal';
 const BEAT_MS = 20_000;
 /** How often the phase and the log are read again. */
 const POLL_MS = 5_000;
+/** The backend's phases for a sandbox that isn't running or on its way up: opening the workspace wakes it. */
+const AT_REST = ['idle', 'stopped', 'stopping'];
 
 export class SandboxRuntime {
 	phase = $state<SandboxPhase>('loading');
@@ -21,6 +23,11 @@ export class SandboxRuntime {
 
 	#base: string;
 	#started = false;
+	/**
+	 * A start was asked for and the backend hasn't moved yet: it still answers with where the
+	 * sandbox is (stopped, stopping, not made) until its worker picks the start up.
+	 */
+	#asked = false;
 	#offset = 0;
 	#reading = false;
 	#timers: ReturnType<typeof setInterval>[] = [];
@@ -35,8 +42,9 @@ export class SandboxRuntime {
 		void this.#beat();
 		this.#timers = [setInterval(() => void this.#beat(), BEAT_MS), setInterval(() => void this.#refresh(), POLL_MS)];
 		const status = await this.#refresh();
-		// Opening the workspace wakes a sandbox that's asleep or not made yet.
-		if (status && (status.phase === 'idle' || status.phase === 'stopped' || status.state === 'none')) {
+		// Opening the workspace wakes a sandbox that's asleep or not made yet. One that is still
+		// stopping (the workspace was closed a moment ago) starts again once it has stopped.
+		if (status && (AT_REST.includes(status.phase) || status.state === 'none')) {
 			this.phase = 'waking';
 			await this.#command('start');
 		}
@@ -57,6 +65,7 @@ export class SandboxRuntime {
 	}
 
 	async #command(action: 'start' | 'stop') {
+		this.#asked = action === 'start';
 		const response = await fetch(`${this.#base}/${action}`, { method: 'POST' }).catch(() => null);
 		if (!this.#started) return;
 		if (!response?.ok) {
@@ -78,7 +87,9 @@ export class SandboxRuntime {
 		const status = (await response.json()) as SandboxStatus;
 		if (!this.#started) return null;
 		const view = sandboxView(status);
-		this.phase = view.phase;
+		// The backend has moved on from where the sandbox rested: what it says from here on is shown as it is.
+		if (!AT_REST.includes(status.phase)) this.#asked = false;
+		this.phase = this.#asked ? 'waking' : view.phase;
 		this.previewUrl = view.previewUrl;
 		this.error = view.error;
 		if (status.phase === 'waking' || status.phase === 'running' || status.phase === 'error') await this.#readLog();
