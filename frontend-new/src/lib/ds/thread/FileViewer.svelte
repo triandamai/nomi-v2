@@ -57,8 +57,9 @@
 
 <svelte:window {onkeydown} />
 
-<section
+<div
 	role="dialog"
+	tabindex="-1"
 	aria-label={name}
 	class={['flex flex-col bg-bg text-text', phone ? 'fixed inset-0 z-40 h-dvh w-full' : 'h-full w-110 shrink-0 border-l border-border']}
 	{ontouchstart}
@@ -111,21 +112,20 @@
 				{#if elapsed}<span class="font-mono text-label text-text-3">· {elapsed}</span>{/if}
 			</p>
 		{/if}
-		<div class={['flex min-h-0 flex-1 flex-col bg-surface-2', phone ? 'p-3' : 'p-4']}>
+		<div class={['relative flex min-h-0 flex-1 flex-col bg-surface-2', phone ? 'p-3' : 'p-4']}>
+				{@render children?.()}
 			{#if status === 'loading'}
-				<div aria-hidden="true" class={['flex flex-1 flex-col rounded-sm bg-surface outline -outline-offset-1 outline-border', phone ? 'gap-3.5 p-4' : 'gap-3 p-5']}>
+				<div aria-hidden="true" class={['absolute flex flex-col rounded-sm bg-surface outline -outline-offset-1 outline-border', phone ? 'inset-3 gap-3.5 p-4' : 'inset-4 gap-3 p-5']}>
 					<span class="h-2.5 w-40 rounded-xs bg-surface-2"></span>
 					<span class="h-2.5 w-full rounded-xs bg-surface-2"></span>
 					{#each ['w-55', 'w-full', 'w-45', 'w-full', 'w-full', 'w-50', 'w-full', 'w-35', 'w-full', 'w-full'] as width, index (index)}
 						<span class={['h-2 rounded-xs bg-surface-2', width]}></span>
 					{/each}
 				</div>
-			{:else}
-				{@render children?.()}
 			{/if}
 		</div>
 		{#if status === 'loading' && note}
 			<p class="shrink-0 border-t border-border bg-surface py-2 pr-2.5 pl-4 font-mono text-label text-text-3">{note}</p>
 		{/if}
 	{/if}
-</section>
+</div>

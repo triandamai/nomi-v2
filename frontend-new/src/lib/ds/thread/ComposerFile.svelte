@@ -13,7 +13,8 @@
 	// - Rejected: why it can't be read, and Remove.
 	// - Warning: the picture's 28 thumb and which model can't see it, in the warning colour.
 	// Each chip is one stop for the keyboard (its actions inside it): Backspace or Delete on it
-	// removes the file, as the contract asks.
+	// removes the file, as the contract asks. The warning's icon is 12: the pen draws 11, a size the
+	// design system's Icon doesn't take.
 	type Props = {
 		name: string;
 		status: 'uploading' | 'ready' | 'failed' | 'rejected' | 'warning';
@@ -39,6 +40,8 @@
 	}
 </script>
 
+<!-- One stop per chip, as the contract's focus order asks: Backspace on it removes the file. -->
+<!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
 <span role="group" aria-label={name} tabindex="0" data-file-chip={status} class="inline-flex max-w-full rounded-sm outline-offset-2" {onkeydown}>
 	{#if status === 'uploading' || (status === 'ready' && !thumb)}
 		<AttachmentChip {name} {detail} progress={status === 'uploading' ? (progress ?? 0) : undefined} {onremove} />
@@ -60,7 +63,7 @@
 				<span class="truncate font-mono text-caption text-text">{name}</span>
 				{#if status === 'warning'}
 					<span class="flex min-w-0 items-center gap-1 text-warning">
-						<Icon icon={TriangleAlert} size={11} />
+						<Icon icon={TriangleAlert} size={12} />
 						<span class="truncate font-mono text-label text-warning">{detail}</span>
 					</span>
 				{:else}
