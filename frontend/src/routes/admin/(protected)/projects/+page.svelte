@@ -36,8 +36,8 @@
 					{#if project.workspace}<span class="md-body-small note block">{project.workspace}</span>{/if}
 				</td>
 				<td class="md-body-medium">{project.owner_email ?? '—'}</td>
-				<td><a class="cell-link md-body-medium" href={`/admin/sandboxes?project=${project.id}`}>{sandboxSummary(project)}</a></td>
-				<td><a class="cell-link md-body-medium" href={`/admin/projects/${project.id}/issues`}>{issueSummary(project)}</a></td>
+				<td><a class="cell-link md-body-medium" href={`/admin/sandboxes?project=${project.id}`} aria-label={m.admin_projects_sandbox_link({ project: project.name, summary: sandboxSummary(project) })}>{sandboxSummary(project)}</a></td>
+				<td><a class="cell-link md-body-medium" href={`/admin/projects/${project.id}/issues`} aria-label={m.admin_projects_issues_link({ project: project.name, summary: issueSummary(project) })}>{issueSummary(project)}</a></td>
 			</tr>
 		{/each}
 	</DataTable>

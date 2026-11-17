@@ -2,6 +2,7 @@
 	import { m } from '$lib/paraglide/messages';
 	// Admin → Sandboxes: every sandbox each project has had, whatever its state (running, waking
 	// up, stopped, idle…), and which is the project's live one. `?project=` shows one project's.
+	// An ended record keeps the last state it had, drawn quiet so it never reads as live.
 	import { getLocale } from '$lib/paraglide/runtime';
 	import DataTable from '$lib/components/m3/DataTable.svelte';
 	import PageHeader from '$lib/components/PageHeader.svelte';
@@ -42,7 +43,7 @@
 			<tr>
 				<td class="md-body-medium">{sandbox.project_name}</td>
 				<td class="md-body-medium mono">{sandbox.sandbox_id}</td>
-				<td class="md-body-medium"><span class="phase" data-phase={sandbox.phase}>{phaseLabel(sandbox.phase)}</span></td>
+				<td class="md-body-medium"><span class="phase" data-phase={sandbox.current ? sandbox.phase : 'ended'}>{phaseLabel(sandbox.phase)}</span></td>
 				<td class="md-body-medium">{sandbox.current ? m.admin_sandboxes_live() : m.admin_sandboxes_ended()}</td>
 				<td class="md-body-small note">{when(sandbox.created_at)}</td>
 				<td class="md-body-small note">{when(sandbox.ended_at ?? sandbox.updated_at)}</td>

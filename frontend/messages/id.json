@@ -3707,5 +3707,7 @@
 	"admin_project_issues_col_updated": "Diperbarui",
 	"admin_project_issues_open": "Terbuka",
 	"admin_project_issues_closed": "Ditutup",
-	"perm_projects_desc": "Lihat semua proyek beserta sandbox dan isunya."
+	"perm_projects_desc": "Lihat semua proyek beserta sandbox dan isunya.",
+	"admin_projects_sandbox_link": "Sandbox {project}: {summary}",
+	"admin_projects_issues_link": "Isu {project}: {summary}"
 }

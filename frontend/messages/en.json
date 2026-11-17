@@ -3707,5 +3707,7 @@
 	"admin_project_issues_col_updated": "Updated",
 	"admin_project_issues_open": "Open",
 	"admin_project_issues_closed": "Closed",
-	"perm_projects_desc": "See every project with its sandboxes and issues."
+	"perm_projects_desc": "See every project with its sandboxes and issues.",
+	"admin_projects_sandbox_link": "Sandboxes of {project}: {summary}",
+	"admin_projects_issues_link": "Issues of {project}: {summary}"
 }

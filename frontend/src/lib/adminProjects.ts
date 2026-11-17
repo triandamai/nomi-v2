@@ -46,7 +46,7 @@ export const phaseLabel = (phase: SandboxPhase) => (PHASES[phase] ?? PHASES.idle
 const ACTIVE: SandboxPhase[] = ['running', 'waking'];
 
 export function sandboxSummary(project: AdminProject): string {
-	if (!project.sandbox_phase && project.sandbox_records === 0) return m.admin_projects_no_sandbox();
+	if (project.sandbox_records === 0) return project.sandbox_phase ? phaseLabel(project.sandbox_phase) : m.admin_projects_no_sandbox();
 	const active = project.sandbox_phase && ACTIVE.includes(project.sandbox_phase) ? 1 : 0;
 	return project.sandbox_records === 1 ? m.admin_projects_sandbox_summary_one({ active }) : m.admin_projects_sandbox_summary({ active, count: project.sandbox_records });
 }

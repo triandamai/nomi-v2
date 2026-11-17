@@ -35,6 +35,18 @@ describe('admin: projects', () => {
 		expect(link(root, '/admin/projects/p2/issues')?.textContent).toContain('No issues');
 	});
 
+	it('names the project in each link, for screen readers', () => {
+		const root = page(Projects, { projects: [project()], q: '' });
+		expect(link(root, '/admin/sandboxes?project=p1')?.getAttribute('aria-label')).toContain('roti-pagi');
+		expect(link(root, '/admin/projects/p1/issues')?.getAttribute('aria-label')).toContain('roti-pagi');
+	});
+
+	it('says a sandbox is on its way while its first one is being made', () => {
+		const root = page(Projects, { projects: [project({ sandbox_phase: 'waking', sandbox_records: 0 })], q: '' });
+		expect(link(root, '/admin/sandboxes?project=p1')?.textContent).toContain('Waking up');
+		expect(link(root, '/admin/sandboxes?project=p1')?.textContent).not.toContain('0 records');
+	});
+
 	it('says so when the projects couldn’t be read', () => {
 		expect(text(page(Projects, { projects: null, q: '' }))).toContain('The projects couldn’t be loaded.');
 	});
@@ -45,13 +57,15 @@ describe('admin: sandboxes', () => {
 
 	it('lists every record whatever its state, and which is the live one', () => {
 		const root = page(Sandboxes, {
-			sandboxes: [record({}), record({ id: 'r2', sandbox_id: 'box-0', state: 'starting', phase: 'waking' }), record({ id: 'r3', sandbox_id: 'box-x', state: 'stopped', phase: 'stopped', current: false, ended_at: '2026-11-14T10:00:00Z' }), record({ id: 'r4', sandbox_id: 'box-y', state: 'gone', phase: 'idle', current: false })],
+			sandboxes: [record({}), record({ id: 'r2', sandbox_id: 'box-0', state: 'starting', phase: 'waking' }), record({ id: 'r3', sandbox_id: 'box-x', state: 'running', phase: 'running', current: false, ended_at: '2026-11-14T10:00:00Z' }), record({ id: 'r5', sandbox_id: 'box-z', state: 'stopped', phase: 'stopped' }), record({ id: 'r4', sandbox_id: 'box-y', state: 'gone', phase: 'idle', current: false })],
 			project: 'p1',
 		});
 		for (const label of ['Running', 'Waking up', 'Stopped', 'Idle', 'box-1', 'box-x']) expect(text(root)).toContain(label);
 		expect(text(root)).toContain('Live');
 		expect(text(root)).toContain('Ended');
 		expect(text(root)).toContain('Showing roti-pagi');
+		const endedRow = [...root.querySelectorAll('tr')].find((row) => row.textContent?.includes('box-x'))!;
+		expect(endedRow.querySelector('[data-phase]')?.getAttribute('data-phase'), 'an ended record isn’t shown as running').toBe('ended');
 		expect(link(root, '/admin/sandboxes')).not.toBeNull();
 	});
 
