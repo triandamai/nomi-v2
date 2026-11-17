@@ -2,6 +2,7 @@
 //! versions stay as they were, and a version remembers where it was published.
 
 use nomi_agent_core::design_artifact::{self, DesignArtifact};
+use nomi_agent_core::design_draft;
 use nomi_agent_core::static_publish::{self, Published};
 use serde_json::json;
 use sqlx::PgPool;
@@ -108,4 +109,40 @@ async fn versions_are_listed_oldest_first_each_with_its_own_unguessable_name(poo
     assert!(content.contains("Bread, daily"));
     assert_eq!(design_artifact::file_by_token(&mut conn, &listed[1].preview_token, "nope.css").await.unwrap(), None);
     assert_eq!(design_artifact::file_by_token(&mut conn, "0".repeat(design_artifact::PREVIEW_TOKEN_CHARS).as_str(), "index.html").await.unwrap(), None);
+}
+
+fn file(path: &str, content: &str) -> design_artifact::ArtifactFile {
+    design_artifact::ArtifactFile { path: path.into(), content: content.into() }
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_draft_keeps_the_latest_content_of_each_file(pool: PgPool) {
+    let (session_id, _) = chat(&pool).await;
+    let mut conn = pool.acquire().await.unwrap();
+    design_draft::stage(&mut conn, session_id, "editorial", &[file("a.css", "1")]).await.unwrap();
+    design_draft::stage(&mut conn, session_id, "editorial", &[file("a.css", "2"), file("b.css", "b")]).await.unwrap();
+    let mut draft = design_draft::draft(&mut conn, session_id, "editorial").await.unwrap();
+    draft.sort_by(|x, y| x.path.cmp(&y.path));
+    assert_eq!(draft, vec![file("a.css", "2"), file("b.css", "b")]);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn drafts_are_per_direction_and_cleared_on_request(pool: PgPool) {
+    let (session_id, _) = chat(&pool).await;
+    let mut conn = pool.acquire().await.unwrap();
+    design_draft::stage(&mut conn, session_id, "editorial", &[file("a.css", "1")]).await.unwrap();
+    assert_eq!(design_draft::draft(&mut conn, session_id, "brutalist").await.unwrap(), vec![]);
+    design_draft::stage(&mut conn, session_id, "editorial", &[file("late.css", "2")]).await.unwrap();
+    design_draft::clear(&mut conn, session_id, "editorial", &["a.css".to_string()]).await.unwrap();
+    assert_eq!(design_draft::draft(&mut conn, session_id, "editorial").await.unwrap(), vec![file("late.css", "2")], "only what became a version is dropped");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn deleting_the_chat_takes_its_drafts_with_it(pool: PgPool) {
+    let (session_id, _) = chat(&pool).await;
+    let mut conn = pool.acquire().await.unwrap();
+    design_draft::stage(&mut conn, session_id, "editorial", &[file("a.css", "1")]).await.unwrap();
+    sqlx::query("DELETE FROM sessions WHERE id = $1").bind(session_id).execute(&pool).await.unwrap();
+    let left: i64 = sqlx::query_scalar("SELECT count(*) FROM design_preview_drafts").fetch_one(&pool).await.unwrap();
+    assert_eq!(left, 0);
 }

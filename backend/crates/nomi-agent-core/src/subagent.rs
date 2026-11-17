@@ -55,6 +55,12 @@ pub trait SubAgent: Send + Sync {
         false
     }
 
+    /// What the agent is told after its response hit the output limit and was dropped: how to
+    /// carry on in smaller pieces with its own tools. Koda's advice unless an agent has its own.
+    fn cut_off_hint(&self) -> &'static str {
+        crate::prompts::CUT_OFF_RETRY
+    }
+
     /// When `true`, `run_agent_turn` folds the user's currently stored personality (if any)
     /// into the system prompt for this turn. See `nomi_agent_core::personality`.
     fn uses_personality(&self) -> bool {
