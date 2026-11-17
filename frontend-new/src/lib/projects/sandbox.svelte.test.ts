@@ -34,6 +34,29 @@ afterEach(() => {
 const count = (path: string, method = 'GET') => requests.filter((one) => one.path.split('?')[0] === path && one.method === method).length;
 
 describe('the sandbox runtime', () => {
+	it('reopening a project whose sandbox stopped, or is still stopping, wakes it and says so', async () => {
+		for (const phase of ['stopped', 'stopping']) {
+			requests = [];
+			// The backend still answers with where the sandbox is until its worker picks the start up.
+			status = { ...status, state: phase, phase, preview_url: null };
+			const runtime = new SandboxRuntime('p1');
+			await runtime.start();
+			expect(count('start', 'POST'), phase).toBe(1);
+			expect(runtime.phase, `${phase}: it was asked to start, so it is waking`).toBe('waking');
+			await vi.advanceTimersByTimeAsync(5_000);
+			expect(runtime.phase, `${phase}: still waking on the next read`).toBe('waking');
+			expect(count('start', 'POST'), phase).toBe(1);
+			status = { ...status, state: 'running', phase: 'running', preview_url: SECRET };
+			await vi.advanceTimersByTimeAsync(5_000);
+			expect(runtime.phase, phase).toBe('running');
+			// Stopped later (it idled out): that is shown as it is, not as waking.
+			status = { ...status, state: 'stopped', phase: 'stopped', preview_url: null };
+			await vi.advanceTimersByTimeAsync(5_000);
+			expect(runtime.phase, phase).toBe('stopped');
+			runtime.stop();
+		}
+	});
+
 	it('shows a running sandbox’s preview and keeps it awake while open', async () => {
 		const runtime = new SandboxRuntime('p1');
 		await runtime.start();

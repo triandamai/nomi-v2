@@ -34,6 +34,9 @@ const POLL_MS = 5_000;
  */
 export const SANDBOX_CHECK_IN = 'runtime?runtime=sandbox';
 
+/** The backend's phases for a sandbox that isn't running or on its way up: opening the project wakes it. */
+const AT_REST: SandboxPhase[] = ['idle', 'stopped', 'stopping'];
+
 /** The only scheme a preview address may have: it goes straight into an iframe's `src`. */
 const PREVIEW_PROTOCOL = 'https:';
 
@@ -70,6 +73,11 @@ export class SandboxRuntime {
 	previewUrl = $state<string | null>(null);
 	/** A sandbox preview is a public address, not a port inside the browser. */
 	previewPort = $state<number | null>(null);
+	/**
+	 * The preview is framed without credentials: the project page is cross-origin isolated, and the
+	 * sandbox's address sends no isolation headers of its own, so the browser refuses it otherwise.
+	 */
+	readonly anonymousFrame = true;
 	log = $state('');
 	/** The sandbox's files live on the backend; the page lists them from its own snapshot. */
 	files = $state<ManifestEntry[]>([]);
@@ -81,6 +89,11 @@ export class SandboxRuntime {
 	#projectId: string;
 	#stopped = false;
 	#started = false;
+	/**
+	 * A start was asked for and the backend hasn't moved yet: it still answers with where the
+	 * sandbox is (stopped, stopping, not created) until its worker picks the start up.
+	 */
+	#asked = false;
 	#offset = 0;
 	#heartbeat: ReturnType<typeof setInterval> | null = null;
 	#poll: ReturnType<typeof setInterval> | null = null;
@@ -99,7 +112,8 @@ export class SandboxRuntime {
 		try {
 			const status = await this.#refresh();
 			// Opening the project wakes its sandbox if it is asleep or not yet created.
-			if (status && (status.phase === 'idle' || status.phase === 'stopped' || status.state === 'none')) {
+			// One that is still stopping (the project was closed a moment ago) starts again once it has stopped.
+			if (status && (AT_REST.includes(status.phase) || status.state === 'none')) {
 				this.phase = 'waking';
 				await this.#command('start');
 			}
@@ -161,6 +175,7 @@ export class SandboxRuntime {
 	async refreshRelay() {}
 
 	async #command(action: 'start' | 'stop') {
+		this.#asked = action === 'start';
 		await projectApi(this.#projectId, `sandbox/${action}`, { method: 'POST' });
 		await this.#refresh();
 	}
@@ -192,7 +207,9 @@ export class SandboxRuntime {
 		// A running sandbox whose install or dev server failed still runs Koda's commands; the page
 		// shows why its preview is missing (and Retry tries the preview again).
 		const previewFailed = status.phase === 'running' && !this.previewUrl && !!status.error;
-		this.phase = previewFailed ? 'failed' : toRuntimePhase(status.phase, this.previewUrl);
+		// The backend has moved on from where the sandbox rested: what it says from here on is shown as it is.
+		if (!AT_REST.includes(status.phase)) this.#asked = false;
+		this.phase = previewFailed ? 'failed' : this.#asked ? 'waking' : toRuntimePhase(status.phase, this.previewUrl);
 		this.error = status.phase === 'error' || previewFailed ? (status.error ?? '') : null;
 	}
 
