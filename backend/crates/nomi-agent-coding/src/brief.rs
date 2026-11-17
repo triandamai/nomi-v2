@@ -9,6 +9,7 @@ use nomi_agent_core::plans::{latest_plan_by, open_checklist_items};
 use nomi_llm::{ContentBlock, LlmMessage, LlmRole};
 
 use crate::guides;
+use nomi_agent_core::sandbox_ops::SandboxOps;
 use nomi_agent_core::relay_ops::{RelayEnv, RelayOps, RelayPackages, DEFAULT_SDK_PACKAGE, DEFAULT_SDK_VERSION};
 
 /// More files than this are summarised as a count: list_files shows them all.
@@ -153,6 +154,20 @@ fn design_section(handoff: &str, artifact_version: i32, files: &[nomi_agent_core
     section
 }
 
+/// The guides put in front of Koda, in order: the stack's, then how the preview runs (and, when
+/// the project's commands run in a sandbox, how that differs: the preview guide stays, as a sandbox
+/// project can go back to the browser), then Relay's on a Relay project.
+pub(crate) fn guide_topics(stack_guide: &'static str, on_relay: bool, in_sandbox: bool) -> Vec<&'static str> {
+    let mut topics = vec![stack_guide, "preview"];
+    if in_sandbox {
+        topics.push("sandbox");
+    }
+    if on_relay {
+        topics.push("relay");
+    }
+    topics
+}
+
 pub async fn task_brief(
     conn: &mut PoolConnection<Postgres>,
     s3: Option<&nomi_storage::S3Config>,
@@ -160,6 +175,7 @@ pub async fn task_brief(
     user_id: Uuid,
     messages: &[LlmMessage],
     relay: &dyn RelayOps,
+    sandbox: &dyn SandboxOps,
 ) -> Option<String> {
     let project_id = project_for(conn, session_id, user_id, messages).await?;
     let (name, stack, files_version, checked_version, check_ok, check_output): (String, String, i64, Option<i64>, Option<bool>, Option<String>) =
@@ -276,11 +292,8 @@ The person stored these for the published app, read on the server from the envir
     let packages = relay.packages().await;
 
     let stack_guide = guides::guide_for_stack(&stack).unwrap_or("sveltekit");
-    let mut topics = vec![stack_guide, "preview"];
-    if on_relay {
-        topics.push("relay");
-    }
-    for topic in topics {
+    let in_sandbox = sandbox.uses_sandbox(project_id).await;
+    for topic in guide_topics(stack_guide, on_relay, in_sandbox) {
         if let Some((_, _, content)) = guides::GUIDES.iter().find(|(name, _, _)| *name == topic) {
             let content = if topic == "relay" { with_packages(content, &packages) } else { content.to_string() };
             brief.push_str(&format!("## Guide: {topic} (already read for you)\n{content}\n\n"));
@@ -352,6 +365,24 @@ mod package_tests {
         let section = relay_section(&StartingRelay, Uuid::new_v4(), Uuid::new_v4()).await;
         assert!(section.contains("The dev backend is being set up in the background right now"), "{section}");
         assert!(!section.contains("Couldn't read the dev backend"), "{section}");
+    }
+}
+
+#[cfg(test)]
+mod guide_topic_tests {
+    use super::*;
+
+    #[test]
+    fn a_browser_project_gets_its_stack_and_the_preview_guide() {
+        assert_eq!(guide_topics("sveltekit", false, false), vec!["sveltekit", "preview"]);
+        assert_eq!(guide_topics("react", true, false), vec!["react", "preview", "relay"]);
+    }
+
+    #[test]
+    fn a_project_running_in_a_sandbox_also_gets_the_sandbox_guide_after_the_preview_one() {
+        // The preview guide stays: a sandbox project can go back to the browser, so its rules still hold.
+        assert_eq!(guide_topics("sveltekit", false, true), vec!["sveltekit", "preview", "sandbox"]);
+        assert_eq!(guide_topics("vue", true, true), vec!["vue", "preview", "sandbox", "relay"]);
     }
 }
 
