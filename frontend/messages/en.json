@@ -3664,5 +3664,6 @@
 	"studio_not_published": "Not published outside Nomi: {reason}",
 	"studio_publish_again": "Publish again",
 	"studio_publishing": "Publishing…",
-	"studio_publish_failed": "That version could not be published again. Try again."
+	"studio_publish_failed": "That version could not be published again. Try again.",
+	"chat_open_design_studio": "Open the Design Studio"
 }

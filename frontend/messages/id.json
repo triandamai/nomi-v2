@@ -3664,5 +3664,6 @@
 	"studio_not_published": "Belum dipublikasikan di luar Nomi: {reason}",
 	"studio_publish_again": "Publikasikan lagi",
 	"studio_publishing": "Memublikasikan…",
-	"studio_publish_failed": "Versi itu tidak bisa dipublikasikan lagi. Coba lagi."
+	"studio_publish_failed": "Versi itu tidak bisa dipublikasikan lagi. Coba lagi.",
+	"chat_open_design_studio": "Buka Design Studio"
 }

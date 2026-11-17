@@ -47,6 +47,12 @@ describe('chat: load', () => {
 		expect(await settleThrow(() => load(chat()))).toMatchObject({ thrown: { status: 500 } });
 	});
 
+	it('knows how many design previews the chat has, for the way into the Design Studio', async () => {
+		expect(((await load(chat())) as Record<string, any>).designVersions).toBe(0);
+		backend((path) => (path === '/api/sessions/s1/design' ? json({ previews: [{ version: 1 }, { version: 2 }], feedback: [], approval: null }) : undefined));
+		expect(((await load(chat())) as Record<string, any>).designVersions).toBe(2);
+	});
+
 	it('names an unknown chat “new chat” and copes without its menu data', async () => {
 		backend((path) => (path === '/api/sessions' || path === '/api/projects' || path === '/api/orgs' || path === '/api/personality/history' ? json({}, 500) : undefined));
 		const data = (await load(chat())) as Record<string, any>;
