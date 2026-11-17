@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { ArrowUp, AtSign, ChevronDown, Cpu, Mic, Plus, Square } from '@lucide/svelte';
+	import type { Snippet } from 'svelte';
+	import { ArrowUp, AtSign, ChevronDown, CircleAlert, Cpu, Mic, Plus, Square } from '@lucide/svelte';
 	import { m } from '$lib/paraglide/messages';
 	import Icon from '../foundations/Icon.svelte';
 	import MentionPicker from '../chat/MentionPicker.svelte';
@@ -14,6 +15,10 @@
 	// its 300 width where the pen runs it the screen's width (it's the old app's twin).
 	// It follows the twin Mobile / Composer and adds the picker, the toolbar and a guard: Stop comes
 	// in under the finger that just sent, so a double tap on Send doesn't also stop the reply.
+	// Files (Mobile Chat — Attachments, steps 9–16): `files` over the input row (the chips, 6 apart),
+	// then `notice` (the model fix line) or, while Send is `blocked`, the Notice line saying why (a
+	// danger 12 icon and the caption, [0,4]); Send then shows, off. With files ready (`attached`) a
+	// message may go without text.
 	type Props = {
 		value?: string;
 		placeholder: string;
@@ -29,11 +34,16 @@
 		onmodel?: () => void;
 		/** "@ Crew": the page's sheet of who to address. */
 		oncrew?: () => void;
+		files?: Snippet;
+		notice?: Snippet;
+		attached?: boolean;
+		/** Send is off: why, in the Notice line, or `true` to wait silently. */
+		blocked?: string | true;
 	};
-	let { value = $bindable(''), placeholder, streaming = false, crew = [], model, field = $bindable(), onsend, onstop, onattach, onrecord, onmodel, oncrew }: Props = $props();
+	let { value = $bindable(''), placeholder, streaming = false, crew = [], model, field = $bindable(), onsend, onstop, onattach, onrecord, onmodel, oncrew, files, notice, attached = false, blocked }: Props = $props();
 
 	const id = $props.id();
-	const ready = $derived(value.trim() !== '');
+	const ready = $derived(value.trim() !== '' || attached);
 	let focused = $state(false);
 	const writing = $derived(focused || ready);
 
@@ -63,7 +73,7 @@
 	const SETTLE_MS = 500;
 	let sentAt = -Infinity;
 	function send() {
-		if (!ready) return;
+		if (!ready || blocked) return;
 		onsend(value.trim());
 		value = '';
 		mention = null;
@@ -106,6 +116,15 @@
 		</div>
 	{/if}
 	<div data-phone-composer class="flex w-full flex-col gap-2 border-t border-border bg-bg px-3 pt-1.75 pb-2">
+		{@render files?.()}
+		{#if notice}
+			{@render notice()}
+		{:else if typeof blocked === 'string'}
+			<p id="{id}-blocked" class="flex items-center gap-1.5 px-1">
+				<span class="inline-flex shrink-0 text-danger"><Icon icon={CircleAlert} size={12} /></span>
+				<span class="text-caption text-text-2">{blocked}</span>
+			</p>
+		{/if}
 		<div class="flex items-end gap-2">
 			{#if onattach}
 				<button type="button" aria-label={m.composer_attach()} class="inline-flex size-9.5 shrink-0 cursor-pointer items-center justify-center rounded-full bg-surface-2 text-text-2 outline-offset-1" onclick={onattach}>
@@ -139,6 +158,10 @@
 			{#if streaming && onstop}
 				<button type="button" aria-label={m.reply_stop()} class="inline-flex size-9.5 shrink-0 cursor-pointer items-center justify-center rounded-full bg-text text-bg outline-offset-1" onclick={stop}>
 					<Icon icon={Square} size={14} />
+				</button>
+			{:else if blocked}
+				<button type="button" disabled aria-disabled="true" aria-describedby={typeof blocked === 'string' ? `${id}-blocked` : undefined} aria-label={m.composer_send()} class="inline-flex size-9.5 shrink-0 cursor-default items-center justify-center rounded-full bg-surface-2 text-text-3">
+					<Icon icon={ArrowUp} size={20} />
 				</button>
 			{:else if ready}
 				<button type="button" aria-label={m.composer_send()} class="inline-flex size-9.5 shrink-0 cursor-pointer items-center justify-center rounded-full bg-accent text-accent-ink outline-offset-1" onclick={send}>
