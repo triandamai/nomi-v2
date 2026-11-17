@@ -321,7 +321,17 @@ pub fn artifact_input_schema() -> Value {
                     "required": ["id"]
                 }
             },
-            "resolves": crate::design_feedback::resolves_schema()
+            "resolves": crate::design_feedback::resolves_schema(),
+            "finished": {
+                "type": "boolean",
+                "description": "false keeps these files in a draft the person doesn't see yet, to send the rest in later calls; \
+                                true (the default) saves the version from the last version of this direction, the draft and these files"
+            },
+            "remove": {
+                "type": "array",
+                "description": "Paths to drop from the last version when this call finishes it",
+                "items": {"type": "string"}
+            }
         },
         "required": ["direction_id", "title", "files"]
     })
@@ -672,5 +682,13 @@ mod tests {
         assert_eq!(schema["required"], json!(["direction_id", "title", "files"]));
         assert_eq!(schema["properties"]["files"]["maxItems"].as_u64(), Some(MAX_FILES as u64));
         assert_eq!(schema["properties"]["elements"]["items"]["properties"]["kind"]["enum"], json!(["section", "component", "element"]));
+    }
+
+    #[test]
+    fn the_tool_schema_offers_finished_and_remove() {
+        let schema = artifact_input_schema();
+        assert_eq!(schema["properties"]["finished"]["type"], "boolean");
+        assert_eq!(schema["properties"]["remove"]["items"]["type"], "string");
+        assert_eq!(schema["required"], json!(["direction_id", "title", "files"]), "both are optional");
     }
 }
