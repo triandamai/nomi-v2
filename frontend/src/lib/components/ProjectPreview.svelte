@@ -59,6 +59,11 @@
 	// What the dev server is printing (installing, starting), passed down to the wait screen / terminal.
 	const logText = $derived(runtime ? runtime.log.trimEnd().split('\n').slice(-500).join('\n') : '');
 
+	// A sandbox's preview comes from another site that sends no isolation headers, and this page
+	// is cross-origin isolated: the browser only frames it without credentials (its own storage,
+	// kept apart). The address carries its access token, so nothing is lost.
+	const frameCredentials = $derived<Record<string, boolean>>(runtime?.anonymousFrame ? { credentialless: true } : {});
+
 	/** Loads the running preview again. */
 	export function reload() {
 		if (frame && runtime?.previewUrl) frame.src = runtime.previewUrl;
@@ -96,9 +101,9 @@
 {:else if runtime.previewUrl}
 	<div class="preview">
 		{#if device === 'phone'}
-			<div class="preview__phone"><iframe bind:this={frame} title={m.project_preview_title()} src={runtime.previewUrl} class="preview__device" allow="cross-origin-isolated; clipboard-write"></iframe></div>
+			<div class="preview__phone"><iframe bind:this={frame} title={m.project_preview_title()} src={runtime.previewUrl} class="preview__device" allow="cross-origin-isolated; clipboard-write" {...frameCredentials}></iframe></div>
 		{:else}
-			<iframe bind:this={frame} title={m.project_preview_title()} src={runtime.previewUrl} class="preview__frame" allow="cross-origin-isolated; clipboard-write"></iframe>
+			<iframe bind:this={frame} title={m.project_preview_title()} src={runtime.previewUrl} class="preview__frame" allow="cross-origin-isolated; clipboard-write" {...frameCredentials}></iframe>
 		{/if}
 	</div>
 {:else}
