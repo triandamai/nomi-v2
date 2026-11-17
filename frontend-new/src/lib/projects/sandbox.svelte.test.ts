@@ -43,16 +43,18 @@ describe('the sandbox runtime', () => {
 			await runtime.start();
 			expect(count('start', 'POST'), phase).toBe(1);
 			expect(runtime.phase, `${phase}: it was asked to start, so it is waking`).toBe('waking');
+			const reads = count('status');
 			await vi.advanceTimersByTimeAsync(5_000);
+			await vi.waitFor(() => expect(count('status')).toBeGreaterThan(reads));
 			expect(runtime.phase, `${phase}: still waking on the next read`).toBe('waking');
 			expect(count('start', 'POST'), phase).toBe(1);
 			status = { ...status, state: 'running', phase: 'running', preview_url: SECRET };
 			await vi.advanceTimersByTimeAsync(5_000);
-			expect(runtime.phase, phase).toBe('running');
+			await vi.waitFor(() => expect(runtime.phase, phase).toBe('running'));
 			// Stopped later (it idled out): that is shown as it is, not as waking.
 			status = { ...status, state: 'stopped', phase: 'stopped', preview_url: null };
 			await vi.advanceTimersByTimeAsync(5_000);
-			expect(runtime.phase, phase).toBe('stopped');
+			await vi.waitFor(() => expect(runtime.phase, phase).toBe('stopped'));
 			runtime.stop();
 		}
 	});
