@@ -683,7 +683,7 @@ async fn run_agent_turn_in_reply(
     // The members the person switched off take no work and answer no questions.
     let off = crate::personal_crew::disabled_agent_types(conn, user_id).await;
     if agent.can_delegate() {
-        let mut targets = registry.delegatable_agent_types(agent.agent_type().as_ref());
+        let mut targets = registry.delegation_targets_of(agent);
         targets.retain(|t| !off.contains(t));
         if !targets.is_empty() {
             tools.push(delegate_tool_definition(&targets));
@@ -1477,7 +1477,10 @@ async fn resolve_tool_batch_in_reply(
                     Some(t) if !crate::personal_crew::is_enabled(conn, user_id, target_agent).await => Some(crate::personal_crew::switched_off_result(&t.display_name())),
                     _ => None,
                 };
-                let mut rejection = switched_off.or_else(|| target.as_ref().and_then(|t| t.validate_delegation_task(task).err()));
+                // The tool only lists the members this agent may reach; a name outside them is refused.
+                let out_of_reach = (!agent.may_delegate_to(target_agent)).then(|| crate::prompts::DELEGATE_OUT_OF_REACH.replace("{agent}", target_agent));
+                let mut rejection =
+                    out_of_reach.or(switched_off).or_else(|| target.as_ref().and_then(|t| t.validate_delegation_task(task).err()));
                 // A build moves through the crew in a fixed order: a hand-over that comes too
                 // early goes back to the agent with what is still missing.
                 if rejection.is_none() {

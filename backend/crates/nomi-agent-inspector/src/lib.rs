@@ -334,6 +334,16 @@ impl SubAgent for InspectorAgent {
         Cow::Borrowed(INSPECTOR_AGENT_TYPE)
     }
 
+    /// A fix she found goes to Koda, once the person says yes (her prompt).
+    fn can_delegate(&self) -> bool {
+        true
+    }
+
+    /// Koda only: what she finds is a code change to make, never a plan or a design.
+    fn delegates_only_to(&self) -> Option<&'static [&'static str]> {
+        Some(&[nomi_agent_core::crew::CODING_AGENT_TYPE])
+    }
+
     fn intent_description(&self) -> Cow<'static, str> {
         Cow::Borrowed(
             "looking into a project's published or development app: is it up, why it errors or is slow, what its logs say, what's in its database",
@@ -402,6 +412,24 @@ mod tests {
         assert_eq!(rows[0], json!({"email": "a@b.c", "note": null}));
         assert_eq!(title.as_deref(), Some("Query results"));
         assert_eq!(source.as_deref(), Some("2 rows"));
+    }
+
+    #[test]
+    fn iris_can_hand_a_fix_to_koda_and_no_one_else_once_the_person_says_yes() {
+        let iris = InspectorAgent::new();
+        assert!(iris.can_delegate());
+        assert_eq!(iris.delegates_only_to(), Some(&[nomi_agent_core::crew::CODING_AGENT_TYPE][..]));
+        let prompt = iris.system_prompt();
+        for said in ["ask_user", "delegate_to_agent", "agent coding", "'Project <its id>: '", "Never hand it over without their yes"] {
+            assert!(prompt.contains(said), "her prompt says {said:?}");
+        }
+    }
+
+    #[test]
+    fn iris_names_the_publish_tool_rather_than_who_has_it() {
+        let prompt = InspectorAgent::new().system_prompt();
+        assert!(prompt.contains("publish_project") && prompt.contains("<suggest>Publish it</suggest>"), "{prompt}");
+        assert!(!prompt.contains("Rena publishes"));
     }
 
     #[test]
