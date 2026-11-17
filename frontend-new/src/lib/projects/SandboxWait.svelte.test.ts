@@ -15,7 +15,7 @@ describe('SandboxWait', () => {
 
 	it('shows what the sandbox is doing while it starts the app', async () => {
 		await render(SandboxWait, { phase: 'starting', log: 'npm install\nadded 212 packages\n', error: null, onretry: () => {} });
-		await expect.element(page.getByText('Starting the app')).toBeInTheDocument();
+		await expect.element(page.getByText('Starting the app', { exact: true })).toBeInTheDocument();
 		await expect.element(page.getByText('added 212 packages')).toBeInTheDocument();
 	});
 
