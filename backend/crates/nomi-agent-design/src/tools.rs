@@ -343,13 +343,7 @@ impl Tool for SavePreview {
         let version = design_artifact::save(&mut **conn, session_id, agent_session_id, user_id, directions_version, &artifact).await.map_err(unsaved)?;
 
         let request = PublishRequest { user_id, session_id, version, title: &artifact.manifest.title, files: &artifact.files };
-        let mut published = static_publish::publish(self.publisher.as_ref(), &request).await;
-        if let Ok(at) = &published {
-            if let Err(e) = static_publish::record(&mut **conn, session_id, version, at).await {
-                tracing::error!(error = %e, "design preview: its address couldn't be kept");
-                published = Err("its address couldn't be kept".to_string());
-            }
-        }
+        let published = static_publish::publish_and_record(&mut **conn, self.publisher.as_ref(), &request).await;
         let resolved = design_feedback::resolve(&mut **conn, session_id, version, &resolutions).await.map_err(|e| {
             tracing::error!(error = %e, "design preview: feedback couldn't be marked");
             format!("version {version} is saved, but the feedback it dealt with couldn't be marked")

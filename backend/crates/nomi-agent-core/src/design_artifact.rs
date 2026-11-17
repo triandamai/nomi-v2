@@ -378,13 +378,19 @@ pub struct StoredVersion {
     pub created_at: chrono::DateTime<chrono::Utc>,
     /// Where it was published last, when it was.
     pub published_url: Option<String>,
+    /// Why it isn't published, when its newest publish failed.
+    pub publish_error: Option<String>,
 }
 
 /// Every version of the chat's previews, oldest first.
 pub async fn list(conn: &mut PgConnection, session_id: Uuid) -> Result<Vec<StoredVersion>, sqlx::Error> {
-    let rows: Vec<(i32, sqlx::types::Json<Manifest>, String, chrono::DateTime<chrono::Utc>, Option<String>)> = sqlx::query_as(
+    type Row = (i32, sqlx::types::Json<Manifest>, String, chrono::DateTime<chrono::Utc>, Option<String>, Option<String>);
+    let rows: Vec<Row> = sqlx::query_as(
         "SELECT a.version, a.manifest, a.preview_token, a.created_at, \
-                (SELECT p.url FROM design_artifact_publications p WHERE p.artifact_id = a.id ORDER BY p.created_at DESC, p.id DESC LIMIT 1) \
+                (SELECT p.url FROM design_artifact_publications p WHERE p.artifact_id = a.id ORDER BY p.created_at DESC, p.id DESC LIMIT 1), \
+                (SELECT f.reason FROM design_artifact_publish_failures f WHERE f.artifact_id = a.id \
+                   AND f.created_at >= COALESCE((SELECT MAX(p.created_at) FROM design_artifact_publications p WHERE p.artifact_id = a.id), '-infinity') \
+                 ORDER BY f.created_at DESC, f.id DESC LIMIT 1) \
          FROM design_artifacts a WHERE a.session_id = $1 ORDER BY a.version",
     )
     .bind(session_id)
@@ -392,7 +398,14 @@ pub async fn list(conn: &mut PgConnection, session_id: Uuid) -> Result<Vec<Store
     .await?;
     Ok(rows
         .into_iter()
-        .map(|(version, manifest, preview_token, created_at, published_url)| StoredVersion { version, manifest: manifest.0, preview_token, created_at, published_url })
+        .map(|(version, manifest, preview_token, created_at, published_url, publish_error)| StoredVersion {
+            version,
+            manifest: manifest.0,
+            preview_token,
+            created_at,
+            published_url,
+            publish_error,
+        })
         .collect())
 }
 

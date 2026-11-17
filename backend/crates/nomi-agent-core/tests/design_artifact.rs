@@ -109,3 +109,62 @@ async fn versions_are_listed_oldest_first_each_with_its_own_unguessable_name(poo
     assert_eq!(design_artifact::file_by_token(&mut conn, &listed[1].preview_token, "nope.css").await.unwrap(), None);
     assert_eq!(design_artifact::file_by_token(&mut conn, "0".repeat(design_artifact::PREVIEW_TOKEN_CHARS).as_str(), "index.html").await.unwrap(), None);
 }
+
+fn publish_error_of(listed: &[design_artifact::StoredVersion], version: i32) -> Option<String> {
+    listed.iter().find(|v| v.version == version).unwrap().publish_error.clone()
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_failed_publish_is_listed_until_a_later_one_succeeds(pool: PgPool) {
+    let (session_id, user_id) = chat(&pool).await;
+    let mut conn = pool.acquire().await.unwrap();
+    design_artifact::save(&mut conn, session_id, Uuid::new_v4(), user_id, None, &preview("editorial", "Fresh at six")).await.unwrap();
+    assert!(static_publish::record_failure(&mut conn, session_id, 1, "publishing previews isn't set up").await.unwrap());
+    assert!(!static_publish::record_failure(&mut conn, session_id, 9, "nope").await.unwrap(), "there is no version 9");
+    let listed = design_artifact::list(&mut conn, session_id).await.unwrap();
+    assert_eq!(publish_error_of(&listed, 1).as_deref(), Some("publishing previews isn't set up"));
+    assert_eq!(listed[0].published_url, None);
+
+    static_publish::record(&mut conn, session_id, 1, &Published { provider: "fake".into(), url: "https://previews.example/a".into() }).await.unwrap();
+    let listed = design_artifact::list(&mut conn, session_id).await.unwrap();
+    assert_eq!(publish_error_of(&listed, 1), None, "the later success wins");
+    assert_eq!(listed[0].published_url.as_deref(), Some("https://previews.example/a"));
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_failure_after_a_success_keeps_the_address(pool: PgPool) {
+    let (session_id, user_id) = chat(&pool).await;
+    let mut conn = pool.acquire().await.unwrap();
+    design_artifact::save(&mut conn, session_id, Uuid::new_v4(), user_id, None, &preview("editorial", "Fresh at six")).await.unwrap();
+    static_publish::record(&mut conn, session_id, 1, &Published { provider: "fake".into(), url: "https://previews.example/a".into() }).await.unwrap();
+    static_publish::record_failure(&mut conn, session_id, 1, "Shipyard refused it").await.unwrap();
+    let listed = design_artifact::list(&mut conn, session_id).await.unwrap();
+    assert_eq!(listed[0].published_url.as_deref(), Some("https://previews.example/a"));
+    assert_eq!(publish_error_of(&listed, 1).as_deref(), Some("Shipyard refused it"));
+}
+
+struct Answers(Result<Published, String>);
+
+#[async_trait::async_trait]
+impl static_publish::StaticPublisher for Answers {
+    async fn publish(&self, _request: &static_publish::PublishRequest<'_>) -> Result<Published, String> {
+        self.0.clone()
+    }
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn publishing_records_what_happened(pool: PgPool) {
+    let (session_id, user_id) = chat(&pool).await;
+    let mut conn = pool.acquire().await.unwrap();
+    let saved = preview("editorial", "Fresh at six");
+    design_artifact::save(&mut conn, session_id, Uuid::new_v4(), user_id, None, &saved).await.unwrap();
+    let request = static_publish::PublishRequest { user_id, session_id, version: 1, title: "Fresh at six", files: &saved.files };
+
+    let failed = static_publish::publish_and_record(&mut conn, &Answers(Err("the service is down".into())), &request).await;
+    assert_eq!(failed.unwrap_err(), "the service is down");
+    assert_eq!(publish_error_of(&design_artifact::list(&mut conn, session_id).await.unwrap(), 1).as_deref(), Some("the service is down"));
+
+    let at = Published { provider: "fake".into(), url: "https://previews.example/a".into() };
+    assert_eq!(static_publish::publish_and_record(&mut conn, &Answers(Ok(at.clone())), &request).await.unwrap(), at);
+    assert_eq!(static_publish::latest(&mut conn, session_id, 1).await.unwrap(), Some(at));
+}
