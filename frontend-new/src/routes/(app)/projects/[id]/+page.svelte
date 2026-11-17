@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
-	import { Activity, ArrowDownUp, Cpu, Database, Download, Globe, History, Hourglass, KeyRound, Link, Lock, MemoryStick, MonitorX, Power, RefreshCw, Rocket, Settings, Trash2, UserMinus, Users } from '@lucide/svelte';
+	import { Activity, ArrowDownUp, ChevronLeft, ChevronRight, Coins, Cpu, Database, Download, Globe, History, Hourglass, KeyRound, Link, Lock, MemoryStick, MonitorX, Power, RefreshCw, Rocket, Settings, Trash2, UserMinus, Users } from '@lucide/svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { pageAction } from '$lib/pageAction';
 	import { clock as appClock } from '$lib/clock';
@@ -39,6 +39,10 @@
 	import Icon from '$lib/ds/foundations/Icon.svelte';
 	import Segmented from '$lib/ds/inputs/Segmented.svelte';
 	import { monitorStats, resourceRows, siteStats, sourceRows, trafficBars } from '$lib/projects/monitor';
+	import { usageView } from '$lib/projects/usage';
+	import { shiftMonth } from '$lib/admin/format';
+	import { getLocale } from '$lib/paraglide/runtime';
+	import type { ProjectUsage } from '$lib/adapters/api';
 	import type { Monitoring } from '$lib/server/workspace';
 	import type { MetricsRange } from '$lib/adapters/api';
 	import SubdomainField, { type SubdomainCheck } from '$lib/ds/projects/SubdomainField.svelte';
@@ -295,6 +299,27 @@
 		const timer = setInterval(() => !document.hidden && void loadMonitoring(asked), 30_000);
 		return () => clearInterval(timer);
 	});
+	// Tokens & cost: a month of what the crew used in the project's chats, loaded when the sheet opens.
+	let usageMonth = $state<string | null>(null);
+	let usage = $state<ProjectUsage | null>(null);
+	let usageFailed = $state(false);
+	let usageLoading = $state(false);
+	async function loadUsage(asked: string | null) {
+		usageMonth = asked;
+		usageLoading = true;
+		usageFailed = false;
+		const response = await fetch(`/projects/${project.id}/usage${asked ? `?month=${asked}` : ''}`).catch(() => null);
+		// A slow answer for a month the person already left is dropped.
+		if (asked !== usageMonth) return;
+		usageLoading = false;
+		if (response?.ok) usage = (await response.json()) as ProjectUsage;
+		else usageFailed = true;
+	}
+	$effect(() => {
+		if (sheet !== 'usage') return;
+		untrack(() => void loadUsage(null));
+	});
+	const usageShown = $derived(usage ? usageView(usage, getLocale()) : null);
 	const stats = $derived(monitoring?.metrics ? monitorStats(monitoring.metrics) : null);
 	// A site (Landing page WUiji, step 5) is watched by its visits: they lead, with the page load, and
 	// the bars count them. An app leads with its requests and errors.
@@ -504,7 +529,7 @@
 	let view = $state<PaneView>('preview');
 	let device = $state<'desktop' | 'phone'>('desktop');
 	let reloads = $state(0);
-	let sheet = $state<'deployments' | 'domain' | 'monitor' | 'database' | 'settings' | 'people' | 'environment' | null>(null);
+	let sheet = $state<'deployments' | 'domain' | 'monitor' | 'usage' | 'database' | 'settings' | 'people' | 'environment' | null>(null);
 	// An opened sheet takes the focus, so Escape (and a screen reader) is in it at once.
 	let sheetBox = $state<HTMLElement>();
 	$effect(() => {
@@ -756,7 +781,7 @@
 			{status}
 			space={project.org_name}
 			url={liveUrl ?? undefined}
-			nav={[...(deploy ? [{ id: 'deployments', label: m.workspace_deployments(), icon: History }] : []), ...(data.address ? [{ id: 'domain', label: m.workspace_domain(), icon: Link }] : []), ...(deploy ? [{ id: 'monitor', label: m.workspace_monitor(), icon: Activity }] : []), ...(data.database ? [{ id: 'database', label: m.workspace_database(), icon: Database }] : []), { id: 'settings', label: m.project_settings(), icon: Settings }]}
+			nav={[...(deploy ? [{ id: 'deployments', label: m.workspace_deployments(), icon: History }] : []), ...(data.address ? [{ id: 'domain', label: m.workspace_domain(), icon: Link }] : []), ...(deploy ? [{ id: 'monitor', label: m.workspace_monitor(), icon: Activity }] : []), { id: 'usage', label: m.workspace_usage(), icon: Coins }, ...(data.database ? [{ id: 'database', label: m.workspace_database(), icon: Database }] : []), { id: 'settings', label: m.project_settings(), icon: Settings }]}
 			navLabel={m.workspace_tools()}
 			active={sheet ?? undefined}
 			onnav={(id) => (sheet = sheet === id ? null : (id as typeof sheet))}
@@ -1177,6 +1202,67 @@
 							</section>
 						</div>
 					{/if}
+				</WorkspaceSheet>
+			</div>
+		{/if}
+		{#if sheet === 'usage'}
+			<div bind:this={sheetBox} class="absolute inset-y-0 right-0 flex w-180 max-w-full">
+				<WorkspaceSheet icon={Coins} title={m.workspace_usage()} meta={project.name} onclose={() => (sheet = null)}>
+					<div class="flex flex-col gap-4.5">
+						<p class="text-ui text-text-2">{m.usage_sheet_scope()}</p>
+						{#if usageFailed}
+							<EmptyState icon={Coins} title={m.usage_sheet_failed_title()} body={m.usage_sheet_failed_body()} />
+							<div><Button variant="secondary" label={m.usage_sheet_retry()} onclick={() => loadUsage(usageMonth)} /></div>
+						{:else if !usage || !usageShown}
+							<p class="text-ui text-text-3" role="status">{m.usage_sheet_loading()}</p>
+						{:else}
+							{@const shown = usageShown}
+							<div class="flex items-center gap-2">
+								<IconButton icon={ChevronLeft} label={m.usage_sheet_prev()} onclick={() => loadUsage(shiftMonth(usage!.month, -1))} />
+								<span class="min-w-36 text-center text-ui font-medium text-text" aria-live="polite">{shown.month}</span>
+								<IconButton icon={ChevronRight} label={m.usage_sheet_next()} disabled={shown.current} onclick={() => loadUsage(shiftMonth(usage!.month, 1))} />
+							</div>
+							<div class={['flex flex-col gap-4.5', usageLoading && 'opacity-60']} aria-busy={usageLoading}>
+								<div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
+									<MonitorStat label={m.usage_sheet_spend()} value={shown.spend} note={shown.spendUsd} notMeasured="" />
+									<MonitorStat label={m.usage_sheet_tokens()} value={shown.tokens} notMeasured="" />
+									<MonitorStat label={m.usage_sheet_calls()} value={shown.calls} notMeasured="" />
+								</div>
+								{#if shown.ownKey}<p class="text-ui text-text-3">{m.usage_sheet_own_key({ tokens: shown.ownKey })}</p>{/if}
+								{#if shown.empty}
+									<EmptyState icon={Coins} title={m.usage_sheet_empty_title({ month: shown.month })} body={m.usage_sheet_empty_body()} />
+								{:else}
+									<section class="flex flex-col gap-2">
+										<h3 class="font-mono text-label tracking-label text-text-3 uppercase">{m.usage_sheet_by_model()}</h3>
+										<ul class="flex flex-col">
+											{#each shown.models as row (row.key)}
+												<li class="flex items-center gap-3 border-b border-border py-2 last:border-b-0">
+													<span class="min-w-0 flex-1 truncate text-ui text-text">{row.label}{#if row.ownKey}<span class="ml-2 rounded-sm px-1.5 py-0.5 font-mono text-label text-text-3 outline -outline-offset-1 outline-border">{m.usage_sheet_own_key_tag()}</span>{/if}</span>
+													<span class="w-16 text-right font-mono text-label text-text-2">{row.tokens}</span>
+													<span class="w-20 text-right font-mono text-label text-text">{row.spend}</span>
+												</li>
+											{/each}
+										</ul>
+									</section>
+									{#if shown.people?.length}
+										<section class="flex flex-col gap-2">
+											<h3 class="font-mono text-label tracking-label text-text-3 uppercase">{m.usage_sheet_by_person()}</h3>
+											<ul class="flex flex-col">
+												{#each shown.people as row (row.id)}
+													<li class="flex items-center gap-3 border-b border-border py-2 last:border-b-0">
+														<span class="min-w-0 flex-1 truncate text-ui text-text">{row.name ?? m.usage_sheet_unknown_person()}</span>
+														<span class="w-16 text-right font-mono text-label text-text-2">{row.tokens}</span>
+														<span class="w-20 text-right font-mono text-label text-text">{row.spend}</span>
+													</li>
+												{/each}
+											</ul>
+										</section>
+									{/if}
+								{/if}
+								<p class="font-mono text-label text-text-3">{shown.since ? m.usage_sheet_counted_since({ date: shown.since }) : m.usage_sheet_counting_starts()}</p>
+							</div>
+						{/if}
+					</div>
 				</WorkspaceSheet>
 			</div>
 		{/if}
