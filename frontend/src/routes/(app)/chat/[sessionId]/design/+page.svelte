@@ -23,6 +23,7 @@
 		type FeedbackScope,
 		type Selection,
 		type StudioApproval,
+		type StudioPublishOutcome,
 		type StudioFeedback,
 		type StudioElement,
 		type StudioElementKind,
@@ -203,6 +204,32 @@
 		}
 	}
 
+	// Publishing a version again, after it couldn't be: what came of it here wins over the page's data.
+	let publishedHere = $state<Record<number, StudioPublishOutcome>>({});
+	let publishing = $state(false);
+	let publishAgainError = $state('');
+	const publishedUrl = $derived(current ? (publishedHere[current.version]?.published_url ?? current.published_url) : null);
+	const publishError = $derived(current ? (publishedHere[current.version] ? publishedHere[current.version].publish_error : (current.publish_error ?? null)) : null);
+
+	async function publishAgain() {
+		if (!current || publishing) return;
+		const version = current.version;
+		publishing = true;
+		publishAgainError = '';
+		try {
+			const response = await fetch(`/chat/${data.sessionId}/design/publish`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ version }) });
+			if (!response.ok) {
+				publishAgainError = m.studio_publish_failed();
+				return;
+			}
+			publishedHere = { ...publishedHere, [version]: (await response.json()) as StudioPublishOutcome };
+		} catch {
+			publishAgainError = m.studio_publish_failed();
+		} finally {
+			publishing = false;
+		}
+	}
+
 	// Asking Sora for a new version: a message in the chat, so the request and her answer are there.
 	let ask = $state('');
 	let asking = $state(false);
@@ -296,14 +323,24 @@
 				{:else}
 					<button type="button" class="studio__tool studio__tool--wide studio__tool--primary" onclick={() => (confirming = true)}>{m.studio_approve()}</button>
 				{/if}
-				{#if current.published_url}
-					<a class="studio__tool studio__tool--wide" href={current.published_url} target="_blank" rel="noopener noreferrer">
+				{#if publishedUrl}
+					<a class="studio__tool studio__tool--wide" href={publishedUrl} target="_blank" rel="noopener noreferrer">
 						<Icon icon={ExternalLink} size={18} /><span>{m.studio_open_published()}</span>
 					</a>
 				{/if}
 			</div>
 		{/if}
 	</header>
+
+	{#if current && publishError}
+		<div class="studio__unpublished" role="status">
+			<p class="md-body-small">{m.studio_not_published({ reason: publishError })}</p>
+			{#if publishAgainError}<p class="md-body-small studio__error" role="alert">{publishAgainError}</p>{/if}
+			<button type="button" class="studio__tool studio__tool--wide" disabled={publishing} onclick={publishAgain}>
+				{publishing ? m.studio_publishing() : m.studio_publish_again()}
+			</button>
+		</div>
+	{/if}
 
 	{#if current && confirming}
 		<div class="studio__confirm" role="alertdialog" aria-labelledby="studio-approve-question">
@@ -763,6 +800,22 @@
 		outline: 2px solid var(--md-sys-color-primary);
 		outline-offset: -1px;
 	}
+	.studio__unpublished {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 8px 12px;
+		padding: 8px 16px;
+		border-bottom: 1px solid var(--md-sys-color-outline-variant);
+		background: var(--md-sys-color-surface-container-low);
+		color: var(--md-sys-color-on-surface-variant);
+	}
+
+	.studio__unpublished p {
+		margin: 0;
+		flex: 1 1 240px;
+	}
+
 	.studio__error {
 		margin: 0;
 		color: var(--md-sys-color-error);
