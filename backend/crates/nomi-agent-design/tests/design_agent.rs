@@ -47,6 +47,7 @@ async fn sora_starts_from_the_chats_newest_brief_when_there_is_one(pool: PgPool)
     }
     let context = DesignAgent::new().domain_context(&mut conn, None, session_id, user_id, &[]).await.expect("a brief");
     assert!(context.contains("# Design brief (version 2)") && context.contains("Office workers nearby") && !context.contains("Neighbours"));
+    assert!(!context.contains("# Building the preview"), "no directions yet, so no preview rules");
 }
 
 fn two_directions() -> serde_json::Value {
@@ -96,6 +97,8 @@ async fn proposing_saves_a_version_shows_a_choice_and_refuses_a_set_that_is_not_
 
     let context = sora.domain_context(&mut conn, None, session_id, user_id, &[]).await.unwrap();
     assert!(context.contains("# Design brief (version 1)") && context.contains("# Design directions (version 1)"));
+    assert!(context.starts_with(nomi_agent_core::prompts::DESIGN_PREVIEW_RULES), "{context}");
+    assert!(!context.contains("# Changing the preview") && !context.contains("# Handing the design to Koda"));
 }
 
 /// A publisher that answers as a test wants and remembers what it was given.
@@ -213,6 +216,8 @@ async fn previews_are_saved_as_versions_even_when_nothing_publishes_them(pool: P
 
     let context = sora.domain_context(&mut conn, None, session_id, user_id, &[]).await.expect("context");
     assert!(context.contains("# Design preview (version 3, direction: swiss)") && context.contains("Not published") && context.contains(&format!("/chat/{session_id}/design?version=3")));
+    assert!(context.contains("# Building the preview") && context.contains("# Changing the preview"));
+    assert!(!context.contains("# Handing the design to Koda"), "nothing is approved yet");
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -327,6 +332,7 @@ async fn a_handoff_is_written_only_for_a_version_the_person_approved(pool: PgPoo
     design_approval::approve(&mut conn, session_id, user_id, 2, None).await.unwrap();
     let context = sora.domain_context(&mut conn, None, session_id, user_id, &[]).await.unwrap();
     assert!(context.contains("The person approved version 2") && context.contains("It is the newest version."), "{context}");
+    assert!(context.contains(nomi_agent_core::prompts::DESIGN_HANDOFF_RULES), "approved, so the handoff rules join");
 
     let mut wrong = spec.clone();
     wrong["components"][0]["id"] = json!("menu-list");
@@ -514,9 +520,9 @@ async fn a_draft_stays_with_its_direction(pool: PgPool) {
 
 #[test]
 fn sora_is_told_to_continue_in_pieces() {
-    use nomi_agent_core::prompts::{DESIGN_CUT_OFF_RETRY, DESIGN_SYSTEM_PROMPT};
+    use nomi_agent_core::prompts::{DESIGN_CUT_OFF_RETRY, DESIGN_PREVIEW_RULES};
     assert_eq!(DesignAgent::new().cut_off_hint(), DESIGN_CUT_OFF_RETRY);
     assert!(DESIGN_CUT_OFF_RETRY.contains("finished"));
-    assert!(DESIGN_SYSTEM_PROMPT.contains("finished"));
-    assert!(!DESIGN_SYSTEM_PROMPT.contains("send every file again"));
+    assert!(DESIGN_PREVIEW_RULES.contains("finished"));
+    assert!(!DESIGN_PREVIEW_RULES.contains("send every file again"));
 }
