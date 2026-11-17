@@ -191,13 +191,30 @@ pub async fn publish(
 ) -> Result<Json<PublishOutcome>, Refused> {
     studio_access(&state, claims.sub, session_id).await?;
     let version = version_of(&input)?;
-    let mut conn = state.pool.acquire().await.map_err(unavailable)?;
-    let manifest = design_artifact::version(&mut conn, session_id, version).await.map_err(unavailable)?.ok_or_else(|| refused(StatusCode::NOT_FOUND, "no such version"))?;
-    let files = design_artifact::files(&mut conn, session_id, version).await.map_err(unavailable)?;
+    let (manifest, files) = {
+        let mut conn = state.pool.acquire().await.map_err(unavailable)?;
+        let manifest = design_artifact::version(&mut conn, session_id, version).await.map_err(unavailable)?.ok_or_else(|| refused(StatusCode::NOT_FOUND, "no such version"))?;
+        let listed = design_artifact::list(&mut conn, session_id).await.map_err(unavailable)?;
+        let stored = listed.iter().find(|v| v.version == version).ok_or_else(|| refused(StatusCode::NOT_FOUND, "no such version"))?;
+        retry_allowed(stored.published_url.as_deref(), stored.publish_error.as_deref())?;
+        (manifest, design_artifact::files(&mut conn, session_id, version).await.map_err(unavailable)?)
+    };
+    // No connection is held through the upload, which can take minutes.
     let request = nomi_agent_core::static_publish::PublishRequest { user_id: claims.sub, session_id, version, title: &manifest.title, files: &files };
     let publisher = crate::static_publisher::ShipyardStaticPublisher::shared(state.pool.clone());
-    let published = nomi_agent_core::static_publish::publish_and_record(&mut conn, publisher.as_ref(), &request).await;
+    let published = nomi_agent_core::static_publish::publish(publisher.as_ref(), &request).await;
+    let mut conn = state.pool.acquire().await.map_err(unavailable)?;
+    let published = nomi_agent_core::static_publish::record_outcome(&mut conn, session_id, version, published).await;
     Ok(Json(publish_outcome(version, published)))
+}
+
+/// A version is published again only when it isn't published now: never tried, or its newest
+/// publish failed. Each publish uploads every file to Shipyard again.
+pub fn retry_allowed(published_url: Option<&str>, publish_error: Option<&str>) -> Result<(), Refused> {
+    match (published_url, publish_error) {
+        (Some(_), None) => Err(refused(StatusCode::CONFLICT, "this version is already published")),
+        _ => Ok(()),
+    }
 }
 
 /// The file a request path means: nothing is the entry page, a folder its index page.
@@ -277,6 +294,14 @@ pub async fn preview_file(State(state): State<AppState>, Path((token, path)): Pa
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_version_that_is_not_published_is_published_again() {
+        assert_eq!(retry_allowed(None, Some("publishing previews isn't set up")), Ok(()));
+        assert_eq!(retry_allowed(None, None), Ok(()), "never tried");
+        assert_eq!(retry_allowed(Some("https://ship.example/dpl/d1"), Some("Shipyard refused it")), Ok(()), "its newest publish failed");
+        assert_eq!(retry_allowed(Some("https://ship.example/dpl/d1"), None).unwrap_err().0, StatusCode::CONFLICT);
+    }
 
     #[test]
     fn a_publish_answer_says_where_or_why_not() {

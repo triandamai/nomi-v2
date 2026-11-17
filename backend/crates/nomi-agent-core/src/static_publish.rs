@@ -97,8 +97,15 @@ pub async fn record_failure(conn: &mut PgConnection, session_id: Uuid, version: 
 /// Publishes a saved version and keeps what happened: its address, or why it isn't published,
 /// so the Design Studio can say so whatever the agent tells the person.
 pub async fn publish_and_record(conn: &mut PgConnection, publisher: &dyn StaticPublisher, request: &PublishRequest<'_>) -> Result<Published, String> {
-    let outcome = match publish(publisher, request).await {
-        Ok(at) => match record(conn, request.session_id, request.version, &at).await {
+    let published = publish(publisher, request).await;
+    record_outcome(conn, request.session_id, request.version, published).await
+}
+
+/// Keeps what publishing a version came to: its address, or why it isn't published. A caller
+/// that mustn't hold a connection through the upload publishes first and records with this.
+pub async fn record_outcome(conn: &mut PgConnection, session_id: Uuid, version: i32, published: Result<Published, String>) -> Result<Published, String> {
+    let outcome = match published {
+        Ok(at) => match record(conn, session_id, version, &at).await {
             Ok(_) => return Ok(at),
             Err(e) => {
                 tracing::error!(error = %e, "design preview: its address couldn't be kept");
@@ -108,7 +115,7 @@ pub async fn publish_and_record(conn: &mut PgConnection, publisher: &dyn StaticP
         Err(why) => Err(why),
     };
     if let Err(why) = &outcome {
-        if let Err(e) = record_failure(conn, request.session_id, request.version, why).await {
+        if let Err(e) = record_failure(conn, session_id, version, why).await {
             tracing::error!(error = %e, "design preview: why it isn't published couldn't be kept");
         }
     }
