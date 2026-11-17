@@ -3,7 +3,7 @@
 //! chat and direction, where the person never sees them. The last call merges the draft into a
 //! version (`merge`) and the draft is cleared.
 
-use sqlx::PgConnection;
+use sqlx::{Connection, PgConnection};
 use uuid::Uuid;
 
 use crate::design_artifact::ArtifactFile;
@@ -25,6 +25,8 @@ pub fn merge(previous: Vec<ArtifactFile>, draft: Vec<ArtifactFile>, sent: Vec<Ar
 
 /// Adds `files` to the draft of `direction_id` in this chat; a file already there is replaced.
 pub async fn stage(conn: &mut PgConnection, session_id: Uuid, direction_id: &str, files: &[ArtifactFile]) -> Result<(), sqlx::Error> {
+    // A piece goes into the draft whole or not at all.
+    let mut tx = conn.begin().await?;
     for file in files {
         sqlx::query(
             "INSERT INTO design_preview_drafts (session_id, direction_id, path, content) VALUES ($1, $2, $3, $4) \
@@ -34,10 +36,10 @@ pub async fn stage(conn: &mut PgConnection, session_id: Uuid, direction_id: &str
         .bind(direction_id)
         .bind(&file.path)
         .bind(&file.content)
-        .execute(&mut *conn)
+        .execute(&mut *tx)
         .await?;
     }
-    Ok(())
+    tx.commit().await
 }
 
 /// The draft of `direction_id` in this chat, in the order its files first arrived.
@@ -51,9 +53,15 @@ pub async fn draft(conn: &mut PgConnection, session_id: Uuid, direction_id: &str
     Ok(rows.into_iter().map(|(path, content)| ArtifactFile { path, content }).collect())
 }
 
-/// Drops the draft of `direction_id` in this chat, once it became a version.
-pub async fn clear(conn: &mut PgConnection, session_id: Uuid, direction_id: &str) -> Result<(), sqlx::Error> {
-    sqlx::query("DELETE FROM design_preview_drafts WHERE session_id = $1 AND direction_id = $2").bind(session_id).bind(direction_id).execute(conn).await?;
+/// Drops `paths` from the draft of `direction_id` in this chat once they became a version; a file
+/// staged after the draft was read stays for the next one.
+pub async fn clear(conn: &mut PgConnection, session_id: Uuid, direction_id: &str, paths: &[String]) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM design_preview_drafts WHERE session_id = $1 AND direction_id = $2 AND path = ANY($3)")
+        .bind(session_id)
+        .bind(direction_id)
+        .bind(paths)
+        .execute(conn)
+        .await?;
     Ok(())
 }
 

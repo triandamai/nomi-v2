@@ -132,8 +132,9 @@ async fn drafts_are_per_direction_and_cleared_on_request(pool: PgPool) {
     let mut conn = pool.acquire().await.unwrap();
     design_draft::stage(&mut conn, session_id, "editorial", &[file("a.css", "1")]).await.unwrap();
     assert_eq!(design_draft::draft(&mut conn, session_id, "brutalist").await.unwrap(), vec![]);
-    design_draft::clear(&mut conn, session_id, "editorial").await.unwrap();
-    assert_eq!(design_draft::draft(&mut conn, session_id, "editorial").await.unwrap(), vec![]);
+    design_draft::stage(&mut conn, session_id, "editorial", &[file("late.css", "2")]).await.unwrap();
+    design_draft::clear(&mut conn, session_id, "editorial", &["a.css".to_string()]).await.unwrap();
+    assert_eq!(design_draft::draft(&mut conn, session_id, "editorial").await.unwrap(), vec![file("late.css", "2")], "only what became a version is dropped");
 }
 
 #[sqlx::test(migrations = "../../migrations")]

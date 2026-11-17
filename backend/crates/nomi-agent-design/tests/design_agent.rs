@@ -443,6 +443,7 @@ async fn a_preview_can_be_built_in_pieces(pool: PgPool) {
         .await
         .unwrap();
     assert!(finished.display_text.starts_with("Preview saved as version 1"), "{}", finished.display_text);
+    assert!(finished.display_text.contains("from the draft: styles.css"), "{}", finished.display_text);
     let files = nomi_agent_core::design_artifact::files(&mut conn, session_id, 1).await.unwrap();
     assert_eq!(paths(&files), ["index.html", "styles.css"]);
     assert_eq!(nomi_agent_core::design_draft::draft(&mut conn, session_id, "editorial").await.unwrap(), vec![], "the draft became the version");

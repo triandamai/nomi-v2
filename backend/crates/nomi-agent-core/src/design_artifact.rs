@@ -272,6 +272,19 @@ impl DesignArtifact {
         Ok(Self { manifest: Manifest { direction_id, title, pages, elements }, files })
     }
 
+    /// Keeps what `earlier` said an element is (its kind and label) for every element this version
+    /// still has and `input` doesn't describe again: a change that sends only some files keeps the rest as they were.
+    pub fn inherit_descriptions(&mut self, earlier: &Manifest, input: &Value) {
+        let described_now: Vec<&str> =
+            input.get("elements").and_then(Value::as_array).map(|list| list.iter().filter_map(|e| text_of(e, "id")).collect()).unwrap_or_default();
+        for element in self.manifest.elements.iter_mut().filter(|e| !described_now.contains(&e.id.as_str())) {
+            if let Some(before) = earlier.elements.iter().find(|e| e.id == element.id) {
+                element.kind = before.kind;
+                element.label = before.label.clone();
+            }
+        }
+    }
+
     pub fn file(&self, path: &str) -> Option<&ArtifactFile> {
         self.files.iter().find(|f| f.path == path)
     }
@@ -682,6 +695,21 @@ mod tests {
         assert_eq!(schema["required"], json!(["direction_id", "title", "files"]));
         assert_eq!(schema["properties"]["files"]["maxItems"].as_u64(), Some(MAX_FILES as u64));
         assert_eq!(schema["properties"]["elements"]["items"]["properties"]["kind"]["enum"], json!(["section", "component", "element"]));
+    }
+
+    #[test]
+    fn descriptions_carry_over_to_a_version_that_does_not_repeat_them() {
+        let mut described = preview();
+        described["elements"] = json!([{"id": "site-header", "kind": "component", "label": "Site header"}, {"id": "menu-list", "kind": "section", "label": "Menu"}]);
+        let earlier = DesignArtifact::parse(&described).unwrap().manifest;
+
+        let mut next = preview();
+        next["elements"] = json!([{"id": "menu-list", "kind": "component", "label": "Menu list"}]);
+        let mut artifact = DesignArtifact::parse(&next).unwrap();
+        artifact.inherit_descriptions(&earlier, &next);
+        let of = |id: &str| artifact.manifest.elements.iter().find(|e| e.id == id).unwrap().clone();
+        assert_eq!((of("site-header").kind, of("site-header").label), (ElementKind::Component, "Site header".to_string()), "kept from before");
+        assert_eq!((of("menu-list").kind, of("menu-list").label), (ElementKind::Component, "Menu list".to_string()), "described again: the new one wins");
     }
 
     #[test]

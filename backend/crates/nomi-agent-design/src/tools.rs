@@ -193,7 +193,15 @@ pub fn studio_link(session_id: Uuid, version: i32) -> String {
 /// What Sora is told after a preview was saved: its version, the ids that went missing since
 /// the direction's last version, its Design Studio link, and its published address when it has one.
 /// Added to why a finishing `save_preview` was refused when files were waiting in the draft.
-pub const DRAFT_KEPT: &str = "The draft is kept: send only the files that need fixing.";
+pub const DRAFT_KEPT: &str = "The draft is kept: send only the files that need fixing, or name a draft file you don't want in remove.";
+
+/// Added to a saved version built with files from the draft, so a forgotten piece doesn't slip in unnoticed.
+pub fn from_draft_message(paths: &[String]) -> String {
+    if paths.is_empty() {
+        return String::new();
+    }
+    format!(" It includes these files from the draft: {}.", paths.join(", "))
+}
 
 /// What Sora is told after a piece of a preview went into the draft.
 pub fn staged_message(direction_id: &str, paths: &[&str]) -> String {
@@ -323,7 +331,8 @@ impl Tool for SavePreview {
                 "Build a preview of one proposed direction as static pages: every file whole (index.html, other pages, css, js, svg), \
                  responsive, with a {ID_ATTRIBUTE} attribute on each section and component (a lowercase slug, unique in its page, \
                  the same on every page that shares the element). A preview rarely fits in one call: send a few files per call with \
-                 finished false, and the last ones with finished true, which saves the preview as a new version. To change a preview, \
+                 finished false, and the last ones with finished true, which saves the preview as a new version (describe elements \
+                 on that last call; what you said about an element before carries over). To change a preview, \
                  send only the files that changed (the rest stay as they were, with the same ids; drop a file with remove), and name in \
                  resolves the open feedback the new version dealt with."
             ),
@@ -369,15 +378,19 @@ impl Tool for SavePreview {
             Some((version, _)) => design_artifact::files(&mut **conn, session_id, *version).await.map_err(unsaved)?,
             None => Vec::new(),
         };
-        let had_draft = !draft.is_empty();
+        let drafted: Vec<String> = draft.iter().map(|f| f.path.clone()).collect();
         let merged = design_draft::merge(previous, draft, sent, &remove);
-        let artifact = DesignArtifact::from_files(&input, merged).map_err(|e| if had_draft { format!("{e}. {DRAFT_KEPT}") } else { e })?;
+        let mut artifact = DesignArtifact::from_files(&input, merged).map_err(|e| if drafted.is_empty() { e } else { format!("{e}. {DRAFT_KEPT}") })?;
+        if let Some((_, earlier)) = &before {
+            artifact.inherit_descriptions(earlier, &input);
+        }
+        let from_draft: Vec<String> = drafted.iter().filter(|path| artifact.file(path).is_some()).cloned().collect();
         let missing = before.map(|(_, earlier)| artifact.manifest.missing_since(&earlier)).unwrap_or_default();
         let feedback = design_feedback::list(&mut **conn, session_id).await.map_err(unsaved)?;
         design_feedback::check_open(&resolutions, &feedback)?;
         let directions_version = directions.map(|(version, _, _)| version);
         let version = design_artifact::save(&mut **conn, session_id, agent_session_id, user_id, directions_version, &artifact).await.map_err(unsaved)?;
-        if let Err(e) = design_draft::clear(&mut **conn, session_id, &direction_id).await {
+        if let Err(e) = design_draft::clear(&mut **conn, session_id, &direction_id, &drafted).await {
             // The version is saved; a draft left behind is only merged into the next one again.
             tracing::error!(error = %e, "design preview: the draft couldn't be cleared");
         }
@@ -396,6 +409,7 @@ impl Tool for SavePreview {
         })?;
         let still_open = feedback.iter().filter(|f| f.status == Status::Open && !resolved.contains(&f.number)).count();
         let mut said = saved_message(session_id, version, &artifact.manifest, &missing, &published);
+        said.push_str(&from_draft_message(&from_draft));
         said.push_str(&resolved_message(version, &resolved, still_open));
         Ok(ToolOutcome::text(said))
     }
@@ -546,6 +560,18 @@ pub(crate) mod tests {
     use nomi_agent_core::mcp_ops::{McpListing, McpOps, McpToolInfo, CARRY_ON, NOTHING_CONNECTED};
     use serde_json::json;
     use std::sync::Mutex;
+
+    #[test]
+    fn a_version_says_which_files_came_from_the_draft() {
+        assert_eq!(from_draft_message(&[]), "");
+        let said = from_draft_message(&["about.html".to_string(), "styles.css".to_string()]);
+        assert!(said.contains("about.html, styles.css"), "{said}");
+    }
+
+    #[test]
+    fn a_refused_finish_says_how_to_drop_a_bad_draft_file() {
+        assert!(DRAFT_KEPT.contains("remove"));
+    }
 
     /// The person's servers as a test wants them, recording what was called.
     #[derive(Default)]
