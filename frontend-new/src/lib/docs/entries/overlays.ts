@@ -23,9 +23,9 @@ export default [
 		summary: 'What a phone uses in place of a menu or popover: a sheet from the bottom, with its title, what it’s about, a close and its rows.',
 		use: ['A chat’s or a project’s actions on a phone (long-press, More).'],
 		avoid: ['Wider screens: use a Menu or a Dialog there.'],
-		dos: ['Put the destructive row last, after a divider, in the danger colour.'],
+		dos: ['Put the destructive row last, after a divider, in the danger colour.', 'Pass `header` only where the pen draws another top (a file’s sheet: FileSheetHeader).'],
 		accessibility: ['A modal dialog named by its title: focus stays inside, Escape closes it, and so do the close button and a tap on the scrim.'],
-		related: ['mobile/SheetHeader.svelte', 'mobile/SheetRow.svelte', 'overlays/Menu.svelte'],
+		related: ['mobile/SheetHeader.svelte', 'mobile/SheetRow.svelte', 'overlays/Menu.svelte', 'thread/FileSheetHeader.svelte'],
 	},
 	{
 		file: 'overlays/Dialog.svelte',
