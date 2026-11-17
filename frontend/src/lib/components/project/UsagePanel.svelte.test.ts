@@ -76,6 +76,31 @@ describe('UsagePanel', () => {
 		expect(root.querySelector<HTMLButtonElement>('[aria-label="Next month"]')!.disabled).toBe(false);
 	});
 
+	it('steps from the month being loaded, so quick clicks go back one month each', async () => {
+		const calls = fakeBackend([
+			['GET', /usage\?month=2026-10/, () => new Promise(() => {})],
+			['GET', /usage\?month=2026-09/, usage({ month: '2026-09' })],
+			['GET', /\/api\/usage$/, usage()],
+		]);
+		const root = render(UsagePanel as never, { projectId: 'p1' });
+		await settle(6);
+		const back = root.querySelector<HTMLButtonElement>('[aria-label="Previous month"]')!;
+		back.click();
+		back.click();
+		await settle(6);
+		expect(calls.map((c) => c.path).slice(1)).toEqual(['/projects/p1/api/usage?month=2026-10', '/projects/p1/api/usage?month=2026-09']);
+		expect(text(root)).toContain('September 2026');
+	});
+
+	it('shows each row’s spend in rupiah', async () => {
+		fakeBackend([['GET', /\/api\/usage/, usage()]]);
+		const root = render(UsagePanel as never, { projectId: 'p1' });
+		await settle(6);
+		const cells = [...root.querySelectorAll('tbody td.num')].map((cell) => cell.textContent?.trim());
+		expect(cells.filter((cell) => cell?.startsWith('Rp')).length).toBe(4);
+		expect(cells.some((cell) => cell?.includes('$'))).toBe(false);
+	});
+
 	it('offers to try again when the usage could not be loaded', async () => {
 		let fail = true;
 		fakeBackend([['GET', /\/api\/usage/, () => (fail ? new Response('boom', { status: 500 }) : new Response(JSON.stringify(usage()), { status: 200, headers: { 'content-type': 'application/json' } }))]]);

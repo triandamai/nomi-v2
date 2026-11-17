@@ -311,12 +311,15 @@
 		const response = await fetch(`/projects/${project.id}/usage${asked ? `?month=${asked}` : ''}`).catch(() => null);
 		// A slow answer for a month the person already left is dropped.
 		if (asked !== usageMonth) return;
+		const next = response?.ok ? ((await response.json().catch(() => null)) as ProjectUsage | null) : null;
+		if (asked !== usageMonth) return;
 		usageLoading = false;
-		if (response?.ok) usage = (await response.json()) as ProjectUsage;
+		if (next) usage = next;
 		else usageFailed = true;
 	}
 	$effect(() => {
-		if (sheet !== 'usage') return;
+		// Another project opened in this page starts again from its own month.
+		if (sheet !== 'usage' || !project.id) return;
 		untrack(() => void loadUsage(null));
 	});
 	const usageShown = $derived(usage ? usageView(usage, getLocale()) : null);
@@ -1218,9 +1221,9 @@
 						{:else}
 							{@const shown = usageShown}
 							<div class="flex items-center gap-2">
-								<IconButton icon={ChevronLeft} label={m.usage_sheet_prev()} onclick={() => loadUsage(shiftMonth(usage!.month, -1))} />
+								<IconButton icon={ChevronLeft} label={m.usage_sheet_prev()} onclick={() => loadUsage(shiftMonth(usageMonth ?? usage!.month, -1))} />
 								<span class="min-w-36 text-center text-ui font-medium text-text" aria-live="polite">{shown.month}</span>
-								<IconButton icon={ChevronRight} label={m.usage_sheet_next()} disabled={shown.current} onclick={() => loadUsage(shiftMonth(usage!.month, 1))} />
+								<IconButton icon={ChevronRight} label={m.usage_sheet_next()} disabled={shown.current} onclick={() => loadUsage(shiftMonth(usageMonth ?? usage!.month, 1))} />
 							</div>
 							<div class={['flex flex-col gap-4.5', usageLoading && 'opacity-60']} aria-busy={usageLoading}>
 								<div class="grid grid-cols-1 gap-2 sm:grid-cols-3">

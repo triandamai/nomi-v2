@@ -25,9 +25,14 @@ pub struct ProjectUsageView {
     pub usd_to_idr: u64,
 }
 
+/// Whether `role` may see who spent what.
+pub fn sees_people(role: &str) -> bool {
+    role == SEES_PEOPLE
+}
+
 /// Leaves out who spent what unless `role` may see it.
 pub fn for_role(mut usage: ProjectUsage, role: &str) -> (ProjectUsage, bool) {
-    let shows_people = role == SEES_PEOPLE;
+    let shows_people = sees_people(role);
     if !shows_people {
         usage.by_person.clear();
     }
@@ -37,7 +42,7 @@ pub fn for_role(mut usage: ProjectUsage, role: &str) -> (ProjectUsage, bool) {
 /// `GET /api/projects/:id/usage?month=`
 pub async fn get(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(project_id): Path<Uuid>, Query(query): Query<UsageQuery>) -> Result<Json<ProjectUsageView>, ApiError> {
     let role = project_role(&state.pool, project_id, claims.sub).await?;
-    let usage = nomi_usage::project::project_month(&state.pool, project_id, claims.sub, query.month.as_deref())
+    let usage = nomi_usage::project::project_month(&state.pool, project_id, claims.sub, query.month.as_deref(), sees_people(role))
         .await
         .map_err(internal("failed to read the project's usage"))?;
     let (usage, shows_people) = for_role(usage, role);

@@ -45,10 +45,10 @@ describe('a project’s tokens and cost', () => {
 	it('marks own-key models and lists people only for admins', () => {
 		const view = usageView(usage(), 'en');
 		expect(view.models.map((row) => [row.label, row.ownKey, row.tokens, row.spend])).toEqual([
-			['Nomi Standard', false, '1.3M', '$5.10'],
-			['My Claude key', true, '50K', '$0'],
+			['Nomi Standard', false, '1.3M', 'Rp 81.600'],
+			['My Claude key', true, '50K', 'Rp 0'],
 		]);
-		expect(view.people).toEqual([{ id: 'u1', name: 'Budi Santoso', tokens: '1.1M', spend: '$4.50' }]);
+		expect(view.people).toEqual([{ id: 'u1', name: 'Budi Santoso', tokens: '1.1M', spend: 'Rp 72.000' }]);
 		expect(usageView(usage({ shows_people: false, by_person: [] }), 'en').people).toBeNull();
 	});
 

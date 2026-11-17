@@ -56,9 +56,9 @@
 
 	{#if usage}
 		<nav class="months" aria-label={m.money_month()}>
-			<IconButton variant="filled-tonal" onclick={() => load(shiftMonth(usage!.month, -1))} aria-label={m.money_prev_month()}><IconChevronLeft /></IconButton>
+			<IconButton variant="filled-tonal" onclick={() => load(shiftMonth(asked ?? usage!.month, -1))} aria-label={m.money_prev_month()}><IconChevronLeft /></IconButton>
 			<span class="months__current" aria-live="polite">{monthLabel(usage.month)}</span>
-			<IconButton variant="filled-tonal" disabled={isCurrent} onclick={() => load(shiftMonth(usage!.month, 1))} aria-label={m.money_next_month()}><IconChevronRight /></IconButton>
+			<IconButton variant="filled-tonal" disabled={isCurrent} onclick={() => load(shiftMonth(asked ?? usage!.month, 1))} aria-label={m.money_next_month()}><IconChevronRight /></IconButton>
 		</nav>
 	{/if}
 
@@ -101,7 +101,7 @@
 								<tr>
 									<td>{row.label}{#if row.source === 'own_key'} <span class="tag">{m.pj_usage_own_key_tag()}</span>{/if}</td>
 									<td class="num" title={formatTokensFull(row.tokens)}>{formatTokens(row.tokens)}</td>
-									<td class="num"><Money value={formatUsd(row.spend_usd)} /></td>
+									<td class="num">{formatIdr(usdToIdr(row.spend_usd, usage.usd_to_idr))}</td>
 								</tr>
 							{/each}
 						</tbody>
@@ -118,7 +118,7 @@
 									<tr>
 										<td>{row.name ?? m.pj_usage_unknown_person()}</td>
 										<td class="num" title={formatTokensFull(row.tokens)}>{formatTokens(row.tokens)}</td>
-										<td class="num"><Money value={formatUsd(row.spend_usd)} /></td>
+										<td class="num">{formatIdr(usdToIdr(row.spend_usd, usage.usd_to_idr))}</td>
 									</tr>
 								{/each}
 							</tbody>

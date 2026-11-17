@@ -71,26 +71,40 @@ async fn a_projects_usage_is_its_own_chat_and_the_chats_filed_into_it(pool: PgPo
     let filed = chat(&pool, org).await;
     sqlx::query("UPDATE sessions SET in_project_id = $1 WHERE id = $2").bind(project_id).bind(filed).execute(&pool).await.unwrap();
     let elsewhere = chat(&pool, org).await;
+    // The chat the crew works an issue in counts too.
+    let issue_chat = chat(&pool, org).await;
+    sqlx::query("INSERT INTO project_issues (project_id, number, title, kind, severity, session_id) VALUES ($1, 1, 'Checkout button broken', 'bug', 'high', $2)")
+        .bind(project_id)
+        .bind(issue_chat)
+        .execute(&pool)
+        .await
+        .unwrap();
 
     call(&pool, budi, Some(own_chat), tag(Some(model), false), 1_000_000, 100_000).await;
     call(&pool, sari, Some(filed), tag(Some(model), false), 200_000, 0).await;
     call(&pool, sari, Some(filed), tag(None, true), 50_000, 0).await;
+    call(&pool, budi, Some(issue_chat), tag(Some(model), false), 100_000, 0).await;
     // Neither counts toward the project: another chat, and a call made in no chat.
     call(&pool, budi, Some(elsewhere), tag(Some(model), false), 9_000_000, 0).await;
     call(&pool, budi, None, tag(Some(model), false), 9_000_000, 0).await;
 
-    let usage = nomi_usage::project::project_month(&pool, project_id, budi, None).await.unwrap();
-    assert_eq!(usage.calls, 3);
-    assert_eq!(usage.tokens, 1_350_000);
+    let usage = nomi_usage::project::project_month(&pool, project_id, budi, None, true).await.unwrap();
+    assert_eq!(usage.calls, 4);
+    assert_eq!(usage.tokens, 1_450_000);
     assert_eq!(usage.own_key_tokens, 50_000);
-    // 1.2M in at $3 + 0.1M out at $15; the own-key call is never billed.
-    assert!((usage.spend_usd - 5.1).abs() < 1e-9, "{}", usage.spend_usd);
+    // 1.3M in at $3 + 0.1M out at $15; the own-key call is never billed.
+    assert!((usage.spend_usd - 5.4).abs() < 1e-9, "{}", usage.spend_usd);
     assert!(usage.counted_since.is_some());
 
     assert_eq!(usage.by_person.len(), 2);
-    assert_eq!((usage.by_person[0].user_id, usage.by_person[0].tokens), (budi, 1_100_000));
+    assert_eq!((usage.by_person[0].user_id, usage.by_person[0].tokens), (budi, 1_200_000));
     assert_eq!((usage.by_person[1].user_id, usage.by_person[1].tokens), (sari, 250_000));
-    assert_eq!(usage.by_model.iter().map(|m| m.calls).sum::<i64>(), 3);
+    assert_eq!(usage.by_model.iter().map(|m| m.calls).sum::<i64>(), 4);
+
+    // Someone who may not see who spent what gets the totals without anyone's part.
+    let without = nomi_usage::project::project_month(&pool, project_id, sari, None, false).await.unwrap();
+    assert!(without.by_person.is_empty());
+    assert_eq!(without.calls, 4);
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -114,7 +128,7 @@ async fn a_project_with_no_calls_reads_as_zero(pool: PgPool) {
     let budi = person(&pool).await;
     let org: Uuid = sqlx::query_scalar("INSERT INTO organizations (name) VALUES ('Toko Roti') RETURNING id").fetch_one(&pool).await.unwrap();
     let (project_id, _) = project(&pool, budi, org).await;
-    let usage = nomi_usage::project::project_month(&pool, project_id, budi, Some("2026-11")).await.unwrap();
+    let usage = nomi_usage::project::project_month(&pool, project_id, budi, Some("2026-11"), true).await.unwrap();
     assert_eq!((usage.month.as_str(), usage.calls, usage.tokens, usage.spend_usd), ("2026-11", 0, 0, 0.0));
     assert!(usage.by_model.is_empty() && usage.by_person.is_empty());
     assert_eq!(usage.counted_since, None);

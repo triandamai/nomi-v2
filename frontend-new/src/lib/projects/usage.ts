@@ -3,10 +3,11 @@ import { formatTokens } from '$lib/adapters/shell';
 import { full, monthLabel } from '$lib/admin/format';
 import { usd } from '$lib/settings/plan';
 
-// A project's Tokens & cost sheet: a month of what the crew used in its chat and the chats moved
-// into it. Spend is in rupiah, with the list-price dollars the backend keeps beside it. Calls
-// from before calls carried their chat count toward no project, so the sheet says since when
-// it counts instead of showing a zero that looks like nothing happened.
+// A project's Tokens & cost sheet: a month of what the crew used in its chat, the chats moved
+// into it and its issues' chats. Spend is in rupiah; the month's total also gives the list-price
+// dollars the backend keeps. Calls from before calls carried their chat count toward no project,
+// so the sheet says since when it counts instead of showing a zero that looks like nothing
+// happened.
 
 /** "Rp 81.600": whole rupiah, grouped the Indonesian way in either language. */
 export function rupiah(amount: number): string {
@@ -49,9 +50,9 @@ export function usageView(usage: ProjectUsage, language: string): UsageView {
 			label: row.label,
 			ownKey: row.source === 'own_key',
 			tokens: formatTokens(row.tokens),
-			spend: usd(row.spend_usd),
+			spend: rupiah(row.spend_usd * usage.usd_to_idr),
 		})),
-		people: usage.shows_people ? usage.by_person.map((row) => ({ id: row.user_id, name: row.name, tokens: formatTokens(row.tokens), spend: usd(row.spend_usd) })) : null,
+		people: usage.shows_people ? usage.by_person.map((row) => ({ id: row.user_id, name: row.name, tokens: formatTokens(row.tokens), spend: rupiah(row.spend_usd * usage.usd_to_idr) })) : null,
 		since: usage.counted_since
 			? new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: usage.timezone }).format(new Date(usage.counted_since))
 			: null,
