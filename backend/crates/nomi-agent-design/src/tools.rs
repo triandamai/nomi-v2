@@ -193,7 +193,7 @@ pub fn studio_link(session_id: Uuid, version: i32) -> String {
 /// What Sora is told after a preview was saved: its version, the ids that went missing since
 /// the direction's last version, its Design Studio link, and its published address when it has one.
 /// Added to why a finishing `save_preview` was refused when files were waiting in the draft.
-pub const DRAFT_KEPT: &str = "The draft is kept: send only the files that need fixing, or name a draft file you don't want in remove.";
+pub use nomi_agent_core::prompts::DESIGN_DRAFT_KEPT as DRAFT_KEPT;
 
 /// Added to a saved version built with files from the draft, so a forgotten piece doesn't slip in unnoticed.
 pub fn from_draft_message(paths: &[String]) -> String {

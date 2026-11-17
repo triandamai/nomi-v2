@@ -12,7 +12,7 @@ use sqlx::PgConnection;
 use uuid::Uuid;
 
 /// The heading of the list of questions the chat already asked.
-pub const ALREADY_ASKED_HEADING: &str = "Already asked in this chat (the answers are in the conversation; never ask these again):";
+pub use nomi_agent_core::prompts::PLANNING_ALREADY_ASKED_HEADING as ALREADY_ASKED_HEADING;
 
 /// The most questions listed as already asked: the newest ones.
 pub const MAX_ASKED_LISTED: usize = 40;

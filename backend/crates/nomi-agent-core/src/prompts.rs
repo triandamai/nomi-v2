@@ -576,3 +576,99 @@ pub const FLOW_DIRECTION_NOT_PICKED: &str = "Not yet: the person hasn't picked a
 pub const DESIGN_APPROVED_TASK: &str = "The person approved version {version} of the design in the Design Studio. That \
      is the go-ahead to build it: write its handoff with create_handoff and hand it to Koda, then tell the person \
      Koda is building it.";
+
+// What Sora is told around the chat's design records (nomi-agent-design's domain_context).
+
+/// Before the chat's design brief.
+pub const DESIGN_BRIEF_INTRO: &str = "This is the design brief Rena saved for this chat: start from it rather than asking for what it \
+     already says. Treat what is marked confirmed as fact, what is from research as evidence, and what is recommended or \
+     assumed as open to change; say so when a direction rests on an assumption.";
+
+/// Before the directions she proposed last.
+pub const DESIGN_DIRECTIONS_INTRO: &str = "These are the directions you proposed last in this chat. When the person picks one or asks \
+     for changes, refine it and keep the same id; don't start over unless they ask.";
+
+/// Before the preview she built last.
+pub const DESIGN_PREVIEW_INTRO: &str = "This is the preview you built last in this chat. When you change it, send every file again with \
+     save_preview and keep the same data-design-id on each element that is still there, so feedback keeps pointing at it.";
+
+/// Before the Studio feedback no version has dealt with yet.
+pub const DESIGN_FEEDBACK_INTRO: &str = "This is what the person said about your previews in the Design Studio and no version has dealt with \
+     yet. Each piece has a number, the version it was given on and what it points at. When they ask you to act on it, change \
+     only what it asks and leave the rest of the design as it is.";
+
+/// While the person hasn't approved a version.
+pub const DESIGN_NOT_APPROVED: &str = "No version of the design is approved yet: the person approves one in the Design Studio.";
+
+/// After a save_preview error while earlier pieces of the preview are kept as a draft.
+pub const DESIGN_DRAFT_KEPT: &str = "The draft is kept: send only the files that need fixing, or name a draft file you don't want in remove.";
+
+/// After review_build's findings: what the check can't see.
+pub const DESIGN_REVIEW_NOT_CHECKED: &str = "Not checked: spacing, sizes, layout and how it feels. This only looks for the handoff's colours, fonts and element ids in the project's files; look at the running app for the rest.";
+
+// What Rena is told in her app playbook (nomi-agent-planning's discovery).
+
+/// Before the questions she already asked in this chat.
+pub const PLANNING_ALREADY_ASKED_HEADING: &str = "Already asked in this chat (the answers are in the conversation; never ask these again):";
+
+// What Koda is told by run_command and in his brief (nomi-agent-coding).
+
+/// run_command's answer while the project isn't open in the person's browser.
+pub const KODA_NOT_OPEN: &str = "The project isn't open in the user's browser right now, so commands can't run. Your files are \
+     saved. Finish the work and complete the task: when the user opens the project, Nomi installs and checks it, and any \
+     errors come back to you as a new task.";
+
+/// After the brief's first line (the project, its name and stack).
+pub const KODA_BRIEF_INTRO: &str = "This is already looked up for you: start from it \
+     rather than calling read_plan, list_files or read_guide for what's here.";
+
+/// Under Files when the project has none.
+pub const KODA_BRIEF_NO_FILES: &str = "No files yet: you're starting from scratch.";
+
+/// The project's secrets; `{names}` is their names, never their values.
+pub const KODA_BRIEF_SECRETS: &str = "The person stored these for the published app, read on the server from the environment \
+     (process.env, or $env/dynamic/private in SvelteKit): {names}. Never put their values in code or ask for them; \
+     in the preview they're missing, so handle that plainly.";
+
+/// Under Done when, when the plan has no open checklist items.
+pub const KODA_BRIEF_DONE_PLAN_BUILT: &str = "Everything the plan describes is built.";
+
+/// The last line of Done when, always.
+pub const KODA_BRIEF_DONE_RUNNING: &str = "The app is fully implemented and running cleanly on the live dev server (npm run dev).";
+
+/// After the plan's title and version when its content couldn't be read.
+pub const KODA_BRIEF_PLAN_UNREADABLE: &str = "couldn't be loaded here: call read_plan.";
+
+/// Under Plan when Rena drafted none in this chat.
+pub const KODA_BRIEF_NO_PLAN: &str = "No plan from Rena in this chat: work from the task and the conversation, and ask with ask_user \
+     if something you can't sensibly assume is missing.";
+
+/// Before Sora's handoff of the approved design.
+pub const KODA_BRIEF_DESIGN_INTRO: &str = "Sora handed this over after the person approved it. Build what it describes, in this project's \
+     stack: the same pages, layout, colours, type, content order and behaviour. The preview's files below are static \
+     mock-ups to match, not code to copy in as it is; keep each data-design-id on the element you build for it. Where the \
+     plan and the design disagree about how something looks, the design wins; say so in your report.";
+
+/// After the names of the preview's files left out of the brief for length.
+pub const KODA_BRIEF_DESIGN_LEFT_OUT: &str = "The handoff above describes them.";
+
+/// Under Backend: Nomi Relay, always.
+pub const KODA_BRIEF_RELAY_INTRO: &str = "This project's database, sign-in and storage come from Relay (guide below): write migrations in \
+     nomi/migrations/, use the nomi-relay client, and never add Drizzle or your own auth.";
+
+/// While the project's dev backend is still being set up.
+pub const KODA_BRIEF_RELAY_STARTING: &str = "The dev backend is being set up in the background right now: write your migrations in \
+     nomi/migrations/, nomi/backend.json, and nomi/functions/ as usual — Nomi applies them \
+     to dev automatically as soon as it's ready. Do not call describe_backend or wait for \
+     dev to finish starting before writing the app.";
+
+/// When dev has no tables yet.
+pub const KODA_BRIEF_RELAY_NO_TABLES: &str = "No tables in dev yet: the first migration is nomi/migrations/0001_init.sql.";
+
+/// After the reason the dev backend couldn't be read.
+pub const KODA_BRIEF_RELAY_UNREADABLE: &str = "Call describe_backend.";
+
+/// After the Relay guide: the packages this Nomi publishes. `{sdk}`, `{sdk_version}`, `{cli}` and
+/// `{cli_version}` are them.
+pub const KODA_BRIEF_RELAY_PACKAGES: &str = "Packages on this Nomi: the client is `{sdk}` (`\"{sdk}\": \"{sdk_version}\"` in dependencies); the command line is `{cli}` \
+     (`\"{cli}\": \"{cli_version}\"` in devDependencies, installs the `nomi-relay` command for `migrate lint`, `migrate new` and `functions new`).";

@@ -9,6 +9,11 @@ use nomi_agent_core::plans::{latest_plan_by, open_checklist_items};
 use nomi_llm::{ContentBlock, LlmMessage, LlmRole};
 
 use crate::guides;
+use nomi_agent_core::prompts::{
+    KODA_BRIEF_DESIGN_INTRO, KODA_BRIEF_DESIGN_LEFT_OUT, KODA_BRIEF_DONE_PLAN_BUILT, KODA_BRIEF_DONE_RUNNING, KODA_BRIEF_INTRO,
+    KODA_BRIEF_NO_FILES, KODA_BRIEF_NO_PLAN, KODA_BRIEF_PLAN_UNREADABLE, KODA_BRIEF_RELAY_INTRO, KODA_BRIEF_RELAY_NO_TABLES,
+    KODA_BRIEF_RELAY_PACKAGES, KODA_BRIEF_RELAY_STARTING, KODA_BRIEF_RELAY_UNREADABLE, KODA_BRIEF_SECRETS,
+};
 use nomi_agent_core::relay_ops::{RelayEnv, RelayOps, RelayPackages, DEFAULT_SDK_PACKAGE, DEFAULT_SDK_VERSION};
 
 /// More files than this are summarised as a count: list_files shows them all.
@@ -65,17 +70,9 @@ fn failed_publish_line(environment: &str, failure: Option<&serde_json::Value>, e
 
 /// What a Relay project's backend has: its dev tables with their columns, from Relay itself.
 async fn relay_section(relay: &dyn RelayOps, user_id: Uuid, project_id: Uuid) -> String {
-    let mut section = String::from(
-        "## Backend: Nomi Relay\nThis project's database, sign-in and storage come from Relay (guide below): write migrations in \
-         nomi/migrations/, use the nomi-relay client, and never add Drizzle or your own auth.\n",
-    );
+    let mut section = format!("## Backend: Nomi Relay\n{KODA_BRIEF_RELAY_INTRO}\n");
     if relay.backend_starting(project_id).await {
-        section.push_str(
-            "The dev backend is being set up in the background right now: write your migrations in \
-             nomi/migrations/, nomi/backend.json, and nomi/functions/ as usual — Nomi applies them \
-             to dev automatically as soon as it's ready. Do not call describe_backend or wait for \
-             dev to finish starting before writing the app.\n\n",
-        );
+        section.push_str(&format!("{KODA_BRIEF_RELAY_STARTING}\n\n"));
         return section;
     }
     match relay.describe_backend(user_id, project_id, RelayEnv::Dev).await {
@@ -92,12 +89,12 @@ async fn relay_section(relay: &dyn RelayOps, user_id: Uuid, project_id: Uuid) ->
                 })
                 .collect();
             if tables.is_empty() {
-                section.push_str("No tables in dev yet: the first migration is nomi/migrations/0001_init.sql.\n\n");
+                section.push_str(&format!("{KODA_BRIEF_RELAY_NO_TABLES}\n\n"));
             } else {
                 section.push_str(&format!("Tables in dev now:\n{}\n\n", tables.join("\n")));
             }
         }
-        Err(e) => section.push_str(&format!("(Couldn't read the dev backend: {e}. Call describe_backend.)\n\n")),
+        Err(e) => section.push_str(&format!("(Couldn't read the dev backend: {e}. {KODA_BRIEF_RELAY_UNREADABLE})\n\n")),
     }
     section
 }
@@ -108,11 +105,12 @@ fn with_packages(guide: &str, packages: &RelayPackages) -> String {
     let pinned = format!("\"{}\": \"{}\"", DEFAULT_SDK_PACKAGE, DEFAULT_SDK_VERSION);
     let guide = guide.replace(&pinned, &format!("\"{}\": \"{}\"", packages.sdk, packages.sdk_version));
     let guide = if packages.sdk == DEFAULT_SDK_PACKAGE { guide } else { guide.replace(DEFAULT_SDK_PACKAGE, &packages.sdk) };
-    format!(
-        "{guide}\n\nPackages on this Nomi: the client is `{}` (`\"{}\": \"{}\"` in dependencies); the command line is `{}` \
-         (`\"{}\": \"{}\"` in devDependencies, installs the `nomi-relay` command for `migrate lint`, `migrate new` and `functions new`).",
-        packages.sdk, packages.sdk, packages.sdk_version, packages.cli, packages.cli, packages.cli_version
-    )
+    let note = KODA_BRIEF_RELAY_PACKAGES
+        .replace("{sdk_version}", &packages.sdk_version)
+        .replace("{sdk}", &packages.sdk)
+        .replace("{cli_version}", &packages.cli_version)
+        .replace("{cli}", &packages.cli);
+    format!("{guide}\n\n{note}")
 }
 
 fn clip(text: &str, max: usize) -> &str {
@@ -126,11 +124,7 @@ fn clip(text: &str, max: usize) -> &str {
 /// files (pages first) for the exact markup and styles.
 fn design_section(handoff: &str, artifact_version: i32, files: &[nomi_agent_core::design_artifact::ArtifactFile]) -> String {
     let mut section = format!(
-        "## The approved design\nSora handed this over after the person approved it. Build what it describes, in this project's \
-         stack: the same pages, layout, colours, type, content order and behaviour. The preview's files below are static \
-         mock-ups to match, not code to copy in as it is; keep each data-design-id on the element you build for it. Where the \
-         plan and the design disagree about how something looks, the design wins; say so in your report.\n\n{}\n\n\
-         ### The approved preview's files (version {artifact_version})\n",
+        "## The approved design\n{KODA_BRIEF_DESIGN_INTRO}\n\n{}\n\n### The approved preview's files (version {artifact_version})\n",
         handoff.trim()
     );
     let mut ordered: Vec<&nomi_agent_core::design_artifact::ArtifactFile> = files.iter().collect();
@@ -147,7 +141,7 @@ fn design_section(handoff: &str, artifact_version: i32, files: &[nomi_agent_core
         section.push_str(&format!("#### {}\n{}\n", file.path, file.content.trim_end()));
     }
     if !left_out.is_empty() {
-        section.push_str(&format!("Left out for length: {}. The handoff above describes them.\n", left_out.join(", ")));
+        section.push_str(&format!("Left out for length: {}. {KODA_BRIEF_DESIGN_LEFT_OUT}\n", left_out.join(", ")));
     }
     section.push('\n');
     section
@@ -175,13 +169,10 @@ pub async fn task_brief(
         .await
         .unwrap_or_default();
 
-    let mut brief = format!(
-        "# Your brief\n\nProject {project_id} \"{name}\", stack: {stack}. This is already looked up for you: start from it \
-         rather than calling read_plan, list_files or read_guide for what's here.\n\n"
-    );
+    let mut brief = format!("# Your brief\n\nProject {project_id} \"{name}\", stack: {stack}. {KODA_BRIEF_INTRO}\n\n");
 
     if files.is_empty() {
-        brief.push_str("## Files\nNo files yet: you're starting from scratch.\n\n");
+        brief.push_str(&format!("## Files\n{KODA_BRIEF_NO_FILES}\n\n"));
     } else {
         brief.push_str(&format!("## Files ({})\n", files.len()));
         for (path, size) in files.iter().take(MAX_LISTED_FILES) {
@@ -200,13 +191,7 @@ pub async fn task_brief(
         .await
         .unwrap_or_default();
     if !secrets.is_empty() {
-        brief.push_str(&format!(
-            "## Secrets
-The person stored these for the published app, read on the server from the environment \
-             (process.env, or $env/dynamic/private in SvelteKit): {}. Never put their values in code or ask for them; \
-             in the preview they're missing, so handle that plainly.\n\n",
-            secrets.join(", ")
-        ));
+        brief.push_str(&format!("## Secrets\n{}\n\n", KODA_BRIEF_SECRETS.replace("{names}", &secrets.join(", "))));
     }
 
     // A publish that failed, until a later one to that environment worked: it's the first thing
@@ -247,19 +232,16 @@ The person stored these for the published app, read on the server from the envir
                     brief.push_str(&format!("- {item}\n"));
                 }
                 if open.is_empty() {
-                    brief.push_str("- Everything the plan describes is built.\n");
+                    brief.push_str(&format!("- {KODA_BRIEF_DONE_PLAN_BUILT}\n"));
                 }
-                brief.push_str("- The app is fully implemented and running cleanly on the live dev server (npm run dev).\n\n");
+                brief.push_str(&format!("- {KODA_BRIEF_DONE_RUNNING}\n\n"));
             }
             None => brief.push_str(&format!(
-                "## Plan\n\"{}\" (version {}) couldn't be loaded here: call read_plan.\n\n",
+                "## Plan\n\"{}\" (version {}) {KODA_BRIEF_PLAN_UNREADABLE}\n\n",
                 plan.title, plan.version
             )),
         },
-        None => brief.push_str(
-            "## Plan\nNo plan from Rena in this chat: work from the task and the conversation, and ask with ask_user \
-             if something you can't sensibly assume is missing.\n\n",
-        ),
+        None => brief.push_str(&format!("## Plan\n{KODA_BRIEF_NO_PLAN}\n\n")),
     }
 
     // Only while Sora is on and handed a design over: without
