@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
-	import { Activity, ArrowDownUp, Cpu, Database, Download, Globe, History, Hourglass, KeyRound, Link, Lock, MemoryStick, MonitorX, Power, RefreshCw, Rocket, Settings, Trash2, UserMinus, Users } from '@lucide/svelte';
+	import { Activity, ArrowDownUp, Cpu, Database, Download, Globe, History, Hourglass, KeyRound, Link, Lock, MemoryStick, MonitorX, RefreshCw, Rocket, Settings, Trash2, UserMinus, Users } from '@lucide/svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { pageAction } from '$lib/pageAction';
 	import { clock as appClock } from '$lib/clock';
@@ -57,6 +57,7 @@
 	import EmptyState from '$lib/ds/lists/EmptyState.svelte';
 	import Terminal from '$lib/ds/build/Terminal.svelte';
 	import { SandboxRuntime } from '$lib/projects/sandbox.svelte';
+	import SandboxWait from '$lib/projects/SandboxWait.svelte';
 	import { terminalLines } from '$lib/projects/terminal';
 	import Presence from '$lib/ds/build/Presence.svelte';
 	import PresenceMenu from '$lib/ds/build/PresenceMenu.svelte';
@@ -870,18 +871,7 @@
 					{/if}
 				{/key}
 			{:else if sandboxOn}
-				<div class="flex flex-col items-start gap-3">
-					{#if sandboxPhase === 'failed'}
-						<EmptyState icon={MonitorX} title={m.sandbox_failed_title()} body={runtime?.error || m.sandbox_failed_body()} />
-					{:else if sandboxPhase === 'stopped'}
-						<EmptyState icon={Power} title={m.sandbox_stopped_title()} body={m.sandbox_stopped_body()} />
-					{:else if sandboxPhase === 'starting'}
-						<EmptyState icon={Hourglass} title={m.sandbox_starting_title()} body={m.sandbox_starting_body()} />
-					{:else}
-						<EmptyState icon={Hourglass} title={sandboxPhase === 'loading' ? m.sandbox_loading_title() : m.sandbox_waking_title()} body={m.sandbox_waking_body()} />
-					{/if}
-					{#if sandboxPhase === 'failed' || sandboxPhase === 'stopped'}<Button variant="secondary" label={m.sandbox_start_again()} onclick={() => void runtime?.retry()} />{/if}
-				</div>
+				<SandboxWait phase={sandboxPhase} log={runtime?.log ?? ''} error={runtime?.error ?? null} onretry={() => void runtime?.retry()} />
 			{:else}
 				<EmptyState icon={MonitorX} title={m.workspace_nothing_title()} body={project.status === 'building' ? m.workspace_nothing_building() : m.workspace_nothing_body()} />
 			{/if}
