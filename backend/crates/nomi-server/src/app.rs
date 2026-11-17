@@ -132,6 +132,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/sessions/:id/design", get(crate::routes::design_studio::list))
         .route("/api/sessions/:id/design/feedback", post(crate::routes::design_studio::add_feedback))
         .route("/api/sessions/:id/design/approval", post(crate::routes::design_studio::approve))
+        .route("/api/sessions/:id/design/publish", post(crate::routes::design_studio::publish))
         .route("/api/design/preview/:token", get(crate::routes::design_studio::preview_index))
         .route("/api/design/preview/:token/", get(crate::routes::design_studio::preview_index))
         .route("/api/design/preview/:token/*path", get(crate::routes::design_studio::preview_file))
