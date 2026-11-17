@@ -464,6 +464,8 @@ export type SandboxStatus = {
 	phase: 'idle' | 'waking' | 'running' | 'stopping' | 'stopped' | 'error';
 	preview_url: string | null;
 	error: string | null;
+	/** False while the crew hasn't finished a first build: nothing is started until it has. */
+	preview_ready?: boolean;
 };
 /** `GET /api/projects/:id/sandbox/logs?offset=`: the dev server's output from `offset` on. */
 export type SandboxLogs = { text: string; next_offset: number };
