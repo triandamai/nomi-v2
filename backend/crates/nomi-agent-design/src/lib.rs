@@ -206,6 +206,11 @@ impl SubAgent for DesignAgent {
         true
     }
 
+    /// Her previews go through save_preview, so a cut-off one continues in pieces of it.
+    fn cut_off_hint(&self) -> &'static str {
+        nomi_agent_core::prompts::DESIGN_CUT_OFF_RETRY
+    }
+
     fn uses_personality(&self) -> bool {
         true
     }

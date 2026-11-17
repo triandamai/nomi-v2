@@ -510,3 +510,12 @@ async fn a_draft_stays_with_its_direction(pool: PgPool) {
     assert_eq!(paths(&nomi_agent_core::design_artifact::files(&mut conn, session_id, 1).await.unwrap()), ["index.html"]);
     assert_eq!(paths(&nomi_agent_core::design_draft::draft(&mut conn, session_id, "editorial").await.unwrap()), ["editorial.css"]);
 }
+
+#[test]
+fn sora_is_told_to_continue_in_pieces() {
+    use nomi_agent_core::prompts::{DESIGN_CUT_OFF_RETRY, DESIGN_SYSTEM_PROMPT};
+    assert_eq!(DesignAgent::new().cut_off_hint(), DESIGN_CUT_OFF_RETRY);
+    assert!(DESIGN_CUT_OFF_RETRY.contains("finished"));
+    assert!(DESIGN_SYSTEM_PROMPT.contains("finished"));
+    assert!(!DESIGN_SYSTEM_PROMPT.contains("send every file again"));
+}

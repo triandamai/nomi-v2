@@ -21,12 +21,6 @@ const ANSWER_NOW: &str = "You haven't written a reply yet. Write your answer to 
 // model ran out of room), so the chat never ends on a silent turn; a plan moved into a draft is
 // answered with `engine.plan_draft`. All three in the person's language (nomi-i18n).
 
-/// Sent when a response hit the output limit before it finished, usually in the middle of a big
-/// tool call (Koda writing many files at once). The cut-off call is dropped, so the agent tries
-/// again in smaller pieces instead of the turn ending on "I ran out of room".
-const CUT_OFF_RETRY: &str = "Your last response hit the output limit before it finished, so it was discarded and \
-     nothing in it ran. Continue from where you were, in smaller steps: at most a few files or a few hundred lines per \
-     tool call, and split long files across write_file then edit_file calls.";
 /// How many times one run retries after being cut off before telling the person.
 const MAX_CUT_OFF_RETRIES: u32 = 3;
 
@@ -1078,7 +1072,7 @@ async fn run_agent_turn_in_reply(
             if cut_off && (reply_text.is_empty() || was_calling_tools) && cut_off_retries < MAX_CUT_OFF_RETRIES {
                 cut_off_retries += 1;
                 messages.pop();
-                messages.push(LlmMessage { role: LlmRole::User, content: vec![ContentBlock::Text { text: CUT_OFF_RETRY.to_string() }] });
+                messages.push(LlmMessage { role: LlmRole::User, content: vec![ContentBlock::Text { text: agent.cut_off_hint().to_string() }] });
                 continue;
             }
             // The model ran out of room before answering (a half-written plan or tool call is
