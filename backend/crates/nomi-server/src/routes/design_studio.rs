@@ -46,6 +46,8 @@ pub struct StudioPreview {
     pub elements: Vec<Element>,
     pub preview_token: String,
     pub published_url: Option<String>,
+    /// Why it isn't published, when its newest publish failed.
+    pub publish_error: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -85,6 +87,7 @@ pub async fn list(State(state): State<AppState>, AuthClaims(claims): AuthClaims,
                 elements: stored.manifest.elements,
                 preview_token: stored.preview_token,
                 published_url: stored.published_url,
+                publish_error: stored.publish_error,
                 created_at: stored.created_at,
             })
             .collect(),
@@ -161,6 +164,57 @@ pub async fn approve(
         tracing::warn!(error = %why, %session_id, "design studio: the approval didn't reach Sora");
     }
     Ok((StatusCode::CREATED, Json(approval)))
+}
+
+/// What publishing a version again came to.
+#[derive(Debug, Serialize)]
+pub struct PublishOutcome {
+    pub version: i32,
+    pub published_url: Option<String>,
+    pub publish_error: Option<String>,
+}
+
+pub fn publish_outcome(version: i32, published: Result<nomi_agent_core::static_publish::Published, String>) -> PublishOutcome {
+    match published {
+        Ok(at) => PublishOutcome { version, published_url: Some(at.url), publish_error: None },
+        Err(why) => PublishOutcome { version, published_url: None, publish_error: Some(why) },
+    }
+}
+
+/// `POST /api/sessions/:id/design/publish`: publishes a version again, after it couldn't be.
+/// The answer says where it is now, or why it still isn't, and both are kept for the Studio.
+pub async fn publish(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Path(session_id): Path<Uuid>,
+    Json(input): Json<serde_json::Value>,
+) -> Result<Json<PublishOutcome>, Refused> {
+    studio_access(&state, claims.sub, session_id).await?;
+    let version = version_of(&input)?;
+    let (manifest, files) = {
+        let mut conn = state.pool.acquire().await.map_err(unavailable)?;
+        let manifest = design_artifact::version(&mut conn, session_id, version).await.map_err(unavailable)?.ok_or_else(|| refused(StatusCode::NOT_FOUND, "no such version"))?;
+        let listed = design_artifact::list(&mut conn, session_id).await.map_err(unavailable)?;
+        let stored = listed.iter().find(|v| v.version == version).ok_or_else(|| refused(StatusCode::NOT_FOUND, "no such version"))?;
+        retry_allowed(stored.published_url.as_deref(), stored.publish_error.as_deref())?;
+        (manifest, design_artifact::files(&mut conn, session_id, version).await.map_err(unavailable)?)
+    };
+    // No connection is held through the upload, which can take minutes.
+    let request = nomi_agent_core::static_publish::PublishRequest { user_id: claims.sub, session_id, version, title: &manifest.title, files: &files };
+    let publisher = crate::static_publisher::ShipyardStaticPublisher::shared(state.pool.clone());
+    let published = nomi_agent_core::static_publish::publish(publisher.as_ref(), &request).await;
+    let mut conn = state.pool.acquire().await.map_err(unavailable)?;
+    let published = nomi_agent_core::static_publish::record_outcome(&mut conn, session_id, version, published).await;
+    Ok(Json(publish_outcome(version, published)))
+}
+
+/// A version is published again only when it isn't published now: never tried, or its newest
+/// publish failed. Each publish uploads every file to Shipyard again.
+pub fn retry_allowed(published_url: Option<&str>, publish_error: Option<&str>) -> Result<(), Refused> {
+    match (published_url, publish_error) {
+        (Some(_), None) => Err(refused(StatusCode::CONFLICT, "this version is already published")),
+        _ => Ok(()),
+    }
 }
 
 /// The file a request path means: nothing is the entry page, a folder its index page.
@@ -240,6 +294,23 @@ pub async fn preview_file(State(state): State<AppState>, Path((token, path)): Pa
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_version_that_is_not_published_is_published_again() {
+        assert_eq!(retry_allowed(None, Some("publishing previews isn't set up")), Ok(()));
+        assert_eq!(retry_allowed(None, None), Ok(()), "never tried");
+        assert_eq!(retry_allowed(Some("https://ship.example/dpl/d1"), Some("Shipyard refused it")), Ok(()), "its newest publish failed");
+        assert_eq!(retry_allowed(Some("https://ship.example/dpl/d1"), None).unwrap_err().0, StatusCode::CONFLICT);
+    }
+
+    #[test]
+    fn a_publish_answer_says_where_or_why_not() {
+        let at = nomi_agent_core::static_publish::Published { provider: "shipyard".into(), url: "https://ship.example/dpl/d1".into() };
+        let done = publish_outcome(3, Ok(at));
+        assert_eq!((done.version, done.published_url.as_deref(), done.publish_error), (3, Some("https://ship.example/dpl/d1"), None));
+        let failed = publish_outcome(3, Err("publishing previews isn't set up".into()));
+        assert_eq!((failed.published_url, failed.publish_error.as_deref()), (None, Some("publishing previews isn't set up")));
+    }
 
     #[test]
     fn a_request_path_means_a_file() {

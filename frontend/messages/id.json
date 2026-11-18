@@ -3660,5 +3660,10 @@
 	"studio_approve_waiting": "Masukan yang masih menunggu: {count}",
 	"studio_approve_confirm": "Setujui versi {version}",
 	"studio_approve_cancel": "Batal",
-	"studio_approve_failed": "Persetujuan itu tidak bisa disimpan. Coba lagi."
+	"studio_approve_failed": "Persetujuan itu tidak bisa disimpan. Coba lagi.",
+	"studio_not_published": "Belum dipublikasikan di luar Nomi: {reason}",
+	"studio_publish_again": "Publikasikan lagi",
+	"studio_publishing": "Memublikasikan…",
+	"studio_publish_failed": "Versi itu tidak bisa dipublikasikan lagi. Coba lagi.",
+	"chat_open_design_studio": "Buka Design Studio"
 }
