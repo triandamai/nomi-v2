@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, tick, untrack, type Snippet } from 'svelte';
-	import { ArrowUpRight, Check, Copy, Cpu, Download, FilePlus2, FolderInput, Hourglass, KeyRound, List, LogIn, Maximize2, Minimize2, Pencil, Pin, PinOff, RefreshCw, RotateCcw, Share, Sparkles, ThumbsDown, ThumbsUp, Trash2, Unplug, Undo2 } from '@lucide/svelte';
+	import { ArrowUpRight, Check, Copy, Cpu, Download, FilePlus2, FolderInput, Hourglass, Info, KeyRound, List, LogIn, Maximize2, Minimize2, Pencil, Pin, PinOff, RefreshCw, RotateCcw, Share, Sparkles, ThumbsDown, ThumbsUp, Trash2, Unplug, Undo2 } from '@lucide/svelte';
 	import { goto, invalidate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { m } from '$lib/paraglide/messages';
@@ -61,6 +61,16 @@
 	import { replyBlocks } from '$lib/adapters/blocks';
 	import ReplyBlocks from '$lib/chat/ReplyBlocks.svelte';
 	import CodeQuote from '$lib/ds/build/CodeQuote.svelte';
+	import PhoneErrorCard from '$lib/ds/thread/PhoneErrorCard.svelte';
+	import PhoneCutNotice from '$lib/ds/thread/PhoneCutNotice.svelte';
+	import PhonePendingMessage from '$lib/ds/thread/PhonePendingMessage.svelte';
+	import PhoneCrewWorking from '$lib/ds/thread/PhoneCrewWorking.svelte';
+	import PhoneButton from '$lib/ds/mobile/PhoneButton.svelte';
+	import { CREW } from '$lib/ds/agents/crew';
+	import { crewOf } from '$lib/adapters/shell';
+	import { countdown, phoneFailureView, resetsOn, type PhoneFailureAction } from '$lib/adapters/phoneChat';
+	import PhoneChatFlows from './PhoneChatFlows.svelte';
+	import { PhoneFlows } from './phoneFlows.svelte';
 	import type { ChatPageData } from '$lib/server/chatPage';
 	import type { Shell } from '$lib/server/shell';
 
@@ -105,9 +115,15 @@
 		| { kind: 'regen'; message: RenderedMessage }
 		| { kind: 'dislike'; message: RenderedMessage }
 		| { kind: 'mine'; message: RenderedMessage; latest: boolean }
-		| { kind: 'model' }
+		| { kind: 'model'; retry?: { message: RenderedMessage; reason: string } }
 		| { kind: 'crew' };
 	let sheet = $state<Sheet | null>(null);
+	// The phone's chat flows (UX contract phone-chat-flows): questions, the plan's bar, the crew at
+	// work, kept per chat.
+	const flows = new PhoneFlows();
+	/** A provider's retry wait seen in this turn (seconds), for the note once it went through. */
+	let retryWait: number | null = null;
+	let retried = $state<{ after: string; seconds: number } | null>(null);
 	// What the phone's action bar shows at once, before the reload brings the saved feedback (the
 	// desktop's reply bar keeps its own): put back if saving fails.
 	let feedbackShown = $state<Record<string, 'liked' | 'disliked' | null>>({});
@@ -152,7 +168,7 @@
 	/** Replies whose thinking was timed live, in seconds. */
 	let thoughtFor = $state<Record<string, number>>({});
 	/** A failure retried here, folded above the reply that came after it. */
-	let recovered = $state<{ after: string; reason: string } | null>(null);
+	let recovered = $state<{ after: string; reason: string; credits?: boolean } | null>(null);
 	/** The reply continued after the stream was cut off, and when it was. */
 	let continued = $state<{ after: string; elapsed: string } | null>(null);
 	/** The stop exchange sent from here: the stopped reply says it, so its messages wait for a reload. */
@@ -228,6 +244,9 @@
 				modelKey = data.model?.key ?? data.models.current?.key ?? null;
 				thinking = data.thinking;
 				hidden.clear();
+				flows.reset();
+				retried = null;
+				retryWait = null;
 				return;
 			}
 			messages = mergeReloaded(incoming, messages, hasOlder);
@@ -257,7 +276,21 @@
 		turn = applyChatEvent(turn, event, Date.now());
 		if (ACTIVITY.has(event.kind)) onactivity?.();
 		switch (event.kind) {
+			case 'AgentSessionStarted':
+				flows.sessionStarted(event.agent_session_id, event.agent_display_name);
+				break;
+			case 'AgentSessionEnded':
+				flows.sessionEnded(event.agent_session_id);
+				break;
+			case 'AgentPhaseChanged':
+				if (event.phase === 'retrying') retryWait ??= retryInfo(event.detail, Date.now()).seconds;
+				break;
+			case 'TurnFailed':
+				retryWait = null;
+				break;
 			case 'TurnCompleted':
+				if (retryWait !== null) retried = { after: new Date(before.startedAt ?? Date.now()).toISOString(), seconds: retryWait };
+				retryWait = null;
 				if (event.message_id !== NIL) {
 					if (before.thoughtFor !== null) thoughtFor = { ...thoughtFor, [event.message_id]: Math.max(1, Math.round(before.thoughtFor / 1000)) };
 					void fetchMessage(event.message_id);
@@ -290,6 +323,7 @@
 				opened(resumed) {
 					// Nothing missed is replayed: what happened meanwhile comes with a reload.
 					if (resumed && !turn.end) turn = idleTurn();
+				void readCrewAtWork();
 					void invalidate('chat:page');
 					onactivity?.();
 				},
@@ -307,6 +341,8 @@
 	async function send(text: string, options: { late?: boolean } = {}) {
 		const local: Pending = { key: nextKey++, text, status: 'sending' };
 		pending = [...pending, local];
+		flows.notice = null;
+		retried = null;
 		newFromId = null;
 		recovered = null;
 		jumpToLatest();
@@ -393,6 +429,22 @@
 		turn = turnStopped(turn, Date.now());
 	}
 
+	/** Stop all (the crew-working banner): the same "stop", even while no reply of this turn streams. */
+	async function stopAll() {
+		if (working) return stop();
+		const result = await callJson<{ message: MessageItem; reply: MessageItem | null; stopped: boolean }>(`${api}/messages`, { method: 'POST', body: { text: 'stop' } });
+		if (!result.ok) toasts.show({ kind: 'error', title: result.message || m.rerun_failed() });
+	}
+
+	/** Who of the crew is at work in the chat already (the feed only says who starts from now). */
+	async function readCrewAtWork() {
+		if (!phone) return;
+		const result = await callJson<{ agent_session_id: string; agent_type: string } | null>(`${api}/agent-status`);
+		if (!result.ok || !result.data) return;
+		const crewId = crewOf(result.data.agent_type);
+		flows.sessionStarted(result.data.agent_session_id, CREW.find((member) => member.id === crewId)?.name ?? 'Nomi');
+	}
+
 	function continueReply() {
 		if (turn.end?.status === 'interrupted') continued = { after: new Date().toISOString(), elapsed: `${Math.round(turn.end.elapsedMs / 1000)}s` };
 		void send(m.reply_continue_message());
@@ -447,11 +499,11 @@
 		return result.ok;
 	}
 
-	async function retryRun(message: RenderedMessage, reason: string) {
+	async function retryRun(message: RenderedMessage, reason: string, credits = false) {
 		const result = await callJson(`${api}/messages/${message.id}/retry`, { method: 'POST' });
 		if (!result.ok) return void toasts.show({ kind: 'error', title: m.retry_failed(), detail: result.message || undefined });
 		messages = messages.filter((one) => one.id !== message.id);
-		recovered = { after: new Date().toISOString(), reason };
+		recovered = { after: new Date().toISOString(), reason, credits };
 		turn = turnSent(turn, Date.now());
 	}
 
@@ -501,6 +553,40 @@
 		return { title: view.title, actions: view.actions.map((action) => ACTIONS[action]) };
 	}
 
+	/** A failure on a phone (Errors & recovery AyrHG): the phone's title and labels, the desktop's moves. */
+	function phoneFailure(message: RenderedMessage, failure: { kind: Parameters<typeof failureView>[0]; text: string; retry: boolean }) {
+		const choices = data.models.groups.flatMap((group) => group.models.filter((option) => option.enabled).map((option) => ({ key: option.key, label: option.label, context: option.context })));
+		const view = phoneFailureView(failure.kind, { retry: failure.retry, canUseCredits, models: choices, current: modelKey });
+		const credits = data.models.groups.find((group) => group.source === 'nomi')?.models.find((option) => option.enabled);
+		const toAction = (action: PhoneFailureAction) => {
+			switch (action.action) {
+				case 'retry':
+					return { label: action.label, icon: RotateCcw, onclick: () => void retryRun(message, failure.text) };
+				case 'credits':
+					return { label: action.label, icon: Sparkles, onclick: async () => void (credits && (await useModel(credits.key)) && failure.retry && (await retryRun(message, failure.text, true))) };
+				case 'switch':
+					return { label: action.label, onclick: async () => void (action.model && (await useModel(action.model)) && failure.retry && (await retryRun(message, failure.text))) };
+				case 'models':
+					return { label: action.label, onclick: () => (sheet = { kind: 'model', ...(failure.retry && { retry: { message, reason: failure.text } }) }) };
+				case 'own_key':
+					return { label: action.label, icon: KeyRound, href: '/settings/models' };
+				case 'upgrade':
+					return { label: action.label, icon: ArrowUpRight, href: '/settings/plan' };
+				case 'new_chat':
+					return { label: action.label, icon: FilePlus2, href: '/chat/new' };
+			}
+		};
+		const [primary, secondary] = view.actions.map(toAction);
+		const usage = failure.kind === 'quota' ? data.usage : null;
+		return {
+			title: view.title,
+			primary,
+			secondary,
+			tag: usage ? usage.card.plan : undefined,
+			meta: usage ? m.phone_credits_out_meta({ used: usage.tokens.used, allowance: usage.tokens.total, date: resetsOn(time.now, language, time.timeZone) }) : modelLabel,
+		};
+	}
+
 	// The chat itself: its menu, rename, pin, move, export, share, delete.
 	function onMenu(action: ChatAction) {
 		if (action === 'rename') header.renaming = true;
@@ -515,7 +601,17 @@
 	// Who answers in this chat, for the phone's nav bar: whoever is at it, else the last to reply.
 	const answering = $derived.by(() => {
 		const name = working ? (turn.agent ?? 'Nomi') : (messages.findLast((message) => message.sender === 'assistant' && message.agent_display_name)?.agent_display_name ?? 'Nomi');
+		// On a phone the nav bar also says who waits on the person, or how many work in the background.
+		const asking = phone && !working ? latestApproval : null;
+		if (asking) return { agent: crewIdOf(asking), name: m.phone_approval_nav({ agent: asking }) };
+		if (phone && flows.working.length > 1) return { agent: crewIdOf(flows.working[0]), name: m.phone_crew_working({ count: String(flows.working.length) }) };
 		return { agent: crewIdOf(name), name: working ? m.chat_nav_working({ name }) : name };
+	});
+	/** Who of the crew waits on an approval in the latest reply. */
+	const latestApproval = $derived.by(() => {
+		const reply = messages.findLast((message) => message.sender === 'assistant');
+		const waiting = (reply?.content_blocks ?? []).some((block) => block.kind === 'approval_request' && (block as { status?: string }).status === 'pending');
+		return waiting ? nameOf(reply!) : null;
 	});
 	const pinned = $derived(header.shown(chatId, 'pinned', data.chat.pinned));
 
@@ -780,11 +876,17 @@
 		<!-- On a phone a short thread sits at the bottom, over the composer, as the pen draws it. -->
 		<div class={['mx-auto flex w-full max-w-180 flex-col', phone ? 'min-h-full justify-end gap-6 pb-5' : 'gap-8 pb-8']}>
 			{#if !online}
-				<Banner kind="offline" text={m.banner_offline()} action={{ label: m.banner_retry_now(), onclick: () => void flushOutbox() }} />
+				<Banner kind="offline" text={phone ? m.phone_net_offline() : m.banner_offline()} action={{ label: m.banner_retry_now(), onclick: () => void flushOutbox() }} />
 			{:else if backOnline}
 				<Banner kind="online" text={pending.length === 0 ? m.banner_online_sent() : m.banner_online()} />
+			{:else if quota !== null && phone}
+				<Banner kind="quota" text={m.phone_credits_low({ percent: String(quota), date: resetsOn(time.now, language, time.timeZone) })} action={{ label: m.phone_credits_usage(), href: '/settings/plan' }} />
 			{:else if quota !== null}
 				<Banner kind="quota" text={m.banner_quota({ percent: quota })} action={{ label: m.banner_see_usage(), href: '/settings/plan' }} />
+			{/if}
+			{#if phone && flows.working.length > 0}
+				<!-- Approvals & background (HsE8N): who works on this chat while the person may leave. -->
+				<PhoneCrewWorking crew={flows.working.map((name) => crewIdOf(name))} onstop={() => void stopAll()} />
 			{/if}
 
 			{#if hasOlder}
@@ -837,20 +939,41 @@
 								{phone}
 								agent={crewIdOf(message.agent_display_name)}
 								name={nameOf(message)}
-								meta={replyMeta(message, entry.turnStart, cutOff === message.id ? m.meta_stopped() : continued && message.created_at > continued.after ? m.meta_continued() : undefined)}
+								meta={replyMeta(
+									message,
+									entry.turnStart,
+									cutOff === message.id
+										? m.meta_stopped()
+										: continued && message.created_at > continued.after
+											? m.meta_continued()
+											: phone && firstOfTurn && recovered?.credits && message.created_at > recovered.after
+												? m.phone_meta_credits()
+												: phone && firstOfTurn && retried && message.created_at > retried.after
+													? m.phone_meta_retried()
+													: undefined,
+								)}
 								version={asked && takes > 1 && !asked.edited_at && firstOfTurn ? { current: takes, total: takes, onprev: () => step(asked, takes - 1), onnext: () => {} } : undefined}
 								dimmed={editing !== null && asked?.id === editing}
 							>
 								{#if recovered && firstOfTurn && message.created_at > recovered.after}
-									<TurnNote kind="box" icon={RotateCcw} text={m.recovered_note({ reason: recovered.reason })} />
+									<TurnNote kind="box" icon={RotateCcw} text={phone && recovered.credits ? m.phone_recovered_credits({ reason: recovered.reason }) : m.recovered_note({ reason: recovered.reason })} />
+								{:else if phone && retried && firstOfTurn && message.created_at > retried.after}
+									<TurnNote kind="box" icon={Hourglass} text={m.phone_retried_note({ seconds: String(retried.seconds) })} />
 								{/if}
 								{#if entry.reasoning.length > 0}
 									<Reasoning label={reasoningLabel(message.id)} text={entry.reasoning.join('\n\n')} />
 								{/if}
 								{#if entry.thinkingOnly}
 									<!-- Thinking that never reached a reply (stopped, or still on its way). -->
+								{:else if cutOff === message.id && turn.end && phone}
+									<!-- Errors & recovery, scenario 5 step 3 (UTrnr): what was written stays, then when it was cut off. -->
+									<p class="text-phone leading-phone whitespace-pre-wrap text-text">{turn.reply.text}</p>
+									<PhoneCutNotice seconds={Math.round(turn.end.elapsedMs / 1000)} oncontinue={continueReply} onrestart={entry.failure?.retry ? () => entry.failure && retryRun(message, entry.failure.text) : undefined} />
 								{:else if cutOff === message.id && turn.end}
 									<ReplyText text={turn.reply.text} status="interrupted" reason={turn.end.reason} oncontinue={continueReply} onrestart={() => entry.failure?.retry && retryRun(message, entry.failure.text)} />
+								{:else if entry.failure && phone}
+									{@const view = phoneFailure(message, entry.failure)}
+									<PhoneErrorCard sentence={entry.failure.text} {...view} />
 								{:else if entry.failure}
 									{@const view = failureActions(message, entry.failure)}
 									<FailedReply text={entry.failure.text} title={view.title} actions={view.actions} />
@@ -867,8 +990,11 @@
 										{working}
 										latest={entry.latest}
 										onsend={(text) => send(text)}
+										{phone}
+										{flows}
+										onreload={() => void fetchMessage(message.id)}
 									/>
-									{#if continued && message.created_at > continued.after}<TurnNote icon={Unplug} text={m.continued_note({ elapsed: continued.elapsed })} />{/if}
+									{#if continued && message.created_at > continued.after}<TurnNote icon={Unplug} text={phone ? m.phone_net_continued() : m.continued_note({ elapsed: continued.elapsed })} />{/if}
 									{#if phone}
 										{@const feedback = message.id in feedbackShown ? feedbackShown[message.id] : message.my_feedback === 'up' ? 'liked' : message.my_feedback === 'down' ? 'disliked' : null}
 										<ActionBar
@@ -898,8 +1024,15 @@
 			{/each}
 
 			{#each pending as item (item.key)}
-				{#if phone && item.status !== 'queued'}
-					<PhoneUserMessage text={item.text} status={item.status === 'failed' ? 'failed' : 'sent'} onretry={item.status === 'failed' ? () => retryPending(item) : undefined} />
+				{#if phone && item.status === 'queued'}
+					<PhonePendingMessage text={item.text} status="queued" note={m.phone_net_queued()} action={{ label: m.action_cancel(), onclick: () => cancelQueued(item) }} />
+				{:else if phone && item.status === 'failed'}
+					<!-- Not sent (TJhp2): the reason under the bubble with Retry; a long press puts it back to edit. -->
+					<div use:longPress={() => editPending(item)}>
+						<PhonePendingMessage text={item.text} status="failed" note={m.phone_send_failed({ reason: item.reason ?? '' })} action={{ label: m.action_retry(), onclick: () => retryPending(item) }} />
+					</div>
+				{:else if phone}
+					<PhoneUserMessage text={item.text} />
 				{:else}
 					<MessageUser
 						text={item.text}
@@ -909,12 +1042,24 @@
 						onedit={item.status === 'failed' ? () => editPending(item) : undefined}
 					/>
 				{/if}
-				{#if item.reason}<TurnNote icon={Hourglass} align="end" tone="danger" text={item.reason} />{/if}
+				{#if item.reason && !phone}<TurnNote icon={Hourglass} align="end" tone="danger" text={item.reason} />{/if}
 			{/each}
+
+			{#if phone && flows.working.length > 0 && !working}
+				<TurnNote kind="box" icon={Info} text={m.phone_crew_leave({ agent: flows.working.at(-1) ?? 'Nomi' })} />
+			{/if}
 
 			{#if (working || turn.end) && !cutOff && (turn.reply.text || turn.reply.thinking || working)}
 				<AgentReply {phone} agent={crewIdOf(turn.agent)} name={turn.agent ?? 'Nomi'} meta={[clock(new Date(turn.startedAt ?? Date.now()), time.timeZone), turn.end?.status === 'stopped' ? m.meta_stopped() : undefined].filter(Boolean).join(' · ')}>
-					{#if retrying}
+					{#if retrying && phone}
+						<!-- Errors & recovery, scenario 2 step 1 (Obkjq): the wait counts down; another model is a tap away. -->
+						<PhoneErrorCard
+							title={m.failure_rate_limited()}
+							meta={modelLabel}
+							primary={{ label: retrying.seconds > 0 ? m.phone_retrying_in({ time: countdown(retrying.seconds) }) : m.phone_retrying_now(), disabled: true }}
+							secondary={{ label: m.phone_action_another_model(), onclick: () => (sheet = { kind: 'model' }) }}
+						/>
+					{:else if retrying}
 						<TurnNote kind="box" icon={Hourglass} text={m.retry_note({ attempt: retrying.attempt, max: retrying.max })} />
 					{/if}
 					{#if turn.reply.thinking}
@@ -943,7 +1088,9 @@
 			<div class="absolute -top-12 left-1/2 -translate-x-1/2"><JumpToLatest count={unseen} onclick={() => jumpToLatest(true)} /></div>
 		{/if}
 		{#if phone}
+			<PhoneChatFlows {flows} {entries} chat={shownTitle ?? m.nav_new_chat()} {language} {working} onsend={(text) => void send(text)} onfocus={() => requestAnimationFrame(() => field?.focus())} />
 			<PhoneComposer
+				notice={flows.notice ?? undefined}
 				bind:value={draft}
 				bind:field
 				placeholder={m.mobile_message()}
@@ -1062,13 +1209,25 @@
 			<SheetRow icon={Copy} label={m.mine_copy()} onclick={() => (void copyText(mine.message.content), close())} />
 		</BottomSheet>
 	{/if}
+	<!-- Opened from a failure (Errors & recovery, scenario 1 step 2: MLk2U), picking a model retries on it. -->
+	{@const retry = sheet?.kind === 'model' ? sheet.retry : undefined}
+	{@const credits = data.models.groups.find((group) => group.source === 'nomi')?.models.find((option) => option.enabled)}
+	{@const pick = (key: string, onCredits: boolean) => {
+		// Read before closing: the sheet (and its retry) is gone once it closes.
+		const again = retry;
+		close();
+		void useModel(key).then((ok) => ok && again && retryRun(again.message, again.reason, onCredits));
+	}}
 	<BottomSheet open={sheet?.kind === 'model'} title={m.composer_model_title()} onclose={closed('model')}>
 		{#each models as group (group.group)}
 			<p class="px-5 pt-3 pb-1 font-mono text-label tracking-label text-text-3 uppercase">{group.group}</p>
 			{#each group.models as option (option.key)}
-				<SheetRow icon={option.chosen ? Check : option.source === m.models_nomi_credits() ? Sparkles : Cpu} label={option.label} meta={option.source} onclick={() => (close(), void useModel(option.key))} />
+				<SheetRow icon={option.chosen ? Check : option.source === m.models_nomi_credits() ? Sparkles : Cpu} label={option.label} meta={option.source} onclick={() => pick(option.key, option.source === m.models_nomi_credits())} />
 			{/each}
 		{/each}
+		{#if retry && credits}
+			<div class="px-4 pt-3"><PhoneButton label={m.phone_action_credits_retry()} onclick={() => pick(credits.key, true)} /></div>
+		{/if}
 	</BottomSheet>
 	<BottomSheet open={sheet?.kind === 'crew'} title={m.composer_crew_title()} onclose={closed('crew')}>
 		{#each crew as option (option.name)}

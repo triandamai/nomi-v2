@@ -12,6 +12,7 @@ import {
 	crewRows,
 	crewSummary,
 	firstName,
+	formatTokens,
 	personName,
 	projectsWorkspace,
 	recents,
@@ -32,7 +33,7 @@ export type Shell = {
 	theme: Theme;
 	/** The person's saved time zone; null when they never saved one (the browser's decides). */
 	timeZone: string | null;
-	usage: { card: { plan: string; used: number; caption: string }; account: string; canUpgrade: boolean } | null;
+	usage: { card: { plan: string; used: number; caption: string }; account: string; canUpgrade: boolean; /** This month's tokens and the allowance, as read ("21.8K", "1M"). */ tokens: { used: string; total: string } } | null;
 	unread: number;
 	recents: Recent[];
 	chats: number;
@@ -101,7 +102,7 @@ export async function loadShell(event: ApiEvent & { userAgent: string }, now: Da
 		person: { name, firstName: firstName(name), avatar: profile?.avatar_url ?? null },
 		theme,
 		timeZone,
-		usage: usage ? { card: usageCard(usage), account: accountLine(usage), canUpgrade: usage.can_upgrade } : null,
+		usage: usage ? { card: usageCard(usage), account: accountLine(usage), canUpgrade: usage.can_upgrade, tokens: { used: formatTokens(usage.tokens_used), total: formatTokens(usage.plan.monthly_tokens) } } : null,
 		unread: unread?.unread ?? 0,
 		recents: recents(sessions?.sessions ?? [], now, undefined, undefined, timeZone ?? undefined),
 		chats: chatsCount(sessions?.sessions ?? []),

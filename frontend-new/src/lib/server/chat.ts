@@ -286,6 +286,11 @@ export async function agentPlans(event: ApiEvent, sessionId: string, agentSessio
 	return outcome(await call(event, `/api/sessions/${sessionId}/agent-plans/${agentSessionId}`), (response) => response.json());
 }
 
+/** Who of the crew is working in a chat now (the latest active session), or null. */
+export async function agentStatus(event: ApiEvent, sessionId: string): Promise<Outcome<unknown>> {
+	return outcome(await call(event, `/api/sessions/${sessionId}/agent-status`), (response) => response.json());
+}
+
 /** A step of a plan ticked off, or back on. */
 export async function setPlanItem(event: ApiEvent, sessionId: string, agentSessionId: string, planId: string, index: number, done: boolean): Promise<Outcome<void>> {
 	return outcome(await call(event, `/api/sessions/${sessionId}/agent-plans/${agentSessionId}/${planId}/items/${index}`, { method: 'PUT', body: body({ done }) }), nothing);

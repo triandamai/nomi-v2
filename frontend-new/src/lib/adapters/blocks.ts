@@ -16,7 +16,7 @@ type Format = 'text' | 'number' | 'money' | 'percent' | 'date' | 'date_time';
 
 export type ReplyBlock =
 	| { kind: 'clarify'; key: string; agent: CrewId; title: string; questions: ClarifyQuestion[]; asked: string[] }
-	| { kind: 'approval'; key: string; id: string; agent: CrewId; title: string; tool: string; fields: { key: string; value: string }[]; status: 'pending' | 'approved' | 'rejected' | 'cancelled' }
+	| { kind: 'approval'; key: string; id: string; agent: CrewId; title: string; tool: string; fields: { key: string; value: string }[]; status: 'pending' | 'approved' | 'rejected' | 'cancelled'; decidedAt?: string }
 	| { kind: 'plan'; key: string; planId: string; agentSessionId: string; title: string }
 	| { kind: 'table'; key: string; title: string; columns: string[]; rows: Cell[][]; source?: string }
 	| { kind: 'decision'; key: string; question: string; options: { title: string; detail?: string; suggested?: boolean }[] }
@@ -240,6 +240,8 @@ export function replyBlocks(message: RenderedMessage, { language }: { language: 
 						topic: m.clarify_topic({ number: String(number + 1) }),
 						title: question.question,
 						multiple: question.multiple === true,
+						// "Something else…" on every one-of-many question: the answer goes back as text (D4).
+						other: question.multiple !== true,
 						options: question.options.map((option) => ({ title: option.label, ...(option.detail && { detail: option.detail }) })),
 					})),
 				});
@@ -255,6 +257,7 @@ export function replyBlocks(message: RenderedMessage, { language }: { language: 
 					tool: String(block.tool_name ?? ''),
 					fields: Object.entries((block.input as Record<string, unknown>) ?? {}).map(([field, value]) => ({ key: field, value: typeof value === 'string' ? value : JSON.stringify(value) })),
 					status: block.status === 'approved' ? 'approved' : block.status === 'denied' ? 'rejected' : block.status === 'cancelled' ? 'cancelled' : 'pending',
+					...(str(block.decided_at) && { decidedAt: str(block.decided_at) }),
 				});
 				break;
 			case 'plan':

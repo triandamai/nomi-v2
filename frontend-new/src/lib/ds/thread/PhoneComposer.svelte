@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { ArrowUp, AtSign, ChevronDown, Cpu, Mic, Plus, Square } from '@lucide/svelte';
+	import { ArrowUp, AtSign, ChevronDown, Cpu, FilePenLine, Mic, Plus, Square } from '@lucide/svelte';
 	import { m } from '$lib/paraglide/messages';
 	import Icon from '../foundations/Icon.svelte';
 	import MentionPicker from '../chat/MentionPicker.svelte';
@@ -29,8 +29,13 @@
 		onmodel?: () => void;
 		/** "@ Crew": the page's sheet of who to address. */
 		oncrew?: () => void;
+		/**
+		 * What the next message is for, over the field (Clarify → plan, step 8: "Changing the plan ·
+		 * v1"): mono at 11 with the pen's file-pen-line, [0,4], 6 apart.
+		 */
+		notice?: string;
 	};
-	let { value = $bindable(''), placeholder, streaming = false, crew = [], model, field = $bindable(), onsend, onstop, onattach, onrecord, onmodel, oncrew }: Props = $props();
+	let { value = $bindable(''), placeholder, streaming = false, crew = [], model, field = $bindable(), onsend, onstop, onattach, onrecord, onmodel, oncrew, notice }: Props = $props();
 
 	const id = $props.id();
 	const ready = $derived(value.trim() !== '');
@@ -106,6 +111,12 @@
 		</div>
 	{/if}
 	<div data-phone-composer class="flex w-full flex-col gap-2 border-t border-border bg-bg px-3 pt-1.75 pb-2">
+		{#if notice}
+			<p class="flex items-center gap-1.5 px-1 font-mono text-label text-text-3">
+				<span class="inline-flex shrink-0"><Icon icon={FilePenLine} size={12} /></span>
+				<span class="min-w-0 flex-1 truncate">{notice}</span>
+			</p>
+		{/if}
 		<div class="flex items-end gap-2">
 			{#if onattach}
 				<button type="button" aria-label={m.composer_attach()} class="inline-flex size-9.5 shrink-0 cursor-pointer items-center justify-center rounded-full bg-surface-2 text-text-2 outline-offset-1" onclick={onattach}>
