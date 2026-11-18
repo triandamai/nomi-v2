@@ -12,11 +12,18 @@ async fn a_made_file_is_stored_like_an_attachment_and_read_back(pool: PgPool) {
         .fetch_one(&pool)
         .await
         .unwrap();
+    let org: Uuid = sqlx::query_scalar("INSERT INTO organizations (name) VALUES ('Warung Bu Sri') RETURNING id").fetch_one(&pool).await.unwrap();
+    let chat: Uuid = sqlx::query_scalar("INSERT INTO sessions (org_id, channel, chat_id, user_id) VALUES ($1, 'web', 'chat-made', $2) RETURNING id")
+        .bind(org)
+        .bind(me)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     let mut conn = pool.acquire().await.unwrap();
     let said = make_file(
         &mut conn,
         None,
-        Uuid::new_v4(),
+        chat,
         me,
         "files",
         &json!({ "name": "may", "format": "csv", "summary": "May spending", "rows": [["a", "b"], [1, 2]], "sources": [source.to_string(), Uuid::new_v4().to_string()] }),
