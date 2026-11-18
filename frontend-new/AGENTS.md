@@ -433,6 +433,33 @@ leaves out what v2 or the backend can't do yet, rather than draw it dead:
   (locked, scanned, damaged, partly read: G9), files Maya makes (G11), citations to a page with
   highlights (G12 steps 25 and 29), the share dialog's files row and files open to viewers (G16),
   and masking file names (M3).
+- A chat's flows on a phone (Flow / Mobile Chat — Clarify → plan `GCvfD`, Plan → approve → act
+  `G1tK6L`, Approvals & background `xvntx`, Errors & recovery `AyrHG`; UX contract
+  `docs/ux/work/phone-chat-flows`): a reply's questions open in `PhoneClarifySheet` on their own;
+  closed, they park as the `PhoneFlowBar` "{n} questions waiting · Answer" (UXP-002 G1) and come
+  back on the same question; the thread keeps their folded line. A proposed plan is
+  `PhoneDraftPlan` (DRAFT, or V{n} with the steps a revision added marked "+") with its bar and
+  `PhoneRunSheet`, whose choice goes as the person's message (D1); Keep planning puts "Changing the
+  plan · v{n}" over the composer. Decisions are `PhoneDecision`, forms the pen's reminder card
+  opening `PhoneFormSheet`, approvals the Mobile / Approval Card with `PhoneApprovalSheet` ("Don't
+  send" for a tool that sends, Decline for the rest, on both layouts: D5), quick replies
+  `PhoneQuickReplies`, the crew at work `PhoneCrewWorking`, a stop `PhoneSupervisor`, and failures
+  `PhoneErrorCard` (with `PhoneCutNotice`, `PhonePendingMessage` and `PhoneSignedOutSheet`); a new
+  needs-you approval in another chat shows Mobile / Toast while the person is elsewhere in the app.
+  Left out until the backend has them (BACKEND_TODO.md): a recommended answer and a question's
+  helper line (nothing is picked to start; Skip leaves it "Skipped"), each step's owner, line and
+  timing, the plan's estimate and "Finished in", a run mode, Edit and "Don't ask again" on an
+  approval (D3), View in Gmail, Undo after Don't send, Discard after a stop, the failure's code and
+  the provider's words, Summarise & continue, a content-filter kind (it reads "Couldn't reply"),
+  the paused plan's failed step and "waits for step {n}", "reconnected · resumed at step {n}", and
+  the lock screen (the note says the request waits "here and on Home", G2). Not wired yet on the
+  phone, though the backend has them: the model sheet's key health ("out of credits", "key
+  rejected"), the credits left and the masked key in the error card's meta (the chat page doesn't
+  read connections). A one-of-many question offers "Something else…" on both layouts (D4). Copy changes from the pen: Skip, not the pen's "Don't send" on the
+  questions' left button (G5); the draft's intro "Tell Nomi what to change. Nothing runs until you
+  say so." without reorder or reassign (G3); an approval's time is when it was decided (the pen's
+  14:06 is a slip). The answered line counts defaults in its mono summary ("· 1 default"), since
+  ClarifyAnswered is the old app's twin; a sheet's 30 close takes a 44 target from BottomSheet.
 - Projects on a phone (Flow / Mobile Projects) is the pen's list: `PhoneProjectsHeader` (the
   workspace pill opening the Workspaces sheet, how many people are in it, Invite to the workspace's
   page, the large title and New), `PhoneProjectSearch` with Sort (a sheet of `SheetOption`s), the

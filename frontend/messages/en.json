@@ -825,6 +825,7 @@
 	"project_phase_unsupported": "Static preview",
 	"project_phase_waiting": "Waiting for Koda",
 	"project_preview": "Preview",
+	"project_design": "Design",
 	"project_preview_title": "Project preview",
 	"project_reload_preview": "Reload",
 	"project_resize": "Resize the chat",

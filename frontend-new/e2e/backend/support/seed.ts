@@ -135,3 +135,37 @@ export async function siteHits(projectId: string): Promise<{ kind: string; refer
 		await sql.end();
 	}
 }
+
+/** A plan a crew member wrote in a chat, one row per version (its markdown checklist), as the planning turn keeps them. */
+export async function seedPlan(sessionId: string, email: string, plan: { title: string; versions: string[] }): Promise<{ agentSessionId: string; planId: string }> {
+	const sql = postgres(DATABASE_URL, { max: 1, onnotice: () => {} });
+	try {
+		const agentSessionId = crypto.randomUUID();
+		let planId = '';
+		for (const [index, content] of plan.versions.entries()) {
+			const [row] = await sql`
+				INSERT INTO agent_plans (session_id, agent_session_id, user_id, title, content, version)
+				SELECT ${sessionId}, ${agentSessionId}, user_id, ${plan.title}, ${content}, ${index + 1}
+				FROM web_credentials WHERE email = ${email}
+				RETURNING id`;
+			planId = row.id as string;
+		}
+		return { agentSessionId, planId };
+	} finally {
+		await sql.end();
+	}
+}
+
+/** A crew session paused on an approval in a message, as the crew's turn leaves it (so deciding it is accepted). */
+export async function seedPendingApproval(sessionId: string, email: string, messageId: string, agentType = 'workspace'): Promise<void> {
+	const sql = postgres(DATABASE_URL, { max: 1, onnotice: () => {} });
+	try {
+		await sql`
+			INSERT INTO agent_sessions (session_id, sender_channel_identity_id, agent_type, status, state)
+			SELECT ${sessionId}, ci.id, ${agentType}, 'awaiting_approval', ${sql.json({ pending_approval_message_id: messageId, paused_for_approval: true })}
+			FROM channel_identities ci JOIN web_credentials w ON w.user_id = ci.user_id
+			WHERE w.email = ${email} LIMIT 1`;
+	} finally {
+		await sql.end();
+	}
+}

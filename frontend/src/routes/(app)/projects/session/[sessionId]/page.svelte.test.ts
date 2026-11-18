@@ -4,6 +4,7 @@
 // in jsdom) and the backend is faked.
 import { describe, expect, it } from 'vitest';
 import { clickEverything, controls, fakeBackend, render, settle, text } from '../../../../../test-stubs/render';
+import { page } from '$app/state';
 import Page from './+page.svelte';
 
 const message = (id: string, sender: 'user' | 'assistant', content: string) => ({
@@ -37,6 +38,18 @@ const project = {
 	open_issues: 2,
 	backend: 'drizzle',
 };
+
+const preview = (version: number) => ({
+	version,
+	direction_id: 'aurora',
+	title: `Aurora Wave v${version}`,
+	preview_token: `t${version}`,
+	pages: [{ path: 'index.html', title: 'Home' }],
+	elements: [],
+	created_at: '2026-11-18T07:00:00Z',
+	published_url: null,
+	publish_error: null,
+});
 
 const data = (over: Record<string, unknown> = {}) => ({
 	messages: [message('m1', 'user', 'Build me a bakery site'), message('m2', 'assistant', 'Done: a home page and an order form.')],
@@ -83,6 +96,33 @@ describe('project session page', () => {
 		clickEverything(document.body, /delete|remove|sign out|publish|transfer|leave|model|provider/i);
 		await settle(8);
 		expect(calls.length).toBeGreaterThan(0);
+	});
+
+	it('has no Design tab until Sora has made a preview', async () => {
+		backend();
+		const root = render(Page as never, { data: data({ design: { previews: [], feedback: [], approval: null } }) as never, form: null as never, params: { sessionId: 's1' } as never });
+		await settle(8);
+		expect([...root.querySelectorAll('[role="tab"]')].map((t) => t.textContent?.trim())).not.toContain('Design');
+	});
+
+	it('shows the Design Studio in a Design tab, and Sora’s link opens it there instead of leaving the project', async () => {
+		backend();
+		(page.params as Record<string, string>).sessionId = 's1';
+		const design = { previews: [preview(1), preview(2)], feedback: [], approval: null };
+		const sora = { ...message('m3', 'assistant', 'Have a look'), agent_display_name: 'Sora', content_html: '<p><a href="/chat/s1/design?version=1">Open in Design Studio</a></p>' };
+		const root = render(Page as never, { data: data({ design, messages: [sora] }) as never, form: null as never, params: { sessionId: 's1' } as never });
+		await settle(8);
+		const tab = [...root.querySelectorAll('[role="tab"]')].find((t) => t.textContent?.trim() === 'Design') as HTMLElement;
+		expect(tab).toBeTruthy();
+		const link = [...root.querySelectorAll('a')].find((a) => a.textContent === 'Open in Design Studio') as HTMLAnchorElement;
+		const click = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 });
+		link.dispatchEvent(click);
+		await settle(4);
+		expect(click.defaultPrevented).toBe(true);
+		expect(tab.getAttribute('aria-selected')).toBe('true');
+		expect(root.querySelector('.design-pane .studio')).not.toBeNull();
+		expect(root.querySelector('.design-pane .studio__back')).toBeNull();
+		expect(root.querySelector('.design-pane .studio__row[aria-current="true"]')?.textContent).toContain('Version 1');
 	});
 
 	it('shows a project that has nothing to build yet', async () => {

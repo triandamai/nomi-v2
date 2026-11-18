@@ -403,3 +403,59 @@ Checked against `backend/crates/nomi-server/src/app.rs`, `routes/attachments.rs`
   - **Needed by:** step 14 (D14 · M16): the bubble's note `Sent without struk-belanja-nov.jpg · deepseek-v3 can't see images`.
   - **Proposed contract:** `POST /api/sessions/:id/messages` takes `left_out: [{ name, reason: "model_cannot_see", model_label }]`, kept on the message and passed to the crew (so Maya can say she didn't get the photo).
   - **Until then:** the note shows on this visit only.
+
+### Questions: a recommended answer, and a helper line
+- **Needed by:** *Flow / Mobile Chat — Clarify → plan* (GCvfD) steps 1 and 3: an option tagged RECOMMENDED and picked to start; Skip takes it as a DEFAULT ("You skipped the weekend, so I picked 1–2 Nov."); a line under the question ("You and Sari, from Jakarta.").
+- **What exists today:** the `questions` block (`nomi_agent_core::content_block::Questions`) has `intro` and `questions[{ question, options[{ label, detail }], multiple }]`.
+- **Proposed contract:** `options[].recommended: bool` and `questions[].helper: string | null`.
+- **Until then:** nothing is picked to start and Next waits for a pick; Skip leaves a question "Skipped"; no helper line. The phone's sheet already draws both when they come.
+
+### A plan's steps: who does each, how it's going, how long it'll take
+- **Needed by:** *Flow / Mobile Chat — Plan → approve → act* (G1tK6L) steps 1, 2 and 6: each step's owner, a per-step line ("running · 00:12", "will ask you first"), the foot "~4 min · Maya, Dana, Kala", and "Finished in 3m 40s".
+- **What exists today:** `GET /api/sessions/:id/agent-plans/:agent_session_id` gives each version's markdown checklist (`- [ ]` / `- [x]`) and `state`; a step has no owner, status, times or estimate.
+- **Proposed contract:** `steps[{ text, owner_agent_type, status: "waiting"|"running"|"done"|"failed", status_detail, started_at, finished_at }]` on each version, and `estimate_seconds` on the plan.
+- **Until then:** every step wears the plan's own agent; no per-step line, estimate or finished time.
+
+### Run a proposed plan, or only research it
+- **Needed by:** *Flow / Mobile Chat — Clarify → plan* step 7 ("Run this plan?": Run it, ask before anything leaves Nomi / Research only / Keep planning).
+- **What exists today:** a plan runs from what the person says next.
+- **Proposed contract:** `POST /api/sessions/:id/agent-plans/:agent_session_id/run { mode: "run" | "research" }` → 202.
+- **Until then:** the chosen way goes as the person's message (decision D1).
+
+### An approval sent with the person's edits, and a link to what was sent
+- **Needed by:** *Flow / Mobile Chat — Approvals & background* (xvntx) steps 1–2 (Edit the draft, Sent with your edits) and *Plan → approve → act* step 6 (View in Gmail).
+- **What exists today:** `PUT /api/sessions/:id/messages/:mid/approval { decision, remember }` → 202 / 409; the tool runs on the input as it was proposed, and nothing links to the sent message.
+- **Proposed contract:** `{ decision: "approve", input: { …edited fields } }`, and `result_url` on the approval block once the tool ran.
+- **Until then:** Edit and View in Gmail are left out.
+
+### Undo a deny, and discard after a stop
+- **Needed by:** *Flow / Mobile Chat — Approvals & background* step 3 (Undo on "Not sent") and step 6 (Discard on the Supervisor's report).
+- **What exists today:** a deny is final; a `stopped` block can only be resumed (by a message).
+- **Proposed contract:** `POST …/messages/:mid/approval/undo` within ~10 s of a deny (back to pending); `POST /api/sessions/:id/stopped/:message_id/discard` dropping the stopped tasks' partial work.
+- **Until then:** neither is offered.
+
+### "Don't ask again" scoped to a recipient
+- **Needed by:** *Flow / Mobile Chat — Plan → approve → act* step 5 ("Don't ask again for Bu Sri").
+- **What exists today:** `remember: true` allows the whole tool (and path) from then on, so any `gmail.send` to anyone.
+- **Proposed contract:** `remember: { scope: "recipient", value: "bu.sri@example.com" }` (or the tool's own rule, said back so the copy can name it).
+- **Until then:** the switch is left out and `remember` is always false (decision D3).
+
+### A failed turn's status, provider and the provider's words; a content-filter kind
+- **Needed by:** *Flow / Mobile Chat — Errors & recovery* (AyrHG): the card's code badge (402, 429…), "DEEPSEEK SAID · Insufficient Balance", and scenario 8.5 (Blocked by provider, with Rephrase).
+- **What exists today:** a `run_failed` block (`retry`) under one plain sentence; the kind is read from the sentence's wording.
+- **Proposed contract:** `run_failed { retry, kind, status, provider, provider_message, model }`, with `kind: "content_filter"` among them.
+- **Until then:** the phone's error card has no code and no quote; a filtered reply reads "Couldn't reply" with Retry.
+
+### Summarise older messages and carry on
+- **Needed by:** *Flow / Mobile Chat — Errors & recovery* scenario 3 (Chat too long → Summarise & continue, Summarised).
+- **What exists today:** nothing summarises a chat; a turn past the model's context fails with the too-long sentence.
+- **Proposed contract:** `POST /api/sessions/:id/summarize` → 202, then a message carrying the summary and the turn retried.
+- **Until then:** "Start a new chat" and "Use a {n}K model" only.
+
+### Web Push for a phone's browser
+- **Needed by:** *Flow / Mobile Chat — Approvals & background* step 5 (the lock screen: "Tara needs your OK"), and plans finishing while the person is away.
+- **What exists today:** push goes to the native apps only (FCM / APNs device tokens).
+- **Proposed contract:** `POST /api/devices/web-push { endpoint, keys: { p256dh, auth } }` (VAPID), and the same needs-you, approval and plan-finished pushes sent to it.
+- **Until then:** the note says "You can leave. {Agent}'s request will wait here and on Home." and nothing claims a notification (decision D2).
+
+Found while building the phone's chat flows (2026-11-18).

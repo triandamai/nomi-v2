@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import { ArrowUp, AtSign, ChevronDown, CircleAlert, Cpu, Mic, Plus, Square } from '@lucide/svelte';
+	import { ArrowUp, AtSign, ChevronDown, CircleAlert, Cpu, FilePenLine, Mic, Plus, Square } from '@lucide/svelte';
 	import { m } from '$lib/paraglide/messages';
 	import Icon from '../foundations/Icon.svelte';
 	import MentionPicker from '../chat/MentionPicker.svelte';
@@ -16,7 +16,7 @@
 	// It follows the twin Mobile / Composer and adds the picker, the toolbar and a guard: Stop comes
 	// in under the finger that just sent, so a double tap on Send doesn't also stop the reply.
 	// Files (Mobile Chat — Attachments, steps 9–16): `files` over the input row (the chips, 6 apart),
-	// then `notice` (the model fix line) or, while Send is `blocked`, the Notice line saying why (a
+	// then `fix` (the model fix line) or, while Send is `blocked`, the Notice line saying why (a
 	// danger 12 icon and the caption, [0,4]); Send then shows, off. With files ready (`attached`) a
 	// message may go without text.
 	type Props = {
@@ -35,12 +35,18 @@
 		/** "@ Crew": the page's sheet of who to address. */
 		oncrew?: () => void;
 		files?: Snippet;
-		notice?: Snippet;
+		/** The model fix line (a picture the model can't see), in place of the Notice line. */
+		fix?: Snippet;
 		attached?: boolean;
 		/** Send is off: why, in the Notice line, or `true` to wait silently. */
 		blocked?: string | true;
+		/**
+		 * What the next message is for, over the field (Clarify → plan, step 8: "Changing the plan ·
+		 * v1"): mono at 11 with the pen's file-pen-line, [0,4], 6 apart.
+		 */
+		notice?: string;
 	};
-	let { value = $bindable(''), placeholder, streaming = false, crew = [], model, field = $bindable(), onsend, onstop, onattach, onrecord, onmodel, oncrew, files, notice, attached = false, blocked }: Props = $props();
+	let { value = $bindable(''), placeholder, streaming = false, crew = [], model, field = $bindable(), onsend, onstop, onattach, onrecord, onmodel, oncrew, files, fix, attached = false, blocked, notice }: Props = $props();
 
 	const id = $props.id();
 	const ready = $derived(value.trim() !== '' || attached);
@@ -118,7 +124,13 @@
 	<div data-phone-composer class="flex w-full flex-col gap-2 border-t border-border bg-bg px-3 pt-1.75 pb-2">
 		{@render files?.()}
 		{#if notice}
-			{@render notice()}
+			<p class="flex items-center gap-1.5 px-1 font-mono text-label text-text-3">
+				<span class="inline-flex shrink-0"><Icon icon={FilePenLine} size={12} /></span>
+				<span class="min-w-0 flex-1 truncate">{notice}</span>
+			</p>
+		{/if}
+		{#if fix}
+			{@render fix()}
 		{:else if typeof blocked === 'string'}
 			<p id="{id}-blocked" class="flex items-center gap-1.5 px-1">
 				<span class="inline-flex shrink-0 text-danger"><Icon icon={CircleAlert} size={12} /></span>

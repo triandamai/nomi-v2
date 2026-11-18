@@ -9,6 +9,8 @@
 	import CodeWorkbench from '$lib/components/CodeWorkbench.svelte';
 	import { relocateFilePath, relocateFolderFilePath } from '$lib/code/fileOperations';
 	import ProjectPreview from '$lib/components/ProjectPreview.svelte';
+	import DesignStudio from '$lib/components/design/DesignStudio.svelte';
+	import type { StudioResponse } from '$lib/designStudio';
 	import PreviewAddressBar from '$lib/components/project/PreviewAddressBar.svelte';
 	import PreviewDevices from '$lib/components/project/PreviewDevices.svelte';
 	import { PHASE_LABEL } from '$lib/components/project/previewPhase';
@@ -74,7 +76,7 @@
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
-	let view = $state<'preview' | 'code' | 'terminal'>('preview');
+	let view = $state<'preview' | 'code' | 'terminal' | 'design'>('preview');
 
 	// The composer's model picker, as on a chat (what this chat replies with, and what Koda builds
 	// the project with). Both follow the page's data, and are moved ahead of the server while a
@@ -691,7 +693,7 @@
 
 	// Others see where the person is.
 	$effect(() => {
-		presence?.moveTo({ view, path: view === 'code' ? activePath : null });
+		if (view !== 'design') presence?.moveTo({ view, path: view === 'code' ? activePath : null });
 	});
 	// Following someone: go where they go. Moving on your own stops following.
 	$effect(() => {
@@ -761,6 +763,45 @@
 	type QueuedAsk = { id: string; text: string; who: string; mine: boolean; state: 'running' | 'next' | 'queued' };
 	let asks = $state<QueuedAsk[]>([]);
 	const hasProject = $derived(Boolean(data.project));
+	// The chat's Design Studio, in the Design tab once Sora has a preview: loaded with the page, and
+	// again whenever a turn ends (Sora may have made a version), so it shows without a reload.
+	let studioNow = $state<StudioResponse | null>(null);
+	const studio = $derived(studioNow ?? data.design ?? null);
+	const hasDesign = $derived((studio?.previews.length ?? 0) > 0);
+	// The version a link in the chat asked for (Sora's "Open in Design Studio").
+	let designVersion = $state<string | null>(null);
+	$effect(() => {
+		void data.design;
+		studioNow = null;
+	});
+	async function loadDesign() {
+		const hadDesign = hasDesign;
+		const response = await fetch(`/chat/${page.params.sessionId}/design/studio`).catch(() => null);
+		if (!response?.ok) return;
+		studioNow = (await response.json()) as StudioResponse;
+		// Sora's first preview: show it in the open pane when it's only showing the app's preview
+		// (never over code being edited, and never opening the pane over the chat on a phone).
+		if (!hadDesign && studioNow.previews.length > 0 && paneOpen && view === 'preview') view = 'design';
+	}
+	function showDesign(version: string | null) {
+		designVersion = version;
+		view = 'design';
+		following = null;
+		if (!paneOpen) setPane(true);
+	}
+	// A link to this chat's Design Studio (Sora gives one with each preview) opens the Design tab
+	// here instead of leaving the project.
+	function openDesignLink(event: MouseEvent) {
+		if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+		const link = (event.target as Element | null)?.closest?.('a[href]');
+		if (!link) return;
+		const url = new URL((link as HTMLAnchorElement).href, window.location.href);
+		if (url.origin !== window.location.origin || url.pathname !== `/chat/${page.params.sessionId}/design`) return;
+		event.preventDefault();
+		showDesign(url.searchParams.get('version'));
+		if (!hasDesign) void loadDesign();
+	}
+
 	async function loadQueue() {
 		if (!hasProject) return;
 		const response = await fetch(`${page.url.pathname}/queue`).catch(() => null);
@@ -1040,7 +1081,8 @@
 				<span class="issue-bar__title">{m.issue_chat_of({ number: data.project.issue.number, title: data.project.issue.title })}</span>
 			</div>
 		{/if}
-		<div class="workspace__thread">
+		<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+		<div class="workspace__thread" onclick={openDesignLink}>
 		<ChatThread
 			sessionId={page.params.sessionId as string}
 			title={data.project?.issue ? m.issue_chat_of({ number: data.project.issue.number, title: data.project.issue.title }) : (data.project?.name ?? m.project_new())}
@@ -1062,7 +1104,10 @@
 			onquotesent={() => (quoted = null)}
 			typingPeople={(presence?.typing ?? []).map((name) => ({ name, initials: initials(name), peer: peerFor(name) }))}
 			ontyping={() => presence?.ping()}
-			onqueuechange={loadQueue}
+			onqueuechange={() => {
+				void loadQueue();
+				void loadDesign();
+			}}
 		>
 			{#snippet aboveComposer()}
 				{#if issueNow && issueNow.status === 'open' && issueNow.crew_state === 'done' && !viewer}
@@ -1121,6 +1166,9 @@
 				<div class="pane-bar__tabs" role="tablist" aria-label={m.project_workspace_label()}>
 					<button type="button" role="tab" class="pane-tab" aria-selected={view === 'preview'} onclick={() => { view = 'preview'; following = null; }}>{m.project_preview()}</button>
 					<button type="button" role="tab" class="pane-tab" aria-selected={view === 'code'} onclick={() => { view = 'code'; following = null; }}>{m.project_code()}</button>
+					{#if hasDesign}
+						<button type="button" role="tab" class="pane-tab" aria-selected={view === 'design'} onclick={() => showDesign(null)}>{m.project_design()}</button>
+					{/if}
 					{#if runtime}
 						<button type="button" role="tab" class="pane-tab" aria-selected={view === 'terminal'} onclick={() => { view = 'terminal'; following = null; }}>{m.project_terminal()}</button>
 					{/if}
@@ -1172,6 +1220,20 @@
 						onShowCode={() => (view = 'code')}
 						onUseBrowser={runtime instanceof SandboxRuntime ? useBrowserRuntime : undefined}
 					/>
+				{:else if view === 'design' && studio}
+					<div class="design-pane">
+						{#key designVersion}
+							<DesignStudio
+								embedded
+								sessionId={page.params.sessionId as string}
+								previews={studio.previews}
+								feedback={studio.feedback}
+								approval={studio.approval}
+								wanted={designVersion}
+								onrefresh={loadDesign}
+							/>
+						{/key}
+					</div>
 				{:else if view === 'terminal' && runtime}
 					<!-- What ran in the preview, in order (Build → Terminal); a failed check offers the fix. -->
 					<div class="terminal-pane">
@@ -1323,6 +1385,10 @@
 {/if}
 
 <style>
+	.design-pane {
+		height: 100%;
+		min-height: 0;
+	}
 	.project-app {
 		display: flex;
 		flex-direction: column;
