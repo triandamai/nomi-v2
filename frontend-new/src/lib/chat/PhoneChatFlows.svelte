@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { tick, untrack } from 'svelte';
-	import { Play } from '@lucide/svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { answersText, replyBlocks, type ReplyBlock } from '$lib/adapters/blocks';
 	import { ownerList } from '$lib/adapters/phoneChat';
@@ -15,7 +14,7 @@
 	// plan GCvfD, Plan → approve → act G1tK6L): the crew's questions in their sheet, which opens on
 	// its own when the latest reply asks them and parks as "{n} questions waiting · Answer" when
 	// closed (UX contract G1); and a plan nothing runs yet, as its bar ("Plan ready · nothing runs
-	// yet", "Plan v2 ready", or its steps and owners) opening "Run this plan?". The answers and the
+	// yet", "Plan v2 ready") opening "Run this plan?", which names the steps and their owners. The answers and the
 	// way to run go back as the person's message, as the backend reads them (D1).
 	type Props = {
 		flows: PhoneFlows;
@@ -88,7 +87,8 @@
 
 	const RUN = $derived([
 		{ title: m.phone_run_option_run(), recommended: true },
-		{ title: m.phone_run_option_research() },
+		// What its research steps are isn't said yet (BACKEND_TODO: a plan's steps); what it won't do is.
+		{ title: m.phone_run_option_research(), detail: m.phone_run_option_research_detail() },
 		{ title: m.phone_run_option_keep(), detail: m.phone_run_option_keep_detail() },
 	]);
 
@@ -106,7 +106,6 @@
 	}
 
 	const remaining = $derived(asked && progress ? Math.max(1, asked.block.questions.length - Math.min(progress.step, asked.block.questions.length - 1)) : 0);
-	const answeredHere = $derived(Object.keys(flows.answered).length > 0);
 </script>
 
 <p class="sr-only" aria-live="polite">{announcement}</p>
@@ -114,13 +113,12 @@
 	<PhoneFlowBar bind:button={answerButton} label={remaining === 1 ? m.phone_clarify_waiting_one() : m.phone_clarify_waiting({ count: String(remaining) })} action={m.phone_clarify_answer()} onclick={() => (flows.sheetOpen = true)} />
 {:else if planned && !flows.notice && !working}
 	{@const plan = planned.seen}
-	{#if plan.version > 1}
-		<PhoneFlowBar label={m.phone_plan_ready_version({ version: String(plan.version) })} action={m.phone_plan_review_run()} onclick={() => (flows.runOpen = true)} />
-	{:else if answeredHere}
-		<PhoneFlowBar label={m.phone_plan_ready()} action={m.phone_plan_review_run()} onclick={() => (flows.runOpen = true)} />
-	{:else}
-		<PhoneFlowBar label={m.phone_plan_steps_owners({ count: String(plan.steps), owners: ownerList(plan.owners) })} action={m.phone_run_run()} icon={Play} onclick={() => (flows.runOpen = true)} />
-	{/if}
+	<!-- One bar for a plan nothing runs yet (ux-lead, gate 3 answer 1): it opens the sheet, it runs nothing. -->
+	<PhoneFlowBar
+		label={plan.version > 1 ? m.phone_plan_ready_version({ version: String(plan.version) }) : m.phone_plan_ready()}
+		action={m.phone_plan_review_run()}
+		onclick={() => (flows.runOpen = true)}
+	/>
 {/if}
 
 {#if asked && progress}

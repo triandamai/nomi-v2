@@ -2,7 +2,6 @@
 	import { Check, CircleDashed, Play, Square } from '@lucide/svelte';
 	import { m } from '$lib/paraglide/messages';
 	import Icon from '../foundations/Icon.svelte';
-	import Button from '../actions/Button.svelte';
 	import Mascot from '../agents/Mascot.svelte';
 	import type { CrewId } from '../agents/crew';
 
@@ -34,8 +33,14 @@
 			</li>
 		{/each}
 	</ul>
-	<footer class="flex flex-wrap items-center gap-2 border-t border-border px-3.5 pt-2.25 pb-2.5">
+	<!-- The footer is 50 as drawn: Resume keeps the pen's 30 and takes a 44 target around it. -->
+	<footer class="flex items-center gap-2 border-t border-border px-3.5 pt-2.25 pb-2.5">
 		<span class="min-w-0 flex-1 text-caption text-text-3">{m.phone_supervisor_note()}</span>
-		{#if onresume}<Button label={m.supervisor_resume()} variant="secondary" iconEnd={Play} onclick={onresume} />{/if}
+		{#if onresume}
+			<button type="button" class="relative inline-flex h-7.5 shrink-0 cursor-pointer items-center gap-2 rounded-sm border border-border-strong px-2.75 text-ui text-text outline-offset-2 hover:bg-surface-2 active:bg-surface-2" onclick={onresume}>
+				<span aria-hidden="true" class="absolute -inset-y-2 inset-x-0"></span>
+				{m.supervisor_resume()}<span class="inline-flex text-text-2"><Icon icon={Play} size={14} /></span>
+			</button>
+		{/if}
 	</footer>
 </section>

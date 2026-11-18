@@ -3039,5 +3039,7 @@
 	"usage_sheet_prev": "Bulan sebelumnya",
 	"usage_sheet_next": "Bulan berikutnya",
 	"admin_area_projects": "Proyek",
-	"admin_area_projects_desc": "Semua proyek beserta sandbox dan isunya."
+	"admin_area_projects_desc": "Semua proyek beserta sandbox dan isunya.",
+	"phone_form_edit": "Ubah {title}",
+	"phone_run_option_research_detail": "Tidak ada yang dibagikan."
 }

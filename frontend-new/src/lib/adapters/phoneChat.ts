@@ -137,3 +137,23 @@ export function isPastDate(value: string, now: Date, timeZone?: string): boolean
 	const today = new Intl.DateTimeFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit', timeZone }).format(now);
 	return value < today;
 }
+
+/** "25 Jan 2026" for a form's `YYYY-MM-DD` (the content rules' date), anything else as it is. */
+export function formDate(value: string, language: string): string {
+	const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+	if (!match) return value;
+	const at = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12));
+	const part = (type: string) => new Intl.DateTimeFormat(language, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).formatToParts(at).find((one) => one.type === type)?.value ?? '';
+	return `${part('day')} ${part('month').replace('.', '')} ${part('year')}`;
+}
+
+/** A form that is a reminder (a date or a time, and how it repeats), drawn as the pen's reminder card. */
+export function isReminderForm(fields: { key: string; label: string; type: string }[]): boolean {
+	return fields.some((field) => field.type === 'date' || field.type === 'time') && fields.some((field) => /repeat|recurr/i.test(`${field.key} ${field.label}`));
+}
+
+/** An email's fields in the order the person approves them: who it goes to, then the subject, then the rest. */
+export function previewOrder<T extends { key: string }>(fields: T[]): T[] {
+	const rank = (key: string) => (/^(to|recipient|recipients|email)$/i.test(key) ? 0 : /^(subject|title)$/i.test(key) ? 1 : 2);
+	return [...fields].sort((a, b) => rank(a.key) - rank(b.key));
+}

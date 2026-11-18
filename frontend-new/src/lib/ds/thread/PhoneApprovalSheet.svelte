@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Check, Image } from '@lucide/svelte';
+	import { Image, Send } from '@lucide/svelte';
 	import Icon from '../foundations/Icon.svelte';
 	import BottomSheet from '../overlays/BottomSheet.svelte';
 	import PhoneButton from '../mobile/PhoneButton.svelte';
@@ -41,6 +41,6 @@
 				<span class="min-w-0 flex-1 truncate font-mono text-ui text-text-2">{attachment}</span>
 			</p>
 		{/if}
-		<PhoneButton label={approveLabel} icon={Check} disabled={busy} onclick={onapprove} />
+		<PhoneButton label={approveLabel} icon={Send} disabled={busy} onclick={onapprove} />
 	</div>
 </BottomSheet>

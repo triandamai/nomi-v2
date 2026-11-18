@@ -3039,5 +3039,7 @@
 	"usage_sheet_prev": "Previous month",
 	"usage_sheet_next": "Next month",
 	"admin_area_projects": "Projects",
-	"admin_area_projects_desc": "Every project with its sandboxes and issues."
+	"admin_area_projects_desc": "Every project with its sandboxes and issues.",
+	"phone_form_edit": "Edit {title}",
+	"phone_run_option_research_detail": "Nothing shared."
 }
