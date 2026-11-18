@@ -204,7 +204,7 @@ test('Projects on a phone: the header, New project from its sheet, the card’s 
 	const search = page.getByRole('searchbox', { name: 'Search projects' });
 	await search.fill('zzz-nothing');
 	await expect(page.getByRole('button', { name: 'Sort' })).toHaveCount(0);
-	await expect(page.getByRole('radio', { name: /^All/ })).toHaveText('All0');
+	await expect(page.getByRole('radio', { name: /^All/ })).toHaveText(/^All\s*0$/);
 	await expect(page.getByText('No projects match “zzz-nothing”')).toBeVisible();
 	await page.getByRole('button', { name: 'Clear search' }).last().click();
 	await expect(search).toHaveValue('');
@@ -212,7 +212,7 @@ test('Projects on a phone: the header, New project from its sheet, the card’s 
 	await page.getByRole('button', { name: 'Cancel' }).click();
 	await expect(search).toHaveValue('');
 	await expect(page.getByRole('button', { name: 'Sort' })).toBeVisible();
-	await expect(page.getByRole('radio', { name: /^All/ })).toHaveText('All1');
+	await expect(page.getByRole('radio', { name: /^All/ })).toHaveText(/^All\s*1$/);
 
 	// The workspace pill: the workspaces as cards, the boundary, Create workspace (a9NrP, C8evkZ).
 	await page.getByRole('button', { name: /^Workspace: / }).click();
@@ -300,11 +300,11 @@ test('a chat’s controls on a phone: your message’s sheet and editing, a repl
 		const confirm = page.getByRole('dialog', { name: 'Delete this reply?' });
 		await expect(confirm.getByText('Your message stays so you can ask again. Things the crew already did aren’t undone.')).toBeVisible();
 		await confirm.getByRole('button', { name: 'Delete reply' }).click();
-		await expect(page.getByText('You deleted Nomi's reply')).toBeVisible();
+		await expect(page.getByText("You deleted Nomi's reply")).toBeVisible();
 	};
 	await deleteLast();
-	await page.getByText('You deleted Nomi's reply').locator('..').getByRole('button', { name: 'Undo' }).click();
-	await expect(page.getByText('You deleted Nomi's reply')).toHaveCount(0);
+	await page.getByText("You deleted Nomi's reply").locator('..').getByRole('button', { name: 'Undo' }).click();
+	await expect(page.getByText("You deleted Nomi's reply")).toHaveCount(0);
 	await deleteLast();
 	await expect.poll(count, { timeout: 20_000 }).toBe(before - 1);
 

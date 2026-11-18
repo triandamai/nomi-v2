@@ -1114,7 +1114,12 @@
 				{#if !(reply.latest && working)}
 					<!-- Delete reply (SwByh XPHtc): under its own line, in danger; asked first. -->
 					<span class="h-px bg-border"></span>
-					<SheetRow icon={Trash2} label={m.reply_delete()} danger onclick={() => (close(), void askDeleteReply(reply.message))} />
+					<SheetRow icon={Trash2} label={m.reply_delete()} danger onclick={() => {
+					// Read before closing: the sheet (and its {@const}) is gone once it closes.
+					const target = reply.message;
+					close();
+					void askDeleteReply(target);
+				}} />
 				{/if}
 				</BottomSheet>
 	{/if}
