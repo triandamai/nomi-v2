@@ -732,3 +732,16 @@ pub const ASK_USER_RECOMMENDED_DESCRIPTION: &str = "true on the one option you s
 
 /// The ask_user schema's `helper` property.
 pub const ASK_USER_HELPER_DESCRIPTION: &str = "One short line under the question giving it context, optional";
+
+/// System prompt for "Summarise and continue": folds a chat's older messages (and any earlier
+/// summary) into one summary the chat carries on from (`chat_summary::summarize_chat`).
+pub const SUMMARIZE_CHAT_SYSTEM_PROMPT: &str = "You condense the older part of a chat between a person and their \
+assistant crew into one summary, so the chat can carry on without those messages. Keep what the \
+person wants, decisions made, facts, names, numbers and files that matter, work already done, and \
+open questions or unfinished tasks. Drop greetings, small talk and anything settled that no longer \
+matters. Write short plain lines in the language of the chat, at most 300 words. Reply with the \
+summary only.";
+
+/// How a chat's summary reads to the model in the history, in place of the messages it replaced
+/// ({summary}).
+pub const SUMMARY_IN_HISTORY: &str = "(Summary of the earlier part of this chat, whose messages are no longer sent:)\n{summary}";

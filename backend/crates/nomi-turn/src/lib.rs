@@ -131,6 +131,52 @@ mod history_budget_tests {
 }
 
 #[cfg(test)]
+mod summary_history_tests {
+    use super::*;
+
+    fn row(from_person: bool, text: &str) -> HistoryRow {
+        (from_person.then(Uuid::new_v4), text.to_string(), Uuid::new_v4(), None, false)
+    }
+
+    fn summary_row(text: &str) -> HistoryRow {
+        (None, text.to_string(), Uuid::new_v4(), None, true)
+    }
+
+    fn text_of(message: &LlmMessage) -> String {
+        message.content.iter().map(|b| match b { ContentBlock::Text { text } => text.clone(), _ => String::new() }).collect()
+    }
+
+    #[test]
+    fn a_summary_takes_the_place_of_the_messages_it_replaced() {
+        // The query leaves out what the summary replaced; the history is the summary, then the kept messages.
+        let history = history_messages(vec![summary_row("Planning a Bali trip."), row(true, "Book the flights"), row(false, "Done")], false);
+        assert_eq!(history.len(), 2);
+        assert_eq!(history[0].role, LlmRole::User);
+        let first = text_of(&history[0]);
+        assert!(first.contains("Planning a Bali trip."));
+        assert!(first.contains("Summary of the earlier part"));
+        assert!(first.contains("Book the flights"));
+        assert_eq!(history[1].role, LlmRole::Assistant);
+        assert_eq!(text_of(&history[1]), "Done");
+    }
+
+    #[test]
+    fn a_long_summary_is_not_clipped_like_an_older_message() {
+        let long = "Z".repeat(OLDER_MESSAGE_CHARS + 500);
+        let mut rows = vec![summary_row(&long)];
+        rows.extend((0..WHOLE_RECENT_MESSAGES).map(|i| row(i % 2 == 0, "ok")));
+        let history = history_messages(rows, false);
+        assert_eq!(text_of(&history[0]).chars().filter(|c| *c == 'Z').count(), OLDER_MESSAGE_CHARS + 500);
+    }
+
+    #[test]
+    fn without_a_summary_the_history_is_as_it_was() {
+        let history = history_messages(vec![row(true, "hi"), row(false, "hello")], false);
+        assert_eq!(history.iter().map(text_of).collect::<Vec<_>>(), vec!["hi", "hello"]);
+    }
+}
+
+#[cfg(test)]
 mod time_limit_tests {
     use super::time_limit;
     use std::time::Duration;
@@ -994,11 +1040,13 @@ pub async fn fetch_recent_messages(
 ) -> Result<Vec<LlmMessage>, TurnError> {
     let project_chat = nomi_agent_core::working_memory::is_project_chat(&mut **conn, session_id).await?;
     // Only what was actually said: shown thinking (🧠) and progress notes (💭) are a window
-    // into the work, not replies, and fed back as replies they confuse the next agent.
-    let rows: Vec<(Option<Uuid>, String, Uuid, Option<serde_json::Value>)> = sqlx::query_as(&format!(
-        "SELECT sender_channel_identity_id, content, id, left_out FROM ( \
-             SELECT id, sender_channel_identity_id, content, created_at, left_out FROM messages \
-             WHERE session_id = $1 AND {} \
+    // into the work, not replies, and fed back as replies they confuse the next agent. What a
+    // summary replaced (`summarized_by`) isn't sent: the summary message stands in for it.
+    let rows: Vec<HistoryRow> = sqlx::query_as(&format!(
+        "SELECT sender_channel_identity_id, content, id, left_out, is_summary FROM ( \
+             SELECT id, sender_channel_identity_id, content, created_at, left_out, \
+                    COALESCE(content_blocks->0->>'kind', '') = 'summary' AS is_summary FROM messages \
+             WHERE session_id = $1 AND summarized_by IS NULL AND {} \
              ORDER BY created_at DESC, id DESC LIMIT $2 \
          ) recent ORDER BY created_at ASC, id ASC",
         nomi_agent_core::working_memory::SAID_IN_CHAT
@@ -1007,7 +1055,18 @@ pub async fn fetch_recent_messages(
     .bind(nomi_agent_core::working_memory::recent_window(project_chat))
     .fetch_all(&mut **conn)
     .await?;
+    Ok(history_messages(rows, project_chat))
+}
 
+/// One said message as read from the chat: who sent it, its text, id, the files it went without
+/// and whether it is a summary of earlier messages.
+type HistoryRow = (Option<Uuid>, String, Uuid, Option<serde_json::Value>, bool);
+
+/// The model's view of the chat's latest messages (oldest first): the newest few whole, older
+/// long ones clipped, all within a character budget. A summary stands in for the messages it
+/// replaced: it is never clipped, is introduced as a summary, and reads as context from the
+/// person's side so turns still alternate.
+fn history_messages(rows: Vec<HistoryRow>, project_chat: bool) -> Vec<LlmMessage> {
     // The newest few go in whole; long ones before them are clipped (a pasted file or a long
     // build report is still there in the chat, and the crew can be asked about it).
     let (whole_recent, older_chars, budget) = if project_chat {
@@ -1019,15 +1078,18 @@ pub async fn fetch_recent_messages(
     let said: Vec<(bool, String)> = rows
         .into_iter()
         .enumerate()
-        .map(|(i, (sender, content, _id, left_out))| {
+        .map(|(i, (sender, content, _id, left_out, is_summary))| {
+            if is_summary {
+                return (true, nomi_agent_core::chat_summary::history_text(&content, true));
+            }
             let content = with_left_out_notes(content, left_out.as_ref());
             (sender.is_some(), if i < whole_from { nomi_agent_core::context::clip_older_message(content, older_chars) } else { content })
         })
         .collect();
-    Ok(merge_turns(within_budget(said, budget).into_iter().map(|(from_person, text)| LlmMessage {
+    merge_turns(within_budget(said, budget).into_iter().map(|(from_person, text)| LlmMessage {
         role: if from_person { LlmRole::User } else { LlmRole::Assistant },
         content: vec![ContentBlock::Text { text }],
-    })))
+    }))
 }
 
 /// A person's message followed by a line for each file they sent it without, so the crew can say

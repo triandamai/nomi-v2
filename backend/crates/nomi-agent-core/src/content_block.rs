@@ -230,6 +230,11 @@ pub enum ContentBlock {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         model: Option<String>,
     },
+    /// The older part of the chat, summarised by the person's request ("Summarise and continue"):
+    /// the message's text is the summary; `replaced` is how many messages it stands in for.
+    Summary {
+        replaced: u32,
+    },
     /// A request to build something moved to its own project chat: a card linking to it.
     ProjectLink {
         project_id: Uuid,

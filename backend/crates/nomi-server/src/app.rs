@@ -123,6 +123,7 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route("/api/sessions/:id/messages/:message_id/delete", get(crate::routes::message_delete::preview_delete))
         .route("/api/sessions/:id/messages/:message_id/retry", post(crate::routes::message_retry::retry_failed_run))
+        .route("/api/sessions/:id/summarize", post(crate::routes::session_summarize::summarize))
         .route("/api/sessions/:id/messages/:message_id/regenerate", post(crate::routes::message_rerun::regenerate))
         .route("/api/sessions/:id/messages/:message_id/versions", get(crate::routes::message_rerun::versions))
         .route(

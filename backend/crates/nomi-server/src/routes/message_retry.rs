@@ -48,17 +48,23 @@ pub async fn retry_failed_run(
     Path((session_id, message_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<RetryResponse>, ApiError> {
     crate::routes::sessions::authorize_session_access(&state.pool, claims.sub, session_id).await?;
+    let removed_message_id = retry_run(&state.pool, claims.sub, session_id, message_id).await?;
+    Ok(Json(RetryResponse { removed_message_id }))
+}
 
+/// Tries the failed run in error bubble `message_id` again and removes the bubble. The caller has
+/// checked the chat is the person's.
+pub(crate) async fn retry_run(pool: &sqlx::PgPool, user_id: Uuid, session_id: Uuid, message_id: Uuid) -> Result<Uuid, ApiError> {
     let blocks: Option<Option<serde_json::Value>> = sqlx::query_scalar("SELECT content_blocks FROM messages WHERE id = $1 AND session_id = $2")
         .bind(message_id)
         .bind(session_id)
-        .fetch_optional(&state.pool)
+        .fetch_optional(pool)
         .await
         .map_err(internal("failed to look up message"))?;
     let blocks = blocks.ok_or((StatusCode::NOT_FOUND, "message not found"))?;
     let target = retry_target(blocks).ok_or((StatusCode::CONFLICT, "this message can't be retried"))?;
 
-    let mut tx = state.pool.begin().await.map_err(internal("failed to start retry"))?;
+    let mut tx = pool.begin().await.map_err(internal("failed to start retry"))?;
     match target {
         RetryTarget::Turn { turn_job_id } => requeue_turn(&mut tx, session_id, Some(turn_job_id)).await?,
         RetryTarget::LastMessage => requeue_turn(&mut tx, session_id, None).await?,
@@ -66,9 +72,9 @@ pub async fn retry_failed_run(
     }
     sqlx::query("DELETE FROM messages WHERE id = $1").bind(message_id).execute(&mut *tx).await.map_err(internal("failed to clear the error"))?;
     tx.commit().await.map_err(internal("failed to retry"))?;
-    crate::chat_events::messages_deleted(claims.sub, session_id, vec![message_id]);
+    crate::chat_events::messages_deleted(user_id, session_id, vec![message_id]);
 
-    Ok(Json(RetryResponse { removed_message_id: message_id }))
+    Ok(message_id)
 }
 
 /// Queues the failed turn's message again: the job's own, or the person's latest message when
