@@ -301,7 +301,13 @@ pub fn build_router(state: AppState) -> Router {
             "/api/admin/payment/xendit",
             get(crate::routes::admin_payment::get_xendit).put(crate::routes::admin_payment::save_xendit),
         )
+        .route("/api/admin/payment", get(crate::routes::admin_payment::get_overview).put(crate::routes::admin_payment::choose_provider))
         .route("/api/admin/payment/xendit/test", post(crate::routes::admin_payment::test_xendit))
+        .route(
+            "/api/admin/payment/doku",
+            get(crate::routes::admin_payment::get_doku).put(crate::routes::admin_payment::save_doku),
+        )
+        .route("/api/admin/payment/doku/test", post(crate::routes::admin_payment::test_doku))
         .route("/api/admin/shipyard", get(crate::routes::deploy::admin_get))
         .route("/api/admin/shipyard/apps", get(crate::routes::admin_shipyard::list_apps))
         .route("/api/admin/shipyard/apps/link", post(crate::routes::admin_shipyard::link_app))
