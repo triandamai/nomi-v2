@@ -45,6 +45,7 @@ pub mod message_retry;
 pub mod message_steps;
 pub mod project_database;
 pub mod project_import;
+pub mod project_usage;
 pub mod project_issues;
 pub mod project_activity;
 pub mod project_edit;

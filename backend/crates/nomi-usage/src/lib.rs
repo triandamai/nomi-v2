@@ -10,6 +10,7 @@ pub mod billing;
 pub mod embedding;
 pub mod entitlements;
 pub mod plans;
+pub mod project;
 
 pub use embedding::MeteredEmbeddingProvider;
 
@@ -47,11 +48,18 @@ pub struct MeteredProvider {
     pool: PgPool,
     user_id: Uuid,
     tag: Arc<ModelTag>,
+    session_id: Option<Uuid>,
 }
 
 impl MeteredProvider {
     pub fn new(inner: Arc<dyn LlmProvider>, pool: PgPool, user_id: Uuid, tag: ModelTag) -> Self {
-        Self { inner, pool, user_id, tag: Arc::new(tag) }
+        Self { inner, pool, user_id, tag: Arc::new(tag), session_id: None }
+    }
+
+    /// Records its calls as made in chat `session_id`, so they count toward the chat's project.
+    pub fn in_session(mut self, session_id: Option<Uuid>) -> Self {
+        self.session_id = session_id;
+        self
     }
 }
 
@@ -73,7 +81,7 @@ impl LlmProvider for MeteredProvider {
                 return Err(e);
             }
         };
-        let (pool, user_id, tag) = (self.pool.clone(), self.user_id, self.tag.clone());
+        let (pool, user_id, tag, session_id) = (self.pool.clone(), self.user_id, self.tag.clone(), self.session_id);
         Ok(Box::pin(async_stream::stream! {
             let mut cached_input_tokens = 0;
             while let Some(event) = events.next().await {
@@ -88,7 +96,7 @@ impl LlmProvider for MeteredProvider {
                     // Recorded before the caller sees the end of the stream, so a finished turn's
                     // usage is always there to read. A failed write never fails the reply.
                     let tokens = Tokens { input: *input_tokens, output: *output_tokens, cached_input: cached_input_tokens };
-                    if let Err(e) = record(&pool, user_id, &tag, tokens).await {
+                    if let Err(e) = record(&pool, user_id, session_id, &tag, tokens).await {
                         tracing::warn!(error = %e, %user_id, "failed to record llm usage");
                     }
                 }
@@ -142,20 +150,22 @@ pub struct Tokens {
 }
 
 /// Records one call. Spend comes from the admin model's current prices: cached input at its
-/// cached-input price (the full input price when none is set).
-pub async fn record(pool: &PgPool, user_id: Uuid, tag: &ModelTag, tokens: Tokens) -> Result<(), sqlx::Error> {
+/// cached-input price (the full input price when none is set). `session_id` is the chat it was
+/// made in, when there was one.
+pub async fn record(pool: &PgPool, user_id: Uuid, session_id: Option<Uuid>, tag: &ModelTag, tokens: Tokens) -> Result<(), sqlx::Error> {
     if tokens.input == 0 && tokens.output == 0 {
         return Ok(());
     }
     let cached = tokens.cached_input.min(tokens.input);
     sqlx::query(
-        "INSERT INTO llm_usage (user_id, admin_model_id, source, model_label, provider, model_id, input_tokens, output_tokens, cached_input_tokens, cost_usd) \
+        "INSERT INTO llm_usage (user_id, admin_model_id, source, model_label, provider, model_id, input_tokens, output_tokens, cached_input_tokens, cost_usd, session_id) \
          SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, \
                 CASE WHEN $3 = 'nomi' THEN \
                     (($7 - $9)::numeric * COALESCE(m.input_usd_per_mtok, 0) \
                      + $9::numeric * COALESCE(m.cached_input_usd_per_mtok, m.input_usd_per_mtok, 0) \
                      + $8::numeric * COALESCE(m.output_usd_per_mtok, 0)) / 1000000 \
-                ELSE 0 END \
+                ELSE 0 END, \
+                (SELECT id FROM sessions WHERE id = $10) \
          FROM (SELECT 1) one LEFT JOIN admin_llm_models m ON m.id = $2",
     )
     .bind(user_id)
@@ -167,6 +177,7 @@ pub async fn record(pool: &PgPool, user_id: Uuid, tag: &ModelTag, tokens: Tokens
     .bind(tokens.input as i32)
     .bind(tokens.output as i32)
     .bind(cached as i32)
+    .bind(session_id)
     .execute(pool)
     .await?;
     Ok(())
@@ -257,7 +268,7 @@ pub struct ModelUsage {
     pub spend_usd: f64,
 }
 
-async fn timezone_and_current_month(pool: &PgPool, user_id: Uuid) -> Result<(String, String), sqlx::Error> {
+pub(crate) async fn timezone_and_current_month(pool: &PgPool, user_id: Uuid) -> Result<(String, String), sqlx::Error> {
     sqlx::query_as(
         "SELECT tz, to_char(now() AT TIME ZONE tz, 'YYYY-MM') FROM \
          (SELECT COALESCE((SELECT timezone FROM user_preferences WHERE user_id = $1 \
