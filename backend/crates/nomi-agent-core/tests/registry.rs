@@ -112,6 +112,46 @@ fn delegatable_agent_types_excludes_the_named_requester_even_if_delegation_eligi
     assert!(targets.is_empty());
 }
 
+/// A specialist that may hand work to "specialist" only, like Iris to Koda.
+struct NarrowAgent;
+
+#[async_trait]
+impl SubAgent for NarrowAgent {
+    fn agent_type(&self) -> Cow<'static, str> {
+        Cow::Borrowed("narrow")
+    }
+    fn system_prompt(&self) -> Cow<'static, str> {
+        Cow::Borrowed("narrow")
+    }
+    fn tools(&self) -> Vec<ToolDefinition> {
+        vec![]
+    }
+    async fn execute_tool(&self, _: &mut PoolConnection<Postgres>, _: Uuid, _: Uuid, _: Uuid, _: &str, _: Value) -> Result<ToolOutcome, String> {
+        Err("no tools".to_string())
+    }
+    fn intent_label(&self) -> Cow<'static, str> {
+        Cow::Borrowed("narrow")
+    }
+    fn intent_description(&self) -> Cow<'static, str> {
+        Cow::Borrowed("narrow")
+    }
+    fn can_delegate(&self) -> bool {
+        true
+    }
+    fn delegates_only_to(&self) -> Option<&'static [&'static str]> {
+        Some(&["specialist"])
+    }
+}
+
+#[test]
+fn an_agent_that_names_its_targets_can_hand_work_only_to_them() {
+    let registry = AgentRegistry::new(vec![Box::new(DefaultAgent), Box::new(SpecialistAgent), Box::new(NarrowAgent), Box::new(NonTargetableAgent)]);
+    assert_eq!(registry.delegation_targets_of(&NarrowAgent), vec!["specialist"]);
+    assert_eq!(registry.delegation_targets_of(&SpecialistAgent), vec!["narrow"], "an agent naming none keeps every target but itself");
+    assert!(NarrowAgent.may_delegate_to("specialist") && !NarrowAgent.may_delegate_to("narrow") && !NarrowAgent.may_delegate_to("default"));
+    assert!(SpecialistAgent.may_delegate_to("narrow"), "no list means no limit");
+}
+
 struct StubAgent {
     agent_type: &'static str,
     intent_label: &'static str,

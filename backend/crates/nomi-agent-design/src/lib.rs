@@ -11,7 +11,7 @@ use sqlx::Postgres;
 use uuid::Uuid;
 
 use nomi_agent_core::crew::DESIGN_AGENT_TYPE;
-use nomi_agent_core::prompts::DESIGN_SYSTEM_PROMPT;
+use nomi_agent_core::prompts::{DESIGN_CHANGE_RULES, DESIGN_HANDOFF_RULES, DESIGN_PREVIEW_RULES, DESIGN_SYSTEM_PROMPT};
 use nomi_agent_core::design_approval::{self, Approval};
 use nomi_agent_core::design_artifact::{self, Manifest};
 use nomi_agent_core::design_brief::{self, DesignBrief};
@@ -24,9 +24,7 @@ use nomi_agent_core::{find_tool, tool_definitions, SubAgent};
 use nomi_llm::ToolDefinition;
 
 /// What Sora is told before the brief.
-pub const BRIEF_INTRO: &str = "This is the design brief Rena saved for this chat: start from it rather than asking for what it \
-     already says. Treat what is marked confirmed as fact, what is from research as evidence, and what is recommended or \
-     assumed as open to change; say so when a direction rests on an assumption.";
+pub use nomi_agent_core::prompts::DESIGN_BRIEF_INTRO as BRIEF_INTRO;
 
 /// The chat's brief as Sora starts from it.
 pub fn brief_context(version: i32, brief: &DesignBrief) -> String {
@@ -34,8 +32,7 @@ pub fn brief_context(version: i32, brief: &DesignBrief) -> String {
 }
 
 /// What Sora is told before the directions she already proposed.
-pub const DIRECTIONS_INTRO: &str = "These are the directions you proposed last in this chat. When the person picks one or asks \
-     for changes, refine it and keep the same id; don't start over unless they ask.";
+pub use nomi_agent_core::prompts::DESIGN_DIRECTIONS_INTRO as DIRECTIONS_INTRO;
 
 /// The chat's newest directions as Sora carries on from them.
 pub fn directions_context(version: i32, set: &DesignDirections) -> String {
@@ -43,8 +40,7 @@ pub fn directions_context(version: i32, set: &DesignDirections) -> String {
 }
 
 /// What Sora is told before the preview she built last.
-pub const PREVIEW_INTRO: &str = "This is the preview you built last in this chat. When you change it, send every file again with \
-     save_preview and keep the same data-design-id on each element that is still there, so feedback keeps pointing at it.";
+pub use nomi_agent_core::prompts::DESIGN_PREVIEW_INTRO as PREVIEW_INTRO;
 
 /// The chat's newest preview as Sora carries on from it: its pages, its ids and its address.
 pub fn preview_context(session_id: Uuid, version: i32, manifest: &Manifest, published: Option<&Published>) -> String {
@@ -56,9 +52,7 @@ pub fn preview_context(session_id: Uuid, version: i32, manifest: &Manifest, publ
 }
 
 /// What Sora is told before the feedback that is still waiting.
-pub const FEEDBACK_INTRO: &str = "This is what the person said about your previews in the Design Studio and no version has dealt with \
-     yet. Each piece has a number, the version it was given on and what it points at. When they ask you to act on it, change \
-     only what it asks and leave the rest of the design as it is.";
+pub use nomi_agent_core::prompts::DESIGN_FEEDBACK_INTRO as FEEDBACK_INTRO;
 
 /// The feedback still waiting on a new version; `None` when there is none.
 pub fn feedback_context(feedback: &[Feedback]) -> Option<String> {
@@ -66,11 +60,28 @@ pub fn feedback_context(feedback: &[Feedback]) -> Option<String> {
 }
 
 /// What Sora is told while the person hasn't approved a version.
-pub const NOT_APPROVED: &str = "No version of the design is approved yet: the person approves one in the Design Studio.";
+pub use nomi_agent_core::prompts::DESIGN_NOT_APPROVED as NOT_APPROVED;
 
 /// The approval that stands, as Sora reads it; `newest` is the chat's newest preview version.
 pub fn approval_context(approval: &Approval, newest: i32) -> String {
     approval.to_markdown(newest)
+}
+
+/// The rules for the steps this chat has reached, in order, added after Sora's core prompt:
+/// building a preview once she has proposed directions (or already built one), changing it once a
+/// preview exists, and the handoff and review once the person approved a version.
+pub fn stage_rules(has_directions: bool, has_preview: bool, approved: bool) -> Vec<&'static str> {
+    let mut rules = Vec::new();
+    if has_directions || has_preview {
+        rules.push(DESIGN_PREVIEW_RULES);
+    }
+    if has_preview {
+        rules.push(DESIGN_CHANGE_RULES);
+    }
+    if approved {
+        rules.push(DESIGN_HANDOFF_RULES);
+    }
+    rules
 }
 
 /// Sora. She is registered for everyone, and reachable unless an admin switched her off
@@ -157,8 +168,9 @@ impl SubAgent for DesignAgent {
         Some(format!("Use {} on {}", text("tool")?, text("server")?))
     }
 
-    /// The chat's newest design brief, when Rena saved one, the directions already proposed, the
-    /// preview built last, the feedback still waiting on a new version and what the person approved.
+    /// The rules for the steps this chat has reached (`stage_rules`), then the chat's newest design
+    /// brief, when Rena saved one, the directions already proposed, the preview built last, the
+    /// feedback still waiting on a new version and what the person approved.
     async fn domain_context(
         &self,
         conn: &mut PoolConnection<Postgres>,
@@ -171,13 +183,16 @@ impl SubAgent for DesignAgent {
         let directions =
             design_directions::latest(&mut **conn, session_id).await.ok().flatten().map(|(version, _, set)| directions_context(version, &set));
         let newest = design_artifact::latest(&mut **conn, session_id).await.ok().flatten();
-        let approval = match &newest {
-            Some((version, _)) => Some(match design_approval::current(&mut **conn, session_id).await.ok().flatten() {
-                Some(approval) => approval_context(&approval, *version),
-                None => NOT_APPROVED.to_string(),
-            }),
+        let approved = match &newest {
+            Some(_) => design_approval::current(&mut **conn, session_id).await.ok().flatten(),
             None => None,
         };
+        let rules = stage_rules(directions.is_some(), newest.is_some(), approved.is_some());
+        let rules = (!rules.is_empty()).then(|| rules.join("\n\n"));
+        let approval = newest.as_ref().map(|(version, _)| match &approved {
+            Some(approval) => approval_context(approval, *version),
+            None => NOT_APPROVED.to_string(),
+        });
         let preview = match newest {
             Some((version, manifest)) => {
                 let published = static_publish::latest(&mut **conn, session_id, version).await.ok().flatten();
@@ -187,7 +202,7 @@ impl SubAgent for DesignAgent {
         };
         let feedback = design_feedback::list(&mut **conn, session_id).await.ok().and_then(|all| feedback_context(&all));
         let flow = nomi_agent_core::build_flow::context_for(&mut **conn, session_id).await;
-        let parts: Vec<String> = [brief, directions, preview, feedback, approval, flow].into_iter().flatten().collect();
+        let parts: Vec<String> = [rules, brief, directions, preview, feedback, approval, flow].into_iter().flatten().collect();
         (!parts.is_empty()).then(|| parts.join("\n\n"))
     }
 
@@ -204,6 +219,11 @@ impl SubAgent for DesignAgent {
     /// Remembers durable facts the user mentions here (their brand, what they like).
     fn uses_memory(&self) -> bool {
         true
+    }
+
+    /// Her previews go through save_preview, so a cut-off one continues in pieces of it.
+    fn cut_off_hint(&self) -> &'static str {
+        nomi_agent_core::prompts::DESIGN_CUT_OFF_RETRY
     }
 
     fn uses_personality(&self) -> bool {
@@ -342,21 +362,43 @@ mod tests {
         assert_eq!(feedback_context(&[dealt_with]), None, "feedback a version dealt with isn't asked for again");
     }
 
+    use nomi_agent_core::prompts::{DESIGN_CHANGE_RULES, DESIGN_HANDOFF_RULES, DESIGN_PREVIEW_RULES};
+
+    #[test]
+    fn each_stages_rules_join_only_once_the_chat_reaches_that_stage() {
+        let none: [&str; 0] = [];
+        assert_eq!(stage_rules(false, false, false), none, "before any directions, the core prompt is enough");
+        assert_eq!(stage_rules(true, false, false), [DESIGN_PREVIEW_RULES]);
+        assert_eq!(stage_rules(true, true, false), [DESIGN_PREVIEW_RULES, DESIGN_CHANGE_RULES]);
+        assert_eq!(stage_rules(false, true, false), [DESIGN_PREVIEW_RULES, DESIGN_CHANGE_RULES], "a preview means she's building");
+        assert_eq!(stage_rules(true, true, true), [DESIGN_PREVIEW_RULES, DESIGN_CHANGE_RULES, DESIGN_HANDOFF_RULES]);
+    }
+
+    #[test]
+    fn the_core_prompt_is_short_and_keeps_the_rules_that_must_always_hold() {
+        let core = DesignAgent::new().system_prompt();
+        for said in ["Only the person approves", "never say a design is approved", "never invent a link", "propose_directions", "read_plan"] {
+            assert!(core.contains(said), "the core says {said:?}");
+        }
+        for later in ["data-design-id", "resolves", "create_handoff", "review_build"] {
+            assert!(!core.contains(later), "{later:?} waits for its stage");
+        }
+        assert!(core.len() < 2_500, "the core is {} bytes", core.len());
+    }
+
     #[test]
     fn sora_builds_previews_but_never_invents_a_link_or_the_apps_code() {
-        let prompt = DesignAgent::new().system_prompt();
-        assert!(prompt.contains("save_preview") && prompt.contains("data-design-id"));
-        assert!(prompt.contains("Design Studio") && prompt.contains("never invent a link"));
-        assert!(prompt.contains("never write the app's code"));
-        assert!(!prompt.contains("in words for now"), "she builds previews now");
+        let rules = DESIGN_PREVIEW_RULES;
+        assert!(rules.contains("save_preview") && rules.contains("data-design-id") && rules.contains("finished"));
+        assert!(rules.contains("Design Studio") && rules.contains("exactly as it is"));
+        assert!(rules.contains("never write the app's code"));
     }
 
     #[test]
     fn sora_refines_from_feedback_without_redoing_the_design() {
         let sora = DesignAgent::new();
-        let prompt = sora.system_prompt();
-        for said in ["read_preview", "resolves", "only what the feedback asks", "never mark feedback you didn't act on"] {
-            assert!(prompt.contains(said), "her prompt says {said:?}");
+        for said in ["read_preview", "resolves", "only what the feedback asks", "never mark feedback you didn't act on", "Approve"] {
+            assert!(DESIGN_CHANGE_RULES.contains(said), "her change rules say {said:?}");
         }
         assert!(!sora.tool_needs_approval(tools::READ_PREVIEW), "reading her own preview needs no OK");
     }
@@ -377,16 +419,16 @@ mod tests {
     #[test]
     fn an_approved_design_goes_to_koda_as_a_handoff() {
         let sora = DesignAgent::new();
-        let prompt = sora.system_prompt();
-        assert!(prompt.contains("create_handoff") && prompt.contains("delegate_to_agent"), "{prompt}");
+        let rules = DESIGN_HANDOFF_RULES;
+        assert!(rules.contains("create_handoff") && rules.contains("delegate_to_agent"), "{rules}");
         assert!(!sora.tool_needs_approval(tools::CREATE_HANDOFF), "the person already approved the design");
     }
 
     #[test]
     fn sora_checks_the_build_against_the_design_and_says_what_she_couldnt_see() {
         let sora = DesignAgent::new();
-        let prompt = sora.system_prompt();
-        assert!(prompt.contains("review_build") && prompt.contains("never say a build matches the design"), "{prompt}");
+        let rules = DESIGN_HANDOFF_RULES;
+        assert!(rules.contains("review_build") && rules.contains("never say a build matches the design"), "{rules}");
         assert!(!sora.tool_needs_approval(tools::REVIEW_BUILD), "reading the build changes nothing");
     }
 

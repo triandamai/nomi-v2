@@ -8,6 +8,8 @@ use crate::types::{CreateInvoiceRequest, Invoice, PaymentStatus, WebhookEvent};
 use crate::xendit::dto::{XenditErrorResponse, XenditInvoiceResponse, XenditWebhookPayload};
 
 const DEFAULT_XENDIT_BASE_URL: &str = "https://api.xendit.co";
+/// The header Xendit sends its callback token in.
+pub const CALLBACK_TOKEN_HEADER: &str = "x-callback-token";
 
 #[derive(Debug, Clone)]
 pub struct XenditConfig {
@@ -172,11 +174,8 @@ impl PaymentGateway for XenditClient {
         Ok(Self::to_domain_invoice(dto))
     }
 
-    fn verify_webhook(
-        &self,
-        callback_token: Option<&str>,
-        payload: &[u8],
-    ) -> Result<WebhookEvent, PaymentError> {
+    fn verify_webhook(&self, headers: &http::HeaderMap, payload: &[u8]) -> Result<WebhookEvent, PaymentError> {
+        let callback_token = headers.get(CALLBACK_TOKEN_HEADER).and_then(|v| v.to_str().ok());
         // If a webhook verification token is configured, enforce that callback_token matches it
         if let Some(expected_token) = &self.config.webhook_token {
             match callback_token {

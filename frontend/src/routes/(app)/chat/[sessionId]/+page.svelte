@@ -6,6 +6,7 @@
 	import ChatThread from '$lib/components/ChatThread.svelte';
 	import { mobileNav } from '$lib/mobileNav.svelte';
 	import IconButton from '$lib/components/m3/IconButton.svelte';
+	import DesignStudioLink from '$lib/components/DesignStudioLink.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
 	import IconPerson from '$lib/components/icons/IconPerson.svelte';
 	import Menu from '$lib/components/m3/Menu.svelte';
@@ -71,6 +72,7 @@
 		{/if}
 	{/snippet}
 	{#snippet extraControls()}
+		<DesignStudioLink sessionId={page.params.sessionId as string} versions={data.designVersions} />
 		<Menu bind:open={personalityMenuOpen}>
 			{#snippet trigger({ toggle })}
 				<IconButton onclick={toggle} aria-label={m.chatpage_personality_label({ personality: currentPersonalityLabel })}>

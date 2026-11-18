@@ -5,6 +5,13 @@ use serde_json::json;
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
+/// The headers of a webhook that carries `value` as its callback token.
+fn token(value: &str) -> http::HeaderMap {
+    let mut headers = http::HeaderMap::new();
+    headers.insert(nomi_payment::xendit::client::CALLBACK_TOKEN_HEADER, http::HeaderValue::from_str(value).unwrap());
+    headers
+}
+
 #[tokio::test]
 async fn test_create_invoice_success() {
     let mock_server = MockServer::start().await;
@@ -191,7 +198,7 @@ async fn test_webhook_verification() {
     let raw_payload = serde_json::to_vec(&webhook_body).unwrap();
 
     // Valid token
-    let event = client.verify_webhook(Some("valid-token-123"), &raw_payload).expect("Verification failed");
+    let event = client.verify_webhook(&token("valid-token-123"), &raw_payload).expect("Verification failed");
     assert_eq!(event.invoice_id, "inv_test_123");
     assert_eq!(event.external_id, "order-abc-1");
     assert_eq!(event.status, PaymentStatus::Paid);
@@ -199,11 +206,11 @@ async fn test_webhook_verification() {
     assert_eq!(event.payment_channel, Some("OVO".to_string()));
 
     // Invalid token
-    let invalid_res = client.verify_webhook(Some("wrong-token"), &raw_payload);
+    let invalid_res = client.verify_webhook(&token("wrong-token"), &raw_payload);
     assert!(matches!(invalid_res, Err(PaymentError::WebhookVerificationFailed(_))));
 
     // Missing token
-    let missing_res = client.verify_webhook(None, &raw_payload);
+    let missing_res = client.verify_webhook(&http::HeaderMap::new(), &raw_payload);
     assert!(matches!(missing_res, Err(PaymentError::WebhookVerificationFailed(_))));
 }
 
@@ -225,11 +232,12 @@ async fn test_build_payment_gateway_factory() {
     let config = PaymentConfig {
         provider: PaymentProviderKind::Xendit,
         api_key: "xnd_test_key".to_string(),
+        client_id: None,
         webhook_token: Some("secret".to_string()),
         base_url: None,
     };
 
     let gateway = build_payment_gateway(config).expect("Factory should build Xendit gateway");
-    assert!(gateway.verify_webhook(Some("secret"), b"{\"id\":\"1\",\"external_id\":\"e1\",\"status\":\"PAID\",\"amount\":100}").is_ok());
+    assert!(gateway.verify_webhook(&token("secret"), b"{\"id\":\"1\",\"external_id\":\"e1\",\"status\":\"PAID\",\"amount\":100}").is_ok());
 }
 

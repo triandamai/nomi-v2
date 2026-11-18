@@ -28,6 +28,23 @@ pub async fn xendit_config() -> Option<nomi_payment::xendit::XenditConfig> {
     })
 }
 
+/// DOKU Checkout as saved in Admin → Configuration or the environment; `None` until both the
+/// client id and the secret key are set.
+pub async fn doku_config() -> Option<nomi_payment::doku::DokuConfig> {
+    let doku = config::current(&config::DOKU).await;
+    Some(nomi_payment::doku::DokuConfig {
+        client_id: doku.get("client_id")?,
+        secret_key: doku.get("secret_key")?,
+        base_url: doku.get("base_url"),
+        notification_path: doku.get("notification_path"),
+    })
+}
+
+/// The provider chosen in Admin → Configuration → Payment, if one is.
+pub async fn chosen_payment_provider() -> Option<nomi_payment::PaymentProviderKind> {
+    config::current(&config::PAYMENT).await.get("provider").and_then(|name| nomi_payment::PaymentProviderKind::from_name(&name))
+}
+
 /// Paid plans' settings as saved in Admin → Configuration → Billing, with the defaults filled in.
 pub async fn billing_config() -> nomi_usage::billing::BillingConfig {
     nomi_usage::billing::config().await

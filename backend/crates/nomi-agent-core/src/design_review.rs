@@ -14,7 +14,7 @@ use crate::design_artifact::ID_ATTRIBUTE;
 use crate::design_handoff::Package;
 
 /// What the check says it didn't look at.
-pub const NOT_CHECKED: &str = "Not checked: spacing, sizes, layout and how it feels. This only looks for the handoff's colours, fonts and element ids in the project's files; look at the running app for the rest.";
+pub use crate::prompts::DESIGN_REVIEW_NOT_CHECKED as NOT_CHECKED;
 /// What a review is told when nothing can read the project's files.
 pub const NOT_READABLE: &str = "the project's files can't be read here";
 /// The most source files one review reads, and the largest one it reads.

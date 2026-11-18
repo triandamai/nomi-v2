@@ -21,8 +21,8 @@ describe('adminAccess', () => {
 	});
 
 	it('gives a platform admin every area at manage, as the backend writes it', () => {
-		const all = ['dashboard', 'user', 'plans', 'notifications', 'models', 'tools', 'agents', 'support', 'maintenance', 'integrations', 'configuration'].map((area) => `nomi:admin:${area}:[view,write,manage]`);
-		expect(Object.values(adminAccess(all))).toEqual(Array(11).fill('manage'));
+		const all = ['dashboard', 'user', 'plans', 'notifications', 'models', 'tools', 'agents', 'support', 'maintenance', 'integrations', 'configuration', 'projects'].map((area) => `nomi:admin:${area}:[view,write,manage]`);
+		expect(Object.values(adminAccess(all))).toEqual(Array(12).fill('manage'));
 	});
 });
 

@@ -47,6 +47,7 @@ async fn sora_starts_from_the_chats_newest_brief_when_there_is_one(pool: PgPool)
     }
     let context = DesignAgent::new().domain_context(&mut conn, None, session_id, user_id, &[]).await.expect("a brief");
     assert!(context.contains("# Design brief (version 2)") && context.contains("Office workers nearby") && !context.contains("Neighbours"));
+    assert!(!context.contains("# Building the preview"), "no directions yet, so no preview rules");
 }
 
 fn two_directions() -> serde_json::Value {
@@ -96,6 +97,8 @@ async fn proposing_saves_a_version_shows_a_choice_and_refuses_a_set_that_is_not_
 
     let context = sora.domain_context(&mut conn, None, session_id, user_id, &[]).await.unwrap();
     assert!(context.contains("# Design brief (version 1)") && context.contains("# Design directions (version 1)"));
+    assert!(context.starts_with(nomi_agent_core::prompts::DESIGN_PREVIEW_RULES), "{context}");
+    assert!(!context.contains("# Changing the preview") && !context.contains("# Handing the design to Koda"));
 }
 
 /// A publisher that answers as a test wants and remembers what it was given.
@@ -213,6 +216,8 @@ async fn previews_are_saved_as_versions_even_when_nothing_publishes_them(pool: P
 
     let context = sora.domain_context(&mut conn, None, session_id, user_id, &[]).await.expect("context");
     assert!(context.contains("# Design preview (version 3, direction: swiss)") && context.contains("Not published") && context.contains(&format!("/chat/{session_id}/design?version=3")));
+    assert!(context.contains("# Building the preview") && context.contains("# Changing the preview"));
+    assert!(!context.contains("# Handing the design to Koda"), "nothing is approved yet");
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -327,6 +332,7 @@ async fn a_handoff_is_written_only_for_a_version_the_person_approved(pool: PgPoo
     design_approval::approve(&mut conn, session_id, user_id, 2, None).await.unwrap();
     let context = sora.domain_context(&mut conn, None, session_id, user_id, &[]).await.unwrap();
     assert!(context.contains("The person approved version 2") && context.contains("It is the newest version."), "{context}");
+    assert!(context.contains(nomi_agent_core::prompts::DESIGN_HANDOFF_RULES), "approved, so the handoff rules join");
 
     let mut wrong = spec.clone();
     wrong["components"][0]["id"] = json!("menu-list");
@@ -399,4 +405,130 @@ async fn a_build_is_checked_against_the_handoff_it_was_built_from(pool: PgPool) 
     let failed = unreadable.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "review_build", json!({})).await.unwrap_err();
     assert_eq!(failed, "the build couldn't be checked: no connection");
     assert_eq!(design_review::latest(&mut conn, session_id).await.unwrap().unwrap().0, 1, "a check that couldn't read the build isn't kept");
+}
+
+#[test]
+fn sora_says_when_a_preview_is_not_published() {
+    let prompt = nomi_agent_core::prompts::DESIGN_PREVIEW_RULES;
+    assert!(prompt.contains("isn't published outside Nomi"), "Sora passes on that a preview isn't published, and why");
+}
+
+fn page(body: &str) -> String {
+    format!("<html><head><meta name=\"viewport\" content=\"width=device-width\"><title>Home</title></head><body>{body}</body></html>")
+}
+
+fn piece(direction: &str, files: &[(&str, &str)], extra: serde_json::Value) -> serde_json::Value {
+    let files: Vec<_> = files.iter().map(|(path, content)| json!({"path": path, "content": content})).collect();
+    let mut input = json!({"direction_id": direction, "title": "A pass", "files": files});
+    input.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+    input
+}
+
+async fn ready_to_preview(pool: &PgPool) -> (Uuid, Uuid, DesignAgent) {
+    let (session_id, user_id) = chat(pool).await;
+    let mut conn = pool.acquire().await.unwrap();
+    let sora = DesignAgent::new();
+    sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "propose_directions", directions()).await.unwrap();
+    picked(pool, session_id, user_id).await;
+    (session_id, user_id, sora)
+}
+
+fn paths(files: &[nomi_agent_core::design_artifact::ArtifactFile]) -> Vec<&str> {
+    let mut paths: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
+    paths.sort();
+    paths
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_preview_can_be_built_in_pieces(pool: PgPool) {
+    let (session_id, user_id, sora) = ready_to_preview(&pool).await;
+    let mut conn = pool.acquire().await.unwrap();
+    let staged = sora
+        .execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "save_preview", piece("editorial", &[("styles.css", "h1{}")], json!({"finished": false})))
+        .await
+        .unwrap();
+    assert!(staged.display_text.contains("styles.css"), "{}", staged.display_text);
+    assert_eq!(nomi_agent_core::design_artifact::latest(&mut conn, session_id).await.unwrap(), None, "nothing is shown yet");
+
+    let finished = sora
+        .execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "save_preview", piece("editorial", &[("index.html", &page(HERO_ONLY))], json!({"finished": true})))
+        .await
+        .unwrap();
+    assert!(finished.display_text.starts_with("Preview saved as version 1"), "{}", finished.display_text);
+    assert!(finished.display_text.contains("from the draft: styles.css"), "{}", finished.display_text);
+    let files = nomi_agent_core::design_artifact::files(&mut conn, session_id, 1).await.unwrap();
+    assert_eq!(paths(&files), ["index.html", "styles.css"]);
+    assert_eq!(nomi_agent_core::design_draft::draft(&mut conn, session_id, "editorial").await.unwrap(), vec![], "the draft became the version");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_change_sends_only_the_changed_files(pool: PgPool) {
+    let (session_id, user_id, sora) = ready_to_preview(&pool).await;
+    let mut conn = pool.acquire().await.unwrap();
+    sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "save_preview", preview("editorial", HERO_ONLY)).await.unwrap();
+
+    sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "save_preview", piece("editorial", &[("index.html", &page(HERO_AND_MENU))], json!({}))).await.unwrap();
+    let second = nomi_agent_core::design_artifact::files(&mut conn, session_id, 2).await.unwrap();
+    assert_eq!(paths(&second), ["index.html", "styles.css"]);
+    assert_eq!(second.iter().find(|f| f.path == "styles.css").unwrap().content, "h1 { margin: 0 }", "kept from version 1");
+    assert!(second.iter().find(|f| f.path == "index.html").unwrap().content.contains("menu-list"));
+
+    sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "save_preview", piece("editorial", &[("index.html", &page(HERO_ONLY))], json!({"remove": ["styles.css"]})))
+        .await
+        .unwrap();
+    assert_eq!(paths(&nomi_agent_core::design_artifact::files(&mut conn, session_id, 3).await.unwrap()), ["index.html"]);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_failed_finish_keeps_the_draft(pool: PgPool) {
+    let (session_id, user_id, sora) = ready_to_preview(&pool).await;
+    let mut conn = pool.acquire().await.unwrap();
+    let no_viewport = "<html><body><h1 data-design-id=\"about\">About</h1></body></html>";
+    sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "save_preview", piece("editorial", &[("about.html", no_viewport)], json!({"finished": false})))
+        .await
+        .unwrap();
+    let failed = sora
+        .execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "save_preview", piece("editorial", &[("index.html", &page(HERO_ONLY))], json!({})))
+        .await
+        .unwrap_err();
+    assert!(failed.contains("about.html") && failed.contains("The draft is kept"), "{failed}");
+    assert_eq!(paths(&nomi_agent_core::design_draft::draft(&mut conn, session_id, "editorial").await.unwrap()), ["about.html"]);
+    assert_eq!(nomi_agent_core::design_artifact::latest(&mut conn, session_id).await.unwrap(), None);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_draft_past_the_file_limit_is_refused(pool: PgPool) {
+    use nomi_agent_core::design_artifact::MAX_FILES;
+    let (session_id, user_id, sora) = ready_to_preview(&pool).await;
+    let mut conn = pool.acquire().await.unwrap();
+    let names: Vec<String> = (0..MAX_FILES).map(|n| format!("s{n}.css")).collect();
+    let full: Vec<(&str, &str)> = names.iter().map(|n| (n.as_str(), "")).collect();
+    sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "save_preview", piece("editorial", &full, json!({"finished": false}))).await.unwrap();
+    let refused = sora
+        .execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "save_preview", piece("editorial", &[("one-more.css", "")], json!({"finished": false})))
+        .await
+        .unwrap_err();
+    assert_eq!(refused, format!("a preview has at most {MAX_FILES} files"));
+    assert_eq!(nomi_agent_core::design_draft::draft(&mut conn, session_id, "editorial").await.unwrap().len(), MAX_FILES);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_draft_stays_with_its_direction(pool: PgPool) {
+    let (session_id, user_id, sora) = ready_to_preview(&pool).await;
+    let mut conn = pool.acquire().await.unwrap();
+    sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "save_preview", piece("editorial", &[("editorial.css", "h1{}")], json!({"finished": false})))
+        .await
+        .unwrap();
+    sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "save_preview", piece("swiss", &[("index.html", &page(HERO_ONLY))], json!({}))).await.unwrap();
+    assert_eq!(paths(&nomi_agent_core::design_artifact::files(&mut conn, session_id, 1).await.unwrap()), ["index.html"]);
+    assert_eq!(paths(&nomi_agent_core::design_draft::draft(&mut conn, session_id, "editorial").await.unwrap()), ["editorial.css"]);
+}
+
+#[test]
+fn sora_is_told_to_continue_in_pieces() {
+    use nomi_agent_core::prompts::{DESIGN_CUT_OFF_RETRY, DESIGN_PREVIEW_RULES};
+    assert_eq!(DesignAgent::new().cut_off_hint(), DESIGN_CUT_OFF_RETRY);
+    assert!(DESIGN_CUT_OFF_RETRY.contains("finished"));
+    assert!(DESIGN_PREVIEW_RULES.contains("finished"));
+    assert!(!DESIGN_PREVIEW_RULES.contains("send every file again"));
 }
