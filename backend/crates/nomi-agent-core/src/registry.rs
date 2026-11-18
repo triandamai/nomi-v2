@@ -129,6 +129,14 @@ impl AgentRegistry {
     /// the valid target list for a delegate_to_agent tool call from that agent. Only ever
     /// built-in agents: dynamic agents are never delegation targets in v1 (see design spec's
     /// Out of Scope), so this never needs to consult the `dynamic_agents` table.
+    /// The members `agent` may hand work to: `delegatable_agent_types` without itself, cut to its
+    /// `delegates_only_to` when it names some.
+    pub fn delegation_targets_of(&self, agent: &dyn SubAgent) -> Vec<String> {
+        let mut targets = self.delegatable_agent_types(agent.agent_type().as_ref());
+        targets.retain(|target| agent.may_delegate_to(target));
+        targets
+    }
+
     pub fn delegatable_agent_types(&self, excluding: &str) -> Vec<String> {
         self.agents
             .iter()

@@ -1,6 +1,7 @@
 pub mod agent_permissions;
 pub mod attachments;
 pub mod background;
+pub mod build_flow;
 pub mod build_intent;
 pub mod chat_project;
 pub mod chat_title;
@@ -13,6 +14,7 @@ pub mod design_approval;
 pub mod design_artifact;
 pub mod design_brief;
 pub mod design_directions;
+pub mod design_draft;
 pub mod design_feedback;
 pub mod design_handoff;
 pub mod design_review;

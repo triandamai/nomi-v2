@@ -11,6 +11,7 @@ use uuid::Uuid;
 use nomi_agent_core::mcp_ops::{format_listing, McpOps, SharedMcpOps, CARRY_ON};
 use nomi_agent_core::design_artifact::{self, ArtifactFile, DesignArtifact, Manifest, ID_ATTRIBUTE};
 use nomi_agent_core::design_approval;
+use nomi_agent_core::design_draft;
 use nomi_agent_core::design_feedback::{self, Status};
 use nomi_agent_core::design_handoff::{self, FeedbackOutcome, Package, Spec};
 use nomi_agent_core::design_review::{self, Review, SharedProjectSource};
@@ -191,6 +192,26 @@ pub fn studio_link(session_id: Uuid, version: i32) -> String {
 
 /// What Sora is told after a preview was saved: its version, the ids that went missing since
 /// the direction's last version, its Design Studio link, and its published address when it has one.
+/// Added to why a finishing `save_preview` was refused when files were waiting in the draft.
+pub use nomi_agent_core::prompts::DESIGN_DRAFT_KEPT as DRAFT_KEPT;
+
+/// Added to a saved version built with files from the draft, so a forgotten piece doesn't slip in unnoticed.
+pub fn from_draft_message(paths: &[String]) -> String {
+    if paths.is_empty() {
+        return String::new();
+    }
+    format!(" It includes these files from the draft: {}.", paths.join(", "))
+}
+
+/// What Sora is told after a piece of a preview went into the draft.
+pub fn staged_message(direction_id: &str, paths: &[&str]) -> String {
+    format!(
+        "Saved to the draft of direction {direction_id}, which now has: {}. The person sees nothing yet: send the rest, \
+         and set finished to true on the last call.",
+        paths.join(", ")
+    )
+}
+
 pub fn saved_message(session_id: Uuid, version: i32, manifest: &Manifest, missing: &[String], published: &Result<Published, String>) -> String {
     let mut said = format!(
         "Preview saved as version {version} of direction {}: {}, {}.",
@@ -309,8 +330,11 @@ impl Tool for SavePreview {
             description: format!(
                 "Build a preview of one proposed direction as static pages: every file whole (index.html, other pages, css, js, svg), \
                  responsive, with a {ID_ATTRIBUTE} attribute on each section and component (a lowercase slug, unique in its page, \
-                 the same on every page that shares the element). It saves the preview as a new version; send all the files again, \
-                 with the same ids, when you change it, and name in resolves the open feedback the new version dealt with."
+                 the same on every page that shares the element). A preview rarely fits in one call: send a few files per call with \
+                 finished false, and the last ones with finished true, which saves the preview as a new version (describe elements \
+                 on that last call; what you said about an element before carries over). To change a preview, \
+                 send only the files that changed (the rest stay as they were, with the same ids; drop a file with remove), and name in \
+                 resolves the open feedback the new version dealt with."
             ),
             input_schema: design_artifact::artifact_input_schema(),
         }
@@ -325,35 +349,61 @@ impl Tool for SavePreview {
     }
 
     async fn execute(&self, conn: &mut PoolConnection<Postgres>, session_id: Uuid, agent_session_id: Uuid, user_id: Uuid, input: Value) -> Result<ToolOutcome, String> {
-        let artifact = DesignArtifact::parse(&input)?;
+        let sent = design_artifact::parse_file_list(&input)?;
+        let remove = design_artifact::removals(&input)?;
+        let finished = input.get("finished").and_then(Value::as_bool).unwrap_or(true);
+        let direction_id = input.get("direction_id").and_then(Value::as_str).ok_or("direction_id is required")?.trim().to_lowercase();
         let resolutions = design_feedback::parse_resolutions(&input)?;
         let unsaved = |e: sqlx::Error| {
             tracing::error!(error = %e, "design preview: save failed");
             "the preview couldn't be saved right now".to_string()
         };
         let directions = design_directions::latest(&mut **conn, session_id).await.map_err(unsaved)?;
-        known_direction(directions.as_ref().map(|(_, _, set)| set), &artifact.manifest.direction_id)?;
-        let before = design_artifact::latest_of_direction(&mut **conn, session_id, &artifact.manifest.direction_id).await.map_err(unsaved)?;
+        known_direction(directions.as_ref().map(|(_, _, set)| set), &direction_id)?;
+        // The first preview waits for the person to pick a direction.
+        nomi_agent_core::build_flow::facts(&mut **conn, session_id).await.map_err(unsaved)?.preview_allowed()?;
+        let draft = design_draft::draft(&mut **conn, session_id, &direction_id).await.map_err(unsaved)?;
+        if !finished {
+            let mut paths: Vec<&str> = draft.iter().map(|f| f.path.as_str()).collect();
+            paths.extend(sent.iter().map(|f| f.path.as_str()).filter(|path| !draft.iter().any(|f| f.path == *path)));
+            if paths.len() > design_artifact::MAX_FILES {
+                return Err(format!("a preview has at most {} files", design_artifact::MAX_FILES));
+            }
+            let message = staged_message(&direction_id, &paths);
+            design_draft::stage(&mut **conn, session_id, &direction_id, &sent).await.map_err(unsaved)?;
+            return Ok(ToolOutcome::text(message));
+        }
+        let before = design_artifact::latest_of_direction(&mut **conn, session_id, &direction_id).await.map_err(unsaved)?;
+        let previous = match &before {
+            Some((version, _)) => design_artifact::files(&mut **conn, session_id, *version).await.map_err(unsaved)?,
+            None => Vec::new(),
+        };
+        let drafted: Vec<String> = draft.iter().map(|f| f.path.clone()).collect();
+        let merged = design_draft::merge(previous, draft, sent, &remove);
+        let mut artifact = DesignArtifact::from_files(&input, merged).map_err(|e| if drafted.is_empty() { e } else { format!("{e}. {DRAFT_KEPT}") })?;
+        if let Some((_, earlier)) = &before {
+            artifact.inherit_descriptions(earlier, &input);
+        }
+        let from_draft: Vec<String> = drafted.iter().filter(|path| artifact.file(path).is_some()).cloned().collect();
         let missing = before.map(|(_, earlier)| artifact.manifest.missing_since(&earlier)).unwrap_or_default();
         let feedback = design_feedback::list(&mut **conn, session_id).await.map_err(unsaved)?;
         design_feedback::check_open(&resolutions, &feedback)?;
         let directions_version = directions.map(|(version, _, _)| version);
         let version = design_artifact::save(&mut **conn, session_id, agent_session_id, user_id, directions_version, &artifact).await.map_err(unsaved)?;
+        if let Err(e) = design_draft::clear(&mut **conn, session_id, &direction_id, &drafted).await {
+            // The version is saved; a draft left behind is only merged into the next one again.
+            tracing::error!(error = %e, "design preview: the draft couldn't be cleared");
+        }
 
         let request = PublishRequest { user_id, session_id, version, title: &artifact.manifest.title, files: &artifact.files };
-        let mut published = static_publish::publish(self.publisher.as_ref(), &request).await;
-        if let Ok(at) = &published {
-            if let Err(e) = static_publish::record(&mut **conn, session_id, version, at).await {
-                tracing::error!(error = %e, "design preview: its address couldn't be kept");
-                published = Err("its address couldn't be kept".to_string());
-            }
-        }
+        let published = static_publish::publish_and_record(&mut **conn, self.publisher.as_ref(), &request).await;
         let resolved = design_feedback::resolve(&mut **conn, session_id, version, &resolutions).await.map_err(|e| {
             tracing::error!(error = %e, "design preview: feedback couldn't be marked");
             format!("version {version} is saved, but the feedback it dealt with couldn't be marked")
         })?;
         let still_open = feedback.iter().filter(|f| f.status == Status::Open && !resolved.contains(&f.number)).count();
         let mut said = saved_message(session_id, version, &artifact.manifest, &missing, &published);
+        said.push_str(&from_draft_message(&from_draft));
         said.push_str(&resolved_message(version, &resolved, still_open));
         Ok(ToolOutcome::text(said))
     }
@@ -504,6 +554,18 @@ pub(crate) mod tests {
     use nomi_agent_core::mcp_ops::{McpListing, McpOps, McpToolInfo, CARRY_ON, NOTHING_CONNECTED};
     use serde_json::json;
     use std::sync::Mutex;
+
+    #[test]
+    fn a_version_says_which_files_came_from_the_draft() {
+        assert_eq!(from_draft_message(&[]), "");
+        let said = from_draft_message(&["about.html".to_string(), "styles.css".to_string()]);
+        assert!(said.contains("about.html, styles.css"), "{said}");
+    }
+
+    #[test]
+    fn a_refused_finish_says_how_to_drop_a_bad_draft_file() {
+        assert!(DRAFT_KEPT.contains("remove"));
+    }
 
     /// The person's servers as a test wants them, recording what was called.
     #[derive(Default)]

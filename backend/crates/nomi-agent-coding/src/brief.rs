@@ -9,6 +9,12 @@ use nomi_agent_core::plans::{latest_plan_by, open_checklist_items};
 use nomi_llm::{ContentBlock, LlmMessage, LlmRole};
 
 use crate::guides;
+use nomi_agent_core::prompts::{
+    KODA_BRIEF_DESIGN_INTRO, KODA_BRIEF_DESIGN_LEFT_OUT, KODA_BRIEF_DONE_PLAN_BUILT, KODA_BRIEF_DONE_RUNNING, KODA_BRIEF_GUIDE_LEFT_OUT,
+    KODA_BRIEF_INTRO, KODA_BRIEF_NO_FILES, KODA_BRIEF_NO_PLAN, KODA_BRIEF_PLAN_UNREADABLE, KODA_BRIEF_RELAY_INTRO, KODA_BRIEF_RELAY_NO_TABLES,
+    KODA_BRIEF_RELAY_PACKAGES, KODA_BRIEF_RELAY_STARTING, KODA_BRIEF_RELAY_UNREADABLE, KODA_BRIEF_SECRETS,
+};
+use nomi_agent_core::sandbox_ops::SandboxOps;
 use nomi_agent_core::relay_ops::{RelayEnv, RelayOps, RelayPackages, DEFAULT_SDK_PACKAGE, DEFAULT_SDK_VERSION};
 
 /// More files than this are summarised as a count: list_files shows them all.
@@ -65,17 +71,9 @@ fn failed_publish_line(environment: &str, failure: Option<&serde_json::Value>, e
 
 /// What a Relay project's backend has: its dev tables with their columns, from Relay itself.
 async fn relay_section(relay: &dyn RelayOps, user_id: Uuid, project_id: Uuid) -> String {
-    let mut section = String::from(
-        "## Backend: Nomi Relay\nThis project's database, sign-in and storage come from Relay (guide below): write migrations in \
-         nomi/migrations/, use the nomi-relay client, and never add Drizzle or your own auth.\n",
-    );
+    let mut section = format!("## Backend: Nomi Relay\n{KODA_BRIEF_RELAY_INTRO}\n");
     if relay.backend_starting(project_id).await {
-        section.push_str(
-            "The dev backend is being set up in the background right now: write your migrations in \
-             nomi/migrations/, nomi/backend.json, and nomi/functions/ as usual — Nomi applies them \
-             to dev automatically as soon as it's ready. Do not call describe_backend or wait for \
-             dev to finish starting before writing the app.\n\n",
-        );
+        section.push_str(&format!("{KODA_BRIEF_RELAY_STARTING}\n\n"));
         return section;
     }
     match relay.describe_backend(user_id, project_id, RelayEnv::Dev).await {
@@ -92,12 +90,12 @@ async fn relay_section(relay: &dyn RelayOps, user_id: Uuid, project_id: Uuid) ->
                 })
                 .collect();
             if tables.is_empty() {
-                section.push_str("No tables in dev yet: the first migration is nomi/migrations/0001_init.sql.\n\n");
+                section.push_str(&format!("{KODA_BRIEF_RELAY_NO_TABLES}\n\n"));
             } else {
                 section.push_str(&format!("Tables in dev now:\n{}\n\n", tables.join("\n")));
             }
         }
-        Err(e) => section.push_str(&format!("(Couldn't read the dev backend: {e}. Call describe_backend.)\n\n")),
+        Err(e) => section.push_str(&format!("(Couldn't read the dev backend: {e}. {KODA_BRIEF_RELAY_UNREADABLE})\n\n")),
     }
     section
 }
@@ -108,11 +106,58 @@ fn with_packages(guide: &str, packages: &RelayPackages) -> String {
     let pinned = format!("\"{}\": \"{}\"", DEFAULT_SDK_PACKAGE, DEFAULT_SDK_VERSION);
     let guide = guide.replace(&pinned, &format!("\"{}\": \"{}\"", packages.sdk, packages.sdk_version));
     let guide = if packages.sdk == DEFAULT_SDK_PACKAGE { guide } else { guide.replace(DEFAULT_SDK_PACKAGE, &packages.sdk) };
-    format!(
-        "{guide}\n\nPackages on this Nomi: the client is `{}` (`\"{}\": \"{}\"` in dependencies); the command line is `{}` \
-         (`\"{}\": \"{}\"` in devDependencies, installs the `nomi-relay` command for `migrate lint`, `migrate new` and `functions new`).",
-        packages.sdk, packages.sdk, packages.sdk_version, packages.cli, packages.cli, packages.cli_version
-    )
+    let note = KODA_BRIEF_RELAY_PACKAGES
+        .replace("{sdk_version}", &packages.sdk_version)
+        .replace("{sdk}", &packages.sdk)
+        .replace("{cli_version}", &packages.cli_version)
+        .replace("{cli}", &packages.cli);
+    format!("{guide}\n\n{note}")
+}
+
+const SVELTEKIT_GUIDE: &str = "sveltekit";
+const SECTION_MARK: &str = "## ";
+const FENCE: &str = "```";
+/// The starter files, which only a project with no files yet needs.
+const STARTER_SECTION: &str = "Files to start with";
+/// The Drizzle notes, which a Relay project must not follow.
+const DRIZZLE_SECTION: &str = "Database";
+/// What the preview guide, always beside it in the brief, already says.
+const PREVIEW_REPEATS: &[&str] = &["How we work in Nomi", "Before you finish"];
+
+/// A guide as the brief carries it: the SvelteKit guide without the sections this project
+/// doesn't need, named at its end so Koda can read them with read_guide. Other guides go in whole.
+fn brief_guide(topic: &str, content: &str, has_files: bool, on_relay: bool) -> String {
+    if topic != SVELTEKIT_GUIDE {
+        return content.to_string();
+    }
+    let left_out = |heading: &str| {
+        PREVIEW_REPEATS.contains(&heading) || (has_files && heading == STARTER_SECTION) || (on_relay && heading == DRIZZLE_SECTION)
+    };
+    let mut kept = String::new();
+    let mut dropped: Vec<&str> = Vec::new();
+    let mut skipping = false;
+    let mut in_fence = false;
+    for line in content.split_inclusive('\n') {
+        if line.trim_start().starts_with(FENCE) {
+            in_fence = !in_fence;
+        } else if !in_fence {
+            if let Some(heading) = line.strip_prefix(SECTION_MARK) {
+                let heading = heading.trim_end();
+                skipping = left_out(heading);
+                if skipping {
+                    dropped.push(heading);
+                }
+            }
+        }
+        if !skipping {
+            kept.push_str(line);
+        }
+    }
+    if dropped.is_empty() {
+        return kept;
+    }
+    let note = KODA_BRIEF_GUIDE_LEFT_OUT.replace("{topic}", topic).replace("{sections}", &dropped.join(", "));
+    format!("{}\n\n{note}", kept.trim_end())
 }
 
 fn clip(text: &str, max: usize) -> &str {
@@ -126,11 +171,7 @@ fn clip(text: &str, max: usize) -> &str {
 /// files (pages first) for the exact markup and styles.
 fn design_section(handoff: &str, artifact_version: i32, files: &[nomi_agent_core::design_artifact::ArtifactFile]) -> String {
     let mut section = format!(
-        "## The approved design\nSora handed this over after the person approved it. Build what it describes, in this project's \
-         stack: the same pages, layout, colours, type, content order and behaviour. The preview's files below are static \
-         mock-ups to match, not code to copy in as it is; keep each data-design-id on the element you build for it. Where the \
-         plan and the design disagree about how something looks, the design wins; say so in your report.\n\n{}\n\n\
-         ### The approved preview's files (version {artifact_version})\n",
+        "## The approved design\n{KODA_BRIEF_DESIGN_INTRO}\n\n{}\n\n### The approved preview's files (version {artifact_version})\n",
         handoff.trim()
     );
     let mut ordered: Vec<&nomi_agent_core::design_artifact::ArtifactFile> = files.iter().collect();
@@ -147,10 +188,24 @@ fn design_section(handoff: &str, artifact_version: i32, files: &[nomi_agent_core
         section.push_str(&format!("#### {}\n{}\n", file.path, file.content.trim_end()));
     }
     if !left_out.is_empty() {
-        section.push_str(&format!("Left out for length: {}. The handoff above describes them.\n", left_out.join(", ")));
+        section.push_str(&format!("Left out for length: {}. {KODA_BRIEF_DESIGN_LEFT_OUT}\n", left_out.join(", ")));
     }
     section.push('\n');
     section
+}
+
+/// The guides put in front of Koda, in order: the stack's, then how the preview runs (and, when
+/// the project's commands run in a sandbox, how that differs: the preview guide stays, as a sandbox
+/// project can go back to the browser), then Relay's on a Relay project.
+pub(crate) fn guide_topics(stack_guide: &'static str, on_relay: bool, in_sandbox: bool) -> Vec<&'static str> {
+    let mut topics = vec![stack_guide, "preview"];
+    if in_sandbox {
+        topics.push("sandbox");
+    }
+    if on_relay {
+        topics.push("relay");
+    }
+    topics
 }
 
 pub async fn task_brief(
@@ -160,6 +215,7 @@ pub async fn task_brief(
     user_id: Uuid,
     messages: &[LlmMessage],
     relay: &dyn RelayOps,
+    sandbox: &dyn SandboxOps,
 ) -> Option<String> {
     let project_id = project_for(conn, session_id, user_id, messages).await?;
     let (name, stack, files_version, checked_version, check_ok, check_output): (String, String, i64, Option<i64>, Option<bool>, Option<String>) =
@@ -175,13 +231,10 @@ pub async fn task_brief(
         .await
         .unwrap_or_default();
 
-    let mut brief = format!(
-        "# Your brief\n\nProject {project_id} \"{name}\", stack: {stack}. This is already looked up for you: start from it \
-         rather than calling read_plan, list_files or read_guide for what's here.\n\n"
-    );
+    let mut brief = format!("# Your brief\n\nProject {project_id} \"{name}\", stack: {stack}. {KODA_BRIEF_INTRO}\n\n");
 
     if files.is_empty() {
-        brief.push_str("## Files\nNo files yet: you're starting from scratch.\n\n");
+        brief.push_str(&format!("## Files\n{KODA_BRIEF_NO_FILES}\n\n"));
     } else {
         brief.push_str(&format!("## Files ({})\n", files.len()));
         for (path, size) in files.iter().take(MAX_LISTED_FILES) {
@@ -200,13 +253,7 @@ pub async fn task_brief(
         .await
         .unwrap_or_default();
     if !secrets.is_empty() {
-        brief.push_str(&format!(
-            "## Secrets
-The person stored these for the published app, read on the server from the environment \
-             (process.env, or $env/dynamic/private in SvelteKit): {}. Never put their values in code or ask for them; \
-             in the preview they're missing, so handle that plainly.\n\n",
-            secrets.join(", ")
-        ));
+        brief.push_str(&format!("## Secrets\n{}\n\n", KODA_BRIEF_SECRETS.replace("{names}", &secrets.join(", "))));
     }
 
     // A publish that failed, until a later one to that environment worked: it's the first thing
@@ -247,22 +294,19 @@ The person stored these for the published app, read on the server from the envir
                     brief.push_str(&format!("- {item}\n"));
                 }
                 if open.is_empty() {
-                    brief.push_str("- Everything the plan describes is built.\n");
+                    brief.push_str(&format!("- {KODA_BRIEF_DONE_PLAN_BUILT}\n"));
                 }
-                brief.push_str("- The app is fully implemented and running cleanly on the live dev server (npm run dev).\n\n");
+                brief.push_str(&format!("- {KODA_BRIEF_DONE_RUNNING}\n\n"));
             }
             None => brief.push_str(&format!(
-                "## Plan\n\"{}\" (version {}) couldn't be loaded here: call read_plan.\n\n",
+                "## Plan\n\"{}\" (version {}) {KODA_BRIEF_PLAN_UNREADABLE}\n\n",
                 plan.title, plan.version
             )),
         },
-        None => brief.push_str(
-            "## Plan\nNo plan from Rena in this chat: work from the task and the conversation, and ask with ask_user \
-             if something you can't sensibly assume is missing.\n\n",
-        ),
+        None => brief.push_str(&format!("## Plan\n{KODA_BRIEF_NO_PLAN}\n\n")),
     }
 
-    // Only where Design is rolled out to this person and Sora handed a design over: without
+    // Only while Sora is on and handed a design over: without
     // one the brief is what it always was.
     if let Some((version, package)) = nomi_agent_core::design_handoff::for_builder(&mut **conn, session_id, user_id).await {
         let files = nomi_agent_core::design_artifact::files(&mut **conn, session_id, package.artifact_version).await.unwrap_or_default();
@@ -276,13 +320,10 @@ The person stored these for the published app, read on the server from the envir
     let packages = relay.packages().await;
 
     let stack_guide = guides::guide_for_stack(&stack).unwrap_or("sveltekit");
-    let mut topics = vec![stack_guide, "preview"];
-    if on_relay {
-        topics.push("relay");
-    }
-    for topic in topics {
+    let in_sandbox = sandbox.uses_sandbox(project_id).await;
+    for topic in guide_topics(stack_guide, on_relay, in_sandbox) {
         if let Some((_, _, content)) = guides::GUIDES.iter().find(|(name, _, _)| *name == topic) {
-            let content = if topic == "relay" { with_packages(content, &packages) } else { content.to_string() };
+            let content = if topic == "relay" { with_packages(content, &packages) } else { brief_guide(topic, content, !files.is_empty(), on_relay) };
             brief.push_str(&format!("## Guide: {topic} (already read for you)\n{content}\n\n"));
         }
     }
@@ -356,6 +397,24 @@ mod package_tests {
 }
 
 #[cfg(test)]
+mod guide_topic_tests {
+    use super::*;
+
+    #[test]
+    fn a_browser_project_gets_its_stack_and_the_preview_guide() {
+        assert_eq!(guide_topics("sveltekit", false, false), vec!["sveltekit", "preview"]);
+        assert_eq!(guide_topics("react", true, false), vec!["react", "preview", "relay"]);
+    }
+
+    #[test]
+    fn a_project_running_in_a_sandbox_also_gets_the_sandbox_guide_after_the_preview_one() {
+        // The preview guide stays: a sandbox project can go back to the browser, so its rules still hold.
+        assert_eq!(guide_topics("sveltekit", false, true), vec!["sveltekit", "preview", "sandbox"]);
+        assert_eq!(guide_topics("vue", true, true), vec!["vue", "preview", "sandbox", "relay"]);
+    }
+}
+
+#[cfg(test)]
 mod design_tests {
     use super::*;
     use nomi_agent_core::design_artifact::ArtifactFile;
@@ -383,5 +442,50 @@ mod design_tests {
         assert!(section.contains("#### index.html\n<h1>Hi</h1>"));
         assert!(!section.contains(&big));
         assert!(section.contains("Left out for length: styles.css"), "{section}");
+    }
+}
+
+#[cfg(test)]
+mod guide_cut_tests {
+    use super::*;
+
+    fn guide(topic: &str) -> &'static str {
+        guides::GUIDES.iter().find(|(name, _, _)| *name == topic).map(|(_, _, content)| *content).unwrap()
+    }
+
+    #[test]
+    fn a_new_project_keeps_the_starter_files_and_its_database_notes() {
+        let cut = brief_guide("sveltekit", guide("sveltekit"), false, false);
+        assert!(cut.contains("## Files to start with") && cut.contains("## Database"), "{cut}");
+        assert!(cut.contains("## Pages, loading and forms") && cut.contains("## Svelte 5 (runes only)"));
+    }
+
+    #[test]
+    fn rules_the_preview_guide_already_gives_are_left_out_and_named() {
+        let cut = brief_guide("sveltekit", guide("sveltekit"), false, false);
+        assert!(!cut.contains("## How we work in Nomi") && !cut.contains("## Before you finish"), "{cut}");
+        assert!(cut.ends_with("read_guide sveltekit returns them): How we work in Nomi, Before you finish."), "{cut}");
+        let preview = guide("preview");
+        for rule in ["Do NOT run `npm run dev` yourself", "NEVER run `npm run build` during development", "\"check\": \"echo ok\"", "**only** after adding or changing dependencies"] {
+            assert!(preview.contains(rule), "the preview guide still says {rule:?}, so the brief loses nothing");
+        }
+    }
+
+    #[test]
+    fn a_relay_project_with_files_drops_the_starter_files_and_drizzle() {
+        let whole = guide("sveltekit");
+        let cut = brief_guide("sveltekit", whole, true, true);
+        assert!(!cut.contains("## Files to start with") && !cut.contains("## Database"), "{cut}");
+        assert!(cut.contains("Files to start with, Database, How we work in Nomi, Before you finish."), "{cut}");
+        assert!(whole.len() - cut.len() > 3_500, "saves {} bytes", whole.len() - cut.len());
+        let kept = brief_guide("sveltekit", whole, true, false);
+        assert!(kept.contains("## Database") && !kept.contains("## Files to start with"), "Drizzle stays off Relay");
+    }
+
+    #[test]
+    fn other_guides_go_in_whole() {
+        for topic in ["preview", "relay", "react", "vue", "astro"] {
+            assert_eq!(brief_guide(topic, guide(topic), true, true), guide(topic), "{topic}");
+        }
     }
 }

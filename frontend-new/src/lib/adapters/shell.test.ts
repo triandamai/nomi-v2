@@ -101,8 +101,8 @@ describe('crewRows', () => {
 	});
 
 	it('maps every crew member the design has a mascot for', () => {
-		const types = ['chitchat', 'money', 'reminders', 'files', 'planning', 'coding', 'workspace', 'health', 'personality', 'supervisor', 'inspector'];
-		expect(crewRows(types.map((agent_type) => crew({ agent_type }))).map((row) => row.agent)).toEqual(['nomi', 'dana', 'kala', 'maya', 'rena', 'koda', 'tara', 'raga', 'personality', 'supervisor', 'iris']);
+		const types = ['chitchat', 'money', 'reminders', 'files', 'planning', 'coding', 'workspace', 'health', 'personality', 'supervisor', 'inspector', 'design'];
+		expect(crewRows(types.map((agent_type) => crew({ agent_type }))).map((row) => row.agent)).toEqual(['nomi', 'dana', 'kala', 'maya', 'rena', 'koda', 'tara', 'raga', 'personality', 'supervisor', 'iris', 'sora']);
 	});
 });
 

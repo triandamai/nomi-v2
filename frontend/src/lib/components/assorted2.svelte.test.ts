@@ -67,6 +67,11 @@ describe('more components', () => {
 		await tryAll(starting);
 		const running = render(ProjectPreview as never, { projectId: 'p1', runtime: { ...runtime, phase: 'running', previewUrl: 'https://preview.test', running: null }, stack: 'sveltekit' });
 		expect(running.innerHTML).toContain('preview.test');
+		expect(running.querySelector('iframe')!.hasAttribute('credentialless'), 'the browser preview keeps its own storage').toBe(false);
+		// The project page is cross-origin isolated, and a sandbox's address sends no isolation
+		// headers of its own: the browser only frames it without credentials.
+		const sandboxed = render(ProjectPreview as never, { projectId: 'p1', runtime: { ...runtime, phase: 'running', previewUrl: 'https://box-5173.on.boat.test/?_token=t', running: null, anonymousFrame: true }, stack: 'sveltekit' });
+		expect(sandboxed.querySelector('iframe')!.hasAttribute('credentialless')).toBe(true);
 		const failed = render(ProjectPreview as never, { projectId: 'p1', runtime: { ...runtime, phase: 'failed', error: 'npm install failed', checkFailed: true, handedToKoda: true }, stack: 'sveltekit' });
 		await tryAll(failed);
 	});

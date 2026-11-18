@@ -4,7 +4,7 @@ import { SandboxRuntime } from './sandbox.svelte';
 const SECRET = 'https://boat.example/p/s3cr3t-token';
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
 
-type Status = { runtime: string; available: boolean; state: string; phase: string; preview_url: string | null; error: string | null };
+type Status = { runtime: string; available: boolean; state: string; phase: string; preview_url: string | null; error: string | null; preview_ready?: boolean };
 let status: Status;
 let logs: (offset: number) => { text: string; next_offset: number };
 let requests: { path: string; method: string }[];
@@ -34,6 +34,47 @@ afterEach(() => {
 const count = (path: string, method = 'GET') => requests.filter((one) => one.path.split('?')[0] === path && one.method === method).length;
 
 describe('the sandbox runtime', () => {
+	it('waits for the crew’s first build before starting the sandbox, then starts it', async () => {
+		status = { ...status, state: 'none', phase: 'idle', preview_url: null, preview_ready: false };
+		const runtime = new SandboxRuntime('p1');
+		await runtime.start();
+		expect(runtime.phase, 'nothing to preview yet').toBe('building');
+		expect(count('start', 'POST')).toBe(0);
+		await vi.advanceTimersByTimeAsync(5_000);
+		expect(runtime.phase).toBe('building');
+		expect(count('start', 'POST'), 'still nothing started').toBe(0);
+		status = { ...status, preview_ready: true };
+		await vi.advanceTimersByTimeAsync(5_000);
+		await vi.waitFor(() => expect(count('start', 'POST'), 'the first build is done: it starts on its own').toBe(1));
+		expect(runtime.phase).toBe('waking');
+		runtime.stop();
+	});
+
+	it('reopening a project whose sandbox stopped, or is still stopping, wakes it and says so', async () => {
+		for (const phase of ['stopped', 'stopping']) {
+			requests = [];
+			// The backend still answers with where the sandbox is until its worker picks the start up.
+			status = { ...status, state: phase, phase, preview_url: null };
+			const runtime = new SandboxRuntime('p1');
+			await runtime.start();
+			expect(count('start', 'POST'), phase).toBe(1);
+			expect(runtime.phase, `${phase}: it was asked to start, so it is waking`).toBe('waking');
+			const reads = count('status');
+			await vi.advanceTimersByTimeAsync(5_000);
+			await vi.waitFor(() => expect(count('status')).toBeGreaterThan(reads));
+			expect(runtime.phase, `${phase}: still waking on the next read`).toBe('waking');
+			expect(count('start', 'POST'), phase).toBe(1);
+			status = { ...status, state: 'running', phase: 'running', preview_url: SECRET };
+			await vi.advanceTimersByTimeAsync(5_000);
+			await vi.waitFor(() => expect(runtime.phase, phase).toBe('running'));
+			// Stopped later (it idled out): that is shown as it is, not as waking.
+			status = { ...status, state: 'stopped', phase: 'stopped', preview_url: null };
+			await vi.advanceTimersByTimeAsync(5_000);
+			await vi.waitFor(() => expect(runtime.phase, phase).toBe('stopped'));
+			runtime.stop();
+		}
+	});
+
 	it('shows a running sandbox’s preview and keeps it awake while open', async () => {
 		const runtime = new SandboxRuntime('p1');
 		await runtime.start();

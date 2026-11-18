@@ -336,10 +336,10 @@ pub async fn latest(conn: &mut PgConnection, session_id: Uuid) -> Result<Option<
     Ok(row.map(|(version, package)| (version, package.0)))
 }
 
-/// The chat's newest handoff as the builder's brief shows it, where Design is rolled out to
-/// this person; nothing otherwise, so a brief without Design is what it always was.
-pub async fn for_builder(conn: &mut PgConnection, session_id: Uuid, user_id: Uuid) -> Option<(i32, Package)> {
-    if !nomi_settings::config::design_enabled_for(user_id).await {
+/// The chat's newest handoff as the builder's brief shows it, while Sora is on; nothing
+/// otherwise, so a brief without her is what it always was.
+pub async fn for_builder(conn: &mut PgConnection, session_id: Uuid, _user_id: Uuid) -> Option<(i32, Package)> {
+    if !nomi_settings::config::agent_on(crate::crew::DESIGN_AGENT_TYPE).await {
         return None;
     }
     latest(conn, session_id).await.ok().flatten()

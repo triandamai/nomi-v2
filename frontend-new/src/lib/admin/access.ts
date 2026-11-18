@@ -9,7 +9,7 @@ export const LEVELS = ['view', 'write', 'manage'] as const;
 export type Level = (typeof LEVELS)[number];
 
 /** Every admin area, in the backend's console order (ADMIN_RESOURCES). */
-export const AREAS = ['dashboard', 'user', 'plans', 'notifications', 'models', 'tools', 'agents', 'support', 'maintenance', 'integrations', 'configuration'] as const;
+export const AREAS = ['dashboard', 'user', 'plans', 'notifications', 'models', 'tools', 'agents', 'support', 'maintenance', 'integrations', 'configuration', 'projects'] as const;
 export type Area = (typeof AREAS)[number];
 
 export type Access = Partial<Record<Area, Level>>;

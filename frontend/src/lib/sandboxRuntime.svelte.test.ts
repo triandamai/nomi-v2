@@ -106,12 +106,37 @@ describe('sandbox runtime', () => {
 		await vi.advanceTimersByTimeAsync(0);
 		expect(runtime.phase).toBe('running');
 		expect(runtime.previewUrl).toBe(SECRET);
+		expect(runtime.anonymousFrame, 'the isolated page can only frame it without credentials').toBe(true);
 		status = { ...status, phase: 'error', error: 'boom' };
 		emit('{"kind":"SandboxChanged","phase":"error"}');
 		await vi.advanceTimersByTimeAsync(0);
 		expect(runtime.phase).toBe('failed');
 		expect(runtime.error).toBe('boom');
 		await runtime.stop();
+	});
+
+	it('reopening a project whose sandbox stopped, or is still stopping, wakes it and says so', async () => {
+		for (const phase of ['stopped', 'stopping']) {
+			requests = [];
+			// The backend still answers with where the sandbox is until its worker picks the start up.
+			status = { ...status, phase, preview_url: null };
+			const runtime = new SandboxRuntime('p1');
+			let emit: (raw: string) => void = () => {};
+			runtime.listen((l) => ((emit = l), () => {}));
+			await runtime.start();
+			expect(requests.some((r) => r.path === 'sandbox/start' && r.method === 'POST'), phase).toBe(true);
+			expect(runtime.phase, `${phase}: it was asked to start, so it is waking`).toBe('waking');
+			status = { ...status, phase: 'running', preview_url: SECRET };
+			emit('{"kind":"SandboxChanged","phase":"running"}');
+			await vi.advanceTimersByTimeAsync(0);
+			expect(runtime.phase, phase).toBe('running');
+			// Stopped later (it idled out): that is shown as it is, not as waking.
+			status = { ...status, phase: 'stopped', preview_url: null };
+			emit('{"kind":"SandboxChanged","phase":"stopped"}');
+			await vi.advanceTimersByTimeAsync(0);
+			expect(runtime.phase, phase).toBe('stopped');
+			await runtime.stop();
+		}
 	});
 
 	it('heartbeat_continues_while_open_and_stops_on_stop', async () => {

@@ -161,13 +161,14 @@ fn has_viewport(html: &str) -> bool {
     lower.contains("name=\"viewport\"") || lower.contains("name='viewport'")
 }
 
-fn parse_files(input: &Value) -> Result<Vec<ArtifactFile>, String> {
+/// The files of one `save_preview` call, each checked on its own: a piece of a preview may leave
+/// out the entry page and the rest, which the whole preview is checked for when it is finished.
+pub fn parse_file_list(input: &Value) -> Result<Vec<ArtifactFile>, String> {
     let list = input.get("files").and_then(Value::as_array).ok_or("files must be a list")?;
     if list.len() > MAX_FILES {
         return Err(format!("a preview has at most {MAX_FILES} files"));
     }
     let mut files: Vec<ArtifactFile> = Vec::new();
-    let mut total = 0;
     for file in list {
         let path = text_of(file, "path").ok_or("each file needs a path")?;
         check_path(path)?;
@@ -178,16 +179,37 @@ fn parse_files(input: &Value) -> Result<Vec<ArtifactFile>, String> {
         if content.len() > MAX_FILE_BYTES {
             return Err(format!("\"{path}\" is larger than {MAX_FILE_BYTES} bytes"));
         }
-        total += content.len();
         files.push(ArtifactFile { path: path.to_string(), content: content.to_string() });
     }
+    Ok(files)
+}
+
+/// The paths a finished `save_preview` call drops from the last version; none when left out.
+pub fn removals(input: &Value) -> Result<Vec<String>, String> {
+    let Some(list) = input.get("remove") else { return Ok(Vec::new()) };
+    let list = list.as_array().ok_or("remove must be a list of paths")?;
+    list.iter()
+        .map(|path| {
+            let path = path.as_str().ok_or("remove must be a list of paths")?;
+            check_path(path)?;
+            Ok(path.to_string())
+        })
+        .collect()
+}
+
+/// The checks only a whole preview has to pass: how many files, how large together, and its entry page.
+fn check_whole(files: &[ArtifactFile]) -> Result<(), String> {
+    if files.len() > MAX_FILES {
+        return Err(format!("a preview has at most {MAX_FILES} files"));
+    }
+    let total: usize = files.iter().map(|f| f.content.len()).sum();
     if total > MAX_TOTAL_BYTES {
         return Err(format!("the preview's files are larger than {MAX_TOTAL_BYTES} bytes together"));
     }
     if !files.iter().any(|f| f.path == ENTRY_PAGE) {
         return Err(format!("a preview needs an {ENTRY_PAGE}"));
     }
-    Ok(files)
+    Ok(())
 }
 
 /// How Sora described an element: its kind and label.
@@ -208,7 +230,12 @@ fn described(input: &Value) -> Result<Vec<(String, ElementKind, Option<String>)>
 impl DesignArtifact {
     /// Reads and checks a preview as the `save_preview` tool takes it. The error says what to fix.
     pub fn parse(input: &Value) -> Result<Self, String> {
-        let files = parse_files(input)?;
+        Self::from_files(input, parse_file_list(input)?)
+    }
+
+    /// Checks `files` as a whole preview, with the title, direction and element names from `input`.
+    pub fn from_files(input: &Value, files: Vec<ArtifactFile>) -> Result<Self, String> {
+        check_whole(&files)?;
         let title: String = text_of(input, "title").ok_or("title is required")?.chars().take(MAX_LABEL_CHARS).collect();
         let direction_id = text_of(input, "direction_id").ok_or("direction_id is required")?.to_lowercase();
         if direction_id != slug(&direction_id) {
@@ -243,6 +270,19 @@ impl DesignArtifact {
             }
         }
         Ok(Self { manifest: Manifest { direction_id, title, pages, elements }, files })
+    }
+
+    /// Keeps what `earlier` said an element is (its kind and label) for every element this version
+    /// still has and `input` doesn't describe again: a change that sends only some files keeps the rest as they were.
+    pub fn inherit_descriptions(&mut self, earlier: &Manifest, input: &Value) {
+        let described_now: Vec<&str> =
+            input.get("elements").and_then(Value::as_array).map(|list| list.iter().filter_map(|e| text_of(e, "id")).collect()).unwrap_or_default();
+        for element in self.manifest.elements.iter_mut().filter(|e| !described_now.contains(&e.id.as_str())) {
+            if let Some(before) = earlier.elements.iter().find(|e| e.id == element.id) {
+                element.kind = before.kind;
+                element.label = before.label.clone();
+            }
+        }
     }
 
     pub fn file(&self, path: &str) -> Option<&ArtifactFile> {
@@ -294,7 +334,17 @@ pub fn artifact_input_schema() -> Value {
                     "required": ["id"]
                 }
             },
-            "resolves": crate::design_feedback::resolves_schema()
+            "resolves": crate::design_feedback::resolves_schema(),
+            "finished": {
+                "type": "boolean",
+                "description": "false keeps these files in a draft the person doesn't see yet, to send the rest in later calls; \
+                                true (the default) saves the version from the last version of this direction, the draft and these files"
+            },
+            "remove": {
+                "type": "array",
+                "description": "Paths to drop from the last version when this call finishes it",
+                "items": {"type": "string"}
+            }
         },
         "required": ["direction_id", "title", "files"]
     })
@@ -378,13 +428,19 @@ pub struct StoredVersion {
     pub created_at: chrono::DateTime<chrono::Utc>,
     /// Where it was published last, when it was.
     pub published_url: Option<String>,
+    /// Why it isn't published, when its newest publish failed.
+    pub publish_error: Option<String>,
 }
 
 /// Every version of the chat's previews, oldest first.
 pub async fn list(conn: &mut PgConnection, session_id: Uuid) -> Result<Vec<StoredVersion>, sqlx::Error> {
-    let rows: Vec<(i32, sqlx::types::Json<Manifest>, String, chrono::DateTime<chrono::Utc>, Option<String>)> = sqlx::query_as(
+    type Row = (i32, sqlx::types::Json<Manifest>, String, chrono::DateTime<chrono::Utc>, Option<String>, Option<String>);
+    let rows: Vec<Row> = sqlx::query_as(
         "SELECT a.version, a.manifest, a.preview_token, a.created_at, \
-                (SELECT p.url FROM design_artifact_publications p WHERE p.artifact_id = a.id ORDER BY p.created_at DESC, p.id DESC LIMIT 1) \
+                (SELECT p.url FROM design_artifact_publications p WHERE p.artifact_id = a.id ORDER BY p.created_at DESC, p.id DESC LIMIT 1), \
+                (SELECT f.reason FROM design_artifact_publish_failures f WHERE f.artifact_id = a.id \
+                   AND f.created_at >= COALESCE((SELECT MAX(p.created_at) FROM design_artifact_publications p WHERE p.artifact_id = a.id), '-infinity') \
+                 ORDER BY f.created_at DESC, f.id DESC LIMIT 1) \
          FROM design_artifacts a WHERE a.session_id = $1 ORDER BY a.version",
     )
     .bind(session_id)
@@ -392,7 +448,14 @@ pub async fn list(conn: &mut PgConnection, session_id: Uuid) -> Result<Vec<Store
     .await?;
     Ok(rows
         .into_iter()
-        .map(|(version, manifest, preview_token, created_at, published_url)| StoredVersion { version, manifest: manifest.0, preview_token, created_at, published_url })
+        .map(|(version, manifest, preview_token, created_at, published_url, publish_error)| StoredVersion {
+            version,
+            manifest: manifest.0,
+            preview_token,
+            created_at,
+            published_url,
+            publish_error,
+        })
         .collect())
 }
 
@@ -509,6 +572,35 @@ mod tests {
     }
 
     #[test]
+    fn a_piece_needs_no_index_page() {
+        let files = parse_file_list(&json!({"files": [{"path": "styles.css", "content": "h1{}"}]})).unwrap();
+        assert_eq!(files, vec![ArtifactFile { path: "styles.css".into(), content: "h1{}".into() }]);
+    }
+
+    #[test]
+    fn a_piece_still_checks_each_file() {
+        let twice = json!({"files": [{"path": "a.css", "content": ""}, {"path": "a.css", "content": ""}]});
+        assert_eq!(parse_file_list(&twice).unwrap_err(), "\"a.css\" is in the files twice");
+        let big = json!({"files": [{"path": "a.css", "content": "x".repeat(MAX_FILE_BYTES + 1)}]});
+        assert_eq!(parse_file_list(&big).unwrap_err(), format!("\"a.css\" is larger than {MAX_FILE_BYTES} bytes"));
+    }
+
+    #[test]
+    fn removals_are_optional_paths() {
+        assert_eq!(removals(&json!({})).unwrap(), Vec::<String>::new());
+        assert_eq!(removals(&json!({"remove": ["about.html"]})).unwrap(), vec!["about.html".to_string()]);
+        assert!(removals(&json!({"remove": ["../x.html"]})).is_err());
+    }
+
+    #[test]
+    fn from_files_checks_the_whole_preview() {
+        let only_css = vec![ArtifactFile { path: "styles.css".into(), content: "h1{}".into() }];
+        assert_eq!(DesignArtifact::from_files(&preview(), only_css).unwrap_err(), format!("a preview needs an {ENTRY_PAGE}"));
+        let too_many = (0..=MAX_FILES).map(|n| ArtifactFile { path: format!("s{n}.css"), content: String::new() }).collect();
+        assert_eq!(DesignArtifact::from_files(&preview(), too_many).unwrap_err(), format!("a preview has at most {MAX_FILES} files"));
+    }
+
+    #[test]
     fn previews_are_limited_in_size() {
         let big = "x".repeat(MAX_FILE_BYTES + 1);
         assert_eq!(DesignArtifact::parse(&with_file("big.js", &big)).unwrap_err(), format!("\"big.js\" is larger than {MAX_FILE_BYTES} bytes"));
@@ -616,5 +708,28 @@ mod tests {
         assert_eq!(schema["required"], json!(["direction_id", "title", "files"]));
         assert_eq!(schema["properties"]["files"]["maxItems"].as_u64(), Some(MAX_FILES as u64));
         assert_eq!(schema["properties"]["elements"]["items"]["properties"]["kind"]["enum"], json!(["section", "component", "element"]));
+    }
+
+    #[test]
+    fn descriptions_carry_over_to_a_version_that_does_not_repeat_them() {
+        let mut described = preview();
+        described["elements"] = json!([{"id": "site-header", "kind": "component", "label": "Site header"}, {"id": "menu-list", "kind": "section", "label": "Menu"}]);
+        let earlier = DesignArtifact::parse(&described).unwrap().manifest;
+
+        let mut next = preview();
+        next["elements"] = json!([{"id": "menu-list", "kind": "component", "label": "Menu list"}]);
+        let mut artifact = DesignArtifact::parse(&next).unwrap();
+        artifact.inherit_descriptions(&earlier, &next);
+        let of = |id: &str| artifact.manifest.elements.iter().find(|e| e.id == id).unwrap().clone();
+        assert_eq!((of("site-header").kind, of("site-header").label), (ElementKind::Component, "Site header".to_string()), "kept from before");
+        assert_eq!((of("menu-list").kind, of("menu-list").label), (ElementKind::Component, "Menu list".to_string()), "described again: the new one wins");
+    }
+
+    #[test]
+    fn the_tool_schema_offers_finished_and_remove() {
+        let schema = artifact_input_schema();
+        assert_eq!(schema["properties"]["finished"]["type"], "boolean");
+        assert_eq!(schema["properties"]["remove"]["items"]["type"], "string");
+        assert_eq!(schema["required"], json!(["direction_id", "title", "files"]), "both are optional");
     }
 }

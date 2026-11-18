@@ -1,5 +1,5 @@
 //! The Design Studio's routes. A chat's previews are listed for the people who can open the
-//! chat, where Design is rolled out. A version's files are served to the Studio's frame by the
+//! chat, while Sora is on. A version's files are served to the Studio's frame by the
 //! version's unguessable name alone: the frame is sandboxed into an origin of its own, so it
 //! sends no sign-in and can reach nothing of Nomi's, and the response says so again in case the
 //! address is opened outside the Studio.
@@ -11,6 +11,7 @@ use axum::{
     Json,
 };
 use chrono::{DateTime, Utc};
+use nomi_agent_core::crew::DESIGN_AGENT_TYPE;
 use nomi_agent_core::design_approval::{self, Approval};
 use nomi_agent_core::design_artifact::{self, Element, Page, ENTRY_PAGE, PREVIEW_TOKEN_CHARS};
 use nomi_agent_core::design_feedback::{self, Feedback, NewFeedback, MAX_OPEN_PER_CHAT};
@@ -33,6 +34,8 @@ const PREVIEW_MAX_AGE_SECS: u32 = 3600;
 const BRIDGE: &str = include_str!("design_bridge.js");
 const BODY_END: &str = "</body>";
 const HTML_TYPE: &str = "text/html";
+/// Who Sora's task comes from when the person approves a version: Nomi, on their behalf.
+const APPROVED_BY: &str = "chitchat";
 
 #[derive(Serialize)]
 pub struct StudioPreview {
@@ -43,6 +46,8 @@ pub struct StudioPreview {
     pub elements: Vec<Element>,
     pub preview_token: String,
     pub published_url: Option<String>,
+    /// Why it isn't published, when its newest publish failed.
+    pub publish_error: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -57,7 +62,7 @@ pub struct StudioResponse {
 
 /// `GET /api/sessions/:id/design`: the chat's preview versions, oldest first.
 pub async fn list(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(session_id): Path<Uuid>) -> Result<Json<StudioResponse>, (StatusCode, &'static str)> {
-    if !nomi_settings::config::design_enabled_for(claims.sub).await {
+    if !nomi_settings::config::agent_on(DESIGN_AGENT_TYPE).await {
         return Err((StatusCode::NOT_FOUND, "not found"));
     }
     authorize_session_access(&state.pool, claims.sub, session_id).await?;
@@ -82,6 +87,7 @@ pub async fn list(State(state): State<AppState>, AuthClaims(claims): AuthClaims,
                 elements: stored.manifest.elements,
                 preview_token: stored.preview_token,
                 published_url: stored.published_url,
+                publish_error: stored.publish_error,
                 created_at: stored.created_at,
             })
             .collect(),
@@ -96,7 +102,7 @@ fn refused(status: StatusCode, why: &str) -> Refused {
 
 /// Whether this person may use the Studio for this chat; the refusal otherwise.
 async fn studio_access(state: &AppState, user_id: Uuid, session_id: Uuid) -> Result<(), Refused> {
-    if !nomi_settings::config::design_enabled_for(user_id).await {
+    if !nomi_settings::config::agent_on(DESIGN_AGENT_TYPE).await {
         return Err(refused(StatusCode::NOT_FOUND, "not found"));
     }
     authorize_session_access(&state.pool, user_id, session_id).await.map_err(|(status, why)| refused(status, why))
@@ -151,7 +157,64 @@ pub async fn approve(
         return Err(refused(StatusCode::NOT_FOUND, "no such version"));
     }
     let approval = design_approval::approve(&mut conn, session_id, claims.sub, version, note.as_deref()).await.map_err(unavailable)?;
+    // Approving is the go-ahead to build: Sora writes the handoff and passes it to Koda without
+    // the person having to say so in the chat too.
+    let task = nomi_agent_core::prompts::DESIGN_APPROVED_TASK.replace("{version}", &version.to_string());
+    if let Err(why) = nomi_agent_core::delegation::create_delegation(&mut conn, None, session_id, APPROVED_BY, DESIGN_AGENT_TYPE, &task, claims.sub).await {
+        tracing::warn!(error = %why, %session_id, "design studio: the approval didn't reach Sora");
+    }
     Ok((StatusCode::CREATED, Json(approval)))
+}
+
+/// What publishing a version again came to.
+#[derive(Debug, Serialize)]
+pub struct PublishOutcome {
+    pub version: i32,
+    pub published_url: Option<String>,
+    pub publish_error: Option<String>,
+}
+
+pub fn publish_outcome(version: i32, published: Result<nomi_agent_core::static_publish::Published, String>) -> PublishOutcome {
+    match published {
+        Ok(at) => PublishOutcome { version, published_url: Some(at.url), publish_error: None },
+        Err(why) => PublishOutcome { version, published_url: None, publish_error: Some(why) },
+    }
+}
+
+/// `POST /api/sessions/:id/design/publish`: publishes a version again, after it couldn't be.
+/// The answer says where it is now, or why it still isn't, and both are kept for the Studio.
+pub async fn publish(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Path(session_id): Path<Uuid>,
+    Json(input): Json<serde_json::Value>,
+) -> Result<Json<PublishOutcome>, Refused> {
+    studio_access(&state, claims.sub, session_id).await?;
+    let version = version_of(&input)?;
+    let (manifest, files) = {
+        let mut conn = state.pool.acquire().await.map_err(unavailable)?;
+        let manifest = design_artifact::version(&mut conn, session_id, version).await.map_err(unavailable)?.ok_or_else(|| refused(StatusCode::NOT_FOUND, "no such version"))?;
+        let listed = design_artifact::list(&mut conn, session_id).await.map_err(unavailable)?;
+        let stored = listed.iter().find(|v| v.version == version).ok_or_else(|| refused(StatusCode::NOT_FOUND, "no such version"))?;
+        retry_allowed(stored.published_url.as_deref(), stored.publish_error.as_deref())?;
+        (manifest, design_artifact::files(&mut conn, session_id, version).await.map_err(unavailable)?)
+    };
+    // No connection is held through the upload, which can take minutes.
+    let request = nomi_agent_core::static_publish::PublishRequest { user_id: claims.sub, session_id, version, title: &manifest.title, files: &files };
+    let publisher = crate::static_publisher::ShipyardStaticPublisher::shared(state.pool.clone());
+    let published = nomi_agent_core::static_publish::publish(publisher.as_ref(), &request).await;
+    let mut conn = state.pool.acquire().await.map_err(unavailable)?;
+    let published = nomi_agent_core::static_publish::record_outcome(&mut conn, session_id, version, published).await;
+    Ok(Json(publish_outcome(version, published)))
+}
+
+/// A version is published again only when it isn't published now: never tried, or its newest
+/// publish failed. Each publish uploads every file to Shipyard again.
+pub fn retry_allowed(published_url: Option<&str>, publish_error: Option<&str>) -> Result<(), Refused> {
+    match (published_url, publish_error) {
+        (Some(_), None) => Err(refused(StatusCode::CONFLICT, "this version is already published")),
+        _ => Ok(()),
+    }
 }
 
 /// The file a request path means: nothing is the entry page, a folder its index page.
@@ -231,6 +294,23 @@ pub async fn preview_file(State(state): State<AppState>, Path((token, path)): Pa
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_version_that_is_not_published_is_published_again() {
+        assert_eq!(retry_allowed(None, Some("publishing previews isn't set up")), Ok(()));
+        assert_eq!(retry_allowed(None, None), Ok(()), "never tried");
+        assert_eq!(retry_allowed(Some("https://ship.example/dpl/d1"), Some("Shipyard refused it")), Ok(()), "its newest publish failed");
+        assert_eq!(retry_allowed(Some("https://ship.example/dpl/d1"), None).unwrap_err().0, StatusCode::CONFLICT);
+    }
+
+    #[test]
+    fn a_publish_answer_says_where_or_why_not() {
+        let at = nomi_agent_core::static_publish::Published { provider: "shipyard".into(), url: "https://ship.example/dpl/d1".into() };
+        let done = publish_outcome(3, Ok(at));
+        assert_eq!((done.version, done.published_url.as_deref(), done.publish_error), (3, Some("https://ship.example/dpl/d1"), None));
+        let failed = publish_outcome(3, Err("publishing previews isn't set up".into()));
+        assert_eq!((failed.published_url, failed.publish_error.as_deref()), (None, Some("publishing previews isn't set up")));
+    }
 
     #[test]
     fn a_request_path_means_a_file() {

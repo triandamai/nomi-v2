@@ -66,6 +66,8 @@ export class ProjectRuntime {
 	previewUrl = $state<string | null>(null);
 	/** The port the dev server listens on inside the container, shown as localhost:<port>. */
 	previewPort = $state<number | null>(null);
+	/** The browser's own preview opts in to the page's isolation itself, and keeps its storage. */
+	readonly anonymousFrame = false;
 	log = $state('');
 	/** The project's files as last copied in, so the Code view lists them as Koda writes them. */
 	files = $state<ManifestEntry[]>([]);

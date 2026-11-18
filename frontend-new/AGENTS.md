@@ -400,13 +400,17 @@ leaves out what v2 or the backend can't do yet, rather than draw it dead:
   Chats, the title, who answers, "· thinking" while they work, and More for the chat's sheet:
   Rename, Pin to top, Move to a project, Export, Share whole chat, Delete chat), the thread padded
   [16,16,20,16] and sitting at the bottom while it's short, your messages in the 18-round bubble,
-  each reply under the Mobile byline with its prose at 16 / 1.55 and the round action bar (More:
-  regenerate, as on a desktop), and `PhoneComposer` (the model chip and "@ Crew" open sheets).
-  New chat is the pen's step 2: Nomi's mascot, the question at 22, the line and the starters.
-  Still the desktop's, until their phone flows are built: the crew picker's 300 width (the pen runs
-  it the screen's width; MentionPicker is the old app's twin), a dislike's reasons (a dislike is
-  sent without them on a phone), editing your message and its versions, the share dialog, and
-  Export's PDF (the pen's "md · pdf": markdown only). The thinking level isn't on the phone's
+  each reply under the Mobile byline with its prose at 16 / 1.55 and the round action bar, and
+  `PhoneComposer` (the model chip and "@ Crew" open sheets). New chat is the pen's step 2: Nomi's
+  mascot, the question at 22, the line and the starters.
+- A chat's controls on a phone (Like & dislike `M0VaJC`, Share & delete `yoVD6`, Message controls
+  `ctP7Q`): a reply's More (or a long press on it) opens its sheet, the quick tiles (`SheetTiles`:
+  Good, Bad, Copy, Share) over Regenerate (its own sheet of styles) and Edit question; Bad opens
+  `PhoneDislikeSheet` with the reasons; Share opens `PhoneShareSheet`; deleting asks in an
+  `ActionSheet`. A long press on your own message opens its sheet (Edit, Copy), and editing is
+  `PhoneMessageEditor` in place of the bubble. Still the desktop's: the crew picker's 300 width (the
+  pen runs it the screen's width; MentionPicker is the old app's twin) and Export's PDF (the pen's
+  "md · pdf": markdown only). The thinking level isn't on the phone's
   toolbar (the pen draws the model and the crew).
 - Files in a chat (Flow / Chat — Attachments, voice & limits, Errors & recovery, Shared link; the UX
   contract `docs/ux/work/audit-chat-files/40-ux-contract.md`) are built on what the backend has. A
@@ -719,7 +723,7 @@ steps; what isn't there yet is left out, not drawn dead:
 - Code (Code, terminal & phone preview `uR6dq`, steps 1–2) is the project's files in `CodeView`,
   read only, opening on the app's own page (the backend doesn't say which file Koda changed last);
   lines picked are quoted above the composer (`CodeQuote`, in `ChatView`) and sent ahead of the
-  message. The tokens are plain: the server-side highlighter isn't there yet.
+  message. Its lines are coloured on the server (shiki, by the file's extension; plain for a file it can't read or one over 200,000 characters), and it fills the pane's height.
 - Where the project runs in the backend's sandbox (and it may be used now), the workspace starts
   it on opening and keeps it awake while open; the preview shows the changes not yet published,
   with the sandbox's phase in words while it wakes and starts (and Start again once it stopped or

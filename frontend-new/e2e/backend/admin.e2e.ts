@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { api, createAccount, signInAgain, signInAs, type Account } from './support/accounts';
 import { deleteAdminModel, deleteConnection, deleteDynamicAgent, makePlatformAdmin, seedSharedEndpoint } from './support/db';
 import { APP_URL } from './support/env';
@@ -408,10 +408,10 @@ test.describe('tools', () => {
 		const name = (await switchable.getAttribute('aria-label'))!.replace('Turn off ', '');
 		try {
 			await switchable.click();
-			await expect(page.getByRole('button', { name: `Turn on ${name}` })).toBeVisible();
+			await expect(page.getByRole('button', { name: `Turn on ${name}`, exact: true })).toBeVisible();
 			expect((await tools(admin)).find((tool) => tool.name === name)?.enabled).toBe(false);
-			await page.getByRole('button', { name: `Turn on ${name}` }).click();
-			await expect(page.getByRole('button', { name: `Turn off ${name}` })).toBeVisible();
+			await page.getByRole('button', { name: `Turn on ${name}`, exact: true }).click();
+			await expect(page.getByRole('button', { name: `Turn off ${name}`, exact: true })).toBeVisible();
 		} finally {
 			await api(admin, `/api/admin/tools/${name}`, { method: 'PUT', body: JSON.stringify({ enabled: true }) });
 		}
@@ -547,6 +547,13 @@ test.describe('configuration', () => {
 	type View = { sections: { name: string; fields: { name: string; value: string | null; source: string }[] }[] };
 	const field = async (admin: Account, section: string, name: string) =>
 		((await (await api(admin, '/api/admin/configuration')).json()) as View).sections.find((one) => one.name === section)!.fields.find((one) => one.name === name)!;
+	// "Saved" stays on screen from the save before, so each save waits for its own answer instead.
+	const save = async (page: Page, section: Locator) => {
+		const answered = page.waitForResponse((response) => response.url().includes('?/save') && response.request().method() === 'POST');
+		await section.getByRole('button', { name: 'Save' }).click();
+		await answered;
+		await expect(section.getByText('Saved', { exact: true })).toBeVisible();
+	};
 
 	test('a value is saved here, then emptied back to the environment’s', async ({ page, context }) => {
 		const admin = await platformAdmin();
@@ -556,13 +563,11 @@ test.describe('configuration', () => {
 		const relay = page.getByRole('region', { name: 'Relay' });
 		try {
 			await relay.getByLabel('CLI version').fill('9.9.9-e2e');
-			await relay.getByRole('button', { name: 'Save' }).click();
-			await expect(relay.getByText('Saved', { exact: true })).toBeVisible();
+			await save(page, relay);
 			expect(await field(admin, 'relay', 'cli_version')).toMatchObject({ value: '9.9.9-e2e', source: 'saved' });
 
 			await relay.getByLabel('CLI version').fill('');
-			await relay.getByRole('button', { name: 'Save' }).click();
-			await expect(relay.getByText('Saved', { exact: true })).toBeVisible();
+			await save(page, relay);
 			expect((await field(admin, 'relay', 'cli_version')).source).not.toBe('saved');
 		} finally {
 			await api(admin, '/api/admin/configuration/relay', { method: 'PUT', body: JSON.stringify({ values: { cli_version: '' } }) });

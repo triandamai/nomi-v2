@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, tick, untrack, type Snippet } from 'svelte';
-	import { ArrowUpRight, Check, Cpu, Download, FilePlus2, FolderInput, Hourglass, ImageOff, KeyRound, List, LogIn, Maximize2, Minimize2, Pencil, Pin, PinOff, RefreshCw, RotateCcw, RotateCw, Share, Sparkles, Trash2, Unplug, Undo2, X } from '@lucide/svelte';
+	import { ArrowUpRight, Check, Copy, Cpu, Download, FilePlus2, FolderInput, Hourglass, ImageOff, KeyRound, List, LogIn, Maximize2, Minimize2, Pencil, Pin, PinOff, RefreshCw, RotateCcw, RotateCw, Share, Sparkles, ThumbsDown, ThumbsUp, Trash2, Unplug, Undo2, X } from '@lucide/svelte';
 	import { goto, invalidate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { m } from '$lib/paraglide/messages';
@@ -44,6 +44,12 @@
 	import TurnNote from '$lib/ds/thread/TurnNote.svelte';
 	import ChatComposer from '$lib/ds/thread/ChatComposer.svelte';
 	import PhoneComposer from '$lib/ds/thread/PhoneComposer.svelte';
+	import PhoneMessageEditor from '$lib/ds/thread/PhoneMessageEditor.svelte';
+	import PhoneDislikeSheet from '$lib/ds/thread/PhoneDislikeSheet.svelte';
+	import PhoneShareSheet from '$lib/ds/thread/PhoneShareSheet.svelte';
+	import SheetTiles from '$lib/ds/overlays/SheetTiles.svelte';
+	import ActionSheet from '$lib/ds/overlays/ActionSheet.svelte';
+	import { longPress } from '$lib/longPress';
 	import NavBar from '$lib/ds/mobile/NavBar.svelte';
 	import Mascot from '$lib/ds/agents/Mascot.svelte';
 	import PhoneUserMessage from '$lib/ds/mobile/UserMessage.svelte';
@@ -103,11 +109,26 @@
 	const phoneGuess = () => Boolean(page.data.phone);
 	const phoneWidth = phoneView(phoneGuess());
 	const phone = $derived(phoneWidth.current && !pane);
-	type Sheet = { kind: 'chat' } | { kind: 'rename' } | { kind: 'reply'; message: RenderedMessage; latest: boolean } | { kind: 'model' } | { kind: 'crew' };
+	type Sheet =
+		| { kind: 'chat' }
+		| { kind: 'rename' }
+		| { kind: 'reply'; message: RenderedMessage; latest: boolean; asked?: RenderedMessage }
+		| { kind: 'regen'; message: RenderedMessage }
+		| { kind: 'dislike'; message: RenderedMessage }
+		| { kind: 'mine'; message: RenderedMessage; latest: boolean }
+		| { kind: 'model' }
+		| { kind: 'crew' };
 	let sheet = $state<Sheet | null>(null);
 	// What the phone's action bar shows at once, before the reload brings the saved feedback (the
 	// desktop's reply bar keeps its own): put back if saving fails.
 	let feedbackShown = $state<Record<string, 'liked' | 'disliked' | null>>({});
+	async function copyText(text: string) {
+		const ok = await navigator.clipboard
+			?.writeText(text)
+			.then(() => true)
+			.catch(() => false);
+		toasts.show(ok ? { kind: 'success', title: m.copy_done() } : { kind: 'error', title: m.action_failed() });
+	}
 	async function ratePhone(message: RenderedMessage, next: 'liked' | 'disliked' | null) {
 		const before = feedbackShown[message.id];
 		feedbackShown = { ...feedbackShown, [message.id]: next };
@@ -967,11 +988,19 @@
 	{@const total = (message.versions ?? 0) + 1}
 	{@const shown = viewing[message.id] ? versions[message.id]?.[viewing[message.id] - 1] : undefined}
 	{@const parts = splitAttachments(shown?.text ?? message.content)}
-	{#if editing === message.id}
+	{#if editing === message.id && phone}
+		<PhoneMessageEditor value={message.content} version={m.edit_saves_as({ version: total + 1 })} onsave={(text) => saveEdit(message, text)} oncancel={() => (editing = null)} />
+	{:else if editing === message.id}
 		<MessageEditor value={message.content} version="{total} / {total + 1}" onsave={(text) => saveEdit(message, text)} oncancel={() => (editing = null)} />
 	{:else if phone}
 		{#if parts.files.length}<SentFiles phone files={sentItems(parts.files, clock(message.created_at, time.timeZone))} />{/if}
-		{#if parts.text}<PhoneUserMessage text={parts.text} />{/if}
+		{#if parts.text}
+			<!-- Long-pressing your message opens its sheet (Message controls, step 3). -->
+			<!-- A message with files isn't edited in place (editing with files is P1), so its sheet has no Edit. -->
+			<div use:longPress={() => (sheet = { kind: 'mine', message, latest: latest && !working && !shown && !parts.files.length })}>
+				<PhoneUserMessage text={parts.text} />
+			</div>
+		{/if}
 		{#if sentNotes[message.id]}<FileNote icon={ImageOff} mono align="end" text={sentNotes[message.id]} />{/if}
 		{#if lateNotes[message.id]}<TurnNote icon={LogIn} align="end" text={lateNotes[message.id]} />{/if}
 	{:else}
@@ -1102,7 +1131,7 @@
 							{/each}
 						{/if}
 					{:else}
-						<div data-message-id={message.id} class="flex flex-col">
+						<div data-message-id={message.id} class="flex flex-col" use:longPress={() => phone && (sheet = { kind: 'reply', message, latest: entry.latest, asked })}>
 							<AgentReply
 								{phone}
 								agent={crewIdOf(message.agent_display_name)}
@@ -1145,9 +1174,9 @@
 											text={message.content}
 											{feedback}
 											onlike={() => void ratePhone(message, feedback === 'liked' ? null : 'liked')}
-											ondislike={() => void ratePhone(message, feedback === 'disliked' ? null : 'disliked')}
+											ondislike={() => (feedback === 'disliked' ? void ratePhone(message, null) : (sheet = { kind: 'dislike', message }))}
 											onshare={() => void share(message.id)}
-											onmore={() => (sheet = { kind: 'reply', message, latest: entry.latest })}
+											onmore={() => (sheet = { kind: 'reply', message, latest: entry.latest, asked })}
 										/>
 									{:else}
 										<ReplyBar
@@ -1294,14 +1323,53 @@
 	</BottomSheet>
 	{#if sheet?.kind === 'reply'}
 		{@const reply = sheet}
-		<BottomSheet open title={nameOf(reply.message)} subtitle={clock(reply.message.created_at, time.timeZone)} onclose={closed('reply')}>
+		{@const liked = (reply.message.id in feedbackShown ? feedbackShown[reply.message.id] : reply.message.my_feedback === 'up' ? 'liked' : reply.message.my_feedback === 'down' ? 'disliked' : null) === 'liked'}
+		<!-- A reply's sheet (Like & dislike, step 1): the quick tiles, then what else it can do. -->
+		<BottomSheet open title={m.reply_sheet_title()} subtitle={`${nameOf(reply.message)} · ${clock(reply.message.created_at, time.timeZone)}`} onclose={closed('reply')}>
+			<SheetTiles
+				tiles={[
+					{ label: m.reply_good(), icon: ThumbsUp, pressed: liked, onclick: () => (void ratePhone(reply.message, liked ? null : 'liked'), close()) },
+					{ label: m.reply_bad(), icon: ThumbsDown, onclick: () => (sheet = { kind: 'dislike', message: reply.message }) },
+					{ label: m.reply_copy_short(), icon: Copy, onclick: () => (void copyText(reply.message.content), close()) },
+					{ label: m.reply_share_short(), icon: Share, onclick: () => (void share(reply.message.id), close()) },
+				]}
+			/>
 			{#if reply.latest && !working}
-				{#each [{ style: 'again', label: m.regen_again(), icon: RefreshCw }, { style: 'shorter', label: m.regen_shorter(), icon: Minimize2 }, { style: 'longer', label: m.regen_longer(), icon: Maximize2 }, { style: 'list', label: m.regen_list(), icon: List }] as const as option (option.style)}
-					<SheetRow icon={option.icon} label={option.label} onclick={() => (close(), void regenerate(reply.message.id, option.style))} />
-				{/each}
-			{:else}
-				<p class="px-5 py-3 text-phone-sm text-text-3">{m.regen_only_latest()}</p>
+				<SheetRow icon={RefreshCw} label={m.reply_regenerate()} more onclick={() => (sheet = { kind: 'regen', message: reply.message })} />
+				{#if reply.asked}
+					{@const asked = reply.asked}
+					<SheetRow icon={Pencil} label={m.reply_edit_question()} onclick={() => ((editing = asked.id), close())} />
+				{/if}
 			{/if}
+		</BottomSheet>
+	{/if}
+	{#if sheet?.kind === 'regen'}
+		{@const regen = sheet}
+		<BottomSheet open title={m.reply_regenerate()} subtitle={nameOf(regen.message)} onclose={closed('regen')}>
+			{#each [{ style: 'again', label: m.regen_again(), icon: RefreshCw }, { style: 'shorter', label: m.regen_shorter(), icon: Minimize2 }, { style: 'longer', label: m.regen_longer(), icon: Maximize2 }, { style: 'list', label: m.regen_list(), icon: List }] as const as option (option.style)}
+				<SheetRow icon={option.icon} label={option.label} onclick={() => (void regenerate(regen.message.id, option.style), close())} />
+			{/each}
+		</BottomSheet>
+	{/if}
+	{#if sheet?.kind === 'dislike'}
+		{@const disliked = sheet.message}
+		<PhoneDislikeSheet
+			open
+			onsend={(feedback) => {
+				// Read now: the sheet (and its {@const}) is gone by the time the answer comes.
+				const target = disliked;
+				feedbackShown = { ...feedbackShown, [target.id]: 'disliked' };
+				void dislike(target, feedback).then((ok) => (ok ? toasts.show({ kind: 'success', title: m.feedback_thanks() }) : (feedbackShown = { ...feedbackShown, [target.id]: null })));
+			}}
+			onclose={closed('dislike')}
+		/>
+	{/if}
+	{#if sheet?.kind === 'mine'}
+		{@const mine = sheet}
+		<!-- Your message's sheet (Message controls, step 3). -->
+		<BottomSheet open title={m.mine_sheet_title()} subtitle={clock(mine.message.created_at, time.timeZone)} onclose={closed('mine')}>
+			{#if mine.latest}<SheetRow icon={Pencil} label={m.mine_edit()} onclick={() => ((editing = mine.message.id), close())} />{/if}
+			<SheetRow icon={Copy} label={m.mine_copy()} onclick={() => (void copyText(mine.message.content), close())} />
 		</BottomSheet>
 	{/if}
 	<BottomSheet open={sheet?.kind === 'model'} title={m.composer_model_title()} onclose={closed('model')}>
@@ -1333,7 +1401,19 @@
 	</BottomSheet>
 {/if}
 
-{#if shareLink}
+{#if shareLink && phone}
+	<PhoneShareSheet
+		bind:open={shareOpen}
+		excerpt={shareLink.preview}
+		chatMessages={shareLink.chat_messages}
+		url={shareUrl}
+		expiry={shareDays === null ? m.share_expiry_never() : shareDays === 1 ? m.share_expiry_day() : m.share_expiry_days({ days: String(shareDays) })}
+		settings={{ scope: shareLink.scope, mask: shareLink.mask, anyone: shareLink.anyone }}
+		onchange={(settings) => void saveShare(settings, shareDays)}
+		onexpiry={() => shareLink && void saveShare({ scope: shareLink.scope, mask: shareLink.mask, anyone: shareLink.anyone }, EXPIRY[(EXPIRY.indexOf(shareDays) + 1) % EXPIRY.length])}
+		oncopy={copyShare}
+	/>
+{:else if shareLink}
 	<ShareDialog
 		bind:open={shareOpen}
 		preview={{ agent: crewIdOf(shareLink.preview_by), name: shareLink.preview_by ?? m.export_you(), time: clock(new Date(), time.timeZone), excerpt: shareLink.preview }}
@@ -1350,6 +1430,18 @@
 
 <MoveDialog bind:open={moveOpen} projects={data.projects} initialChosen={data.chat.inProjectId ?? undefined} onmove={move} />
 
+{#if phone}
+	<ActionSheet
+		bind:open={deleteOpen}
+		title={m.chat_delete_title()}
+		body={m.chat_delete_body({ count: messages.length })}
+		actions={[
+			{ label: m.chat_delete_export(), onclick: exportChat },
+			{ label: m.chat_delete(), danger: true, onclick: () => void deleteChat() },
+		]}
+		cancel={m.action_cancel()}
+	/>
+{:else}
 <Dialog bind:open={deleteOpen} title={m.chat_delete_title()} description={m.chat_delete_body({ count: messages.length })}>
 	{#snippet actions()}
 		<Button label={m.chat_delete_export()} variant="ghost" iconStart={Download} onclick={exportChat} />
@@ -1357,6 +1449,7 @@
 		<Button label={m.chat_delete()} variant="danger" iconStart={Trash2} onclick={deleteChat} />
 	{/snippet}
 </Dialog>
+{/if}
 
 <!-- Files: the picker, what's said to a screen reader as uploads finish or fail, a phone's sheets
      (a failed file's Retry or Remove, the models that can see a picture), and the viewers. -->

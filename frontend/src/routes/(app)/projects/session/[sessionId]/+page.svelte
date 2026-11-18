@@ -12,7 +12,7 @@
 	import PreviewAddressBar from '$lib/components/project/PreviewAddressBar.svelte';
 	import PreviewDevices from '$lib/components/project/PreviewDevices.svelte';
 	import { PHASE_LABEL } from '$lib/components/project/previewPhase';
-	import { browserRuntimeForced, createRuntime, forceBrowserRuntime, type AnyRuntime } from '$lib/runtimeChooser';
+	import { browserRuntimeForced, createRuntime, forceBrowserRuntime, startWhenReady, type AnyRuntime } from '$lib/runtimeChooser';
 	import { SandboxRuntime } from '$lib/sandboxRuntime.svelte';
 	import IconButton from '$lib/components/m3/IconButton.svelte';
 	import IconClose from '$lib/components/icons/IconClose.svelte';
@@ -40,6 +40,7 @@
 	import MembersPanel from '$lib/components/project/MembersPanel.svelte';
 	import SettingsPanel from '$lib/components/project/SettingsPanel.svelte';
 	import DomainPanel from '$lib/components/project/DomainPanel.svelte';
+	import UsagePanel from '$lib/components/project/UsagePanel.svelte';
 	import { ProjectDeploy } from '$lib/projectDeploy.svelte';
 	import { invalidateAll, replaceState } from '$app/navigation';
 	import { isBackendEvent, isIssuesEvent } from '$lib/presenceView';
@@ -66,7 +67,7 @@
 	import DsButton from '$lib/components/ds/actions/Button.svelte';
 	import { ArrowLeft, Download } from '@lucide/svelte';
 	import { projectApi } from '$lib/projectApi';
-	import { Activity, Bug, Database, History, Link2, Settings, Share2, Users } from '@lucide/svelte';
+	import { Activity, Bug, Coins, Database, History, Link2, Settings, Share2, Users } from '@lucide/svelte';
 	import SplitButton from '$lib/components/project/SplitButton.svelte';
 	import type { MenuEntry } from '$lib/components/ds/overlays/MenuPanel.svelte';
 	import type { ActionData, PageData } from './$types';
@@ -101,8 +102,8 @@
 
 	// The project's tools open in full-screen sheets over the project, so its chat, code and
 	// running preview stay as they are underneath (closing one never restarts the install).
-	type Sheet = 'deploy' | 'domain' | 'monitor' | 'database' | 'members' | 'issues' | 'settings';
-	const SHEETS: Sheet[] = ['deploy', 'domain', 'monitor', 'database', 'members', 'issues', 'settings'];
+	type Sheet = 'deploy' | 'domain' | 'monitor' | 'usage' | 'database' | 'members' | 'issues' | 'settings';
+	const SHEETS: Sheet[] = ['deploy', 'domain', 'monitor', 'usage', 'database', 'members', 'issues', 'settings'];
 	let sheet = $state<Sheet | null>(null);
 	let sheetOpen = $state(false);
 	// Sheets open below the toolbar, which stays in view: where its bottom edge is.
@@ -269,15 +270,17 @@
 		{ label: m.pj_tab_deploy(), icon: History, onselect: () => openSheet('deploy') },
 		{ group: m.pj_menu_watch() },
 		{ label: m.pj_tab_monitor(), icon: Activity, onselect: () => openSheet('monitor') },
+		{ label: m.pj_tab_usage(), icon: Coins, onselect: () => openSheet('usage') },
 		{ label: dataTitle(), icon: Database, onselect: () => openSheet('database') },
 		'divider',
 		{ label: m.export_tool(), icon: Download, onselect: openExport },
 	]);
-	const SHEET_ICON = { deploy: History, domain: Link2, monitor: Activity, database: Database, members: Users, issues: Bug, settings: Settings } as const;
+	const SHEET_ICON = { deploy: History, domain: Link2, monitor: Activity, usage: Coins, database: Database, members: Users, issues: Bug, settings: Settings } as const;
 	const SHEET_TITLE: Record<Sheet, () => string> = {
 		deploy: m.pj_tab_deploy,
 		domain: m.pj_tab_domain,
 		monitor: m.pj_tab_monitor,
+		usage: m.pj_tab_usage,
 		database: () => dataTitle(),
 		members: m.pj_tab_members,
 		issues: m.issues_title,
@@ -285,6 +288,8 @@
 	};
 	const published = $derived(Boolean(deploy?.overview?.app && deploy.overview.publishes.some((p) => p.status === 'succeeded')));
 	let runtime = $state<AnyRuntime | null>(null);
+	// The crew is still planning, designing or first building it: the preview hasn't started.
+	let awaitingFirstBuild = $state(false);
 
 	// Projects with a package.json run in the browser (WebContainer); static ones don't.
 	const projectId = $derived(data.project?.id ?? null);
@@ -302,14 +307,26 @@
 		void runtimeChoice;
 		let live: AnyRuntime | null = null;
 		let cancelled = false;
-		void createRuntime(projectId).then((created) => {
+		let stopWaiting: (() => void) | null = null;
+		const id = projectId;
+		void createRuntime(id).then((created) => {
 			if (cancelled) return;
-			live = created;
-			runtime = created;
-			void created.start();
+			// Nothing starts (no sandbox, no install in the browser) until there is a build to
+			// preview: the crew may still be planning or designing it.
+			stopWaiting = startWhenReady(
+				id,
+				() => {
+					live = created;
+					runtime = created;
+					void created.start();
+				},
+				(waiting) => (awaitingFirstBuild = waiting),
+			);
 		});
 		return () => {
 			cancelled = true;
+			stopWaiting?.();
+			awaitingFirstBuild = false;
 			runtime = null;
 			void live?.stop();
 		};
@@ -1124,6 +1141,11 @@
 					<IconClose size={18} />
 				</IconButton>
 			</div>
+			{#if awaitingFirstBuild}
+				<p class="md-body-small px-4 py-2" style="background: var(--md-sys-color-surface-container); color: var(--md-sys-color-on-surface-variant)">
+					{m.project_preview_waits()}
+				</p>
+			{/if}
 			{#if runtime?.checkFailed}
 				<p class="md-body-small px-4 py-2" style="background: var(--md-sys-color-error-container); color: var(--md-sys-color-on-error-container)">
 					{runtime.handedToKoda ? m.project_check_failed_koda() : m.project_check_failed()}
@@ -1283,6 +1305,8 @@
 				<DomainPanel {deploy} />
 			{:else if sheet === 'monitor'}
 				<MonitorPanel projectId={project.id} {published} {deploy} />
+			{:else if sheet === 'usage'}
+				<UsagePanel projectId={project.id} />
 			{:else if sheet === 'database'}
 				{#if project.backend === 'relay'}
 					<RelayPanel projectId={project.id} {published} />

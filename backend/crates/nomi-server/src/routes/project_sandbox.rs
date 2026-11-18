@@ -87,13 +87,21 @@ pub struct SandboxResponse {
     /// Only while the sandbox is running.
     pub preview_url: Option<String>,
     pub error: Option<String>,
+    /// Whether there is a build to preview (`BuildState::ready_to_preview`). Until then the page
+    /// starts neither the sandbox nor the browser's runtime.
+    pub preview_ready: bool,
 }
 
 async fn describe(state: &AppState, project_id: Uuid, user_id: Uuid) -> Result<SandboxResponse, ApiError> {
     let config = sandbox_config().await;
-    let found = {
+    let (found, preview_ready) = {
         let mut conn = state.pool.acquire().await.map_err(internal)?;
-        availability(&mut conn, project_id, Some(user_id), config.as_ref()).await.map_err(internal)?
+        let found = availability(&mut conn, project_id, Some(user_id), config.as_ref()).await.map_err(internal)?;
+        let ready = match &found {
+            Some(_) => nomi_agent_coding::runtime::build_state(&mut conn, project_id).await.map_err(internal)?.ready_to_preview(),
+            None => false,
+        };
+        (found, ready)
     };
     let Availability { runtime, status, available, .. } = found.ok_or((StatusCode::NOT_FOUND, "project not found".to_string()))?;
     let sandbox_state = status.as_ref().map_or(SandboxState::None, |s| s.state);
@@ -101,7 +109,9 @@ async fn describe(state: &AppState, project_id: Uuid, user_id: Uuid) -> Result<S
     let preview_url = status.as_ref().filter(|_| running).and_then(|s| s.preview_url.clone());
     // An error, or a running sandbox whose preview failed (it still runs Koda's commands).
     let failed = sandbox_state == SandboxState::Error || running && preview_url.is_none();
-    let error = status.as_ref().and_then(|s| {
+    // Before the first build there is nothing that could have failed: a sandbox Koda woke for
+    // his commands has no preview on purpose.
+    let error = status.as_ref().filter(|_| preview_ready).and_then(|s| {
         if failed || !running {
             s.last_error.clone()
         } else {
@@ -115,6 +125,7 @@ async fn describe(state: &AppState, project_id: Uuid, user_id: Uuid) -> Result<S
         phase: status.as_ref().map_or(PHASE_IDLE, |s| s.state.phase()),
         preview_url,
         error,
+        preview_ready,
     })
 }
 
@@ -135,6 +146,10 @@ pub async fn start_sandbox(State(state): State<AppState>, AuthClaims(claims): Au
     }
     if !current.available {
         return Err((StatusCode::CONFLICT, "the sandbox isn't available right now; the project runs in the browser".to_string()));
+    }
+    // Nothing to preview yet (still planned, designed or first built): nothing is started.
+    if !current.preview_ready {
+        return Ok(Json(current));
     }
     let mut conn = state.pool.acquire().await.map_err(internal)?;
     store::want_running(&mut conn, project_id, PROVIDER_NAME).await.map_err(internal)?;

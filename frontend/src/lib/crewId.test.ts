@@ -7,12 +7,14 @@ describe('crewId', () => {
 		expect(crewId('money')).toBe('dana');
 		expect(crewId('reminders')).toBe('kala');
 		expect(crewId('inspector')).toBe('iris');
+		expect(crewId('design')).toBe('sora');
 	});
 
 	it('takes a crew name as it is', () => {
 		expect(crewId('Koda')).toBe('koda');
 		expect(crewId('supervisor')).toBe('supervisor');
 		expect(crewId('Iris')).toBe('iris');
+		expect(crewId('Sora')).toBe('sora');
 	});
 
 	it('falls back to Nomi for chitchat, unknown agents and none', () => {

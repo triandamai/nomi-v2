@@ -163,10 +163,9 @@ pub async fn list_crew(
             }
         })
         .collect();
-    // Sora isn't in the crew until the design workflow is rolled out to this person.
-    if !nomi_settings::config::design_enabled_for(claims.sub).await {
-        agents.retain(|a| a.agent_type != nomi_agent_core::crew::DESIGN_AGENT_TYPE);
-    }
+    // A member an admin switched off for everyone (Admin → Agents) isn't in anyone's crew.
+    let everyone_off = nomi_settings::config::agents_off_now().await;
+    agents.retain(|a| a.is_default || !everyone_off.contains(&a.agent_type));
     // Nomi leads the crew.
     if let Some(index) = agents.iter().position(|a| a.agent_type == registry.default_agent().agent_type()) {
         let nomi = agents.remove(index);

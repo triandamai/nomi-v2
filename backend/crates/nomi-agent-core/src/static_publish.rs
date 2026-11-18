@@ -76,6 +76,52 @@ pub async fn record(conn: &mut PgConnection, session_id: Uuid, version: i32, pub
     Ok(done.rows_affected() > 0)
 }
 
+/// What Sora is told when a version was published but its address couldn't be stored.
+pub const NOT_KEPT: &str = "its address couldn't be kept";
+
+/// Records why a version of the chat's previews couldn't be published. False when there is no
+/// such version.
+pub async fn record_failure(conn: &mut PgConnection, session_id: Uuid, version: i32, reason: &str) -> Result<bool, sqlx::Error> {
+    let done = sqlx::query(
+        "INSERT INTO design_artifact_publish_failures (artifact_id, reason) \
+         SELECT id, $3 FROM design_artifacts WHERE session_id = $1 AND version = $2",
+    )
+    .bind(session_id)
+    .bind(version)
+    .bind(reason)
+    .execute(conn)
+    .await?;
+    Ok(done.rows_affected() > 0)
+}
+
+/// Publishes a saved version and keeps what happened: its address, or why it isn't published,
+/// so the Design Studio can say so whatever the agent tells the person.
+pub async fn publish_and_record(conn: &mut PgConnection, publisher: &dyn StaticPublisher, request: &PublishRequest<'_>) -> Result<Published, String> {
+    let published = publish(publisher, request).await;
+    record_outcome(conn, request.session_id, request.version, published).await
+}
+
+/// Keeps what publishing a version came to: its address, or why it isn't published. A caller
+/// that mustn't hold a connection through the upload publishes first and records with this.
+pub async fn record_outcome(conn: &mut PgConnection, session_id: Uuid, version: i32, published: Result<Published, String>) -> Result<Published, String> {
+    let outcome = match published {
+        Ok(at) => match record(conn, session_id, version, &at).await {
+            Ok(_) => return Ok(at),
+            Err(e) => {
+                tracing::error!(error = %e, "design preview: its address couldn't be kept");
+                Err(NOT_KEPT.to_string())
+            }
+        },
+        Err(why) => Err(why),
+    };
+    if let Err(why) = &outcome {
+        if let Err(e) = record_failure(conn, session_id, version, why).await {
+            tracing::error!(error = %e, "design preview: why it isn't published couldn't be kept");
+        }
+    }
+    outcome
+}
+
 /// Where a version was published last.
 pub async fn latest(conn: &mut PgConnection, session_id: Uuid, version: i32) -> Result<Option<Published>, sqlx::Error> {
     let row: Option<(String, String)> = sqlx::query_as(

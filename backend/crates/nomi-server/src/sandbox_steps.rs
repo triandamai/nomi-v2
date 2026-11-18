@@ -95,6 +95,11 @@ impl ProjectSteps for ServerSteps {
     }
 
     async fn start_preview(&self, project_id: Uuid, sandbox: &SandboxId) -> Result<PreviewUrl, StepError> {
+        // A sandbox woken for Koda's commands while he is still on his first build runs them
+        // and nothing else: no install, no dev server, no check, until there is a build to show.
+        if !self.ready_to_preview(project_id).await.map_err(StepError::Retry)? {
+            return Err(StepError::Usable(PREVIEW_WAITS_FOR_BUILD.to_string()));
+        }
         let version = self.current_version(project_id).await.map_err(StepError::Retry)?;
         let started = self.ensure_dev_server(project_id, sandbox).await;
         if let Some(version) = version {
@@ -104,6 +109,9 @@ impl ProjectSteps for ServerSteps {
     }
 
     async fn update_dependencies(&self, project_id: Uuid, sandbox: &SandboxId) -> Result<bool, StepError> {
+        if !self.ready_to_preview(project_id).await.map_err(StepError::Retry)? {
+            return Ok(false);
+        }
         let version = self.current_version(project_id).await.map_err(StepError::Retry)?;
         let installed = self.reinstall_if_changed(project_id, sandbox).await;
         if let (Some(version), Err(DevServerError::Install(_))) = (version, &installed) {
@@ -131,7 +139,16 @@ pub(crate) fn step_error(err: DevServerError) -> StepError {
     }
 }
 
+/// Why a sandbox that runs has no preview yet: the project is still being planned, designed or
+/// first built. The page shows it instead of an error.
+pub const PREVIEW_WAITS_FOR_BUILD: &str = "the preview starts when the first build is done";
+
 impl ServerSteps {
+    async fn ready_to_preview(&self, project_id: Uuid) -> Result<bool, String> {
+        let mut conn = self.pool.acquire().await.map_err(|e| e.to_string())?;
+        nomi_agent_coding::runtime::build_state(&mut conn, project_id).await.map(|s| s.ready_to_preview()).map_err(|e| e.to_string())
+    }
+
     async fn current_version(&self, project_id: Uuid) -> Result<Option<i64>, String> {
         sqlx::query_scalar("SELECT files_version FROM projects WHERE id = $1").bind(project_id).fetch_optional(&self.pool).await.map_err(|e| e.to_string())
     }

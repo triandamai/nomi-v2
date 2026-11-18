@@ -1,4 +1,4 @@
-//! Rena's design discovery: when the design workflow is rolled out to the person, an app or site
+//! Rena's design discovery: while Sora is on (Admin → Agents), an app or site
 //! request is explored step by step instead of with one card of questions. She is told what the
 //! chat already asked, so she never asks it twice.
 
@@ -12,7 +12,7 @@ use sqlx::PgConnection;
 use uuid::Uuid;
 
 /// The heading of the list of questions the chat already asked.
-pub const ALREADY_ASKED_HEADING: &str = "Already asked in this chat (the answers are in the conversation; never ask these again):";
+pub use nomi_agent_core::prompts::PLANNING_ALREADY_ASKED_HEADING as ALREADY_ASKED_HEADING;
 
 /// The most questions listed as already asked: the newest ones.
 pub const MAX_ASKED_LISTED: usize = 40;
@@ -60,7 +60,7 @@ pub fn already_asked_section(asked: &[String]) -> Option<String> {
 
 pub const SAVE_DESIGN_BRIEF: &str = "save_design_brief";
 
-/// `save_design_brief`: Rena's tool for the structured brief, where the design workflow is on.
+/// `save_design_brief`: Rena's tool for the structured brief, while Sora is on.
 pub fn save_design_brief_definition() -> nomi_llm::ToolDefinition {
     nomi_llm::ToolDefinition {
         name: SAVE_DESIGN_BRIEF.to_string(),
@@ -100,7 +100,7 @@ pub async fn save_design_brief(conn: &mut PgConnection, session_id: Uuid, agent_
 }
 
 /// What Rena is told for an app or site request: her app-building playbook as it always was, and
-/// where the design workflow is on for the person (`design_on`), design discovery and what the
+/// while Sora is on (`design_on`), design discovery and what the
 /// chat already asked.
 pub fn app_context(design_on: bool, asked: &[String]) -> String {
     if !design_on {
@@ -116,8 +116,8 @@ pub fn app_context(design_on: bool, asked: &[String]) -> String {
 
 /// `app_context` for this chat and person: the design setting as saved now, and the question
 /// cards posted in the chat so far.
-pub async fn app_context_for(conn: &mut PgConnection, session_id: Uuid, user_id: Uuid) -> String {
-    if !nomi_settings::config::design_enabled_for(user_id).await {
+pub async fn app_context_for(conn: &mut PgConnection, session_id: Uuid, _user_id: Uuid) -> String {
+    if !nomi_settings::config::agent_on(nomi_agent_core::crew::DESIGN_AGENT_TYPE).await {
         return app_context(false, &[]);
     }
     let cards: Vec<Value> = sqlx::query_scalar(

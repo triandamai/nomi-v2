@@ -14,7 +14,7 @@ pub const MANAGE: &str = "manage";
 pub const LEVELS: [&str; 3] = [VIEW, WRITE, MANAGE];
 
 /// Every admin area, in the order the admin console lists them.
-pub const ADMIN_RESOURCES: [&str; 11] = [
+pub const ADMIN_RESOURCES: [&str; 12] = [
     "dashboard",
     "user",
     "plans",
@@ -26,6 +26,7 @@ pub const ADMIN_RESOURCES: [&str; 11] = [
     "maintenance",
     "integrations",
     "configuration",
+    "projects",
 ];
 
 /// Where a level sits (0 for view), or None when it isn't one.
