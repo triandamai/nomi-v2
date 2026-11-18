@@ -48,6 +48,13 @@ describe('the chat page’s own endpoints', () => {
 		expect((await chatRequest(event, 's1', ['agent-plans', 'a1', 'p1', 'items', 'x'], request('PUT', { done: true }))).status).toBe(400);
 	});
 
+	it('says who of the crew is working in the chat now', async () => {
+		const { backend, event } = eventWith(() => json({ agent_session_id: 'a1', agent_type: 'money', current_phase: 'working', current_phase_detail: null }));
+		const status = await chatRequest(event, 's1', ['agent-status'], request('GET'));
+		expect(await status.json()).toMatchObject({ agent_session_id: 'a1', agent_type: 'money' });
+		expect(backend.calls[0]).toMatchObject({ method: 'GET', url: 'http://api.test/api/sessions/s1/agent-status' });
+	});
+
 	it('marks a reminder done or snoozes it', async () => {
 		const { backend, event } = eventWith(() => json({}));
 		await chatRequest(event, 's1', ['reminders', 'r1'], request('POST', { action: 'snooze', minutes: 30 }));

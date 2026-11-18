@@ -79,7 +79,7 @@ describe('loadShell', () => {
 		expect(shell.person).toEqual({ name: 'Mario Prasetyo', firstName: 'Mario', avatar: null });
 		expect(shell.theme).toBe('dark');
 		expect(shell.timeZone).toBe('Asia/Jakarta');
-		expect(shell.usage).toEqual({ card: { plan: 'Free plan', used: 0.0218, caption: '21.8K / 1M tokens this month' }, account: 'Free · 21.8K / 1M tokens', canUpgrade: true });
+		expect(shell.usage).toEqual({ card: { plan: 'Free plan', used: 0.0218, caption: '21.8K / 1M tokens this month' }, account: 'Free · 21.8K / 1M tokens', canUpgrade: true, tokens: { used: '21.8K', total: '1M' } });
 		expect(shell.unread).toBe(3);
 		expect(shell.chats).toBe(1);
 		expect(shell.recents.map((recent) => recent.href)).toEqual(['/chat/s1', '/projects/p1']);
