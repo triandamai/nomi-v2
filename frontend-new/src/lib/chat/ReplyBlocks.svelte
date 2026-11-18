@@ -33,7 +33,8 @@
 	import PhoneQuickReplies from '$lib/ds/thread/PhoneQuickReplies.svelte';
 	import PhoneSupervisor from '$lib/ds/thread/PhoneSupervisor.svelte';
 	import PhoneErrorCard from '$lib/ds/thread/PhoneErrorCard.svelte';
-	import { approvalPreview, recipientOf, sendsEmail, sendsSomething } from '$lib/adapters/phoneChat';
+	import { approvalPreview, formDate, isReminderForm, previewOrder, recipientOf, sendsEmail, sendsSomething } from '$lib/adapters/phoneChat';
+	import PhoneFormCard from '$lib/ds/thread/PhoneFormCard.svelte';
 	import { clock } from './dates';
 	import { callJson } from './client';
 	import PlanBlock from './PlanBlock.svelte';
@@ -115,7 +116,7 @@
 	const FIELD_NAMES: Record<string, () => string> = { to: m.phone_approval_to, subject: m.phone_approval_subject };
 	/** The preview's rows: to and subject named as the pen does, the rest by their key; the text and attachment drawn on their own. */
 	const previewRows = (fields: { key: string; value: string }[]) =>
-		fields.filter((field) => !/^(body|text|message|content|attachment|attachments|file|files)$/i.test(field.key)).map((field) => ({ key: FIELD_NAMES[field.key.toLowerCase()]?.() ?? field.key, value: field.value }));
+		previewOrder(fields.filter((field) => !/^(body|text|message|content|attachment|attachments|file|files)$/i.test(field.key))).map((field) => ({ key: FIELD_NAMES[field.key.toLowerCase()]?.() ?? field.key, value: field.value }));
 
 	async function remind(block: Extract<ReplyBlock, { kind: 'reminder' }>, action: 'done' | 'snooze') {
 		const result = await callJson(`${api}/reminders/${block.id}`, { method: 'POST', body: action === 'snooze' ? { action, minutes: 30 } : { action } });
@@ -193,15 +194,16 @@
 		<PhoneDecision question={block.question} options={block.options} onconfirm={(index) => send(block.key, block.options[index].title)} />
 	{:else if phone && block.kind === 'form' && !answered[block.key]}
 		{@const values = Object.fromEntries(block.fields.map((field) => [field.key, value(block.key, field)]))}
-		<Reminder
-			title={block.title}
-			when={block.fields
-				.map((field) => value(block.key, field))
-				.filter((one) => typeof one === 'string' && one.trim())
-				.join(' · ')}
-			owner={{ agent: block.agent, name: agentName }}
-			onedit={() => (formOpen = block.key)}
-		/>
+		{@const filled = block.fields
+			.map((field) => value(block.key, field))
+			.filter((one): one is string => typeof one === 'string' && one.trim() !== '')
+			.map((one) => formDate(one, language))
+			.join(' · ')}
+		{#if isReminderForm(block.fields)}
+			<Reminder title={block.title} when={filled} owner={{ agent: block.agent, name: agentName }} onedit={() => (formOpen = block.key)} />
+		{:else}
+			<PhoneFormCard title={block.title} values={filled} owner={{ agent: block.agent, name: agentName }} onedit={() => (formOpen = block.key)} />
+		{/if}
 		<PhoneFormSheet
 			open={formOpen === block.key}
 			title={block.title}

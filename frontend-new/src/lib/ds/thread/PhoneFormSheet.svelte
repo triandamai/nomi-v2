@@ -12,7 +12,7 @@
 </script>
 
 <script lang="ts">
-	import { CircleAlert } from '@lucide/svelte';
+	import { Check, CircleAlert } from '@lucide/svelte';
 	import { m } from '$lib/paraglide/messages';
 	import Icon from '../foundations/Icon.svelte';
 	import BottomSheet from '../overlays/BottomSheet.svelte';
@@ -23,7 +23,8 @@
 	// 14 apart at the phone's 16 (so iOS doesn't zoom): text, date and time as the platform's own,
 	// a few options as the pen's segment (Once / Weekly / Monthly / Yearly), more as a select. A
 	// date that has passed says so under its field ("That date has passed.") and Save waits until
-	// it's fixed, as it waits for every required field. Cancel and Save.
+	// it's fixed, as it waits for every required field. Dates and times are in mono (vKSyn, JCtTB).
+	// Cancel and Save (its check after the label).
 	type Props = {
 		open?: boolean;
 		title: string;
@@ -112,7 +113,7 @@
 								oninput={(event) => set(field.key, event.currentTarget.value)}
 								aria-invalid={error ? 'true' : undefined}
 								aria-describedby={error ? `${id}-${field.key}-error` : undefined}
-								class="min-w-0 flex-1 bg-transparent text-phone text-text caret-accent outline-none placeholder:text-text-3"
+								class={['min-w-0 flex-1 bg-transparent text-phone text-text caret-accent outline-none placeholder:text-text-3', (field.type === 'date' || field.type === 'time') && 'font-mono']}
 							/>
 						{/if}
 						{#if error}<span class="inline-flex text-danger"><Icon icon={CircleAlert} size={14} /></span>{/if}
@@ -126,8 +127,8 @@
 			<button
 				type="submit"
 				aria-disabled={blocked}
-				class={['flex h-11.5 w-full cursor-pointer items-center justify-center rounded-lg bg-accent text-phone font-medium text-accent-ink outline-offset-2', blocked && 'cursor-default opacity-40']}
-				>{submitLabel ?? m.phone_form_save()}</button
+				class={['flex h-11.5 w-full cursor-pointer items-center justify-center gap-2 rounded-lg bg-accent text-phone font-medium text-accent-ink outline-offset-2', blocked && 'cursor-default opacity-40']}
+				>{submitLabel ?? m.phone_form_save()}<Icon icon={Check} /></button
 			>
 		</div>
 	</form>

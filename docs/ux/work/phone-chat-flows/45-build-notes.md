@@ -138,3 +138,17 @@ See `git log origin/main..feat/frontend-new-v2-phone-chat-flows`.
   (the emailed reset and invite links go to that app: auth forgot-password, invites), whose crew
   has no Sora yet (#285 on main: app-shell's crew list), and whose sign-in code limit is shared with
   that run (auth "too many codes"). The backend binds 8080 fixed, so a second one couldn't be run.
+
+## Gate 3 fixes (50-build-verify.md, 18 Nov 2026)
+
+Branch `fix/frontend-new-v2-phone-chat-flows-gate3` off `origin/main` (PR #306 was already merged).
+All 12 deviations are fixed: #1 plan bar, #2 Research only's "Nothing shared.", #3 To before
+Subject, #4 accent progress, #5 many-of-many rows and box, #6 banners pinned under the nav bar, #7
+"1 crew working", #8 Resume 30 in a 50 footer, #9 dates "25 Jan 2026" and mono, #10 trailing
+icons (Make the plan has none: the pen's is sparkles), #11 gap 6, #12 review rows named by their
+question. A non-reminder form gets `PhoneFormCard` (answer 2). The sparkles on "Switch to Nomi
+credits" and "Make the plan" are dropped (AGENTS.md §9).
+
+Gates: check 9638 files, 0 errors · unit 993/993 (173 files) · components 727/727 (111 files) ·
+build ok · stub e2e 24 passed · twins 326/326 · backend `phone-flows.e2e.ts` + `phone.e2e.ts`
+15/15 (E2E_APP_PORT=4184, backend on 8080).
