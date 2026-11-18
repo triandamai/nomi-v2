@@ -309,3 +309,290 @@ Matches the pen except for one item (listed here because it's less visible than 
 
 ## Result
 changes-required for the chat flows (items 1–35). Re-run this gate for Projects once pen.dev access is back.
+
+## Projects
+
+Added 18 Nov 2026, once pen.dev access was back.
+
+**How it was measured:**
+- The pen: the Mobile Projects frames, read with `Get(…, {resolveInstances: true})`.
+- The build: the same production build of `8d665993` (a clean `git archive` copy built in the scratchpad, because this worktree's build had moved on with the chat fixes). It ran against the 8080 backend at 390 × 844 with an iPhone UA, dark and light.
+- The account: "Siti's space" with 4 projects and a second workspace, "Warung Bu Siti". The 4 projects:
+  - warung-kopi-menu: live, through a publish row inserted into the database
+  - kos-booking: first deploy failed
+  - arisan-tracker: stopped
+  - laundry-orders: has files, never reported done, so it shows as Stopped
+- Coordinates: as above, a build y equals pen y − 54.
+- Light pen twins: not screenshotted. Colours were compared as tokens.
+
+### Summary
+29 deviations: **11 high · 12 medium · 6 low**.
+
+### Deviations
+
+#### Search, filters, sort (Find & filter `owsMq`)
+P1. **Searching doesn't change the bar.** Severity: high.
+- Frame: `epdb3` → `oFdFf`.
+- Build, with "kos" typed:
+  - The field stays 310 wide with no clear button.
+  - Sort stays at its right.
+  - The field shows an `accent` border and the focus shadow.
+- Pen:
+  - The field narrows to 299 and gets a 20px round clear button (`text-3` fill, `x` 12 in `surface-2`).
+  - A text "Cancel" (16, `text`) replaces Sort.
+  - The field's stroke is `$nm-focus`, 1px.
+- Likely file: `src/lib/ds/projects/PhoneProjectSearch.svelte`.
+
+P2. **The no-match state is the desktop's, not the phone's.** Severity: high.
+- Frame: `Ifa4i` → `OC2PS`.
+- Build:
+  - An outlined box (`border`, radius 10, padding 24).
+  - A bare 20px `search-x` in `text-3`; title 13/500; text 13 at line height 20.
+  - "Clear search": 44 tall, radius 6, 13/400, no icon.
+- Pen:
+  - No box; padding [40,24].
+  - A 48 × 48 `surface-2` tile (radius 14) holding a 22px `search-x` in `text-2`.
+  - Title "No projects match “kasir”" at 17/600; text 14 at 1.45.
+  - "Clear search": a 40-tall pill (radius 20, `border-strong`, 14/500) with an `x` icon.
+- Likely file: `src/routes/(app)/projects/+page.svelte` (`phoneEmpty`), `src/lib/ds/projects/ProjectEmpty.svelte`.
+
+P3. **Sort sheet: order and labels.** Severity: high.
+- Frame: `TIuwF` → `M7SCRS`.
+- Build: Updated, Name, Status, Created.
+- Pen: Updated, "Status · needs you first", "Name · A–Z", Created.
+- The selected check is 20 in the build, 18 in the pen (see L3).
+- Likely file: `src/routes/(app)/projects/+page.svelte` (the sort sheet).
+
+M1. **Filter counts don't follow the search.** Severity: medium.
+- Frame: `epdb3` → `wDi32`.
+- Build: with one card shown, the chips still say All 4, Live 1.
+- Pen: the counts are the search's ("All 1", "Live 0").
+- Likely file: `src/routes/(app)/projects/+page.svelte` (`filterOptions`).
+
+L1. **Filters row height.** Severity: low.
+- Frame: `J8au5J`.
+- Build: 44 tall (bottom padding 10).
+- Pen: 46 (padding [0,16,12,16]).
+- Likely file: `src/lib/ds/projects/PhoneFilters.svelte`.
+
+#### Header and cards (`etEGD`, `zz1kw`, `a7KP1`)
+M2. **The workspace pill's initial is in mono.** Severity: medium.
+- Frame: `LXujm/AXKpW`.
+- Build: Geist Mono 12/400.
+- Pen: sans 12/600.
+- Likely file: `src/lib/ds/projects/PhoneProjectsHeader.svelte`.
+
+L2. **Card name and description spacing.** Severity: low.
+- Frame: `fbJBa`.
+- Build: gap 2; description at line height 17.
+- Pen: gap 3; line height 1.35 (18).
+- Likely file: `src/lib/ds/projects/ProjectCard.svelte` (phone).
+
+The rest of the card matches the pen:
+- The card itself: 358 wide, padding 16, radius 14, `border-strong`.
+- Tile: 40, radius 10, Fraunces 17.
+- State block: radius 10, padding [10,12]; `danger-bg` when failed.
+- Footer: a top stroke, padding top 12.
+- Actions: 40-tall pills, with the right icons (play, wrench, arrow-right).
+- Live line: the arrow-up-right 12 icon.
+
+#### Card sheet (Card menu `T9IbH`, `M4p0u`)
+M3. **Subtitle starts with the chat count, not the state.** Severity: medium.
+- Frame: `OFwQo/G8cFz`.
+- Build: "1 chat · deploy #1 · 22h ago" (the card's footer).
+- Pen: "live · deploy #15 · 2d ago".
+- Likely file: `src/routes/(app)/projects/+page.svelte` (`subtitle={card.footer}`).
+
+M4. **Icons differ.** Severity: medium.
+- Frame: `R4a7xS`.
+
+| Row | Build | Pen |
+|---|---|---|
+| Open workspace | `arrow-right` | `app-window` |
+| Visit live site | `globe` | `arrow-up-right` |
+| Take down | `eye-off` | `power` |
+| Delete project | `trash` | `trash-2` |
+
+- Likely file: `src/lib/projects` / `projectMenu` (the phone sheet's icons).
+
+M5. **Separators.** Severity: medium.
+- Frames: `XDW6C`, `ZRj78`.
+- Build: 1px lines across the full width.
+- Pen: a 9-tall separator (padding [4,20]) with a 350-wide inset line, so the sheet is 16px taller.
+- Likely file: `src/routes/(app)/projects/+page.svelte` / `SheetRow` divider.
+
+M6. **No chevrons.** Severity: medium.
+- Frames: `VvKNR`, `gvrNK`, `nEjEw`.
+- Build: Move to workspace…, Share… and Settings have none.
+- Pen: each of the three has chevron-right 16 in `text-3`.
+- Likely file: `src/routes/(app)/projects/+page.svelte`.
+
+#### Move (`WbD1H`) and Delete (`Z6OsC`)
+P4. **Move title repeats the subtitle and wraps.** Severity: high.
+- Frame: `rbozn`.
+- Build: title "Move laundry-orders to another workspace" (2 lines, 44 tall) over the subtitle "To another workspace".
+- Pen: title "Move salah-tracker", subtitle "To another workspace".
+- Likely file: `src/lib/ds/projects/ProjectMoveSheet.svelte` (or its message).
+
+P5. **The current workspace's meta repeats "current".** Severity: high.
+- Frame: `KEIJW`.
+- Build: "current · current · only you".
+- Pen: "current · 3 members".
+- Likely file: `ProjectMoveSheet.svelte`.
+
+M7. **Workspace cards.** Severity: medium.
+- Frame: `I5UHw`.
+- Build: 64 tall, padding 12/14, tile 32 with radius 10, name 16/400, radio border 2.
+- Pen: 68 tall, padding 14, tile 36 with radius 9, name 16/500, radio stroke 1.5; body padding top 4.
+- Not checked: the pen's note under the cards (who sees it, what stays). It appears only once a workspace is chosen, and I didn't choose one.
+- Likely file: `ProjectMoveSheet.svelte`.
+
+P6. **Delete sheet copy.** Severity: high.
+- Frame: `AHDzi`.
+- Build: "Its files, its live app and its data go for good. Its chat stays."
+- Pen: "The live URL stops working and the database is removed. Your code stays in your account f…" (cut off in the dump).
+- Likely file: `src/lib/ds/projects/DeleteProjectSheet.svelte` / `messages/en.json`.
+
+L4. **Delete details.** Severity: low.
+- Frame: `v81Hi`.
+- Build: body line height 19; the button's icon is `trash`.
+- Pen: line height 1.4 (21); the icon is `trash-2`.
+- Likely file: `DeleteProjectSheet.svelte`.
+
+#### Workspaces sheet (Workspaces & people `F2Tuh`, `V3fmpB`)
+P7. **Workspaces are full-width rows, not inset cards.** Severity: high.
+- Frame: `a9NrP`.
+- Build:
+  - Rows run edge to edge: 60 tall, padding [8,20].
+  - The tile is round, 36, filled `surface-2`; name 16/400.
+  - The chosen workspace has a check but no fill.
+- Pen:
+  - Cards 64 tall, padding [12,14], radius 14, inside body padding [4,16] with gap 8.
+  - The tile is 36 with radius 9, filled `bg`; name 16/500.
+  - The chosen card is filled `surface-2` and has the check.
+- Likely file: `src/routes/(app)/projects/+page.svelte` (the Workspaces sheet).
+
+P8. **The boundary note is missing.** Severity: high.
+- Frame: `C8evkZ`.
+- Build: nothing.
+- Pen: a `bg` box (padding 14, radius 12) under the workspaces, with two parts:
+  - "Shared in a workspace / Projects, their chats and shared crew templates" (users icon)
+  - "Always personal / Your chats, memory, money and inbox" (lock icon)
+- The desktop's §9 note says to drop "shared crew templates"; the box itself should still be there.
+- Likely file: `src/routes/(app)/projects/+page.svelte`.
+
+M8. **Rows under the workspaces.** Severity: medium.
+- Frame: `eTxpl`.
+- Build:
+  - A 1px divider above the rows.
+  - "Create a workspace", with a chevron.
+- Pen:
+  - No divider; padding top 8.
+  - "Create workspace", with no chevron.
+- Likely file: `src/routes/(app)/projects/+page.svelte`.
+
+#### New project (`H4ngT2`, `xNV1T`)
+M9. **Chip labels.** Severity: medium.
+- Frame: `CvjGu`.
+- Build: `text-2`.
+- Pen: `text-3`; the accent `database · for orders` chip appears once a database is detected.
+- The URL chip ("*.trian.space") doesn't show here: the local backend gives no base domain, so I didn't count it.
+- Likely file: `src/lib/ds/projects/ProjectComposer.svelte` (phone).
+
+L6. **Sheet body padding.** Severity: low.
+- Frame: `hkMeL`.
+- Build: top padding 0 (here and in Move).
+- Pen: [4,16,0,16].
+- Likely files: `ProjectComposer.svelte`, `ProjectMoveSheet.svelte`.
+
+#### Project detail (Detail panel `G4Mwvd`, `V9w2zU`)
+P9. **Ask bar at the foot.** Severity: high.
+- Frame: `kB2Dt`.
+- Build: the chat's `PhoneComposer`, a 38-tall pill reading "Ask Koda to change something", with no mascot or mic.
+- Pen: the Mobile / Ask Bar:
+  - The bar: 52 tall, radius 26, `surface`, `border-strong`, shadow.
+  - Inside it: Koda's 20px mascot, the placeholder at 15, and a 40px round `surface-2` mic.
+  - Its wrap: padding [10,16,4,16] with a top stroke.
+- Likely file: `src/routes/(app)/projects/+page.svelte` (`phoneDetail`'s `ask` snippet).
+
+P10. **Status line under the name.** Severity: high.
+- Frame: `AL711`.
+- Build: the card's footer, "1 chat · deploy #1 · 23h ago".
+- Pen: the state, "deploy #6 failed · #5 still live".
+- Likely file: `src/routes/(app)/projects/+page.svelte` (`liveLine(...) ?? card.footer`).
+
+P11. **The live project's status line says "deploy #0".** Severity: high.
+- Build: "live · deploy #0 · 23h ago", while its card says "deploy #1".
+- The publish was seeded straight into the database (no Shipyard), so this may come from the deploy overview being empty. Even so, the line shouldn't show #0.
+- Likely file: `src/routes/(app)/projects/+page.svelte` (`liveLine`).
+
+M10. **Alert title has no deploy number.** Severity: medium.
+- Frame: `x7xv6`.
+- Build: "Deploy failed".
+- Pen: "Deploy #6 failed".
+- Likely file: `src/routes/(app)/projects/+page.svelte`.
+
+The rest of the detail matches the pen:
+- Back bar: 48 tall, "Projects".
+- Hero: tile 56, radius 14; name 20/600.
+- Alert: `danger-bg`, padding 14, radius 12, with "Ask Koda to fix".
+- Open workspace and Visit: 46 tall, radius 12.
+- The parts rows: 52 tall, 18px icons, 15 labels, values in mono 12.
+- The chats list, and no tab bar.
+
+#### Loading and couldn't load (Loading, offline & errors `EkEA9`)
+M11. **Loading cards.** Severity: medium.
+- Frame: `hc5uw` → `V6bMR`.
+- Build:
+  - Cards 204 tall with a `border` stroke.
+  - Name bars 10 and 8 tall, radius 3, gap 6.
+  - An empty 56-tall state block; a footer bar 8 tall.
+- Pen:
+  - Cards 194 tall with a `border-strong` stroke.
+  - Bars 12 and 10 tall, radius 4, gap 3.
+  - The state block (46 tall) holds two bars (90 × 10, 220 × 10); the footer bar is 10.
+- Likely file: `src/lib/ds/projects/ProjectCardLoading.svelte` (phone).
+
+M12. **Couldn't-load spacing and copy.** Severity: medium.
+- Frame: `ZSUL6` → `tDuEM`.
+- Build: top padding 48; the code line says "503 from Nomi’s server · 11:49".
+- Pen: top padding 40; the code line says "503 from api.nomi.app · 09:14".
+- Likely file: `src/lib/ds/projects/LoadError.svelte` / `projects_load_failed_reason`.
+
+L5. **Couldn't-load sizes.** Severity: low.
+- Frame: `tDuEM`.
+- Build: icon tile radius 12; title 16; gap 8; code 11/14; text line height 18.
+- Pen: radius 14; title 17; gap 10; code 12/16; line height 1.45 (20).
+- Likely file: `LoadError.svelte`.
+
+L3. **Sort sheet's check.** Severity: low.
+- Frame: `i7GQct`.
+- Build: 20.
+- Pen: 18.
+- Likely file: the sort sheet in `src/routes/(app)/projects/+page.svelte`.
+
+### Projects not compared, and why
+- **Stop sheet** (`w2yWm`) and **Deploy sheet** (`xvEu2`): not reachable locally.
+  - Stop needs a project chat that's working at that moment.
+  - The Deploy action needs Shipyard publishing.
+- **Not captured:**
+  - Card menu: Rename, Renamed, Duplicate (`O79XLV`, `X6aX7`, `w5PNXl`).
+  - Find & filter: Empty filter (`L2NzD`).
+  - New project: Questions, Building, Live (`P8ljBK`, `m7Tzqf`, `gY5Yt`).
+  - Workspaces & people: Invite and Invited (`PVYvG`, `rPrc3`).
+  - Detail panel: Ask, Changing, Export (`EUo3M`, `kZIuK`, `JznvP`).
+- **Offline, App down, Koda checks** (`vKZi8`, `epdkW`, `iKLNC`): §9 says these aren't built yet.
+
+### §9 items confirmed still accurate (Projects)
+- `PhoneProjectsHeader` (workspace pill, member count, Invite, large title, New).
+- `PhoneProjectSearch` with Sort.
+- `PhoneFilters`, with Needs you first while something needs the person.
+- Phone cards with the ⋯ sheet carrying the desktop menu's items.
+- New opens the New project sheet with the composer, and no Import from GitHub.
+- Tapping a card opens `PhoneProjectDetail`: no tab bar, no "Next prayer" picture.
+- Delete wants the name typed; Move picks among workspace cards.
+- Loading and couldn't-load keep the search and filters, with counts left out.
+- The Sort sheet has no "Saved for …" subtitle, and the Workspaces sheet has no Join.
+
+### Result (Projects)
+changes-required: P1–P11, M1–M12, L1–L6.
