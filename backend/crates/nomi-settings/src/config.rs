@@ -154,6 +154,16 @@ pub const DOMAINS: SectionDef = SectionDef {
     fields: &[saved_only("apps_base_domain", Kind::Domain)],
 };
 
+/// The payment providers Nomi can take payments through, by the name `PAYMENT`'s `provider` saves.
+pub const PAYMENT_PROVIDERS: &[&str] = &["xendit", "doku"];
+
+/// Which provider new payments go through. Unset: the first of `PAYMENT_PROVIDERS` that is set
+/// up. A payment already made stays with the provider it was made with.
+pub const PAYMENT: SectionDef = SectionDef {
+    name: "payment",
+    fields: &[field("provider", "PAYMENT_PROVIDER", Kind::Choice(PAYMENT_PROVIDERS))],
+};
+
 pub const XENDIT: SectionDef = SectionDef {
     name: "xendit",
     fields: &[
@@ -163,6 +173,19 @@ pub const XENDIT: SectionDef = SectionDef {
         field("base_url", "XENDIT_BASE_URL", Kind::Text),
         // Rupiah to the dollar, for showing spend (kept in dollars) in rupiah.
         field("usd_to_idr", "USD_TO_IDR", Kind::Number),
+    ],
+};
+
+/// DOKU Checkout (DOKU dashboard → Integration → API Keys). `base_url` is
+/// `https://api-sandbox.doku.com` for the sandbox; `notification_path` is the path of the
+/// notification URL set in DOKU's dashboard, when it isn't `/api/payments/doku/webhook`.
+pub const DOKU: SectionDef = SectionDef {
+    name: "doku",
+    fields: &[
+        field("client_id", "DOKU_CLIENT_ID", Kind::Text),
+        field("secret_key", "DOKU_SECRET_KEY", Kind::Secret),
+        field("base_url", "DOKU_BASE_URL", Kind::Text),
+        field("notification_path", "DOKU_NOTIFICATION_PATH", Kind::Text),
     ],
 };
 
@@ -218,7 +241,7 @@ pub const CREW: SectionDef = SectionDef { name: "crew", fields: &[saved_only("of
 /// The field of `CREW` that lists the members switched off.
 const CREW_OFF: &str = "off";
 
-pub const SECTIONS: [&SectionDef; 11] = [&ATTACHMENTS, &STORAGE, &GOOGLE, &GITHUB, &SMTP, &AGENT_LOOP, &RELAY, &DOMAINS, &XENDIT, &BILLING, &SANDBOX];
+pub const SECTIONS: [&SectionDef; 13] = [&ATTACHMENTS, &STORAGE, &GOOGLE, &GITHUB, &SMTP, &AGENT_LOOP, &RELAY, &DOMAINS, &PAYMENT, &XENDIT, &DOKU, &BILLING, &SANDBOX];
 
 pub fn section_named(name: &str) -> Option<&'static SectionDef> {
     SECTIONS.into_iter().find(|s| s.name == name)

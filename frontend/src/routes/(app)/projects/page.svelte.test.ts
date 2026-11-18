@@ -86,6 +86,12 @@ describe('projects page', () => {
 		expect(root.textContent).toBeTruthy();
 	});
 
+	it("says the plan's project limit under the composer", () => {
+		const limit = 'Your plan allows 3 projects. Upgrade your plan to create more.';
+		const root = page(data(), { limitError: limit });
+		expect(root.querySelector('[role="alert"]')?.textContent).toBe(limit);
+	});
+
 	it('shows an empty organization', () => {
 		const root = page(data({ projects: [], sessions: [] }));
 		expect(root.textContent).toBeTruthy();

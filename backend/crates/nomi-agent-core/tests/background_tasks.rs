@@ -162,6 +162,10 @@ async fn crew_agent_can_start_background_task_and_work_on_another_task_while_wai
         requests[0].system.as_deref().unwrap_or_default().contains("run_background_task"),
         "every crew agent system prompt must include BACKGROUND_EXECUTION_GUIDE"
     );
+    assert!(
+        requests[0].system.as_deref().unwrap_or_default().contains(nomi_agent_core::prompts::ABOUT_NOMI),
+        "every crew member can say who founded Nomi"
+    );
 
     // The chat got a card that follows the task, running for now…
     let task_id: Uuid = sqlx::query_scalar("SELECT id FROM background_tasks WHERE session_id = $1").bind(session_id).fetch_one(&pool).await.unwrap();

@@ -114,6 +114,14 @@ describe('projects: actions', () => {
 		expect(status(await actions.createForImport(event({ form: {} })))).toBe(500);
 	});
 
+	it("says the plan's project limit instead of failing the page", async () => {
+		const limit = 'Your plan allows 3 projects. Upgrade your plan to create more.';
+		backend((path, method) => (path === '/api/projects' && method === 'POST' ? new Response(limit, { status: 402 }) : undefined));
+		expect(await actions.createProject(event({ form: { org_id: 'o1', prompt: 'a bakery site' } }))).toMatchObject({ status: 402, data: { limitError: limit } });
+		expect(calls().some((call) => call.path.endsWith('/messages'))).toBe(false);
+		expect(await actions.createForImport(event({ form: { org_id: 'o1' } }))).toMatchObject({ status: 402, data: { importError: limit } });
+	});
+
 	it('deletes a project', async () => {
 		expect(status(await actions.deleteProject(event({ form: {} })))).toBe(400);
 		expect(await actions.deleteProject(event({ form: { project_id: 'p1' } }))).toEqual({ deleted: 'p1' });

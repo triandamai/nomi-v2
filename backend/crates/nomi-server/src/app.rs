@@ -416,6 +416,8 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/billing/referral", get(billing_routes::referral))
         // Xendit calls this without a sign-in; it is trusted by its callback token.
         .route("/api/payments/xendit/webhook", post(billing_routes::xendit_webhook))
+        // DOKU calls this without a sign-in; it is trusted by its signature.
+        .route(nomi_payment::doku::DEFAULT_NOTIFICATION_PATH, post(billing_routes::doku_webhook))
         .route("/api/admin/billing/terms", get(admin_billing_routes::list_terms).post(admin_billing_routes::create_term))
         .route("/api/admin/billing/terms/:id", put(admin_billing_routes::update_term).delete(admin_billing_routes::delete_term))
         .route("/api/admin/coupons", get(admin_billing_routes::list_coupons).post(admin_billing_routes::create_coupon))
