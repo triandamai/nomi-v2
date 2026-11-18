@@ -47,12 +47,38 @@ export function panelParts(card: ProjectCardData, about: ProjectAbout | null | u
 	};
 }
 
+/** The live deploy's number: the deploy overview's, else the card's count; null rather than 0. */
+const liveNumber = (card: ProjectCardData, about: ProjectAbout | null | undefined) => about?.deploys?.liveNumber || card.deploys || null;
+
 /** "live · deploy #14 · 2d ago" beside the live dot, for a project with an address. */
 export function liveLine(card: ProjectCardData, about: ProjectAbout | null | undefined, now: Date): string | undefined {
 	if (!card.liveUrl) return undefined;
-	const number = about?.deploys?.liveNumber ?? card.deploys;
+	const number = liveNumber(card, about);
 	const when = about?.deploys?.liveAt;
-	return [m.projects_live_word(), m.projects_deploy({ number }), ...(when ? [m.projects_ago({ when: ago(when, now) })] : [])].join(' · ');
+	return [m.projects_live_word(), ...(number ? [m.projects_deploy({ number })] : []), ...(when ? [m.projects_ago({ when: ago(when, now) })] : [])].join(' · ');
+}
+
+/**
+ * The state under a project's name on its phone screen (Mobile Projects — Detail panel, AL711):
+ * "deploy #6 failed · #5 still live" for a failed deploy, "Koda is changing it · #15 stays live"
+ * while Koda changes a live app, the live line once it's live, else the card's footer. The pen's
+ * "1 of 3" (Koda's step) isn't given (§9).
+ */
+export function detailLine(card: ProjectCardData, about: ProjectAbout | null | undefined, now: Date): string {
+	const live = card.liveUrl ? liveNumber(card, about) : null;
+	if (card.status === 'failed') {
+		const failed = about?.deploys?.failedNumber || null;
+		if (failed) return live ? m.projects_detail_failed_live({ failed, live }) : m.projects_detail_failed({ failed });
+		return card.detail ?? m.projects_status_failed();
+	}
+	if (card.status === 'building' && card.liveUrl && card.next === 'stop') return live ? m.projects_detail_changing({ number: live }) : (card.statusLabel ?? card.footer);
+	return liveLine(card, about, now) ?? card.footer;
+}
+
+/** What broke's title on the phone screen: "Deploy #6 failed" once the failed deploy's number is read. */
+export function alertTitle(card: ProjectCardData, about: ProjectAbout | null | undefined): string {
+	const failed = about?.deploys?.failedNumber || null;
+	return failed ? m.projects_alert_failed({ number: failed }) : m.projects_status_failed();
 }
 
 /** The panel's chats: the project's own chat (its workspace) and those moved into it, newest first. */

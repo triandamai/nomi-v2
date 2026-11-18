@@ -2838,7 +2838,6 @@
 	"projects_phone_load_error_title": "Proyekmu tidak bisa dimuat",
 	"projects_phone_load_error_body": "Aplikasimu tetap jalan; hanya daftar ini yang gagal.",
 	"projects_phone_move_sub": "Ke workspace lain",
-	"projects_phone_move_current": "sekarang · {meta}",
 	"message_edit_field": "Pesanmu",
 	"dislike_pick_any": "Pilih yang sesuai",
 	"dislike_note_label": "Seharusnya bilang apa?",
@@ -2892,5 +2891,18 @@
 	"regen_source_key": "kunci kamu",
 	"share_anyone_help_phone": "Hanya baca, tanpa masuk",
 	"chat_delete_body_phone": "{count} pesan beserta kartunya dihapus. Pengingat, catatan keuangan, dan email terkirim tetap ada.",
-	"mine_select": "Pilih teks"
+	"mine_select": "Pilih teks",
+	"projects_phone_sort_status": "Status · yang butuh kamu dulu",
+	"projects_phone_sort_name": "Nama · A–Z",
+	"projects_phone_move_title": "Pindahkan {name}",
+	"projects_delete_body_phone": "URL live berhenti bekerja dan database-nya dihapus. Kodenya juga hilang permanen: ekspor dulu kalau kamu mau salinannya. Chat-nya tetap ada.",
+	"projects_detail_failed_live": "deploy #{failed} gagal · #{live} masih live",
+	"projects_detail_failed": "deploy #{failed} gagal",
+	"projects_detail_changing": "Koda sedang mengubahnya · #{number} tetap live",
+	"projects_alert_failed": "Deploy #{number} gagal",
+	"delete_reply_body_phone": "Pesanmu tetap ada, jadi kamu bisa bertanya lagi. Yang sudah dikerjakan kru tidak dibatalkan.",
+	"delete_reply_body_phone_items": "Pesanmu tetap ada, jadi kamu bisa bertanya lagi. Yang dibuat kartunya ikut terhapus: {items}.",
+	"reply_deleted": "Balasan dihapus",
+	"reply_deleted_detail": "Bisa dibatalkan dalam 10 detik",
+	"reply_delete_failed": "Balasan belum bisa dihapus"
 }

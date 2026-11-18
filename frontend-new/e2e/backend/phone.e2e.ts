@@ -195,6 +195,36 @@ test('Projects on a phone: the header, New project from its sheet, the card’s 
 	await sort.getByRole('button', { name: /Name/ }).click();
 	await page.getByRole('button', { name: 'Sort' }).click();
 	await expect(page.getByRole('dialog', { name: 'Sort projects' }).getByRole('button', { name: /Name/ })).toHaveAttribute('aria-pressed', 'true');
+	// The phone's order and words (M7SCRS).
+	await expect(page.getByRole('dialog', { name: 'Sort projects' }).getByRole('button')).toHaveText(['', 'Updated', 'Status · needs you first', 'Name · A–Z', 'Created']);
+	await page.keyboard.press('Escape');
+
+	// Searching: Cancel takes Sort's place and the chips count what's found (wDi32); no match is
+	// the phone's own, with Clear search (OC2PS).
+	const search = page.getByRole('searchbox', { name: 'Search projects' });
+	await search.fill('zzz-nothing');
+	await expect(page.getByRole('button', { name: 'Sort' })).toHaveCount(0);
+	await expect(page.getByRole('radio', { name: /^All/ })).toHaveText('All0');
+	await expect(page.getByText('No projects match “zzz-nothing”')).toBeVisible();
+	await page.getByRole('button', { name: 'Clear search' }).last().click();
+	await expect(search).toHaveValue('');
+	await search.fill('zzz');
+	await page.getByRole('button', { name: 'Cancel' }).click();
+	await expect(search).toHaveValue('');
+	await expect(page.getByRole('button', { name: 'Sort' })).toBeVisible();
+	await expect(page.getByRole('radio', { name: /^All/ })).toHaveText('All1');
+
+	// The workspace pill: the workspaces as cards, the boundary, Create workspace (a9NrP, C8evkZ).
+	await page.getByRole('button', { name: /^Workspace: / }).click();
+	const spaces = page.getByRole('dialog', { name: 'Workspaces' });
+	await expect(spaces.getByText('Shared in a workspace')).toBeVisible();
+	await expect(spaces.getByText('Always personal')).toBeVisible();
+	await expect(spaces.getByRole('button', { name: 'Create workspace' })).toBeVisible();
+	await page.keyboard.press('Escape');
+
+	// The project's own screen asks Koda from the pen's ask bar (kB2Dt).
+	await page.getByRole('article').first().getByRole('heading', { level: 3 }).getByRole('button').click();
+	await expect(page.getByRole('textbox', { name: 'Ask Koda to change something' })).toBeVisible();
 });
 
 test('a chat’s controls on a phone: your message’s sheet and editing, a reply’s sheet and dislike, share, delete', async ({ page, context }) => {

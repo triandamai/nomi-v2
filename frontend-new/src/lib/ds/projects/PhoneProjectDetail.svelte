@@ -11,18 +11,19 @@
 	// Mobile / Back Bar and Mobile / Project Detail (Flow / Mobile Projects — Detail panel): a project
 	// on a phone, its own screen. The back bar (48: "‹ Projects" at 16, More at the end), then
 	// [8,16,24,16], 24 apart: the hero (a 56 tile with 14 corners and the initial at 24, the name at
-	// 20 / 600 and the status line at 13 after its dot); what broke, where something did (danger-bg,
+	// 20 / 600 and the status line at 13 after its dot, the state as drawn (AL711)); what broke, where something did (danger-bg,
 	// 12 corners, 14 in: the title at 15 / 600, the reason in mono at 12, the one action as an inverse
 	// pill); Open workspace (inverse, the rest of the row) and Visit, 46 tall with 12 corners; WHAT'S
 	// IN THIS PROJECT in 52 rows (an 18 icon, a 76 key at 15, the value in mono at 12, Export on the
 	// code), and CHATS IN THIS PROJECT (Koda's mascot, the title at 15, its age, a chevron). `ask` is
-	// the composer at the screen's foot. The pen's picture of the app's own data is left out (§9).
+	// the ask bar at the screen's foot (PhoneAskBar). The pen's picture of the app's own data is left out (§9).
 	type Props = {
 		name: string;
 		tone: CrewId;
-		/** "live · deploy #14 · 2d ago", after its dot. */
+		/** The state, after its dot: "live · deploy #14 · 2d ago", "deploy #6 failed · #5 still live". */
 		status: string;
-		dot: 'live' | 'failed' | 'idle';
+		/** Accent when live, danger when something broke, warning while Koda is at work. */
+		dot: 'live' | 'failed' | 'working' | 'idle';
 		/** What broke, with the one thing to do about it. */
 		alert?: { title: string; detail?: string; action?: { label: string; icon?: Component<LucideProps>; onclick: () => void } };
 		workspaceHref: string;
@@ -68,7 +69,7 @@
 				<div class="flex min-w-0 flex-1 flex-col gap-1">
 					<h1 class="truncate text-heading font-semibold tracking-wordmark text-text">{name}</h1>
 					<p class="flex min-w-0 items-center gap-1.5">
-						<span class={['size-1.75 shrink-0 rounded-full', dot === 'live' ? 'bg-accent' : dot === 'failed' ? 'bg-danger' : 'bg-text-3']}></span>
+						<span class={['size-1.75 shrink-0 rounded-full', dot === 'live' ? 'bg-accent' : dot === 'failed' ? 'bg-danger' : dot === 'working' ? 'bg-warning' : 'bg-text-3']}></span>
 						<span class="truncate text-ui text-text-2">{status}</span>
 					</p>
 				</div>
