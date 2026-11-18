@@ -133,6 +133,18 @@ pub enum ContentBlock {
         input: Value,
         status: ApprovalStatus,
         decided_at: Option<DateTime<Utc>>,
+        /// The model's call this card is about, so the result finds its card once the batch runs.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tool_use_id: Option<String>,
+        /// The person changed the input before approving; `input` is what ran.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        edited: bool,
+        /// Where what the tool did can be seen (the sent mail), when it returned one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        result_url: Option<String>,
+        /// What "don't ask again" was kept as: `{ "scope": "recipient", "value": ... }` or `{ "scope": "tool" }`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        remembered: Option<Value>,
     },
     /// Questions an agent needs answered before it carries on, each with options to tap and room
     /// for the person's own answer. Their reply is an ordinary message.
@@ -242,6 +254,12 @@ pub struct StoppedTask {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
     pub state: String,
+    /// The hand-off this was, so discarding the stop can clear its partial result.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delegation_id: Option<Uuid>,
+    /// The background task this was, likewise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub background_task_id: Option<Uuid>,
 }
 
 impl ToolOutcome {
@@ -355,10 +373,27 @@ mod tests {
             input: serde_json::json!({"path": "src/old.js"}),
             status: ApprovalStatus::Pending,
             decided_at: None,
+            tool_use_id: None,
+            edited: false,
+            result_url: None,
+            remembered: None,
         };
         let json = serde_json::to_string(&block).unwrap();
         let parsed: ContentBlock = serde_json::from_str(&json).unwrap();
         assert_eq!(block, parsed);
+    }
+
+    #[test]
+    fn an_old_approval_block_parses_and_new_fields_stay_out_when_unset() {
+        let block: ContentBlock = serde_json::from_value(serde_json::json!({
+            "kind": "approval_request", "id": uuid::Uuid::nil(), "tool_name": "gmail.send", "description": "Send",
+            "input": {}, "status": "approved", "decided_at": null
+        }))
+        .unwrap();
+        let json = serde_json::to_value(&block).unwrap();
+        assert!(json.get("result_url").is_none() && json.get("edited").is_none() && json.get("remembered").is_none());
+        let ContentBlock::ApprovalRequest { edited, .. } = block else { panic!() };
+        assert!(!edited);
     }
 
     #[test]

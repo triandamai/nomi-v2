@@ -221,6 +221,10 @@ pub(super) async fn resolve_tool_batch_in_reply(
                 input: input.clone(),
                 status: crate::content_block::ApprovalStatus::Pending,
                 decided_at: None,
+                tool_use_id: Some(id.clone()),
+                edited: false,
+                result_url: None,
+                remembered: None,
             };
             let content_blocks = serde_json::json!([approval_block]);
             let message_id: Option<Uuid> = sqlx::query_scalar(

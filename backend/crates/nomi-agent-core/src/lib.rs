@@ -20,6 +20,7 @@ pub mod design_handoff;
 pub mod design_review;
 pub mod dynamic_agent;
 pub mod engine;
+pub mod input_check;
 pub mod error;
 pub mod locale;
 pub mod memory;

@@ -1411,11 +1411,68 @@ pub async fn put_message_feedback(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// What "don't ask again" asks for: `true` keeps it for the whole tool (as before), or
+/// `{ "scope": "recipient", "value": "bu.sri@example.com" }` keeps it for that recipient only.
+#[derive(Deserialize, Debug, Clone, PartialEq)]
+#[serde(untagged)]
+pub enum RememberRequest {
+    Everything(bool),
+    Scoped { scope: String, value: String },
+}
+
+impl Default for RememberRequest {
+    fn default() -> Self {
+        Self::Everything(false)
+    }
+}
+
 #[derive(Deserialize)]
 pub struct ApprovalRequest {
     pub decision: String,
     #[serde(default)]
-    pub remember: bool,
+    pub remember: RememberRequest,
+    /// The person's edits to what the tool will be run with (approve only): the whole input.
+    #[serde(default)]
+    pub input: Option<serde_json::Value>,
+}
+
+/// The input the tool's schema says is wrong, or `None` when it fits (or the tool's schema
+/// isn't known, which leaves the call to the tool itself).
+async fn edited_input_problem(
+    state: &AppState,
+    session_id: Uuid,
+    message_id: Uuid,
+    edited: &serde_json::Value,
+) -> Result<Option<String>, (StatusCode, &'static str)> {
+    let internal = |_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to check the edited input");
+    let row: Option<(String, serde_json::Value, Uuid)> = sqlx::query_as(
+        "SELECT a.agent_type, a.state, ci.user_id FROM agent_sessions a JOIN channel_identities ci ON ci.id = a.sender_channel_identity_id \
+         WHERE a.state->>'pending_approval_message_id' = $1",
+    )
+    .bind(message_id.to_string())
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(internal)?;
+    let Some((agent_type, paused, user_id)) = row else { return Ok(None) };
+
+    let pending_id = paused["pending_tool_use_id"].as_str().unwrap_or_default();
+    let blocks: Vec<nomi_llm::ContentBlock> = serde_json::from_value(paused["tool_use_blocks"].clone()).unwrap_or_default();
+    let Some(tool_name) = blocks.iter().find_map(|b| match b {
+        nomi_llm::ContentBlock::ToolUse { id, name, .. } if id == pending_id => Some(name.clone()),
+        _ => None,
+    }) else {
+        return Ok(None);
+    };
+
+    let registry = crate::build_agent_registry(&state.pool, state.project_storage.clone(), state.tool_catalog.clone());
+    let mut conn = state.pool.acquire().await.map_err(internal)?;
+    let Some(agent) = nomi_turn::resolve_agent(&mut conn, &registry, &state.tool_catalog, &agent_type).await else { return Ok(None) };
+    let mut definitions = agent.tools();
+    definitions.extend(agent.chat_tools(&mut conn, session_id, user_id, &[]).await);
+    Ok(definitions
+        .iter()
+        .find(|t| t.name == tool_name)
+        .and_then(|t| nomi_agent_core::input_check::check_input(&t.input_schema, edited).err()))
 }
 
 pub async fn resolve_approval(
@@ -1430,6 +1487,14 @@ pub async fn resolve_approval(
     if req.decision != "approve" && req.decision != "deny" {
         return Err((StatusCode::BAD_REQUEST, "decision must be 'approve' or 'deny'"));
     }
+    if let RememberRequest::Scoped { scope, value } = &req.remember {
+        if scope != nomi_agent_core::permissions::SCOPE_RECIPIENT || value.trim().is_empty() {
+            return Err((StatusCode::BAD_REQUEST, "remember.scope must be 'recipient' with a value"));
+        }
+    }
+    if req.input.is_some() && req.decision != "approve" {
+        return Err((StatusCode::BAD_REQUEST, "only an approval can carry edited input"));
+    }
 
     let pending: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM agent_sessions WHERE state->>'pending_approval_message_id' = $1 AND (state->>'paused_for_approval')::boolean = true)",
@@ -1443,11 +1508,44 @@ pub async fn resolve_approval(
         return Err((StatusCode::CONFLICT, "this action is no longer pending"));
     }
 
+    if let Some(edited) = &req.input {
+        if !edited.is_object() {
+            return Err((StatusCode::BAD_REQUEST, "input must be an object"));
+        }
+        if let Some(problem) = edited_input_problem(&state, session_id, message_id, edited).await? {
+            tracing::debug!(%problem, %message_id, "edited approval input refused");
+            return Err((StatusCode::BAD_REQUEST, "the edited input doesn't fit what this tool takes"));
+        }
+    }
+
+    let (remember, extras) = match &req.remember {
+        RememberRequest::Everything(all) => (*all, nomi_turn::approval::Extras::default()),
+        RememberRequest::Scoped { scope, value } => (
+            false,
+            nomi_turn::approval::Extras { remember_scope: Some(scope.clone()), remember_value: Some(value.trim().to_string()), ..Default::default() },
+        ),
+    };
+    let extras = nomi_turn::approval::Extras { edited_input: req.input.clone(), ..extras };
+
     let mut tx = state.pool.begin().await.map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to start transaction"))?;
-    nomi_turn::approval::enqueue(&mut tx, message_id, &req.decision, req.remember)
+    nomi_turn::approval::enqueue_with(&mut tx, message_id, &req.decision, remember, &extras)
         .await
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to queue approval decision"))?;
+    // A deny shows at once, but the turn carries on only after the undo window.
+    if req.decision == "deny" {
+        sqlx::query(
+            "UPDATE messages SET content_blocks = jsonb_set(jsonb_set(content_blocks, '{0,status}', '\"denied\"'), '{0,decided_at}', to_jsonb(now())) \
+             WHERE id = $1 AND content_blocks->0->>'status' = 'pending'",
+        )
+        .bind(message_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to record the decision"))?;
+    }
     tx.commit().await.map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to queue approval decision"))?;
+    if req.decision == "deny" {
+        crate::chat_events::message_updated(claims.sub, session_id, message_id);
+    }
 
     Ok(StatusCode::ACCEPTED)
 }
