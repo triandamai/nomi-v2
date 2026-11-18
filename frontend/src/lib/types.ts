@@ -1672,3 +1672,27 @@ export interface CrewTemplate {
 	tone: string;
 	motion: string;
 }
+
+/** One month of a project's tokens and spend (GET /api/projects/:id/usage): its own chat and the chats moved into it. */
+export interface ProjectUsage {
+	month: string;
+	current_month: string;
+	timezone: string;
+	/** When calls began to carry their chat; null until the first one. */
+	counted_since: string | null;
+	/** Every token, cached input at a tenth, whoever's key paid. */
+	tokens: number;
+	input_tokens: number;
+	output_tokens: number;
+	cached_input_tokens: number;
+	/** The part of tokens sent with someone's own API key (never billed). */
+	own_key_tokens: number;
+	calls: number;
+	spend_usd: number;
+	by_model: UsageMonth['by_model'];
+	/** Filled in for the project's admins only (see shows_people). */
+	by_person: { user_id: string; name: string | null; tokens: number; calls: number; spend_usd: number }[];
+	shows_people: boolean;
+	/** Rupiah to the dollar, to show spend_usd in rupiah. */
+	usd_to_idr: number;
+}

@@ -1653,6 +1653,76 @@ async fn a_tool_call_cut_off_by_the_output_limit_is_retried_in_smaller_steps(poo
     assert!(matches!(&retry.last().unwrap().content[0], ContentBlock::Text { text } if text.contains("smaller steps")));
 }
 
+/// TestAgent, but with its own advice for continuing after a cut-off.
+struct PiecesTestAgent;
+
+const PIECES_HINT: &str = "split it up";
+
+#[async_trait::async_trait]
+impl SubAgent for PiecesTestAgent {
+    fn agent_type(&self) -> Cow<'static, str> {
+        Cow::Borrowed("test")
+    }
+    fn system_prompt(&self) -> Cow<'static, str> {
+        Cow::Borrowed("test prompt")
+    }
+    fn tools(&self) -> Vec<ToolDefinition> {
+        TestAgent.tools()
+    }
+    async fn execute_tool(
+        &self,
+        conn: &mut PoolConnection<Postgres>,
+        session_id: Uuid,
+        agent_session_id: Uuid,
+        user_id: Uuid,
+        name: &str,
+        input: serde_json::Value,
+    ) -> Result<ToolOutcome, String> {
+        TestAgent.execute_tool(conn, session_id, agent_session_id, user_id, name, input).await
+    }
+    fn intent_label(&self) -> Cow<'static, str> {
+        Cow::Borrowed("test")
+    }
+    fn intent_description(&self) -> Cow<'static, str> {
+        Cow::Borrowed("test agent")
+    }
+    fn is_default(&self) -> bool {
+        true
+    }
+    fn cut_off_hint(&self) -> &'static str {
+        PIECES_HINT
+    }
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_cut_off_retry_gives_the_agent_its_own_advice(pool: PgPool) {
+    let session_id = seed_session(&pool).await;
+    let (user_id, agent_session_id) = seed_agent_session(&pool, session_id).await;
+    let mut conn = pool.acquire().await.unwrap();
+    let provider = FakeLlmProvider::sequence(vec![
+        LlmResponse {
+            content: vec![ContentBlock::ToolUse { id: "t1".to_string(), name: "complete_task".to_string(), input: serde_json::json!({ "summary": "half" }), thought_signature: None }],
+            stop_reason: StopReason::MaxTokens,
+            input_tokens: 1,
+            output_tokens: 1,
+        },
+        LlmResponse { content: vec![ContentBlock::Text { text: "Done.".to_string() }], stop_reason: StopReason::EndTurn, input_tokens: 2, output_tokens: 2 },
+    ]);
+    let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
+    let registry = AgentRegistry::new(vec![Box::new(PiecesTestAgent)]);
+
+    run_agent_turn(&mut conn, None, None, &provider, &embedding_provider, &registry, &PiecesTestAgent, session_id, agent_session_id, user_id, vec![], 100).await.unwrap();
+
+    let requests = provider.received_requests.lock().unwrap();
+    assert!(matches!(&requests[1].messages.last().unwrap().content[0], ContentBlock::Text { text } if text == PIECES_HINT));
+}
+
+#[test]
+fn the_default_cut_off_advice_is_koda_s() {
+    assert_eq!(TestAgent.cut_off_hint(), nomi_agent_core::prompts::CUT_OFF_RETRY);
+    assert!(nomi_agent_core::prompts::CUT_OFF_RETRY.contains("smaller steps"));
+}
+
 /// TestAgent, but it remembers things about the person.
 struct RememberingTestAgent;
 

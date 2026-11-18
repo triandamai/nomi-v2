@@ -50,6 +50,17 @@ async function pickOrg(fetch: typeof globalThis.fetch, cookies: Parameters<typeo
 	});
 }
 
+/** The backend's answer when the person's plan has no room for another project. */
+const PLAN_LIMIT = 402;
+/** Longest backend message shown as is. */
+const MAX_MESSAGE_CHARS = 200;
+
+/** What the plan allows, as the backend said it ("Your plan allows 3 projects. …"). */
+async function limitMessage(response: Response): Promise<string> {
+	const said = (await response.text().catch(() => '')).trim().slice(0, MAX_MESSAGE_CHARS);
+	return said || m.err_new_project();
+}
+
 export const actions: Actions = {
 	// Picks the organization projects are listed from and started in.
 	chooseOrg: async ({ request, cookies, fetch }) => {
@@ -100,6 +111,7 @@ export const actions: Actions = {
 		if (response.status === 409 || response.status === 404) {
 			return fail(409, { needsOrg: true });
 		}
+		if (response.status === PLAN_LIMIT) return fail(PLAN_LIMIT, { limitError: await limitMessage(response) });
 		if (!response.ok) {
 			throw error(500, m.err_new_project());
 		}
@@ -126,6 +138,7 @@ export const actions: Actions = {
 			body: JSON.stringify(typeof orgId === 'string' && orgId ? { org_id: orgId } : {}),
 		});
 		if (response.status === 409 || response.status === 404) return fail(409, { needsOrg: true });
+		if (response.status === PLAN_LIMIT) return fail(PLAN_LIMIT, { importError: await limitMessage(response) });
 		if (!response.ok) return fail(500, { importError: m.err_new_project() });
 		const { session_id, project_id } = (await response.json()) as { session_id: string; project_id: string };
 		return { imported: { session_id, project_id } };

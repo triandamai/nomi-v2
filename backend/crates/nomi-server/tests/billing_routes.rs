@@ -1,4 +1,4 @@
-//! Paying for a plan: checkout, the Xendit webhook, polling, cancelling, the renewal worker and
+//! Paying for a plan: checkout, the Xendit and DOKU webhooks, polling, cancelling, the renewal worker and
 //! the admin routes, against a fake payment gateway.
 
 use std::collections::HashMap;
@@ -13,7 +13,7 @@ use sqlx::PgPool;
 use tower::ServiceExt;
 use uuid::Uuid;
 
-use nomi_payment::{CreateInvoiceRequest, Invoice, PaymentError, PaymentGateway, PaymentStatus, WebhookEvent};
+use nomi_payment::{CreateInvoiceRequest, Invoice, PaymentError, PaymentGateway, PaymentProviderKind, PaymentStatus, WebhookEvent};
 use nomi_server::app::{build_router, AppState};
 use nomi_server::billing::{set_gateway_override, Gateway};
 use nomi_usage::billing as usage_billing;
@@ -24,6 +24,8 @@ const HOOK_TOKEN: &str = "hook-secret";
 const PRICE: i64 = 50_000;
 const SIX_MONTHS_AMOUNT: i64 = 270_000;
 const INVOICE_HOURS: u32 = 24;
+/// A signature the fake gateway refuses.
+const FORGED: &str = "forged";
 
 /// A gateway that remembers the invoices it made and answers `get_invoice` with a status the
 /// test sets. Every test shares one, so they take turns (the override is process-wide).
@@ -72,7 +74,11 @@ impl PaymentGateway for FakeGateway {
         self.set_status(invoice_id, PaymentStatus::Expired);
         Ok(self.invoice(invoice_id))
     }
-    fn verify_webhook(&self, _token: Option<&str>, payload: &[u8]) -> Result<WebhookEvent, PaymentError> {
+    /// Refuses a webhook whose `signature` header is `forged`, as a real gateway would.
+    fn verify_webhook(&self, headers: &axum::http::HeaderMap, payload: &[u8]) -> Result<WebhookEvent, PaymentError> {
+        if headers.get("signature").is_some_and(|s| s == FORGED) {
+            return Err(PaymentError::WebhookVerificationFailed("forged".into()));
+        }
         let raw: Value = serde_json::from_slice(payload)?;
         Ok(WebhookEvent {
             event_type: "invoice".into(),
@@ -95,10 +101,15 @@ fn fake() -> Arc<FakeGateway> {
 
 static TURN: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
-/// Takes the turn and installs the fake with `token` as the webhook token.
+/// Takes the turn and installs the fake, as Xendit, with `token` as the webhook token.
 async fn with_gateway(token: Option<&str>) -> tokio::sync::MutexGuard<'static, ()> {
+    with_provider(PaymentProviderKind::Xendit, token).await
+}
+
+/// Takes the turn and installs the fake as `provider`.
+async fn with_provider(provider: PaymentProviderKind, token: Option<&str>) -> tokio::sync::MutexGuard<'static, ()> {
     let guard = TURN.lock().await;
-    set_gateway_override(Some(Gateway { client: fake(), webhook_token: token.map(str::to_string) }));
+    set_gateway_override(Some(Gateway { provider, client: fake(), webhook_token: token.map(str::to_string) }));
     guard
 }
 
@@ -183,6 +194,10 @@ async fn webhook(router: &axum::Router, token: Option<&str>, body: Value) -> Sta
     request(router.clone(), "POST", "/api/payments/xendit/webhook", body, None, &headers).await.0
 }
 
+async fn doku_webhook(router: &axum::Router, signature: &str, body: Value) -> StatusCode {
+    request(router.clone(), "POST", "/api/payments/doku/webhook", body, None, &[("signature", signature)]).await.0
+}
+
 async fn checkout(router: &axum::Router, token: &str, plan: &PlanRow, months: i32, code: Option<&str>) -> (StatusCode, Value) {
     call(router, "POST", "/api/billing/checkout", json!({ "plan_id": plan.id, "months": months, "code": code }), token).await
 }
@@ -205,6 +220,29 @@ async fn the_webhook_needs_a_configured_token_and_the_right_one(pool: PgPool) {
         assert_eq!(webhook(&router, Some(HOOK_TOKEN), body).await, StatusCode::OK);
         assert_eq!(webhook(&router, Some(HOOK_TOKEN), json!({ "id": "x", "external_id": "not-a-uuid", "status": "PAID", "amount": 1 })).await, StatusCode::OK);
     }
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_doku_payment_is_kept_as_doku_and_settled_by_its_signed_notification(pool: PgPool) {
+    let _turn = with_provider(PaymentProviderKind::Doku, None).await;
+    let router = build_router(test_state(pool.clone()));
+    let plan = paid_plan(&pool).await;
+    let ana = register_and_login(&router, "ana@example.com").await;
+
+    let (status, made) = checkout(&router, &ana, &plan, 1, None).await;
+    assert_eq!(status, StatusCode::OK, "{made}");
+    let payment_id = made["payment_id"].as_str().unwrap().to_string();
+    let provider: String = sqlx::query_scalar("SELECT provider FROM payments WHERE id = $1::uuid").bind(&payment_id).fetch_one(&pool).await.unwrap();
+    assert_eq!(provider, "doku");
+
+    // A notification that isn't signed by DOKU changes nothing.
+    assert_eq!(doku_webhook(&router, FORGED, webhook_body(&payment_id, "PAID", PRICE)).await, StatusCode::UNAUTHORIZED);
+    let (_, payments) = call(&router, "GET", "/api/billing/payments", Value::Null, &ana).await;
+    assert_eq!(payments[0]["status"], "pending");
+
+    assert_eq!(doku_webhook(&router, "signed", webhook_body(&payment_id, "PAID", PRICE)).await, StatusCode::OK);
+    let (_, payments) = call(&router, "GET", "/api/billing/payments", Value::Null, &ana).await;
+    assert_eq!(payments[0]["status"], "paid");
 }
 
 #[sqlx::test(migrations = "../../migrations")]

@@ -14,6 +14,7 @@ pub mod design_approval;
 pub mod design_artifact;
 pub mod design_brief;
 pub mod design_directions;
+pub mod design_draft;
 pub mod design_feedback;
 pub mod design_handoff;
 pub mod design_review;

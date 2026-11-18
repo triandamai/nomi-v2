@@ -36,9 +36,7 @@ const OUTPUT_SHOWN: usize = 12 * 1024;
 pub const SANDBOX_START_WAIT: Duration = Duration::from_secs(90);
 const PROGRAMS: &[&str] = &["npm", "npx", "node"];
 
-pub const NOT_OPEN: &str = "The project isn't open in the user's browser right now, so commands can't run. Your files are \
-     saved. Finish the work and complete the task: when the user opens the project, Nomi installs and checks it, and any \
-     errors come back to you as a new task.";
+pub use nomi_agent_core::prompts::KODA_NOT_OPEN as NOT_OPEN;
 
 pub fn run_command_tool_definition() -> ToolDefinition {
     ToolDefinition {

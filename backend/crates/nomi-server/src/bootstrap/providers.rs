@@ -113,7 +113,7 @@ async fn build_llm_provider(
     let primary_admin_id = tag.admin_model_id;
     let provider: Arc<dyn LlmProvider> = Arc::from(build_provider(model_config, http_client.clone()));
     // Every call made for this person counts toward their usage (Billing & usage).
-    let primary: Arc<dyn LlmProvider> = Arc::new(MeteredProvider::new(provider, pool.clone(), user_id, tag));
+    let primary: Arc<dyn LlmProvider> = Arc::new(MeteredProvider::new(provider, pool.clone(), user_id, tag).in_session(session_id));
 
     // Files their own model can't open (an image for a text-only model, a video for Claude) go
     // to the files model an admin picked, also counted toward their usage.
@@ -126,7 +126,7 @@ async fn build_llm_provider(
             admin_model_config(pool, settings_key, model).await.map(|config| {
                 let tag = tag_for(&config, Some(id), false, label, connection);
                 let provider: Arc<dyn LlmProvider> = Arc::from(build_provider(config, http_client));
-                (Arc::new(MeteredProvider::new(provider, pool.clone(), user_id, tag)) as Arc<dyn LlmProvider>, files_support)
+                (Arc::new(MeteredProvider::new(provider, pool.clone(), user_id, tag).in_session(session_id)) as Arc<dyn LlmProvider>, files_support)
             })
         }
         Ok(_) => None,

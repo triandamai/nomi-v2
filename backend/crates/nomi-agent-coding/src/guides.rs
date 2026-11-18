@@ -13,6 +13,7 @@ pub const GUIDES: &[(&str, &str, &str)] = &[
     ("database", "Drizzle with Postgres or SQLite, and how the preview runs them (projects not on Relay)", include_str!("../guides/database.md")),
     ("relay", "Nomi Relay: migrations with row-level security, the nomi-relay client, sign-in, files, live changes and hosted functions (projects on Relay)", include_str!("../guides/relay.md")),
     ("preview", "How Nomi runs the project in the browser, and what can't run there", include_str!("../guides/preview.md")),
+    ("sandbox", "How it differs when the project runs in a sandbox on Nomi's servers", include_str!("../guides/sandbox.md")),
     ("react", "React 19 + Vite single-page apps", include_str!("../guides/react.md")),
     ("vue", "Vue 3 + Vite single-page apps", include_str!("../guides/vue.md")),
     ("astro", "Astro 7 content sites with Svelte islands", include_str!("../guides/astro.md")),
@@ -72,6 +73,17 @@ mod tests {
     fn the_design_guide_names_the_generic_look_to_avoid() {
         let guide = read_guide(&json!({ "topic": "design" })).unwrap();
         assert!(guide.contains("AI slop") && guide.contains("@theme") && guide.contains("complete_task"));
+    }
+
+    #[test]
+    fn the_sandbox_guide_says_where_it_runs_and_keeps_the_browser_rules() {
+        let guide = read_guide(&json!({ "topic": "sandbox" })).unwrap();
+        assert!(guide.contains("sandbox on Nomi's servers"), "{guide}");
+        assert!(guide.contains("doesn't need the project open"), "{guide}");
+        assert!(guide.contains("still starting") && guide.contains("couldn't start"), "{guide}");
+        assert!(guide.contains("back to the browser"), "the preview guide's rules still hold: {guide}");
+        let preview = read_guide(&json!({ "topic": "preview" })).unwrap();
+        assert!(preview.contains("sandbox guide"), "the preview guide points at it: {preview}");
     }
 
     #[test]

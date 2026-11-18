@@ -309,6 +309,30 @@ export type UsageMonth = {
 	by_model: { admin_model_id: string | null; label: string; provider: string; model_id: string; source: string; tokens: number; calls: number; spend_usd: number }[];
 };
 
+/** One month of a project's tokens and spend (`GET /api/projects/:id/usage`): its own chat and the chats moved into it. */
+export type ProjectUsage = {
+	month: string;
+	current_month: string;
+	timezone: string;
+	/** When calls began to carry their chat; null until the first one. */
+	counted_since: string | null;
+	/** Every token, cached input at a tenth, whoever's key paid. */
+	tokens: number;
+	input_tokens: number;
+	output_tokens: number;
+	cached_input_tokens: number;
+	/** The part of tokens sent with someone's own API key (never billed). */
+	own_key_tokens: number;
+	calls: number;
+	spend_usd: number;
+	by_model: UsageMonth['by_model'];
+	/** Filled in for the project's admins only (see shows_people). */
+	by_person: { user_id: string; name: string | null; tokens: number; calls: number; spend_usd: number }[];
+	shows_people: boolean;
+	/** Rupiah to the dollar, to show spend_usd in rupiah. */
+	usd_to_idr: number;
+};
+
 /** A plan people can be on (`GET /api/plans`). */
 export type PlanOffer = {
 	id: string;
@@ -464,6 +488,8 @@ export type SandboxStatus = {
 	phase: 'idle' | 'waking' | 'running' | 'stopping' | 'stopped' | 'error';
 	preview_url: string | null;
 	error: string | null;
+	/** False while the crew hasn't finished a first build: nothing is started until it has. */
+	preview_ready?: boolean;
 };
 /** `GET /api/projects/:id/sandbox/logs?offset=`: the dev server's output from `offset` on. */
 export type SandboxLogs = { text: string; next_offset: number };
