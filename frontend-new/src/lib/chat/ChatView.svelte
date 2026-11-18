@@ -1139,7 +1139,7 @@
 			</div>
 		{/if}
 		<!-- A phone's Notice is padded [0,4] (S61SO), as the failed-upload Notice is; a desktop's helper sits flush. -->
-		{#if removedLine}<div class={phone && 'px-1'}><FileNote icon={phone ? Check : undefined} mono text={removedLine} /></div>{/if}
+		{#if removedLine}<div class={[phone && 'px-1']}><FileNote icon={phone ? Check : undefined} mono text={removedLine} /></div>{/if}
 	</div>
 {/snippet}
 
