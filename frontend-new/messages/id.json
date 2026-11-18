@@ -2880,5 +2880,17 @@
 	"usage_sheet_prev": "Bulan sebelumnya",
 	"usage_sheet_next": "Bulan berikutnya",
 	"admin_area_projects": "Proyek",
-	"admin_area_projects_desc": "Semua proyek beserta sandbox dan isunya."
+	"admin_area_projects_desc": "Semua proyek beserta sandbox dan isunya.",
+	"phone_starter_warung": "Buat halaman menu untuk warungku",
+	"phone_starter_price_list": "Ubah foto daftar hargaku jadi formulir pesanan",
+	"phone_starter_ten_minutes": "Apa yang bisa kubuat dalam 10 menit?",
+	"phone_starter_preorders": "Ingatkan aku cek pre-order jam 4 sore",
+	"chat_sheet_subtitle": "{count} pesan · {name}",
+	"reply_try_model": "Coba model lain",
+	"regen_sheet_subtitle": "Setiap hasil disimpan sebagai versi",
+	"regen_model_option": "{model} · {source}",
+	"regen_source_key": "kunci kamu",
+	"share_anyone_help_phone": "Hanya baca, tanpa masuk",
+	"chat_delete_body_phone": "{count} pesan beserta kartunya dihapus. Pengingat, catatan keuangan, dan email terkirim tetap ada.",
+	"mine_select": "Pilih teks"
 }

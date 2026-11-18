@@ -3,14 +3,14 @@ import type { ComponentDoc } from '../types';
 export default [
 	{
 		file: 'overlays/SheetTiles.svelte',
-		summary: 'A phone sheet’s quick actions as equal tiles (Good, Bad, Copy, Share), one that’s on in accent.',
+		summary: 'A phone sheet’s quick actions as equal tiles 68 tall (Good, Bad, Copy, Share): the icon over its name in text-2, one that’s on in accent.',
 		use: ['The top of a reply’s sheet on a phone.'],
 		accessibility: ['Buttons named by their label; one that toggles says whether it’s on.'],
 		related: ['overlays/BottomSheet.svelte', 'mobile/SheetRow.svelte'],
 	},
 	{
 		file: 'overlays/ActionSheet.svelte',
-		summary: 'A phone’s confirmation: the question and what it means over its actions, the destructive one in danger, and the way out on its own.',
+		summary: 'A phone’s confirmation: the question and what it means (13 / 1.4) over its actions, the destructive one in danger, and the way out on its own.',
 		use: ['Confirming something on a phone that has a short answer (Stop building).'],
 		avoid: ['Anything that needs typing or facts: a BottomSheet (Deploy, Delete).', 'Wider screens: a Dialog.'],
 		dos: ['Name the way out by what stays (“Keep building”), not “Cancel”.'],
@@ -31,7 +31,10 @@ export default [
 		use: ['A chat’s or a project’s actions on a phone (long-press, More).'],
 		avoid: ['Wider screens: use a Menu or a Dialog there.'],
 		dos: ['Put the destructive row last, after a divider, in the danger colour.'],
-		accessibility: ['A modal dialog named by its title: focus stays inside, Escape closes it, and so do the close button and a tap on the scrim.'],
+		accessibility: [
+			'A modal dialog named by its title: focus stays inside, Escape closes it, and so do the close button and a tap on the scrim.',
+			'It opens with the sheet itself focused (no ring on the close after a long press); Tab goes on to the close and the rows. A field marked autofocus takes the focus instead.',
+		],
 		related: ['mobile/SheetHeader.svelte', 'mobile/SheetRow.svelte', 'overlays/Menu.svelte'],
 	},
 	{

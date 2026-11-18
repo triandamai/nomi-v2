@@ -23,7 +23,7 @@ describe('SheetTiles', () => {
 		await render(SheetTiles, { tiles: [{ label: 'Good', icon: ThumbsUp, pressed: true, onclick: () => {} }, { label: 'Copy', icon: Copy, onclick: oncopy }] });
 		const good = page.getByRole('button', { name: 'Good' }).element();
 		const copy = page.getByRole('button', { name: 'Copy' }).element();
-		expect([box(good).width, box(good).height, getComputedStyle(good).color, getComputedStyle(good).backgroundColor]).toEqual([box(copy).width, 64, tokenColor('nm-accent'), tokenBackground('nm-surface-2')]);
+		expect([box(good).width, box(good).height, getComputedStyle(good).color, getComputedStyle(good).backgroundColor]).toEqual([box(copy).width, 68, tokenColor('nm-accent'), tokenBackground('nm-surface-2')]);
 		await page.getByRole('button', { name: 'Copy' }).click();
 		expect(oncopy).toHaveBeenCalledOnce();
 	});

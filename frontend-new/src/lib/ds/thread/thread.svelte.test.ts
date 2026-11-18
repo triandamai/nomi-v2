@@ -252,6 +252,11 @@ describe('AgentReply', () => {
 		await render(AgentReplyFixture, { dimmed: true });
 		expect(getComputedStyle(page.getByRole('article').element()).opacity).toBe('0.4');
 	});
+
+	it('dims to 0.35 on a phone, as Message controls draws it (bRx3K)', async () => {
+		await render(AgentReplyFixture, { dimmed: true, phone: true });
+		expect(getComputedStyle(page.getByRole('article').element()).opacity).toBe('0.35');
+	});
 });
 
 describe('ReplyBar', () => {

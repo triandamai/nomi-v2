@@ -2880,5 +2880,17 @@
 	"usage_sheet_prev": "Previous month",
 	"usage_sheet_next": "Next month",
 	"admin_area_projects": "Projects",
-	"admin_area_projects_desc": "Every project with its sandboxes and issues."
+	"admin_area_projects_desc": "Every project with its sandboxes and issues.",
+	"phone_starter_warung": "Build a menu page for my warung",
+	"phone_starter_price_list": "Turn a photo of my price list into an order form",
+	"phone_starter_ten_minutes": "What can I build in 10 minutes?",
+	"phone_starter_preorders": "Remind me to check pre-orders at 4pm",
+	"chat_sheet_subtitle": "{count} messages · {name}",
+	"reply_try_model": "Try another model",
+	"regen_sheet_subtitle": "Each result is kept as a version",
+	"regen_model_option": "{model} · {source}",
+	"regen_source_key": "your key",
+	"share_anyone_help_phone": "Read-only, no sign-in",
+	"chat_delete_body_phone": "{count} messages and their cards are removed. Reminders, money records and sent emails stay.",
+	"mine_select": "Select text"
 }
