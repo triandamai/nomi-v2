@@ -46,7 +46,12 @@ impl ShipyardStaticPublisher {
     pub fn shared(pool: PgPool) -> SharedStaticPublisher {
         match ShipyardConfig::from_env() {
             Some(config) => Arc::new(Self::new(pool, crate::http_client(), config)),
-            None => Arc::new(NoStaticPublisher),
+            None => {
+                // Said once per process: every preview saved here stays unpublished until it is set up.
+                static MISSING: std::sync::Once = std::sync::Once::new();
+                MISSING.call_once(|| tracing::warn!("SHIPYARD_URL / SHIPYARD_KEY aren't set: design previews are saved but not published"));
+                Arc::new(NoStaticPublisher)
+            }
         }
     }
 }

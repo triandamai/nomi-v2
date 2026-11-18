@@ -3710,4 +3710,9 @@
 	"perm_projects_desc": "See every project with its sandboxes and issues.",
 	"admin_projects_sandbox_link": "Sandboxes of {project}: {summary}",
 	"admin_projects_issues_link": "Issues of {project}: {summary}"
+	"studio_not_published": "Not published outside Nomi: {reason}",
+	"studio_publish_again": "Publish again",
+	"studio_publishing": "Publishing…",
+	"studio_publish_failed": "That version could not be published again. Try again.",
+	"chat_open_design_studio": "Open the Design Studio"
 }

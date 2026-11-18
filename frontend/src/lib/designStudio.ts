@@ -14,8 +14,12 @@ export type StudioPreview = {
 	/** The unguessable name the version's files are served under. */
 	preview_token: string;
 	published_url: string | null;
+	/** Why it isn't published outside Nomi, when its newest publish failed. */
+	publish_error?: string | null;
 	created_at: string;
 };
+/** What publishing a version again came to. */
+export type StudioPublishOutcome = { version: number; published_url: string | null; publish_error: string | null };
 export type FeedbackLevel = 'global' | 'page' | 'section' | 'component' | 'element' | 'interaction';
 /** A point inside what feedback is about: x across and y down, each from 0 to 1. */
 export type StudioPin = { x: number; y: number };
