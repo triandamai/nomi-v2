@@ -1,7 +1,7 @@
-//! Moving to a plan the simple way: a month of it through the payment gateway (Xendit), and the
+//! Moving to a plan the simple way: a month of it through the payment gateway (Xendit or DOKU), and the
 //! waitlist of one that isn't sold yet. The checkout runs on the billing engine (`nomi_usage::billing`,
 //! `crate::billing`) like the full checkout at `/api/billing/checkout`, as one month with no code;
-//! the gateway's callback (`POST /api/payments/xendit/webhook`) is `routes::billing::xendit_webhook`.
+//! the gateways' callbacks are `routes::billing::xendit_webhook` and `routes::billing::doku_webhook`.
 
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
