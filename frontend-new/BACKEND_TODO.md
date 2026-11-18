@@ -358,3 +358,30 @@ Found while building Invite & build together, steps 9–10 (2026-11-15).
 
 Found while building the phone's Chats (2026-11-16).
 
+
+### How many messages each chat holds
+- **Needed by:** *Flow / Mobile Chat — Manage chat* (W3a8j) step 1, the chat's sheet (G8cFz: "14 messages · Dana"), opened from the Chats list's long press as well as from inside the chat.
+- **Why:** from the Chats list the sheet can't say how big the chat is, and inside a long chat (older messages not loaded yet) neither can the chat's own sheet.
+- **What exists today:** `GET /api/sessions` gives `last_message` without a count; `GET /api/sessions/:id/messages` pages with `has_more`, no total. A share link carries `chat_messages`, only once one is made.
+- **Proposed contract:** `message_count` on each item of `GET /api/sessions` (and on the session itself).
+- **Until then:** the list's sheet says when the chat last moved, as before; the chat's own sheet says "N messages · Dana" once every message is loaded, and only who answers while older ones aren't.
+
+Found while matching the phone's chat screens to the pen (phone-fidelity, 2026-11-18).
+
+### How long a reply thought
+- **Needed by:** *Flow / Mobile Chat — Start & answer* (FvlVs) step 6 and the desktop's Ask → think → answer: a finished reply's reasoning row reads "Thought for 8s" (k8JkX2).
+- **Why:** after a reload the app can't say how long the crew thought, so the row reads "Thinking" on a reply that's done.
+- **What exists today:** a message's `reasoning` content block is `{ kind: "reasoning", text }`; the live feed's phase changes give the time only while the turn runs (the app shows "Thought for Ns" for a reply it watched).
+- **Proposed contract:** `duration_ms` on the `reasoning` block (from the first thinking delta to the first reply delta).
+- **Until then:** "Thought for Ns" on a reply timed live; "Thinking" on one loaded later.
+
+Found while matching the phone's chat screens to the pen (phone-fidelity, 2026-11-18).
+
+### Save a reply to memory
+- **Needed by:** *Flow / Mobile Chat — Like & dislike* (M0VaJC) step 1, the reply's sheet: "Save to memory" (bookmark-plus, XPHtc).
+- **Why:** a person can't keep what a reply said as a memory of their own; memories only come from what the crew learns.
+- **What exists today:** `GET /api/memory` lists, `PUT`/`DELETE /api/memory/:id` edit or forget, `POST /api/memory/:id/confirm` confirms; `GET /api/sessions/:id/messages/:message_id/memories` lists what a message taught. Nothing creates one.
+- **Proposed contract:** `POST /api/sessions/:id/messages/:message_id/memories` → `201 { memory }` (the crew sums the reply up as one memory, with its kind), or `POST /api/memory` with `{ text, kind }`.
+- **Until then:** the reply's sheet leaves Save to memory out.
+
+Found while matching the phone's chat screens to the pen (phone-fidelity, 2026-11-18).

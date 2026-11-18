@@ -392,23 +392,42 @@ leaves out what v2 or the backend can't do yet, rather than draw it dead:
   Chats is the pen's: the large title, the search pill, the days in mono, phone rows and New chat
   floating above the tab bar. Each row's avatar is the chat glyph and there are no crew filters
   (All, Dana, Kala…): both are who last answered, which the chat list doesn't say
-  (BACKEND_TODO.md). The pen's sheet for a chat comes from a long press (or More, for the
-  keyboard) with Pin to top and Delete chat, the two things the desktop row does; You is Settings.
+  (BACKEND_TODO.md), so a row's line also has no "Tara:" before it. The pen's sheet for a chat comes
+  from a long press (or More, for the keyboard) with Pin to top and Delete chat, the two things the
+  desktop row does; its subtitle is when the chat last moved, not the pen's "14 messages · Dana"
+  (the list says neither how many messages nor who answered: BACKEND_TODO.md). You is Settings.
   The pen draws no phone Home, Projects, Inbox or Settings yet: they keep their own layout under
   the tab bar, and Home leaves out its empty top bar.
-- A chat on a phone (Mobile Chat — Start & answer, steps 2–7) is the pen's: the nav bar (back to
-  Chats, the title, who answers, "· thinking" while they work, and More for the chat's sheet:
-  Rename, Pin to top, Move to a project, Export, Share whole chat, Delete chat), the thread padded
-  [16,16,20,16] and sitting at the bottom while it's short, your messages in the 18-round bubble,
-  each reply under the Mobile byline with its prose at 16 / 1.55 and the round action bar, and
-  `PhoneComposer` (the model chip and "@ Crew" open sheets). New chat is the pen's step 2: Nomi's
-  mascot, the question at 22, the line and the starters.
+- A chat on a phone (Mobile Chat — Start & answer, steps 2–7) is the pen's: the nav bar
+  (`PhoneChatNavBar`: back to Chats, the title, who answers with their 20 mascot, "· thinking" while
+  they work, and More for the chat's sheet, "N messages · Dana": Rename, Pin to top, Move to a
+  project, Export, Share whole chat, Delete chat), the thread padded [16,16,20,16] and sitting at
+  the bottom while it's short (a thread of one day has no date divider), your messages in the
+  18-round bubble (`PhoneMessageBubble`, its text at most 250), each reply under the Mobile byline
+  with its prose at 16 / 1.55 and the round action bar, and `PhoneComposer` (the model chip and
+  "@ Crew" open sheets). New chat is the pen's step 2: Nomi's mascot, the question at 22, the line
+  and the pen's starters (`PhoneStarters`, at 15). Not yet: the composer's attach (+) and mic. The
+  backend takes files and voice notes (`/api/attachments`), but no v2 composer sends them yet, the
+  desktop's neither; they come to both at once (UXP-001), as the pen measures them (`PhoneComposer`
+  already draws them with their handlers). The chat's sheet counts the messages only once every
+  one is loaded (a long chat's sheet says who answers). A finished reply's reasoning reads "Thought
+  for 8s" when the app timed it live; loaded later it reads "Thinking": the backend doesn't keep
+  how long a reply thought (BACKEND_TODO.md).
 - A chat's controls on a phone (Like & dislike `M0VaJC`, Share & delete `yoVD6`, Message controls
   `ctP7Q`): a reply's More (or a long press on it) opens its sheet, the quick tiles (`SheetTiles`:
-  Good, Bad, Copy, Share) over Regenerate (its own sheet of styles) and Edit question; Bad opens
-  `PhoneDislikeSheet` with the reasons; Share opens `PhoneShareSheet`; deleting asks in an
-  `ActionSheet`. A long press on your own message opens its sheet (Edit, Copy), and editing is
-  `PhoneMessageEditor` in place of the bubble. Still the desktop's: the crew picker's 300 width (the
+  Good, Bad, Copy, Share) over Regenerate (its own sheet: "Each result is kept as a version", the
+  styles, then With another model), Try another model (the same sheet) and Edit question. Picking
+  another model moves the chat to it, as the composer's chip then says, and runs the turn again on
+  it: the backend regenerates on the chat's model. Left out of the reply's sheet: Save to memory
+  (nothing in the backend makes a memory from a reply: BACKEND_TODO.md) and, for now, Delete reply
+  (the backend deletes a reply with what it made, but how the pen confirms it isn't measured yet).
+  Bad opens `PhoneDislikeSheet` with the pen's six reasons (the desktop's "Unsafe or harmful" isn't
+  drawn); Share opens `PhoneShareSheet`, whose footnote says when the link expires without the
+  pen's "· revoke in Settings › Data" (v2 has no such page); deleting asks in an `ActionSheet`. A
+  long press on your own message opens its sheet (Edit, Copy, Select text, which selects it where
+  it stands), and editing is `PhoneMessageEditor` in place of the bubble. The pen lifts your
+  bubble above the scrim while its sheet is open; here it stays in the thread under the scrim
+  until that placement is measured. Still the desktop's: the crew picker's 300 width (the
   pen runs it the screen's width; MentionPicker is the old app's twin) and Export's PDF (the pen's
   "md · pdf": markdown only). The thinking level isn't on the phone's
   toolbar (the pen draws the model and the crew).
