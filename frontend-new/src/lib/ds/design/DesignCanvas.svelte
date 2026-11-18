@@ -105,12 +105,6 @@
 	let canvasFrames = $state<Record<string, HTMLIFrameElement | null>>({});
 
 	type Mode = 'preview' | 'canvas' | 'feedback' | 'compare';
-	const MODES: { mode: Mode; label: string }[] = [
-		{ mode: 'preview', label: m.studio_mode_preview() },
-		{ mode: 'canvas', label: m.studio_mode_canvas() },
-		{ mode: 'feedback', label: m.studio_mode_feedback() },
-		{ mode: 'compare', label: m.studio_mode_compare() },
-	];
 	let mode = $state<Mode>('canvas');
 	const picking = $derived(selecting || mode === 'feedback' || mode === 'canvas');
 
@@ -542,37 +536,19 @@
 
 		{#if current || directionList.length > 0}
 			<div class="flex flex-wrap items-center gap-2">
-				<div class="inline-flex rounded-sm bg-surface-2 p-0.5 outline -outline-offset-1 outline-border" role="group" aria-label={m.studio_mode()}>
-					{#each MODES as option (option.mode)}
-						<button
-							type="button"
-							class={[
-								'cursor-pointer rounded-xs px-2.5 py-1 text-caption',
-								mode === option.mode ? 'bg-surface font-medium text-text outline -outline-offset-1 outline-border-strong' : 'text-text-2 hover:text-text',
-							]}
-							aria-pressed={mode === option.mode}
-							onclick={() => openMode(option.mode)}
-						>
-							{option.label}
-						</button>
-					{/each}
+				<div class="inline-flex items-center gap-0.5 rounded-sm bg-surface-2 p-0.5 outline -outline-offset-1 outline-border" role="group" aria-label={m.studio_mode_canvas()}>
+					<button type="button" class="inline-flex size-6.5 cursor-pointer items-center justify-center rounded-xs text-text-2 hover:text-text" aria-label={m.studio_zoom_out()} onclick={zoomOut}>
+						<Icon icon={ZoomOut} size={14} />
+					</button>
+					<span class="min-w-11 text-center font-mono text-label text-text" data-testid="canvas-zoom-label">{zoomLabel(zoom)}</span>
+					<button type="button" class="inline-flex size-6.5 cursor-pointer items-center justify-center rounded-xs text-text-2 hover:text-text" aria-label={m.studio_zoom_in()} onclick={zoomIn}>
+						<Icon icon={ZoomIn} size={14} />
+					</button>
+					<button type="button" class="inline-flex cursor-pointer items-center gap-1 rounded-xs px-2 py-1 font-mono text-label text-text-2 hover:text-text" onclick={fitCanvas}>
+						<Icon icon={Maximize2} size={12} />
+						<span>{m.studio_zoom_fit()}</span>
+					</button>
 				</div>
-
-				{#if mode === 'canvas'}
-					<div class="inline-flex items-center gap-0.5 rounded-sm bg-surface-2 p-0.5 outline -outline-offset-1 outline-border" role="group" aria-label={m.studio_mode_canvas()}>
-						<button type="button" class="inline-flex size-6.5 cursor-pointer items-center justify-center rounded-xs text-text-2 hover:text-text" aria-label={m.studio_zoom_out()} onclick={zoomOut}>
-							<Icon icon={ZoomOut} size={14} />
-						</button>
-						<span class="min-w-11 text-center font-mono text-label text-text" data-testid="canvas-zoom-label">{zoomLabel(zoom)}</span>
-						<button type="button" class="inline-flex size-6.5 cursor-pointer items-center justify-center rounded-xs text-text-2 hover:text-text" aria-label={m.studio_zoom_in()} onclick={zoomIn}>
-							<Icon icon={ZoomIn} size={14} />
-						</button>
-						<button type="button" class="inline-flex cursor-pointer items-center gap-1 rounded-xs px-2 py-1 font-mono text-label text-text-2 hover:text-text" onclick={fitCanvas}>
-							<Icon icon={Maximize2} size={12} />
-							<span>{m.studio_zoom_fit()}</span>
-						</button>
-					</div>
-				{/if}
 
 				<div class="inline-flex rounded-sm bg-surface-2 p-0.5 outline -outline-offset-1 outline-border" role="group" aria-label={m.studio_title()}>
 					{#each DEVICES as option (option.device)}
@@ -591,7 +567,7 @@
 					{/each}
 				</div>
 
-				{#if current && mode !== 'compare'}
+				{#if current}
 					<button
 						type="button"
 						class={[
@@ -813,315 +789,7 @@
 			</div>
 		</div>
 	{:else if current}
-		<div class="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-4">
-			<aside class="flex flex-col gap-4 overflow-y-auto border-b border-border bg-surface p-3.5 md:col-span-1 md:border-r md:border-b-0">
-				<section class="flex flex-col gap-2" aria-label={m.studio_versions()}>
-					<h2 class="m-0 font-mono text-label tracking-label text-text-3 uppercase">{m.studio_versions()}</h2>
-					<ul class="m-0 flex list-none flex-col gap-1 p-0">
-						{#each versions as v (v.version)}
-							<li>
-								<button
-									type="button"
-									class={[
-										'flex w-full cursor-pointer flex-col gap-0.5 rounded-sm p-2 text-left outline -outline-offset-1',
-										v.version === current.version ? 'bg-surface-2 outline-border-strong' : 'bg-transparent outline-transparent hover:bg-surface-2',
-									]}
-									aria-current={v.version === current.version ? 'true' : undefined}
-									onclick={() => openVersion(v.version)}
-								>
-									<span class="flex items-center justify-between gap-1.5 font-mono text-label text-text">
-										<span>{m.studio_version({ version: v.version })}</span>
-										{#if approval?.version === v.version}
-											<span class="rounded-xs bg-surface px-1.5 py-0.5 font-mono text-micro text-accent outline -outline-offset-1 outline-border">{m.studio_approved()}</span>
-										{:else if v.version === newest}
-											<span class="rounded-xs bg-surface px-1.5 py-0.5 font-mono text-micro text-text-2 outline -outline-offset-1 outline-border">{m.studio_latest()}</span>
-										{/if}
-									</span>
-									<span class="truncate text-caption text-text">{v.title}</span>
-									<span class="font-mono text-label text-text-3">{v.direction_id} · {formatShortDate(v.created_at)}</span>
-								</button>
-							</li>
-						{/each}
-					</ul>
-				</section>
-
-				<section class="flex flex-col gap-2" aria-label={m.studio_pages()}>
-					<h2 class="m-0 font-mono text-label tracking-label text-text-3 uppercase">{m.studio_pages()}</h2>
-					<ul class="m-0 flex list-none flex-col gap-1 p-0">
-						{#each current.pages as p (p.path)}
-							<li>
-								<button
-									type="button"
-									class={[
-										'flex w-full cursor-pointer flex-col gap-0.5 rounded-sm p-2 text-left outline -outline-offset-1',
-										p.path === shownPage ? 'bg-surface-2 outline-border-strong' : 'bg-transparent outline-transparent hover:bg-surface-2',
-									]}
-									aria-current={p.path === shownPage ? 'page' : undefined}
-									onclick={() => openPage(p.path)}
-								>
-									<span class="text-caption text-text">{p.title}</span>
-									<span class="font-mono text-label text-text-3">{p.path}</span>
-								</button>
-							</li>
-						{/each}
-					</ul>
-				</section>
-
-				{#if mode === 'compare'}
-					<section class="flex flex-col gap-2" aria-label={m.studio_compare_with()}>
-						<h2 class="m-0 font-mono text-label tracking-label text-text-3 uppercase">{m.studio_compare_with()}</h2>
-						{#if otherVersions.length === 0}
-							<p class="m-0 text-caption text-text-2">{m.studio_compare_none()}</p>
-						{:else}
-							<ul class="m-0 flex list-none flex-col gap-1 p-0">
-								{#each otherVersions as v (v.version)}
-									<li>
-										<button
-											type="button"
-											class={[
-												'flex w-full cursor-pointer flex-col gap-0.5 rounded-sm p-2 text-left outline -outline-offset-1',
-												compared?.version === v.version ? 'bg-surface-2 outline-border-strong' : 'bg-transparent outline-transparent hover:bg-surface-2',
-											]}
-											aria-pressed={compared?.version === v.version}
-											onclick={() => (comparedVersion = v.version)}
-										>
-											<span class="font-mono text-label text-text">{m.studio_version({ version: v.version })}</span>
-											<span class="truncate text-caption text-text">{v.title}</span>
-										</button>
-									</li>
-								{/each}
-							</ul>
-						{/if}
-					</section>
-				{:else if mode === 'feedback'}
-					<section class="flex flex-col gap-2.5" aria-label={m.studio_mode_feedback()}>
-						<h2 class="m-0 font-mono text-label tracking-label text-text-3 uppercase">{m.studio_mode_feedback()}</h2>
-						<form class="flex flex-col gap-2.5" onsubmit={addFeedback}>
-							<fieldset class="m-0 flex flex-col gap-1.5 border-0 p-0">
-								<legend class="mb-1 text-caption text-text-2">{m.studio_feedback_about()}</legend>
-								<div class="flex flex-col gap-1">
-									{#each SCOPES as option (option.scope)}
-										<button
-											type="button"
-											class={[
-												'cursor-pointer rounded-sm px-2.5 py-1.5 text-left text-caption outline -outline-offset-1',
-												scope === option.scope ? 'bg-surface-2 font-medium text-text outline-border-strong' : 'bg-bg text-text-2 outline-border hover:text-text',
-											]}
-											aria-pressed={scope === option.scope}
-											onclick={() => (scope = option.scope)}
-										>
-											{option.label}
-										</button>
-									{/each}
-								</div>
-							</fieldset>
-
-							{#if scope === 'element'}
-								{#if selection && selection.page === shownPage}
-									<div class="flex flex-col gap-0.5 rounded-sm bg-surface-2 p-2 outline -outline-offset-1 outline-border">
-										<span class="font-mono text-label text-text-3">{KIND_LABELS[selection.kind]}</span>
-										<strong class="text-caption font-medium text-text">{selection.label}</strong>
-										<span class="font-mono text-label text-text-3">{selection.id}</span>
-									</div>
-								{:else}
-									<p class="m-0 text-caption text-text-2">{m.studio_feedback_pick_first()}</p>
-								{/if}
-							{/if}
-
-							{#if scope !== 'global'}
-								<label class="flex items-center gap-2 text-caption text-text-2">
-									<input type="checkbox" bind:checked={interaction} />
-									<span>{m.studio_feedback_interaction()}</span>
-								</label>
-							{/if}
-
-							<label class="flex flex-col gap-1 text-caption text-text-2">
-								<span>{m.studio_feedback_label()}</span>
-								<textarea
-									rows="3"
-									maxlength={FEEDBACK_CHARS}
-									class="w-full rounded-sm bg-bg p-2 text-caption text-text outline -outline-offset-1 outline-border focus:outline-border-strong"
-									bind:value={words}
-									placeholder={m.studio_feedback_placeholder()}
-								></textarea>
-							</label>
-
-							{#if feedbackError}
-								<p class="m-0 text-caption text-danger" role="alert">{feedbackError}</p>
-							{/if}
-
-							<button
-								type="submit"
-								class="cursor-pointer rounded-sm bg-accent px-3 py-1.5 text-caption font-medium text-accent-ink disabled:opacity-50"
-								disabled={!draft || sending}
-							>
-								{m.studio_feedback_add()}
-							</button>
-						</form>
-					</section>
-
-					<section class="flex flex-col gap-2" aria-label={m.studio_refine_title()}>
-						<h2 class="m-0 font-mono text-label tracking-label text-text-3 uppercase">{m.studio_refine_title()}</h2>
-						<form class="flex flex-col gap-2" onsubmit={(e) => askSora(e)}>
-							<label class="flex flex-col gap-1 text-caption text-text-2">
-								<span>{m.studio_refine_label()}</span>
-								<textarea
-									rows="2"
-									maxlength={FEEDBACK_CHARS}
-									class="w-full rounded-sm bg-bg p-2 text-caption text-text outline -outline-offset-1 outline-border focus:outline-border-strong"
-									bind:value={refineWords}
-									placeholder={m.studio_refine_placeholder()}
-								></textarea>
-							</label>
-							{#if refineError}
-								<p class="m-0 text-caption text-danger" role="alert">{refineError}</p>
-							{/if}
-							{#if refineSent}
-								<div class="flex flex-col gap-1.5 rounded-sm bg-surface-2 p-2 text-caption text-text-2 outline -outline-offset-1 outline-border" role="status">
-									<p class="m-0">{m.studio_refine_sent()}</p>
-									<div class="flex flex-wrap items-center gap-2">
-										<button type="button" class="cursor-pointer rounded-xs bg-surface px-2 py-1 text-caption text-text outline -outline-offset-1 outline-border" onclick={checkForNewVersion}>
-											{m.studio_refine_refresh()}
-										</button>
-										{#if !embedded}
-											<a href={`/chat/${data.sessionId}`} class="text-caption text-accent">{m.studio_refine_chat()}</a>
-										{/if}
-									</div>
-								</div>
-							{/if}
-							<button
-								type="submit"
-								class="cursor-pointer rounded-sm bg-surface-2 px-3 py-1.5 text-caption font-medium text-text outline -outline-offset-1 outline-border-strong disabled:opacity-50"
-								disabled={!refineText || refining}
-							>
-								{m.studio_refine_send()}
-							</button>
-						</form>
-					</section>
-
-					<section class="flex flex-col gap-2" aria-label={m.studio_feedback_history()}>
-						<h2 class="m-0 font-mono text-label tracking-label text-text-3 uppercase">{m.studio_feedback_history()}</h2>
-						{#if history.length === 0}
-							<p class="m-0 text-caption text-text-2">{m.studio_feedback_none()}</p>
-						{:else}
-							<ul class="m-0 flex list-none flex-col gap-1.5 p-0">
-								{#each history as item (item.id)}
-									<li>
-										<button
-											type="button"
-											class="flex w-full cursor-pointer flex-col gap-1 rounded-sm bg-surface-2 p-2 text-left outline -outline-offset-1 outline-border hover:outline-border-strong"
-											aria-label={m.studio_feedback_show({ number: item.number })}
-											onclick={() => showFeedback(item)}
-										>
-											<span class="flex items-center justify-between gap-1.5">
-												<span class="font-mono text-label text-accent">{m.studio_feedback_number({ number: item.number })}</span>
-												<span class="font-mono text-micro text-text-2">
-													{item.status === 'resolved' && item.resolved_in_version !== null
-														? m.studio_feedback_resolved({ version: item.resolved_in_version })
-														: m.studio_feedback_open()}
-												</span>
-											</span>
-											<span class="text-caption font-medium text-text">{whereLabel(item)}</span>
-											<span class="text-caption text-text-2">{item.body}</span>
-											{#if item.resolution}
-												<span class="font-mono text-label text-text-3">{item.resolution}</span>
-											{/if}
-											<span class="font-mono text-label text-text-3">{m.studio_feedback_given_on({ version: item.version })}</span>
-										</button>
-									</li>
-								{/each}
-							</ul>
-						{/if}
-					</section>
-				{:else}
-					<section class="flex flex-col gap-2" aria-label={m.studio_selected()}>
-						<div class="flex items-center justify-between">
-							<h2 class="m-0 font-mono text-label tracking-label text-text-3 uppercase">{m.studio_selected()}</h2>
-							{#if selection}
-								<button
-									type="button"
-									class="cursor-pointer text-caption text-text-2 hover:text-text"
-									onclick={() => {
-										selection = null;
-										pinPopoverOpen = false;
-										tellAll(highlightMessage(null));
-									}}
-								>
-									{m.studio_clear()}
-								</button>
-							{/if}
-						</div>
-						{#if selection}
-							<div class="flex flex-col gap-1 rounded-sm bg-surface-2 p-2.5 outline -outline-offset-1 outline-border">
-								<span class="font-mono text-label text-text-3">{KIND_LABELS[selection.kind]}</span>
-								<strong class="text-caption font-medium text-text">{selection.label}</strong>
-								<span class="font-mono text-label text-text-3">{selection.id}</span>
-								<span class="text-caption text-text-2">{m.studio_selected_on({ page: selection.page })}</span>
-								{#if selection.text}
-									<p class="m-0 truncate text-caption text-text-2">“{selection.text}”</p>
-								{/if}
-							</div>
-						{:else}
-							<p class="m-0 text-caption text-text-2">{selecting ? m.studio_select_hint() : m.studio_selected_none()}</p>
-						{/if}
-					</section>
-				{/if}
-
-				{#if mode !== 'compare'}
-					<section class="flex flex-col gap-2" aria-label={m.studio_elements()}>
-						<h2 class="m-0 font-mono text-label tracking-label text-text-3 uppercase">{m.studio_elements()}</h2>
-						<ul class="m-0 flex list-none flex-col gap-1 p-0">
-							{#each pageElements as el (el.id)}
-								<li>
-									<button
-										type="button"
-										class={[
-											'flex w-full cursor-pointer flex-col gap-0.5 rounded-sm p-2 text-left outline -outline-offset-1',
-											selection?.id === el.id ? 'bg-surface-2 outline-border-strong' : 'bg-transparent outline-transparent hover:bg-surface-2',
-										]}
-										onclick={() => pick(el)}
-									>
-										<span class="text-caption text-text">{el.label}</span>
-										<span class="font-mono text-label text-text-3">{KIND_LABELS[el.kind]} · {el.id}</span>
-									</button>
-								</li>
-							{/each}
-						</ul>
-					</section>
-				{/if}
-			</aside>
-
-			<div class="relative flex min-h-0 flex-col bg-bg md:col-span-3">
-				{#if mode === 'compare'}
-					{#if compared}
-						<div class="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-auto p-4 lg:grid-cols-2">
-							<div class="flex min-h-0 flex-col gap-2">
-								<div class="font-mono text-label text-text-2">{m.studio_compare_frame({ version: current.version, title: current.title })}</div>
-								<iframe
-									class="min-h-120 w-full flex-1 rounded-md bg-surface outline -outline-offset-1 outline-border"
-									style:max-width={frameWidth}
-									src={previewUrl(current, shownPage)}
-									sandbox="allow-scripts"
-									referrerpolicy="no-referrer"
-									title={m.studio_compare_frame({ version: current.version, title: current.title })}
-								></iframe>
-							</div>
-							<div class="flex min-h-0 flex-col gap-2">
-								<div class="font-mono text-label text-text-2">{m.studio_compare_frame({ version: compared.version, title: compared.title })}</div>
-								<iframe
-									class="min-h-120 w-full flex-1 rounded-md bg-surface outline -outline-offset-1 outline-border"
-									style:max-width={frameWidth}
-									src={previewUrl(compared, shownPage)}
-									sandbox="allow-scripts"
-									referrerpolicy="no-referrer"
-									title={m.studio_compare_frame({ version: compared.version, title: compared.title })}
-								></iframe>
-							</div>
-						</div>
-					{:else}
-						<div class="m-auto p-8 text-center text-ui text-text-2">{m.studio_compare_none()}</div>
-					{/if}
-				{:else if mode === 'canvas'}
+		<div class="relative flex min-h-0 flex-1 flex-col bg-bg">
 					<!-- 2D Spatial Canvas: Stage filter bar + zoomable/pannable artboard plane -->
 					<div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-surface px-4 py-2">
 						<div class="flex flex-wrap items-center gap-2">
@@ -1401,23 +1069,8 @@
 						</div>
 					</div>
 					{/if}
-				{:else}
-					<div class="flex min-h-0 flex-1 justify-center overflow-auto p-4">
-						{#if frameSrc}
-							<iframe
-								bind:this={frame}
-								class="min-h-140 w-full flex-1 rounded-md bg-surface outline -outline-offset-1 outline-border"
-								style:max-width={frameWidth}
-								src={frameSrc}
-								sandbox="allow-scripts"
-								referrerpolicy="no-referrer"
-								title={m.studio_frame_title({ title: current.title })}
-							></iframe>
-						{/if}
-					</div>
-				{/if}
 
-				{#if pinPopoverOpen && selection && mode !== 'feedback'}
+				{#if pinPopoverOpen && selection}
 					<aside
 						data-part="pin-popover"
 						data-testid="direct-pin-popover"
@@ -1501,6 +1154,5 @@
 					</div>
 				{/if}
 			</div>
-		</div>
 	{/if}
 </div>
