@@ -16,7 +16,8 @@ type Orgs = { orgs: { id: string }[] };
 /** A project with a static site in it, made as Projects makes one. */
 async function siteProject(account: Account, files = [{ path: 'index.html', content: '<h1>Warung Kopi Bu Siti</h1>\n<p>Kopi susu gula aren</p>' }]): Promise<string> {
 	const org = ((await (await api(account, '/api/orgs')).json()) as Orgs).orgs[0].id;
-	const id = ((await (await api(account, '/api/projects', { method: 'POST', body: JSON.stringify({ org_id: org, name: 'warung-kopi-menu' }) })).json()) as { project_id: string }).project_id;
+	const id = ((await (await api(account, '/api/projects', { method: 'POST', body: JSON.stringify({ org_id: org }) })).json()) as { project_id: string }).project_id;
+	expect((await api(account, `/api/projects/${id}`, { method: 'PATCH', body: JSON.stringify({ name: 'warung-kopi-menu' }) })).ok).toBe(true);
 	expect((await api(account, `/api/projects/${id}/import/files`, { method: 'POST', body: JSON.stringify({ files, finish: true }) })).ok).toBe(true);
 	return id;
 }
@@ -178,9 +179,9 @@ test('Settings: People invites with a link to copy, Environment says the backend
 	await page.getByRole('dialog', { name: 'Transfer warung-kopi-menu?' }).getByRole('button', { name: 'Close' }).click();
 	await page.getByRole('dialog', { name: 'Settings' }).getByRole('button', { name: /^Delete project/ }).click();
 	const deleting = page.getByRole('dialog', { name: 'Delete warung-kopi-menu?' });
-	await expect(deleting.getByRole('button', { name: 'Delete forever' })).toBeDisabled();
+	await expect(deleting.getByRole('button', { name: 'Delete project' })).toBeDisabled();
 	await deleting.getByRole('textbox').fill('warung-kopi-menu');
-	await deleting.getByRole('button', { name: 'Delete forever' }).click();
+	await deleting.getByRole('button', { name: 'Delete project' }).click();
 	await expect(page).toHaveURL(/\/projects\?deleted=|\/projects$/);
 });
 

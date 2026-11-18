@@ -278,11 +278,12 @@
 		{#if here.length}
 			<PresenceStrip people={here} onopen={() => open('presence')} onfollow={ws.following ? undefined : () => follow(0)} />
 		{/if}
-		{#if tab === 'chat'}
-			<div class="min-h-0 flex-1">
-				<ChatView {data} pane quote={ws.quote} onunquote={() => (ws.quote = null)} onactivity={() => void ws.loadQueue()} after={together} />
-			</div>
-		{:else}
+		<!-- The chat stays put under the preview (its live link, draft and place in the thread), so
+		     switching tabs never reconnects it; only the tab on show is visible. -->
+		<div class={['min-h-0 flex-1', tab !== 'chat' && 'hidden']}>
+			<ChatView {data} pane quote={ws.quote} onunquote={() => (ws.quote = null)} onactivity={() => void ws.loadQueue()} after={together} />
+		</div>
+		{#if tab === 'preview'}
 			<div class="relative min-h-0 flex-1">
 				{#if ws.frame}
 					<div class="flex h-full flex-col">

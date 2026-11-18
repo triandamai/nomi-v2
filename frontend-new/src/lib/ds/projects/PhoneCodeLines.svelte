@@ -57,7 +57,7 @@
 	const range = $derived(from === null || to === null ? '' : from === to ? String(from) : `${from}–${to}`);
 </script>
 
-<div class="flex w-full flex-col gap-4">
+<div class="flex w-full flex-col gap-4 pb-18">
 	<ol aria-label={label} class="flex w-full flex-col rounded-xl py-2 outline -outline-offset-1 outline-border">
 		{#each lines as tokens, index (index)}
 			{@const line = index + 1}
@@ -82,7 +82,7 @@
 		{/each}
 	</ol>
 	{#if from !== null && to !== null}
-		<div class="sticky bottom-4">
+		<div class="fixed inset-x-4 bottom-4 z-10 pb-safe">
 			<button type="button" class="flex h-13 w-full cursor-pointer items-center gap-2.5 rounded-full bg-surface px-3.5 text-left shadow-float outline -outline-offset-1 outline-border-strong" onclick={() => from !== null && to !== null && onask(from, to)}>
 				<Mascot agent="koda" size={20} />
 				<span class="min-w-0 flex-1 truncate text-body text-text">{m.code_ask_lines({ name: 'Koda', range })}</span>

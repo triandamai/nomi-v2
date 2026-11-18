@@ -199,4 +199,12 @@ export default [
 		accessibility: ['role="tooltip"; it ignores the pointer.'],
 		related: ['overlays/Tooltip.svelte'],
 	},
+	{
+		file: 'overlays/PhoneToastRegion.svelte',
+		summary: 'The app’s toasts on a phone screen that draws its own: Mobile / Toast at the top, under the status bar.',
+		use: ['A project’s workspace on a phone (ToastRegion everywhere else).'],
+		donts: ['Show both regions on one screen.'],
+		accessibility: ['A named region; errors are alerts, the rest status.'],
+		related: ['overlays/ToastRegion.svelte', 'mobile/PhoneToast.svelte'],
+	},
 ] satisfies ComponentDoc[];
