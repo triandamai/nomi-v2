@@ -359,7 +359,8 @@ async fn payments_are_listed_for_the_person_and_for_admins(pool: PgPool) {
     assert_eq!(only_pending.items.iter().map(|i| i.payment.id).collect::<Vec<_>>(), vec![pending.id]);
     assert!(billing::list_payments_for_admin(&pool, None, 2).await.unwrap().items.is_empty());
     // An open payment for the same plan, term and code is found again; another term isn't.
-    billing::attach_invoice(&pool, pending.id, "inv-1", "https://pay.example/inv-1", None).await.unwrap();
+    billing::attach_invoice(&pool, pending.id, "doku", "inv-1", "https://pay.example/inv-1", None).await.unwrap();
+    assert_eq!(billing::get_payment(&pool, pending.id).await.unwrap().unwrap().provider, "doku", "the provider that made the invoice is kept");
     assert!(billing::reusable_payment(&pool, b, plan.id, 1, None).await.unwrap().is_some());
     assert!(billing::reusable_payment(&pool, b, plan.id, 6, None).await.unwrap().is_none());
     assert!(billing::reusable_payment(&pool, b, plan.id, 1, Some("X")).await.unwrap().is_none());

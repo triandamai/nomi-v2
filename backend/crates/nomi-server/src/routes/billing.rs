@@ -1,5 +1,6 @@
-//! Paying for a plan: the billing terms, a quote and checkout (a Xendit invoice), the person's
-//! payments and subscription, referral code, and the webhook Xendit calls when an invoice is paid.
+//! Paying for a plan: the billing terms, a quote and checkout (a Xendit or DOKU invoice), the
+//! person's payments and subscription, referral code, and the webhooks Xendit and DOKU call when
+//! an invoice is paid.
 
 use axum::body::Bytes;
 use axum::extract::{Path, State};
@@ -11,15 +12,14 @@ use serde_json::{json, Value};
 use uuid::Uuid;
 
 use nomi_auth::extractor::AuthClaims;
-use nomi_payment::PaymentStatus;
+use nomi_payment::xendit::client::CALLBACK_TOKEN_HEADER;
+use nomi_payment::{PaymentError, PaymentProviderKind, PaymentStatus, WebhookEvent};
 use nomi_usage::billing::{self, Payment, PaymentListItem, Quote, QuoteError, Term, STATUS_CANCELLED, STATUS_PENDING};
 use nomi_usage::plans::{self, PlanRow};
 
 use crate::app::AppState;
 use crate::billing::{self as server_billing, CheckoutError, Gateway};
 use crate::routes::deploy::ApiError;
-
-const CALLBACK_TOKEN_HEADER: &str = "x-callback-token";
 
 fn internal<E: std::fmt::Display>(e: E) -> ApiError {
     tracing::error!(error = %e, "billing request failed");
@@ -123,7 +123,7 @@ async fn item(state: &AppState, id: Uuid) -> Result<Json<PaymentListItem>, ApiEr
 pub async fn get_payment(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(id): Path<Uuid>) -> Result<Json<PaymentListItem>, ApiError> {
     let payment = own_payment(&state, claims.sub, id).await?;
     if payment.status == STATUS_PENDING {
-        if let Some(gateway) = server_billing::gateway().await {
+        if let Some(gateway) = server_billing::gateway_of(&payment).await {
             refresh(&state, &payment, &gateway).await;
         }
     }
@@ -137,7 +137,7 @@ pub async fn cancel_payment(State(state): State<AppState>, AuthClaims(claims): A
         return Err((StatusCode::CONFLICT, "only a payment that is waiting can be cancelled".to_string()));
     }
     if let Some(invoice_id) = payment.provider_invoice_id.as_deref() {
-        let gateway = server_billing::gateway().await.ok_or((StatusCode::SERVICE_UNAVAILABLE, "Payments aren't set up yet. Please try again later.".to_string()))?;
+        let gateway = server_billing::gateway_of(&payment).await.ok_or((StatusCode::SERVICE_UNAVAILABLE, "Payments aren't set up yet. Please try again later.".to_string()))?;
         if let Err(e) = gateway.client.expire_invoice(invoice_id).await {
             tracing::warn!(error = %e, payment_id = %payment.id, "couldn't expire an invoice");
             // It may have been paid in the meantime: look before giving up.
@@ -223,7 +223,7 @@ pub async fn referral(State(state): State<AppState>, AuthClaims(claims): AuthCla
 /// sign-in: it is trusted by its callback token, which must be configured (otherwise 503) and
 /// match. Unknown invoices are acknowledged and ignored, and replays change nothing.
 pub async fn xendit_webhook(State(state): State<AppState>, headers: HeaderMap, body: Bytes) -> Result<Json<Value>, ApiError> {
-    let gateway = server_billing::gateway().await.ok_or((StatusCode::SERVICE_UNAVAILABLE, "payments aren't set up".to_string()))?;
+    let gateway = server_billing::gateway_for(PaymentProviderKind::Xendit).await.ok_or((StatusCode::SERVICE_UNAVAILABLE, "payments aren't set up".to_string()))?;
     let expected = gateway
         .webhook_token
         .as_deref()
@@ -233,10 +233,35 @@ pub async fn xendit_webhook(State(state): State<AppState>, headers: HeaderMap, b
     if !provided.is_some_and(|provided| server_billing::tokens_match(provided, expected)) {
         return Err((StatusCode::UNAUTHORIZED, "invalid callback token".to_string()));
     }
-    let event = gateway.client.verify_webhook(provided, &body).map_err(|e| {
+    let event = gateway.client.verify_webhook(&headers, &body).map_err(|e| {
         tracing::warn!(error = %e, "an unreadable webhook");
         (StatusCode::BAD_REQUEST, "unreadable webhook".to_string())
     })?;
+    settle(&state, event).await
+}
+
+/// `POST /api/payments/doku/webhook`: DOKU's HTTP Notification for a checkout order. No sign-in:
+/// it is trusted by its signature (HMAC over its headers and body with our secret key), so DOKU
+/// must be set up (otherwise 503). It answers whichever provider new payments go through, so
+/// payments made before a switch still settle.
+pub async fn doku_webhook(State(state): State<AppState>, headers: HeaderMap, body: Bytes) -> Result<Json<Value>, ApiError> {
+    let gateway = server_billing::gateway_for(PaymentProviderKind::Doku).await.ok_or((StatusCode::SERVICE_UNAVAILABLE, "payments aren't set up".to_string()))?;
+    let event = gateway.client.verify_webhook(&headers, &body).map_err(|e| match e {
+        PaymentError::WebhookVerificationFailed(why) => {
+            tracing::warn!(reason = %why, "a DOKU notification that isn't signed by DOKU");
+            (StatusCode::UNAUTHORIZED, "invalid signature".to_string())
+        }
+        e => {
+            tracing::warn!(error = %e, "an unreadable webhook");
+            (StatusCode::BAD_REQUEST, "unreadable webhook".to_string())
+        }
+    })?;
+    settle(&state, event).await
+}
+
+/// Applies what a verified webhook says to its payment. Unknown invoices are acknowledged and
+/// ignored, and replays change nothing.
+async fn settle(state: &AppState, event: WebhookEvent) -> Result<Json<Value>, ApiError> {
     let Some(payment) = billing::payment_by_external_id(&state.pool, &event.external_id).await.map_err(internal)? else {
         tracing::info!(external_id = %event.external_id, "webhook for an unknown payment");
         return Ok(Json(json!({ "ok": true })));

@@ -845,15 +845,16 @@ pub async fn create_payment(pool: &PgPool, user_id: Uuid, quote: &Quote, kind: &
     Ok(get_payment(pool, id).await?.ok_or(sqlx::Error::RowNotFound)?)
 }
 
-/// Saves the invoice the provider made for a payment.
-pub async fn attach_invoice(pool: &PgPool, payment_id: Uuid, invoice_id: &str, invoice_url: &str, expires_at: Option<DateTime<Utc>>) -> Result<(), sqlx::Error> {
+/// Saves the invoice `provider` (`xendit`, `doku`) made for a payment.
+pub async fn attach_invoice(pool: &PgPool, payment_id: Uuid, provider: &str, invoice_id: &str, invoice_url: &str, expires_at: Option<DateTime<Utc>>) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "UPDATE payments SET provider_invoice_id = $2, invoice_url = $3, expires_at = COALESCE($4, expires_at), updated_at = now() WHERE id = $1",
+        "UPDATE payments SET provider = $5, provider_invoice_id = $2, invoice_url = $3, expires_at = COALESCE($4, expires_at), updated_at = now() WHERE id = $1",
     )
     .bind(payment_id)
     .bind(invoice_id)
     .bind(invoice_url)
     .bind(expires_at)
+    .bind(provider)
     .execute(pool)
     .await?;
     Ok(())
