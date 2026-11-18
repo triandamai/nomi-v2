@@ -21,6 +21,19 @@ describe('a shared link', () => {
 		expect((result as { chat: { messages: { html: string }[] } }).chat.messages[1].html).toContain('<strong>•••</strong>');
 	});
 
+	it('lists the files a message went with by name only, private, with no way to open them (G16)', async () => {
+		const tag = '<attachment id="5b0c" name="bca-sep-2026.pdf" kind="pdf" mime="application/pdf" size="4404019"/>';
+		const { result } = await run(
+			json({ title: null, scope: 'reply', masked: true, expires_at: null, shared_by: 'M. P.', messages: [{ sender: 'user', agent_display_name: null, content: `What did I spend?\n\n${tag}`, created_at: '2026-11-11T05:00:00Z' }, { sender: 'assistant', agent_display_name: 'Maya', content: 'Rent was Rp •••.', created_at: '2026-11-11T05:00:02Z' }] }),
+		);
+		const chat = (result as { chat: { sharedBy: string; files: boolean; messages: { html: string; files: { name: string; type: string }[] }[] } }).chat;
+		expect(chat.sharedBy).toBe('M. P.');
+		expect(chat.files).toBe(true);
+		expect(chat.messages[0].files).toEqual([{ name: 'bca-sep-2026.pdf', type: 'PDF' }]);
+		expect(chat.messages[0].html).not.toContain('attachment');
+		expect(JSON.stringify(result)).not.toContain('5b0c');
+	});
+
 	it('says a link that isn’t there (expired, turned off or never made) isn’t available', async () => {
 		expect((await run(new Response('link not found', { status: 404 }))).result).toEqual({ state: 'gone' });
 	});

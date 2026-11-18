@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, tick, untrack, type Snippet } from 'svelte';
-	import { ArrowUpRight, Check, Copy, Cpu, Download, FilePlus2, FolderInput, Hourglass, KeyRound, List, LogIn, Maximize2, Minimize2, Pencil, Pin, PinOff, RefreshCw, RotateCcw, Share, Sparkles, TextSelect, ThumbsDown, ThumbsUp, Trash2, Unplug, Undo2 } from '@lucide/svelte';
+	import { ArrowUpRight, Check, Copy, Cpu, Download, FilePlus2, FolderInput, Hourglass, ImageOff, Info, KeyRound, List, LogIn, Maximize2, Minimize2, Pencil, Pin, PinOff, RefreshCw, RotateCcw, RotateCw, Share, Sparkles, TextSelect, ThumbsDown, ThumbsUp, Trash2, Undo2, Unplug, X } from '@lucide/svelte';
 	import { goto, invalidate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { m } from '$lib/paraglide/messages';
@@ -61,9 +61,30 @@
 	import { replyBlocks } from '$lib/adapters/blocks';
 	import ReplyBlocks from '$lib/chat/ReplyBlocks.svelte';
 	import CodeQuote from '$lib/ds/build/CodeQuote.svelte';
+	import PhoneErrorCard from '$lib/ds/thread/PhoneErrorCard.svelte';
+	import PhoneCutNotice from '$lib/ds/thread/PhoneCutNotice.svelte';
+	import PhonePendingMessage from '$lib/ds/thread/PhonePendingMessage.svelte';
+	import PhoneCrewWorking from '$lib/ds/thread/PhoneCrewWorking.svelte';
+	import PhoneButton from '$lib/ds/mobile/PhoneButton.svelte';
+	import { CREW } from '$lib/ds/agents/crew';
+	import { crewOf } from '$lib/adapters/shell';
+	import { countdown, phoneFailureView, resetsOn, type PhoneFailureAction } from '$lib/adapters/phoneChat';
+	import PhoneChatFlows from './PhoneChatFlows.svelte';
+	import { PhoneFlows } from './phoneFlows.svelte';
 	import type { ChatPageData } from '$lib/server/chatPage';
 	import type { DeletePreview } from '$lib/server/chat';
 	import DeletedReply from '$lib/ds/chat/DeletedReply.svelte';
+	import { blockedReason, composeMessage, extensionOf, formatBytes, hiddenLine, kindLabel, progressParts, readyCount, seesImages, splitAttachments, visionSplit, type SentFile } from '$lib/chat/attachments';
+	import { ComposerUploads, type Chip } from '$lib/chat/uploads.svelte';
+	import { clearDraft, loadDraft, saveDraft } from '$lib/chat/draft';
+	import ComposerFile from '$lib/ds/thread/ComposerFile.svelte';
+	import ModelFix from '$lib/ds/thread/ModelFix.svelte';
+	import VisionModelMenu, { type VisionGroup } from '$lib/ds/thread/VisionModelMenu.svelte';
+	import SentFiles, { type SentFileItem } from '$lib/ds/thread/SentFiles.svelte';
+	import FileNote from '$lib/ds/thread/FileNote.svelte';
+	import FileViewer from '$lib/ds/thread/FileViewer.svelte';
+	import PhotoViewer from '$lib/ds/thread/PhotoViewer.svelte';
+	import FileSheetHeader from '$lib/ds/thread/FileSheetHeader.svelte';
 	import type { Shell } from '$lib/server/shell';
 
 	// A chat, as its page and a project's workspace show it.
@@ -107,9 +128,15 @@
 		| { kind: 'regen'; message: RenderedMessage }
 		| { kind: 'dislike'; message: RenderedMessage }
 		| { kind: 'mine'; message: RenderedMessage; latest: boolean }
-		| { kind: 'model' }
+		| { kind: 'model'; retry?: { message: RenderedMessage; reason: string } }
 		| { kind: 'crew' };
 	let sheet = $state<Sheet | null>(null);
+	// The phone's chat flows (UX contract phone-chat-flows): questions, the plan's bar, the crew at
+	// work, kept per chat.
+	const flows = new PhoneFlows();
+	/** A provider's retry wait seen in this turn (seconds), for the note once it went through. */
+	let retryWait: number | null = null;
+	let retried = $state<{ after: string; seconds: number } | null>(null);
 	// What the phone's action bar shows at once, before the reload brings the saved feedback (the
 	// desktop's reply bar keeps its own): put back if saving fails.
 	let feedbackShown = $state<Record<string, 'liked' | 'disliked' | null>>({});
@@ -154,7 +181,7 @@
 	/** Replies whose thinking was timed live, in seconds. */
 	let thoughtFor = $state<Record<string, number>>({});
 	/** A failure retried here, folded above the reply that came after it. */
-	let recovered = $state<{ after: string; reason: string } | null>(null);
+	let recovered = $state<{ after: string; reason: string; credits?: boolean } | null>(null);
 	/** The reply continued after the stream was cut off, and when it was. */
 	let continued = $state<{ after: string; elapsed: string } | null>(null);
 	/** The stop exchange sent from here: the stopped reply says it, so its messages wait for a reload. */
@@ -230,6 +257,14 @@
 				modelKey = data.model?.key ?? data.models.current?.key ?? null;
 				thinking = data.thinking;
 				hidden.clear();
+				uploads.clear();
+				removedLine = null;
+				viewer = null;
+				photo = null;
+				restoreDraft(id);
+				flows.reset();
+				retried = null;
+				retryWait = null;
 				return;
 			}
 			messages = mergeReloaded(incoming, messages, hasOlder);
@@ -259,7 +294,21 @@
 		turn = applyChatEvent(turn, event, Date.now());
 		if (ACTIVITY.has(event.kind)) onactivity?.();
 		switch (event.kind) {
+			case 'AgentSessionStarted':
+				flows.sessionStarted(event.agent_session_id, event.agent_display_name);
+				break;
+			case 'AgentSessionEnded':
+				flows.sessionEnded(event.agent_session_id);
+				break;
+			case 'AgentPhaseChanged':
+				if (event.phase === 'retrying') retryWait ??= retryInfo(event.detail, Date.now()).seconds;
+				break;
+			case 'TurnFailed':
+				retryWait = null;
+				break;
 			case 'TurnCompleted':
+				if (retryWait !== null) retried = { after: new Date(before.startedAt ?? Date.now()).toISOString(), seconds: retryWait };
+				retryWait = null;
 				if (event.message_id !== NIL) {
 					if (before.thoughtFor !== null) thoughtFor = { ...thoughtFor, [event.message_id]: Math.max(1, Math.round(before.thoughtFor / 1000)) };
 					void fetchMessage(event.message_id);
@@ -293,6 +342,7 @@
 				opened(resumed) {
 					// Nothing missed is replayed: what happened meanwhile comes with a reload.
 					if (resumed && !turn.end) turn = idleTurn();
+				void readCrewAtWork();
 					void invalidate('chat:page');
 					onactivity?.();
 				},
@@ -307,9 +357,11 @@
 
 	// Sending. Offline, it waits in the outbox; signed out, it waits for the sign-in; refused, it
 	// stays where it was written with Retry and Edit.
-	async function send(text: string, options: { late?: boolean } = {}) {
+	async function send(text: string, options: { late?: boolean; note?: string } = {}) {
 		const local: Pending = { key: nextKey++, text, status: 'sending' };
 		pending = [...pending, local];
+		flows.notice = null;
+		retried = null;
 		newFromId = null;
 		recovered = null;
 		jumpToLatest();
@@ -326,6 +378,7 @@
 			messages = upsert(messages, { ...result.data.message, content_html: '' });
 			onactivity?.();
 			if (options.late) lateNotes = { ...lateNotes, [result.data.message.id]: m.sent_after_signin({ time: clock(new Date(), time.timeZone) }) };
+			if (options.note) sentNotes = { ...sentNotes, [result.data.message.id]: options.note };
 			if (result.data.stopped) {
 				// The supervisor answered on the spot: no turn is coming.
 				hidden.add(result.data.message.id);
@@ -361,7 +414,10 @@
 
 	function editPending(item: Pending) {
 		pending = pending.filter((one) => one.key !== item.key);
-		draft = item.text;
+		// Its files come back as chips (the backend reads each tag against its own records).
+		const parts = splitAttachments(item.text);
+		draft = parts.text;
+		uploads.restore(parts.files.map((file) => ({ id: file.id, name: file.name, kind: file.kind, mime: file.mime ?? '', size: file.size ?? 0, status: 'ready', reference: `<attachment id="${file.id}" name="${file.name}" kind="${file.kind}" mime="${file.mime ?? ''}" size="${file.size ?? 0}"/>` })));
 		field?.focus();
 	}
 
@@ -394,6 +450,22 @@
 		if (result.data.reply) hidden.add(result.data.reply.id);
 		messages = messages.filter((message) => !hidden.has(message.id));
 		turn = turnStopped(turn, Date.now());
+	}
+
+	/** Stop all (the crew-working banner): the same "stop", even while no reply of this turn streams. */
+	async function stopAll() {
+		if (working) return stop();
+		const result = await callJson<{ message: MessageItem; reply: MessageItem | null; stopped: boolean }>(`${api}/messages`, { method: 'POST', body: { text: 'stop' } });
+		if (!result.ok) toasts.show({ kind: 'error', title: result.message || m.rerun_failed() });
+	}
+
+	/** Who of the crew is at work in the chat already (the feed only says who starts from now). */
+	async function readCrewAtWork() {
+		if (!phone) return;
+		const result = await callJson<{ agent_session_id: string; agent_type: string } | null>(`${api}/agent-status`);
+		if (!result.ok || !result.data) return;
+		const crewId = crewOf(result.data.agent_type);
+		flows.sessionStarted(result.data.agent_session_id, CREW.find((member) => member.id === crewId)?.name ?? 'Nomi');
 	}
 
 	function continueReply() {
@@ -450,11 +522,11 @@
 		return result.ok;
 	}
 
-	async function retryRun(message: RenderedMessage, reason: string) {
+	async function retryRun(message: RenderedMessage, reason: string, credits = false) {
 		const result = await callJson(`${api}/messages/${message.id}/retry`, { method: 'POST' });
 		if (!result.ok) return void toasts.show({ kind: 'error', title: m.retry_failed(), detail: result.message || undefined });
 		messages = messages.filter((one) => one.id !== message.id);
-		recovered = { after: new Date().toISOString(), reason };
+		recovered = { after: new Date().toISOString(), reason, credits };
 		turn = turnSent(turn, Date.now());
 	}
 
@@ -504,6 +576,40 @@
 		return { title: view.title, actions: view.actions.map((action) => ACTIONS[action]) };
 	}
 
+	/** A failure on a phone (Errors & recovery AyrHG): the phone's title and labels, the desktop's moves. */
+	function phoneFailure(message: RenderedMessage, failure: { kind: Parameters<typeof failureView>[0]; text: string; retry: boolean }) {
+		const choices = data.models.groups.flatMap((group) => group.models.filter((option) => option.enabled).map((option) => ({ key: option.key, label: option.label, context: option.context })));
+		const view = phoneFailureView(failure.kind, { retry: failure.retry, canUseCredits, models: choices, current: modelKey });
+		const credits = data.models.groups.find((group) => group.source === 'nomi')?.models.find((option) => option.enabled);
+		const toAction = (action: PhoneFailureAction) => {
+			switch (action.action) {
+				case 'retry':
+					return { label: action.label, icon: RotateCcw, onclick: () => void retryRun(message, failure.text) };
+				case 'credits':
+					return { label: action.label, icon: Sparkles, onclick: async () => void (credits && (await useModel(credits.key)) && failure.retry && (await retryRun(message, failure.text, true))) };
+				case 'switch':
+					return { label: action.label, onclick: async () => void (action.model && (await useModel(action.model)) && failure.retry && (await retryRun(message, failure.text))) };
+				case 'models':
+					return { label: action.label, onclick: () => (sheet = { kind: 'model', ...(failure.retry && { retry: { message, reason: failure.text } }) }) };
+				case 'own_key':
+					return { label: action.label, icon: KeyRound, href: '/settings/models' };
+				case 'upgrade':
+					return { label: action.label, icon: ArrowUpRight, href: '/settings/plan' };
+				case 'new_chat':
+					return { label: action.label, icon: FilePlus2, href: '/chat/new' };
+			}
+		};
+		const [primary, secondary] = view.actions.map(toAction);
+		const usage = failure.kind === 'quota' ? data.usage : null;
+		return {
+			title: view.title,
+			primary,
+			secondary,
+			tag: usage ? usage.card.plan : undefined,
+			meta: usage ? m.phone_credits_out_meta({ used: usage.tokens.used, allowance: usage.tokens.total, date: resetsOn(time.now, language, time.timeZone) }) : modelLabel,
+		};
+	}
+
 	// The chat itself: its menu, rename, pin, move, export, share, delete.
 	function onMenu(action: ChatAction) {
 		if (action === 'rename') header.renaming = true;
@@ -518,7 +624,17 @@
 	// Who answers in this chat, for the phone's nav bar: whoever is at it, else the last to reply.
 	const answering = $derived.by(() => {
 		const name = working ? (turn.agent ?? 'Nomi') : (messages.findLast((message) => message.sender === 'assistant' && message.agent_display_name)?.agent_display_name ?? 'Nomi');
+		// On a phone the nav bar also says who waits on the person, or how many work in the background.
+		const asking = phone && !working ? latestApproval : null;
+		if (asking) return { agent: crewIdOf(asking), name: m.phone_approval_nav({ agent: asking }) };
+		if (phone && flows.working.length > 1) return { agent: crewIdOf(flows.working[0]), name: m.phone_crew_working({ count: String(flows.working.length) }) };
 		return { agent: crewIdOf(name), name: working ? m.chat_nav_working({ name }) : name };
+	});
+	/** Who of the crew waits on an approval in the latest reply. */
+	const latestApproval = $derived.by(() => {
+		const reply = messages.findLast((message) => message.sender === 'assistant');
+		const waiting = (reply?.content_blocks ?? []).some((block) => block.kind === 'approval_request' && (block as { status?: string }).status === 'pending');
+		return waiting ? nameOf(reply!) : null;
 	});
 	const pinned = $derived(header.shown(chatId, 'pinned', data.chat.pinned));
 	// The chat's sheet says how many messages it holds and who answers (W3a8j G8cFz: "14 messages ·
@@ -763,7 +879,7 @@
 	}
 
 	function onkeydown(event: KeyboardEvent) {
-		if (event.defaultPrevented || document.querySelector('dialog[open], [role="menu"], [role="listbox"]')) return;
+		if (event.defaultPrevented || document.querySelector('dialog[open], [role="dialog"], [role="menu"], [role="listbox"]')) return;
 		if (event.key === 'Escape' && working) {
 			event.preventDefault();
 			void stop();
@@ -790,6 +906,7 @@
 		window.addEventListener('online', back);
 		// Signed back in (or reloaded) with a message waiting: it goes now.
 		void flushOutbox();
+		restoreDraft(chatId);
 		if (!matchMedia('(pointer: coarse)').matches) field?.focus();
 		jumpToLatest();
 		return () => {
@@ -814,6 +931,220 @@
 		return m.phase_working();
 	});
 	const retrying = $derived(turn.phase?.phase === 'retrying' ? retryInfo(turn.phase.detail, tickNow) : null);
+
+	// Files (UX contract audit-chat-files: G3, G4, G6, G12, built on what the backend has). Each file
+	// uploads the moment it's picked; a message carries the ready ones as reference tags after its
+	// text. A picture with a model that can't see it waits on the fix line (Switch model, Send text
+	// only); a file that failed or was refused keeps Send off until it's retried or removed. What's in
+	// the composer is kept for a trip to Settings and back (draft.ts).
+	let picker: HTMLInputElement | undefined = $state();
+	let liveText = $state('');
+	let alertText = $state('');
+	/** "bca-oct-2026.pdf removed · 1 file ready", after a file that didn't make it is taken out. */
+	let removedLine = $state<string | null>(null);
+	/** Notes on messages sent from here ("Sent without …"): nothing in the backend keeps them. */
+	let sentNotes = $state<Record<string, string>>({});
+	let visionOpen = $state(false);
+	let switchButton: HTMLButtonElement | undefined = $state();
+	/** The failed file whose sheet is open, on a phone. */
+	let fileSheet = $state<Chip | null>(null);
+	const fixId = $props.id();
+
+	const uploads = new ComposerUploads({
+		announce: ({ kind, name }) => {
+			if (kind === 'failed') alertText = m.files_live_failed({ name });
+			else liveText = kind === 'uploaded' ? m.files_live_uploaded({ name }) : m.files_live_rejected({ name });
+		},
+		discard: (id) => void fetch(`/attachments/${id}`, { method: 'DELETE', keepalive: true }).catch(() => undefined),
+	});
+
+	const currentModel = $derived(data.models.groups.flatMap((group) => group.models).find((option) => option.key === modelKey));
+	const canSee = $derived(seesImages(currentModel));
+	/** The chips as they show: a ready picture the model can't see is a warning. */
+	const chips = $derived(uploads.chips.map((chip): Chip => (chip.status === 'ready' && chip.uploaded?.kind === 'image' && !canSee ? { ...chip, status: 'warning' } : chip)));
+	const blocked = $derived(blockedReason(chips));
+	const warning = $derived(blocked?.kind === 'warning');
+	const blockedText = $derived<string | true | undefined>(
+		!blocked ? undefined : blocked.kind === 'rejected' ? m.files_hint_rejected({ name: blocked.name }) : blocked.kind === 'failed' ? (blocked.count === 1 ? m.files_hint_failed_one() : m.files_hint_failed_many({ count: String(blocked.count) })) : true,
+	);
+	const REASONS = { connection_lost: m.files_reason_connection_lost, server_error: m.files_reason_server_error, storage_full: m.files_reason_storage_full, too_large: m.files_reason_too_large, rejected: m.files_reason_server_error };
+
+	function chipDetail(chip: Chip): string {
+		if (chip.status === 'uploading') {
+			const progress = m.files_progress(progressParts(chip.progress ?? 0, chip.size));
+			return chip.again ? m.files_again({ progress }) : progress;
+		}
+		if (chip.status === 'failed') return m.files_upload_failed({ reason: REASONS[chip.failure ?? 'server_error']() });
+		if (chip.status === 'rejected') return extensionOf(chip.name) ? m.files_rejected({ ext: extensionOf(chip.name) }) : m.files_rejected_plain();
+		if (chip.status === 'warning') return m.files_model_warning({ model: modelLabel ?? '' });
+		return `${kindLabel({ name: chip.name, kind: chip.uploaded?.kind ?? '' })} · ${formatBytes(chip.size)}`;
+	}
+
+	// The warning is said once as it appears; focus moves to Switch model (ModelFix).
+	let warned = false;
+	$effect(() => {
+		if (warning && !warned) liveText = m.files_live_warning({ model: modelLabel ?? '' });
+		warned = warning;
+	});
+
+	function pickFiles(event: Event & { currentTarget: HTMLInputElement }) {
+		const files = event.currentTarget.files;
+		if (files?.length) {
+			removedLine = null;
+			uploads.add([...files]);
+		}
+		event.currentTarget.value = '';
+	}
+
+	/** Takes a file out; focus goes to the next chip, or the field. */
+	async function removeChip(chip: Chip) {
+		const at = chips.findIndex((one) => one.key === chip.key);
+		const unfinished = chip.status === 'failed' || chip.status === 'rejected';
+		uploads.remove(chip.key);
+		if (unfinished) {
+			const ready = readyCount(uploads.chips);
+			removedLine = ready === 0 ? m.files_removed_none({ name: chip.name }) : ready === 1 ? m.files_removed_one({ name: chip.name }) : m.files_removed_many({ name: chip.name, count: String(ready) });
+			liveText = removedLine;
+		}
+		await tick();
+		const next = document.querySelectorAll<HTMLElement>('[data-file-chip]')[at] ?? document.querySelectorAll<HTMLElement>('[data-file-chip]')[at - 1];
+		(next ?? field)?.focus();
+	}
+
+	/** The message as it goes: the text (after any quoted lines), then each ready file's tag. */
+	function submit(text: string, note?: string) {
+		const quoted = quote;
+		if (quoted) onunquote?.();
+		const body = composeMessage(quoted ? `${quoted.text}\n\n${text}` : text, uploads.uploaded.map((file) => file.reference));
+		if (!body) return;
+		uploads.clear();
+		removedLine = null;
+		clearDraft(chatId);
+		void send(body, { note });
+	}
+
+	/** Sends without the pictures the model can't see; they're deleted, never sent. */
+	function sendTextOnly() {
+		visionOpen = false;
+		const left = chips.filter((chip) => chip.status === 'warning');
+		for (const chip of left) uploads.remove(chip.key);
+		const text = draft;
+		draft = '';
+		submit(text, m.files_sent_without({ name: left.map((chip) => chip.name).join(', '), model: modelLabel ?? '' }));
+	}
+
+	const vision = $derived.by(() => {
+		const split = visionSplit(data.models.groups, modelKey);
+		const groups: VisionGroup[] = [];
+		for (const source of ['connection', 'nomi'] as const) {
+			const models = split.groups
+				.filter((group) => group.source === source)
+				.flatMap((group) => group.models.map((model) => ({ key: model.key, label: model.label, meta: m.files_reads_images({ source: source === 'nomi' ? m.models_nomi_credits() : group.label }) })));
+			if (models.length) groups.push({ group: source === 'nomi' ? m.models_nomi_credits() : m.models_your_keys(), models });
+		}
+		const line = split.hidden.length ? hiddenLine(split.hidden, modelLabel ?? '') : null;
+		return { groups, hidden: line ? (line.others ? m.files_hidden_many({ model: line.name, count: String(line.others) }) : m.files_hidden_one({ model: line.name })) : undefined };
+	});
+
+	async function pickVisionModel(key: string) {
+		visionOpen = false;
+		if (await useModel(key)) field?.focus();
+	}
+
+	function closeVision() {
+		visionOpen = false;
+		switchButton?.focus();
+	}
+
+	function restoreDraft(id: string) {
+		const kept = loadDraft(id);
+		if (!kept) return;
+		if (!draft.trim()) draft = kept.text;
+		uploads.restore(kept.files);
+	}
+
+	// What's in the composer is kept as it changes (an empty one keeps nothing).
+	$effect(() => saveDraft(chatId, { text: draft, files: uploads.uploaded }));
+
+	// The viewer (G12): a sent file opened beside the chat (a PDF at page 1, the browser's own
+	// reader drawing it), a photo in the lightbox; anything else downloads.
+	type Viewer = { file: SentFile; trigger: HTMLElement | null; status: 'loading' | 'ready' | 'error'; pages: number | null; started: number; code: string | null; attempt: number };
+	let viewer = $state<Viewer | null>(null);
+	let photo = $state<{ file: SentFile; trigger: HTMLElement | null; index: number; count: number; at: string } | null>(null);
+	let viewerNow = $state(Date.now());
+	const PREVIEW_TIMEOUT_MS = 30_000;
+
+	function openFile(file: SentFile, all: SentFile[], at: string) {
+		const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+		if (file.kind === 'image') {
+			const photos = all.filter((one) => one.kind === 'image');
+			photo = { file, trigger, index: photos.indexOf(file) + 1, count: photos.length, at };
+		} else if (file.kind === 'pdf') {
+			viewer = { file, trigger, status: 'loading', pages: null, started: Date.now(), code: null, attempt: 0 };
+			void loadViewer();
+		} else window.location.assign(`/attachments/${file.id}/content?download`);
+	}
+
+	async function loadViewer() {
+		const opened = viewer;
+		if (!opened) return;
+		const attempt = opened.attempt + 1;
+		viewer = { ...opened, status: 'loading', code: null, started: Date.now(), attempt };
+		const response = await fetch(`/attachments/${opened.file.id}`).catch(() => null);
+		if (viewer?.attempt !== attempt) return;
+		if (!response?.ok) {
+			viewer = { ...viewer, status: 'error', code: `preview_failed · ${response?.status ?? 'offline'}` };
+			liveText = m.files_viewer_error_title();
+			return;
+		}
+		const details = ((await response.json().catch(() => null)) as { details?: { pages?: number } } | null)?.details;
+		viewer = { ...viewer, pages: details?.pages || null };
+		setTimeout(() => {
+			if (viewer?.attempt === attempt && viewer.status === 'loading') {
+				viewer = { ...viewer, status: 'error', code: 'preview_timeout · 30 s' };
+				liveText = m.files_viewer_error_title();
+			}
+		}, PREVIEW_TIMEOUT_MS);
+	}
+
+	function viewerLoaded() {
+		if (!viewer || viewer.status !== 'loading') return;
+		viewer = { ...viewer, status: 'ready' };
+		liveText = viewer.pages ? m.files_live_page({ page: '1', pages: String(viewer.pages) }) : '';
+	}
+
+	async function closeViewer() {
+		const trigger = viewer?.trigger ?? photo?.trigger;
+		viewer = null;
+		photo = null;
+		await tick();
+		trigger?.focus();
+	}
+
+	$effect(() => {
+		if (viewer?.status !== 'loading') return;
+		viewerNow = Date.now();
+		const timer = setInterval(() => (viewerNow = Date.now()), 1000);
+		return () => clearInterval(timer);
+	});
+
+	/** "0:02", as the viewer's step says it. */
+	const shortElapsed = (ms: number) => {
+		const seconds = Math.max(0, Math.floor(ms / 1000));
+		return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+	};
+	const pagesText = (pages: number | null) => (pages === null ? null : pages === 1 ? m.files_pages_one() : m.files_pages_many({ count: String(pages) }));
+	const fileMeta = (file: SentFile) => [kindLabel(file), file.size !== undefined ? formatBytes(file.size) : null].filter(Boolean).join(' · ');
+
+	/** A sent message's files, as the chips over its bubble. */
+	function sentItems(files: SentFile[], at: string): SentFileItem[] {
+		return files.map((file) => ({
+			name: file.name,
+			meta: fileMeta(file),
+			image: file.kind === 'image' ? `/attachments/${file.id}/content` : undefined,
+			onopen: () => openFile(file, files, at),
+		}));
+	}
 </script>
 
 <svelte:window {onkeydown} />
@@ -822,40 +1153,110 @@
 {#snippet userMessage(message: RenderedMessage, latest: boolean)}
 	{@const total = (message.versions ?? 0) + 1}
 	{@const shown = viewing[message.id] ? versions[message.id]?.[viewing[message.id] - 1] : undefined}
+	{@const parts = splitAttachments(shown?.text ?? message.content)}
 	{#if editing === message.id && phone}
 		<PhoneMessageEditor value={message.content} version={m.edit_saves_as({ version: total + 1 })} onsave={(text) => saveEdit(message, text)} oncancel={() => (editing = null)} />
 	{:else if editing === message.id}
 		<MessageEditor value={message.content} version="{total} / {total + 1}" onsave={(text) => saveEdit(message, text)} oncancel={() => (editing = null)} />
 	{:else if phone}
-		<!-- Long-pressing your message opens its sheet (Message controls, step 3), lifting the bubble
-		     over the scrim: its place in the thread stays, empty, until the sheet closes (nzT7f). -->
-		<div class={[sheet?.kind === 'mine' && sheet.message.id === message.id && 'invisible']} use:longPress={() => (sheet = { kind: 'mine', message, latest: latest && !working && !shown })}>
-			<PhoneUserMessage text={shown?.text ?? message.content} />
-		</div>
+		{#if parts.files.length}<SentFiles phone files={sentItems(parts.files, clock(message.created_at, time.timeZone))} />{/if}
+		{#if parts.text}
+			<!-- Long-pressing your message opens its sheet (Message controls, step 3), lifting the bubble
+			     over the scrim: its place in the thread stays, empty, until the sheet closes (nzT7f). -->
+			<!-- A message with files isn't edited in place (editing with files is P1), so its sheet has no Edit. -->
+			<div class={[sheet?.kind === 'mine' && sheet.message.id === message.id && 'invisible']} use:longPress={() => (sheet = { kind: 'mine', message, latest: latest && !working && !shown && !parts.files.length })}>
+				<PhoneUserMessage text={parts.text} />
+			</div>
+		{/if}
+		{#if sentNotes[message.id]}<FileNote icon={ImageOff} mono align="end" text={sentNotes[message.id]} />{/if}
 		{#if lateNotes[message.id]}<TurnNote icon={LogIn} align="end" text={lateNotes[message.id]} />{/if}
 	{:else}
-		<MessageUser
-			text={shown?.text ?? message.content}
+		{#if parts.files.length}<SentFiles files={sentItems(parts.files, clock(message.created_at, time.timeZone))} />{/if}
+		{#if parts.text}<MessageUser
+			text={parts.text}
 			time={clock(message.edited_at ?? message.created_at, time.timeZone)}
 			edited={Boolean(message.edited_at) && !shown}
 			version={total > 1 && message.edited_at ? { current: viewing[message.id] || total, total, onprev: () => step(message, (viewing[message.id] || total) - 1), onnext: () => step(message, (viewing[message.id] || total) + 1) } : undefined}
-			onedit={latest && !working && !shown ? () => (editing = message.id) : undefined}
-		/>
+			onedit={latest && !working && !shown && !parts.files.length ? () => (editing = message.id) : undefined}
+		/>{/if}
+		{#if sentNotes[message.id]}<FileNote icon={ImageOff} mono align="end" text={sentNotes[message.id]} />{/if}
 		{#if lateNotes[message.id]}<TurnNote icon={LogIn} align="end" text={lateNotes[message.id]} />{/if}
 	{/if}
 {/snippet}
 
-<div class="flex h-full flex-col">
+{#snippet composerFiles()}
+	<div class={['flex flex-col', phone ? 'gap-2' : 'gap-1.5']}>
+		{#if chips.length}
+			<div class={['flex', phone ? 'flex-col items-start gap-1.5' : 'flex-wrap items-center gap-2']}>
+				{#each chips as chip (chip.key)}
+					<ComposerFile
+						name={chip.name}
+						status={chip.status}
+						detail={chipDetail(chip)}
+						progress={chip.progress}
+						thumb={chip.thumb}
+						{phone}
+						onretry={() => uploads.retry(chip.key)}
+						onremove={() => void removeChip(chip)}
+						onmore={() => (fileSheet = chip)}
+					/>
+				{/each}
+			</div>
+		{/if}
+		{#if removedLine}<FileNote icon={phone ? Check : undefined} mono text={removedLine} />{/if}
+	</div>
+{/snippet}
+
+{#snippet modelFix()}
+	<div class="relative">
+		<ModelFix {phone} focus labelId="{fixId}-fix" bind:switchButton onswitch={() => (visionOpen = !visionOpen)} ontextonly={sendTextOnly} />
+		{#if visionOpen && !phone}
+			<div class="absolute right-0 bottom-full z-20 mb-2">
+				<VisionModelMenu groups={vision.groups} hidden={vision.hidden} settingsHref="/settings/models" onpick={(key) => void pickVisionModel(key)} ontextonly={sendTextOnly} onclose={closeVision} />
+			</div>
+		{/if}
+	</div>
+{/snippet}
+
+{#snippet fileViewer(open: Viewer)}
+	{@const pages = pagesText(open.pages)}
+	<FileViewer
+		name={open.file.name}
+		meta={[kindLabel(open.file), pages ?? (open.file.size !== undefined ? formatBytes(open.file.size) : null), phone ? m.files_yours_phone() : m.files_yours()].filter(Boolean).join(' · ')}
+		status={open.status}
+		step={open.pages ? m.files_opening({ page: '1', pages: String(open.pages) }) : m.files_opening_page({ page: '1' })}
+		elapsed={shortElapsed(viewerNow - open.started)}
+		note={phone ? m.files_viewer_note_phone() : m.files_viewer_note()}
+		error={open.code ? { body: m.files_viewer_error_body({ page: '1' }), code: open.code } : undefined}
+		{phone}
+		downloadHref="/attachments/{open.file.id}/content?download"
+		onretry={() => void loadViewer()}
+		onclose={() => void closeViewer()}
+	>
+		{#key open.attempt}
+			<iframe title={open.file.name} src="/attachments/{open.file.id}/content#page=1" class="min-h-0 w-full flex-1 rounded-sm bg-surface outline -outline-offset-1 outline-border" onload={viewerLoaded}></iframe>
+		{/key}
+	</FileViewer>
+{/snippet}
+
+<div class="flex h-full">
+<div class="flex h-full min-w-0 flex-1 flex-col">
 	{#if phone}<NavBar title={shownTitle ?? m.nav_new_chat()} who={answering} onback={() => void goto('/chats')} onmenu={() => (sheet = { kind: 'chat' })} />{/if}
 	<div bind:this={scroller} {onscroll} class={['min-h-0 flex-1 overflow-y-auto', phone ? 'px-4 pt-4' : pane ? 'px-5 pt-5' : 'px-4 pt-6 lg:px-12 lg:pt-10']}>
 		<!-- On a phone a short thread sits at the bottom, over the composer, as the pen draws it. -->
 		<div class={['mx-auto flex w-full max-w-180 flex-col', phone ? 'min-h-full justify-end gap-6 pb-5' : 'gap-8 pb-8']}>
 			{#if !online}
-				<Banner kind="offline" text={m.banner_offline()} action={{ label: m.banner_retry_now(), onclick: () => void flushOutbox() }} />
+				<Banner kind="offline" text={phone ? m.phone_net_offline() : m.banner_offline()} action={{ label: m.banner_retry_now(), onclick: () => void flushOutbox() }} />
 			{:else if backOnline}
 				<Banner kind="online" text={pending.length === 0 ? m.banner_online_sent() : m.banner_online()} />
+			{:else if quota !== null && phone}
+				<Banner kind="quota" text={m.phone_credits_low({ percent: String(quota), date: resetsOn(time.now, language, time.timeZone) })} action={{ label: m.phone_credits_usage(), href: '/settings/plan' }} />
 			{:else if quota !== null}
 				<Banner kind="quota" text={m.banner_quota({ percent: quota })} action={{ label: m.banner_see_usage(), href: '/settings/plan' }} />
+			{/if}
+			{#if phone && flows.working.length > 0}
+				<!-- Approvals & background (HsE8N): who works on this chat while the person may leave. -->
+				<PhoneCrewWorking crew={flows.working.map((name) => crewIdOf(name))} onstop={() => void stopAll()} />
 			{/if}
 
 			{#if hasOlder}
@@ -913,20 +1314,41 @@
 								{phone}
 								agent={crewIdOf(message.agent_display_name)}
 								name={nameOf(message)}
-								meta={replyMeta(message, entry.turnStart, cutOff === message.id ? m.meta_stopped() : continued && message.created_at > continued.after ? m.meta_continued() : undefined)}
+								meta={replyMeta(
+									message,
+									entry.turnStart,
+									cutOff === message.id
+										? m.meta_stopped()
+										: continued && message.created_at > continued.after
+											? m.meta_continued()
+											: phone && firstOfTurn && recovered?.credits && message.created_at > recovered.after
+												? m.phone_meta_credits()
+												: phone && firstOfTurn && retried && message.created_at > retried.after
+													? m.phone_meta_retried()
+													: undefined,
+								)}
 								version={asked && takes > 1 && !asked.edited_at && firstOfTurn ? { current: takes, total: takes, onprev: () => step(asked, takes - 1), onnext: () => {} } : undefined}
 								dimmed={editing !== null && asked?.id === editing}
 							>
 								{#if recovered && firstOfTurn && message.created_at > recovered.after}
-									<TurnNote kind="box" icon={RotateCcw} text={m.recovered_note({ reason: recovered.reason })} />
+									<TurnNote kind="box" icon={RotateCcw} text={phone && recovered.credits ? m.phone_recovered_credits({ reason: recovered.reason }) : m.recovered_note({ reason: recovered.reason })} />
+								{:else if phone && retried && firstOfTurn && message.created_at > retried.after}
+									<TurnNote kind="box" icon={Hourglass} text={m.phone_retried_note({ seconds: String(retried.seconds) })} />
 								{/if}
 								{#if entry.reasoning.length > 0}
 									<Reasoning label={reasoningLabel(message.id)} text={entry.reasoning.join('\n\n')} />
 								{/if}
 								{#if entry.thinkingOnly}
 									<!-- Thinking that never reached a reply (stopped, or still on its way). -->
+								{:else if cutOff === message.id && turn.end && phone}
+									<!-- Errors & recovery, scenario 5 step 3 (UTrnr): what was written stays, then when it was cut off. -->
+									<p class="text-phone leading-phone whitespace-pre-wrap text-text">{turn.reply.text}</p>
+									<PhoneCutNotice seconds={Math.round(turn.end.elapsedMs / 1000)} oncontinue={continueReply} onrestart={entry.failure?.retry ? () => entry.failure && retryRun(message, entry.failure.text) : undefined} />
 								{:else if cutOff === message.id && turn.end}
 									<ReplyText text={turn.reply.text} status="interrupted" reason={turn.end.reason} oncontinue={continueReply} onrestart={() => entry.failure?.retry && retryRun(message, entry.failure.text)} />
+								{:else if entry.failure && phone}
+									{@const view = phoneFailure(message, entry.failure)}
+									<PhoneErrorCard sentence={entry.failure.text} {...view} />
 								{:else if entry.failure}
 									{@const view = failureActions(message, entry.failure)}
 									<FailedReply text={entry.failure.text} title={view.title} actions={view.actions} />
@@ -943,8 +1365,11 @@
 										{working}
 										latest={entry.latest}
 										onsend={(text) => send(text)}
+										{phone}
+										{flows}
+										onreload={() => void fetchMessage(message.id)}
 									/>
-									{#if continued && message.created_at > continued.after}<TurnNote icon={Unplug} text={m.continued_note({ elapsed: continued.elapsed })} />{/if}
+									{#if continued && message.created_at > continued.after}<TurnNote icon={Unplug} text={phone ? m.phone_net_continued() : m.continued_note({ elapsed: continued.elapsed })} />{/if}
 									{#if phone}
 										{@const feedback = message.id in feedbackShown ? feedbackShown[message.id] : message.my_feedback === 'up' ? 'liked' : message.my_feedback === 'down' ? 'disliked' : null}
 										<ActionBar
@@ -974,23 +1399,44 @@
 			{/each}
 
 			{#each pending as item (item.key)}
-				{#if phone && item.status !== 'queued'}
-					<PhoneUserMessage text={item.text} status={item.status === 'failed' ? 'failed' : 'sent'} onretry={item.status === 'failed' ? () => retryPending(item) : undefined} />
+				{@const parts = splitAttachments(item.text)}
+				{#if parts.files.length}<SentFiles {phone} files={parts.files.map((file) => ({ name: file.name, meta: fileMeta(file) }))} />{/if}
+				{#if phone && item.status === 'queued'}
+					<PhonePendingMessage text={parts.text} status="queued" note={m.phone_net_queued()} action={{ label: m.action_cancel(), onclick: () => cancelQueued(item) }} />
+				{:else if phone && item.status === 'failed'}
+					<!-- Not sent (TJhp2): the reason under the bubble with Retry; a long press puts it back to edit. -->
+					<div use:longPress={() => editPending(item)}>
+						<PhonePendingMessage text={parts.text} status="failed" note={m.phone_send_failed({ reason: item.reason ?? '' })} action={{ label: m.action_retry(), onclick: () => retryPending(item) }} />
+					</div>
+				{:else if phone}
+					<PhoneUserMessage text={parts.text} />
 				{:else}
 					<MessageUser
-						text={item.text}
+						text={parts.text}
 						status={item.status}
 						oncancel={item.status === 'queued' ? () => cancelQueued(item) : undefined}
 						onretry={item.status === 'failed' ? () => retryPending(item) : undefined}
 						onedit={item.status === 'failed' ? () => editPending(item) : undefined}
 					/>
 				{/if}
-				{#if item.reason}<TurnNote icon={Hourglass} align="end" tone="danger" text={item.reason} />{/if}
+				{#if item.reason && !phone}<TurnNote icon={Hourglass} align="end" tone="danger" text={item.reason} />{/if}
 			{/each}
+
+			{#if phone && flows.working.length > 0 && !working}
+				<TurnNote kind="box" icon={Info} text={m.phone_crew_leave({ agent: flows.working.at(-1) ?? 'Nomi' })} />
+			{/if}
 
 			{#if (working || turn.end) && !cutOff && (turn.reply.text || turn.reply.thinking || working)}
 				<AgentReply {phone} agent={crewIdOf(turn.agent)} name={turn.agent ?? 'Nomi'} meta={[clock(new Date(turn.startedAt ?? Date.now()), time.timeZone), turn.end?.status === 'stopped' ? m.meta_stopped() : undefined].filter(Boolean).join(' · ')}>
-					{#if retrying}
+					{#if retrying && phone}
+						<!-- Errors & recovery, scenario 2 step 1 (Obkjq): the wait counts down; another model is a tap away. -->
+						<PhoneErrorCard
+							title={m.failure_rate_limited()}
+							meta={modelLabel}
+							primary={{ label: retrying.seconds > 0 ? m.phone_retrying_in({ time: countdown(retrying.seconds) }) : m.phone_retrying_now(), disabled: true }}
+							secondary={{ label: m.phone_action_another_model(), onclick: () => (sheet = { kind: 'model' }) }}
+						/>
+					{:else if retrying}
 						<TurnNote kind="box" icon={Hourglass} text={m.retry_note({ attempt: retrying.attempt, max: retrying.max })} />
 					{/if}
 					{#if turn.reply.thinking}
@@ -1019,14 +1465,21 @@
 			<div class="absolute -top-12 left-1/2 -translate-x-1/2"><JumpToLatest count={unseen} onclick={() => jumpToLatest(true)} /></div>
 		{/if}
 		{#if phone}
+			<PhoneChatFlows {flows} {entries} chat={shownTitle ?? m.nav_new_chat()} {language} {working} onsend={(text) => void send(text)} onfocus={() => requestAnimationFrame(() => field?.focus())} />
 			<PhoneComposer
+				notice={flows.notice ?? undefined}
 				bind:value={draft}
 				bind:field
 				placeholder={m.mobile_message()}
 				streaming={working}
 				{crew}
 				model={modelLabel}
-				onsend={(text) => void send(text)}
+				attached={uploads.uploaded.length > 0}
+				blocked={blockedText}
+				files={chips.length || removedLine ? composerFiles : undefined}
+				fix={warning ? modelFix : undefined}
+				onattach={() => picker?.click()}
+				onsend={(text) => submit(text)}
 				onstop={stop}
 				onmodel={models.length ? () => (sheet = { kind: 'model' }) : undefined}
 				oncrew={crew.length ? () => (sheet = { kind: 'crew' }) : undefined}
@@ -1045,11 +1498,13 @@
 				model={modelLabel}
 				{models}
 				thinking={thinkingChoice}
-				onsend={(text) => {
-					const quoted = quote;
-					if (quoted) onunquote?.();
-					void send(quoted ? `${quoted.text}\n\n${text}` : text);
-				}}
+				attached={uploads.uploaded.length > 0}
+				blocked={blockedText}
+				describedBy={warning ? `${fixId}-fix` : undefined}
+				files={chips.length || removedLine ? composerFiles : undefined}
+				notice={warning ? modelFix : undefined}
+				onattach={() => picker?.click()}
+				onsend={(text) => submit(text)}
 				onstop={stop}
 				onmodel={(key) => void useModel(key)}
 				onthinking={(level) => void useThinking(level)}
@@ -1057,6 +1512,8 @@
 		</div>
 		{/if}
 	</div>
+</div>
+{#if viewer && !phone}{@render fileViewer(viewer)}{/if}
 </div>
 
 {#if phone}
@@ -1110,18 +1567,23 @@
 					{@const asked = reply.asked}
 					<SheetRow icon={Pencil} label={m.reply_edit_question()} onclick={() => ((editing = asked.id), close())} />
 				{/if}
-				{/if}
-				{#if !(reply.latest && working)}
-					<!-- Delete reply (SwByh XPHtc): under its own line, in danger; asked first. -->
-					<span class="h-px bg-border"></span>
-					<SheetRow icon={Trash2} label={m.reply_delete()} danger onclick={() => {
-					// Read before closing: the sheet (and its {@const}) is gone once it closes.
-					const target = reply.message;
-					close();
-					void askDeleteReply(target);
-				}} />
-				{/if}
-				</BottomSheet>
+			{/if}
+			{#if !(reply.latest && working)}
+				<!-- Delete reply (SwByh XPHtc): under its own line, in danger; asked first. -->
+				<span class="h-px bg-border"></span>
+				<SheetRow
+					icon={Trash2}
+					label={m.reply_delete()}
+					danger
+					onclick={() => {
+						// Read before closing: the sheet (and its {@const}) is gone once it closes.
+						const target = reply.message;
+						close();
+						void askDeleteReply(target);
+					}}
+				/>
+			{/if}
+		</BottomSheet>
 	{/if}
 	{#if sheet?.kind === 'regen'}
 		{@const regen = sheet}
@@ -1160,19 +1622,31 @@
 		{@const mine = sheet}
 		<!-- Your message's sheet (Message controls, step 3). -->
 		<BottomSheet open title={m.mine_sheet_title()} subtitle={clock(mine.message.created_at, time.timeZone)} onclose={closed('mine')}>
-			{#snippet lifted()}<PhoneUserMessage text={mine.message.content} lifted />{/snippet}
+			{#snippet lifted()}<PhoneUserMessage text={splitAttachments(mine.message.content).text} lifted />{/snippet}
 			{#if mine.latest}<SheetRow icon={Pencil} label={m.mine_edit()} onclick={() => ((editing = mine.message.id), close())} />{/if}
 			<SheetRow icon={Copy} label={m.mine_copy()} onclick={() => (void copyText(mine.message.content), close())} />
 			<SheetRow icon={TextSelect} label={m.mine_select()} onclick={() => (selectText(mine.message.id), close())} />
 		</BottomSheet>
 	{/if}
+	<!-- Opened from a failure (Errors & recovery, scenario 1 step 2: MLk2U), picking a model retries on it. -->
+	{@const retry = sheet?.kind === 'model' ? sheet.retry : undefined}
+	{@const credits = data.models.groups.find((group) => group.source === 'nomi')?.models.find((option) => option.enabled)}
+	{@const pick = (key: string, onCredits: boolean) => {
+		// Read before closing: the sheet (and its retry) is gone once it closes.
+		const again = retry;
+		close();
+		void useModel(key).then((ok) => ok && again && retryRun(again.message, again.reason, onCredits));
+	}}
 	<BottomSheet open={sheet?.kind === 'model'} title={m.composer_model_title()} onclose={closed('model')}>
 		{#each models as group (group.group)}
 			<p class="px-5 pt-3 pb-1 font-mono text-label tracking-label text-text-3 uppercase">{group.group}</p>
 			{#each group.models as option (option.key)}
-				<SheetRow icon={option.chosen ? Check : option.source === m.models_nomi_credits() ? Sparkles : Cpu} label={option.label} meta={option.source} onclick={() => (close(), void useModel(option.key))} />
+				<SheetRow icon={option.chosen ? Check : option.source === m.models_nomi_credits() ? Sparkles : Cpu} label={option.label} meta={option.source} onclick={() => pick(option.key, option.source === m.models_nomi_credits())} />
 			{/each}
 		{/each}
+		{#if retry && credits}
+			<div class="px-4 pt-3"><PhoneButton label={m.phone_action_credits_retry()} onclick={() => pick(credits.key, true)} /></div>
+		{/if}
 	</BottomSheet>
 	<BottomSheet open={sheet?.kind === 'crew'} title={m.composer_crew_title()} onclose={closed('crew')}>
 		{#each crew as option (option.name)}
@@ -1252,4 +1726,61 @@
 		<Button label={m.chat_delete()} variant="danger" iconStart={Trash2} onclick={deleteChat} />
 	{/snippet}
 </Dialog>
+{/if}
+
+<!-- Files: the picker, what's said to a screen reader as uploads finish or fail, a phone's sheets
+     (a failed file's Retry or Remove, the models that can see a picture), and the viewers. -->
+<input bind:this={picker} type="file" multiple hidden onchange={pickFiles} />
+<p class="sr-only" aria-live="polite">{liveText}</p>
+{#if alertText}<p role="alert" class="sr-only">{alertText}</p>{/if}
+
+{#if phone && fileSheet}
+	{@const failed = fileSheet}
+	<BottomSheet open title={failed.name} onclose={() => (fileSheet = null)}>
+		{#snippet header(close)}<FileSheetHeader name={failed.name} reason={chipDetail(failed)} onclose={close} />{/snippet}
+		<SheetRow
+			icon={RotateCw}
+			label={m.files_retry()}
+			meta={m.files_sheet_retry_meta()}
+			onclick={() => {
+				uploads.retry(failed.key);
+				fileSheet = null;
+			}}
+		/>
+		<SheetRow
+			icon={X}
+			danger
+			label={m.files_remove()}
+			meta={m.files_sheet_remove_meta()}
+			onclick={() => {
+				void removeChip(failed);
+				fileSheet = null;
+			}}
+		/>
+	</BottomSheet>
+{/if}
+
+{#if phone && visionOpen}
+	<VisionModelMenu phone groups={vision.groups} hidden={vision.hidden} settingsHref="/settings/models" onpick={(key) => void pickVisionModel(key)} ontextonly={sendTextOnly} onclose={closeVision} />
+{/if}
+
+{#if viewer && phone}{@render fileViewer(viewer)}{/if}
+
+{#if photo}
+	{@const shown = photo}
+	<PhotoViewer
+		name={shown.file.name}
+		meta={[fileMeta(shown.file), phone ? m.files_yours_phone() : m.files_yours(), phone ? null : m.files_sent_at({ time: shown.at })].filter(Boolean).join(' · ')}
+		src="/attachments/{shown.file.id}/content"
+		where={phone
+			? shown.count === 1
+				? m.files_photo_where_phone_one()
+				: m.files_photo_where_phone({ index: String(shown.index), count: String(shown.count) })
+			: shown.count === 1
+				? m.files_photo_where_one()
+				: m.files_photo_where({ index: String(shown.index), count: String(shown.count) })}
+		{phone}
+		downloadHref="/attachments/{shown.file.id}/content?download"
+		onclose={() => void closeViewer()}
+	/>
 {/if}
