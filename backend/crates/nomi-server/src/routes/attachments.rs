@@ -40,6 +40,17 @@ fn server_error(message: &str) -> UploadError {
     coded(StatusCode::INTERNAL_SERVER_ERROR, "server_error", message)
 }
 
+/// The header an upload names the file it replaces in.
+const REPLACES_HEADER: &str = "x-replaces";
+
+/// The file an upload says it replaces; Err when the header isn't a file id.
+fn replaces_header(headers: &HeaderMap) -> Result<Option<Uuid>, ()> {
+    let Some(value) = headers.get(REPLACES_HEADER).and_then(|v| v.to_str().ok()).map(str::trim).filter(|v| !v.is_empty()) else {
+        return Ok(None);
+    };
+    Uuid::parse_str(value).map(Some).map_err(|_| ())
+}
+
 /// Bytes read before deciding what a file is.
 const SNIFF_BYTES: usize = 8 * 1024;
 /// The browser's live transcript of a voice note, kept as a fallback.
@@ -56,6 +67,9 @@ pub struct AttachmentResponse {
     pub status: String,
     /// The tag a message carries to point at this file.
     pub reference: String,
+    /// The file this upload was sent to replace.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub replaces: Option<Uuid>,
 }
 
 /// What each person may keep stored, unless Admin → Configuration (or ATTACHMENT_QUOTA_MB) says.
@@ -179,6 +193,19 @@ pub async fn upload(State(state): State<AppState>, AuthClaims(claims): AuthClaim
         return Err(coded(StatusCode::INSUFFICIENT_STORAGE, "storage_full", "storage is full"));
     }
 
+    let replaces = replaces_header(&headers).map_err(|_| coded(StatusCode::BAD_REQUEST, "invalid_replaces", "X-Replaces must be the id of a file"))?;
+    if let Some(old) = replaces {
+        let own: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM attachments WHERE id = $1 AND user_id = $2)")
+            .bind(old)
+            .bind(claims.sub)
+            .fetch_one(&state.pool)
+            .await
+            .map_err(|_| server_error("failed to check the file being replaced"))?;
+        if !own {
+            return Err(coded(StatusCode::NOT_FOUND, "unknown_replaces", "the file being replaced wasn't found"));
+        }
+    }
+
     let name = clean_name(&header_text(&headers, "x-file-name").unwrap_or_default());
     let claimed = headers.get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
     let voice = headers.get("x-attachment-kind").and_then(|v| v.to_str().ok()) == Some("voice");
@@ -261,8 +288,8 @@ pub async fn upload(State(state): State<AppState>, AuthClaims(claims): AuthClaim
     // A voice note starts with the browser's transcript until the files model's is in.
     let text = extracted.text.or(transcript);
     sqlx::query(
-        "INSERT INTO attachments (id, user_id, name, mime, kind, size_bytes, storage_key, preview_key, status, extracted_text, details) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
+        "INSERT INTO attachments (id, user_id, name, mime, kind, size_bytes, storage_key, preview_key, status, extracted_text, details, replaces_attachment_id) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
     )
     .bind(id)
     .bind(claims.sub)
@@ -275,6 +302,7 @@ pub async fn upload(State(state): State<AppState>, AuthClaims(claims): AuthClaim
     .bind(status)
     .bind(&text)
     .bind(&details)
+    .bind(replaces)
     .execute(&state.pool)
     .await
     .map_err(|e| {
@@ -293,6 +321,7 @@ pub async fn upload(State(state): State<AppState>, AuthClaims(claims): AuthClaim
             size,
             status: status.to_string(),
             reference: nomi_attachments::write_reference(&reference),
+            replaces,
         }),
     ))
 }
@@ -308,11 +337,13 @@ struct StoredFile {
     status: String,
     message_id: Option<Uuid>,
     details: serde_json::Value,
+    extracted_text: Option<String>,
+    replaces_attachment_id: Option<Uuid>,
 }
 
 async fn find_own(state: &AppState, user_id: Uuid, id: Uuid) -> Result<StoredFile, ApiError> {
     sqlx::query_as::<_, StoredFile>(
-        "SELECT name, mime, kind, size_bytes, storage_key, preview_key, status, message_id, details FROM attachments WHERE id = $1 AND user_id = $2",
+        "SELECT name, mime, kind, size_bytes, storage_key, preview_key, status, message_id, details, extracted_text, replaces_attachment_id FROM attachments WHERE id = $1 AND user_id = $2",
     )
     .bind(id)
     .bind(user_id)
@@ -325,6 +356,8 @@ async fn find_own(state: &AppState, user_id: Uuid, id: Uuid) -> Result<StoredFil
 /// `GET /api/attachments/:id`: what Nomi knows about the file, for the chat's file chips.
 pub async fn get_attachment(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(id): Path<Uuid>) -> Result<Json<serde_json::Value>, ApiError> {
     let file = find_own(&state, claims.sub, id).await?;
+    // How reading it came to: null while it is still being read.
+    let read = nomi_attachments::read_result::read_result(&file.status, file.extracted_text.as_deref(), &file.details);
     Ok(Json(json!({
         "id": id,
         "name": file.name,
@@ -334,6 +367,8 @@ pub async fn get_attachment(State(state): State<AppState>, AuthClaims(claims): A
         "status": file.status,
         "has_preview": file.preview_key.is_some(),
         "details": file.details,
+        "read": read,
+        "replaces": file.replaces_attachment_id,
     })))
 }
 
@@ -515,6 +550,19 @@ mod tests {
         assert_eq!(byte_range(&headers, 10), Some((7, 9)));
         headers.insert(header::RANGE, HeaderValue::from_static("bytes=12-"));
         assert_eq!(byte_range(&headers, 10), None);
+    }
+
+    #[test]
+    fn an_upload_names_the_file_it_replaces_in_a_header() {
+        let mut headers = HeaderMap::new();
+        assert_eq!(replaces_header(&headers), Ok(None));
+        let id = Uuid::new_v4();
+        headers.insert(REPLACES_HEADER, HeaderValue::from_str(&format!(" {id} ")).unwrap());
+        assert_eq!(replaces_header(&headers), Ok(Some(id)));
+        headers.insert(REPLACES_HEADER, HeaderValue::from_static("not-an-id"));
+        assert_eq!(replaces_header(&headers), Err(()));
+        headers.insert(REPLACES_HEADER, HeaderValue::from_static(""));
+        assert_eq!(replaces_header(&headers), Ok(None));
     }
 
     #[test]

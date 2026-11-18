@@ -109,7 +109,7 @@ fn catalog_id_for_kind(kind: &str) -> String {
 }
 
 /// Where one of Nomi's models runs: its instance connection's provider and name, else its kind's.
-fn admin_provider(model: &llm_models::AdminLlmModel, shared: &HashMap<Uuid, ProviderConnectionRow>) -> (String, String) {
+pub(crate) fn admin_provider(model: &llm_models::AdminLlmModel, shared: &HashMap<Uuid, ProviderConnectionRow>) -> (String, String) {
     match model.connection_id.and_then(|id| shared.get(&id)) {
         Some(connection) => (connection.provider_id.clone(), connection.label.clone()),
         None => (catalog_id_for_kind(&model.provider), provider_display_name(&model.provider)),
@@ -117,7 +117,7 @@ fn admin_provider(model: &llm_models::AdminLlmModel, shared: &HashMap<Uuid, Prov
 }
 
 /// A connection's name as the selector shows it: the provider's own name for catalog providers.
-fn connection_name(connection: &ProviderConnectionRow) -> String {
+pub(crate) fn connection_name(connection: &ProviderConnectionRow) -> String {
     match catalog::provider(&connection.provider_id) {
         Some(provider) if connection.auth_type != "custom_endpoint" => provider.name.clone(),
         _ => connection.label.clone(),

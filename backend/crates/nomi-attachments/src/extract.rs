@@ -14,7 +14,7 @@ pub const MAX_TEXT_CHARS: usize = 2_000_000;
 /// Longest side of an image preview, in pixels (what Claude and GPT read at full detail).
 pub const PREVIEW_MAX_SIDE: u32 = 1568;
 /// Rows read from each sheet of a spreadsheet.
-const MAX_SHEET_ROWS: usize = 5_000;
+pub const MAX_SHEET_ROWS: usize = 5_000;
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Extracted {
@@ -26,7 +26,30 @@ pub struct Extracted {
     pub needs_model: bool,
 }
 
+/// The signature of an OLE container: what a password-protected Office file is saved as.
+const OLE_MAGIC: [u8; 8] = [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
+/// How far back from a PDF's end its trailer is looked for.
+const PDF_TRAILER_WINDOW: usize = 4096;
+
+/// A modern Office file (docx, xlsx, pptx) that is an OLE container instead of a zip: it is
+/// password-protected.
+fn is_encrypted_office(bytes: &[u8], sniffed: &Sniffed) -> bool {
+    matches!(sniffed.kind, Kind::Document | Kind::Spreadsheet | Kind::Presentation) && sniffed.mime.contains("openxmlformats") && bytes.starts_with(&OLE_MAGIC)
+}
+
+/// Whether a PDF asks for a password: its trailer names an encryption dictionary.
+fn is_encrypted_pdf(bytes: &[u8], document: Option<&lopdf::Document>) -> bool {
+    if document.is_some_and(|d| d.is_encrypted()) {
+        return true;
+    }
+    let tail = &bytes[bytes.len().saturating_sub(PDF_TRAILER_WINDOW)..];
+    tail.windows(b"/Encrypt".len()).any(|w| w == b"/Encrypt")
+}
+
 pub fn extract(bytes: &[u8], sniffed: &Sniffed) -> Extracted {
+    if is_encrypted_office(bytes, sniffed) {
+        return Extracted { details: json!({ "encrypted": true }), ..Default::default() };
+    }
     let result = match sniffed.kind {
         Kind::Text => Ok(text_file(bytes)),
         Kind::Pdf => pdf(bytes),
@@ -39,10 +62,14 @@ pub fn extract(bytes: &[u8], sniffed: &Sniffed) -> Extracted {
     };
     match result {
         Ok(mut extracted) => {
-            extracted.text = extracted.text.map(cap);
             if extracted.details.is_null() {
                 extracted.details = json!({});
             }
+            let total = extracted.text.as_deref().map_or(0, |t| t.trim().chars().count());
+            if total > MAX_TEXT_CHARS {
+                extracted.details["text_cut"] = json!({ "read": MAX_TEXT_CHARS, "total": total });
+            }
+            extracted.text = extracted.text.map(cap);
             extracted
         }
         Err(reason) => {
@@ -67,7 +94,11 @@ fn text_file(bytes: &[u8]) -> Extracted {
 }
 
 fn pdf(bytes: &[u8]) -> Result<Extracted, String> {
-    let pages = lopdf::Document::load_mem(bytes).map(|d| d.get_pages().len()).unwrap_or(0);
+    let document = lopdf::Document::load_mem(bytes).ok();
+    let pages = document.as_ref().map_or(0, |d| d.get_pages().len());
+    if is_encrypted_pdf(bytes, document.as_ref()) {
+        return Ok(Extracted { details: json!({ "pages": pages, "encrypted": true }), ..Default::default() });
+    }
     // pdf-extract panics on some malformed files; a bad PDF must never take the server down.
     let text = std::panic::catch_unwind(|| pdf_extract::extract_text_from_mem(bytes))
         .map_err(|_| "This PDF couldn't be opened.".to_string())?
@@ -392,5 +423,36 @@ mod tests {
     fn reads_rtf_roughly() {
         let out = extract(br"{\rtf1\ansi{\fonttbl\f0 Arial;}\f0 Hello\par World}", &sniffed(Kind::Document, "application/rtf"));
         assert!(out.text.unwrap().contains("Hello\nWorld"));
+    }
+
+    #[test]
+    fn a_password_protected_pdf_is_marked_encrypted() {
+        use lopdf::{dictionary, Object};
+        let plain = pdf_saying("Statement");
+        let mut doc = lopdf::Document::load_mem(&plain).unwrap();
+        doc.trailer.set("Encrypt", Object::Dictionary(dictionary! { "Filter" => "Standard" }));
+        let mut locked = Vec::new();
+        doc.save_to(&mut locked).unwrap();
+        let out = extract(&locked, &sniffed(Kind::Pdf, "application/pdf"));
+        assert_eq!(out.details["encrypted"], true, "{out:?}");
+        assert_eq!(extract(&plain, &sniffed(Kind::Pdf, "application/pdf")).details.get("encrypted"), None);
+    }
+
+    #[test]
+    fn an_encrypted_office_file_is_marked_encrypted() {
+        // Password-protected Office files are an OLE container, not a zip.
+        let mut bytes = vec![0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
+        bytes.extend_from_slice(&[0; 64]);
+        let out = extract(&bytes, &sniffed(Kind::Document, "application/vnd.openxmlformats-officedocument.wordprocessingml.document"));
+        assert_eq!(out.details["encrypted"], true, "{out:?}");
+    }
+
+    #[test]
+    fn text_cut_at_the_limit_says_how_much_was_kept() {
+        let long = "a".repeat(MAX_TEXT_CHARS + 500);
+        let out = extract(long.as_bytes(), &sniffed(Kind::Text, "text/plain"));
+        assert_eq!(out.details["text_cut"], json!({ "read": MAX_TEXT_CHARS, "total": MAX_TEXT_CHARS + 500 }));
+        let short = extract(b"hello", &sniffed(Kind::Text, "text/plain"));
+        assert_eq!(short.details.get("text_cut"), None);
     }
 }

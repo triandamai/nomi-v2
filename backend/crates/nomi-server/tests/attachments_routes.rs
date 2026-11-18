@@ -336,3 +336,97 @@ async fn files_left_out_of_a_message_stay_on_it_and_the_crew_is_told(pool: PgPoo
     assert_eq!(status, StatusCode::ACCEPTED);
     assert!(plain["user_message"].get("left_out").is_none());
 }
+
+async fn upload_replacing(router: axum::Router, token: &str, name: &str, replaces: &str, bytes: Vec<u8>) -> (StatusCode, Value) {
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/attachments")
+        .header("authorization", format!("Bearer {token}"))
+        .header("content-type", "text/plain")
+        .header("x-file-name", name)
+        .header("x-replaces", replaces)
+        .body(Body::from(bytes))
+        .unwrap();
+    let response = router.oneshot(request).await.unwrap();
+    let status = response.status();
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+}
+
+async fn get(router: axum::Router, token: &str, uri: &str) -> (StatusCode, Value) {
+    let request = Request::builder().uri(uri).header("authorization", format!("Bearer {token}")).body(Body::empty()).unwrap();
+    let response = router.oneshot(request).await.unwrap();
+    let status = response.status();
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_file_says_how_it_was_read_and_which_file_it_replaces(pool: PgPool) {
+    use_temp_attachment_dir();
+    let router = build_router(test_state(pool.clone()));
+    let ana = register_and_login(router.clone(), "ana@example.com").await;
+    let ben = register_and_login(router.clone(), "ben@example.com").await;
+
+    let (_, old) = upload(router.clone(), &ana, "bca-agustus.txt", "text/plain", b"Saldo Rp 1.200.000".to_vec()).await;
+    let old_id = old["id"].as_str().unwrap().to_string();
+    let (_, shown) = get(router.clone(), &ana, &format!("/api/attachments/{old_id}")).await;
+    assert_eq!(shown["read"]["result"], "ok", "{shown}");
+    assert_eq!(shown["replaces"], Value::Null);
+
+    let (status, new) = upload_replacing(router.clone(), &ana, "bca-september.txt", &old_id, b"Saldo Rp 900.000".to_vec()).await;
+    assert_eq!(status, StatusCode::CREATED, "{new}");
+    assert_eq!(new["replaces"], old_id);
+    let (_, shown) = get(router.clone(), &ana, &format!("/api/attachments/{}", new["id"].as_str().unwrap())).await;
+    assert_eq!(shown["replaces"], old_id);
+
+    // Someone else's file, or something that isn't an id, can't be replaced.
+    let (status, _) = upload_replacing(router.clone(), &ben, "x.txt", &old_id, b"hi".to_vec()).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _) = upload_replacing(router.clone(), &ana, "x.txt", "nope", b"hi".to_vec()).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // A photo waiting for the files model has no result yet; one that failed is damaged.
+    let (_, photo) = upload(router.clone(), &ana, "struk.png", "image/png", png(40, 40)).await;
+    let photo_id = photo["id"].as_str().unwrap().to_string();
+    let (_, shown) = get(router.clone(), &ana, &format!("/api/attachments/{photo_id}")).await;
+    assert_eq!(shown["read"], Value::Null);
+    sqlx::query("UPDATE attachments SET status = 'failed' WHERE id = $1").bind(photo_id.parse::<Uuid>().unwrap()).execute(&pool).await.unwrap();
+    let (_, shown) = get(router, &ana, &format!("/api/attachments/{photo_id}")).await;
+    assert_eq!(shown["read"]["result"], "damaged");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn the_estimate_prices_files_for_nomis_models_and_is_free_of_cost_on_the_persons_key(pool: PgPool) {
+    use_temp_attachment_dir();
+    let router = build_router(test_state(pool.clone()));
+    let ana = register_and_login(router.clone(), "ana@example.com").await;
+    let ben = register_and_login(router.clone(), "ben@example.com").await;
+    let ana_id: Uuid = sqlx::query_scalar("SELECT user_id FROM web_credentials WHERE email = 'ana@example.com'").fetch_one(&pool).await.unwrap();
+    let model: Uuid = sqlx::query_scalar(
+        "INSERT INTO admin_llm_models (label, provider, model_id, updated_by, input_usd_per_mtok, output_usd_per_mtok) VALUES ('Claude Sonnet', 'fake', 'sonnet', $1, 3, 15) RETURNING id",
+    )
+    .bind(ana_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    let (_, text) = upload(router.clone(), &ana, "notes.txt", "text/plain", "x".repeat(4_000).into_bytes()).await;
+    let (_, photo) = upload(router.clone(), &ana, "struk.png", "image/png", png(40, 40)).await;
+    let ids = json!([text["id"], photo["id"]]);
+
+    let (status, out) = json_request(router.clone(), "POST", "/api/attachments/estimate", json!({ "attachment_ids": ids, "model_key": format!("admin:{model}") }), Some(&ana)).await;
+    assert_eq!(status, StatusCode::OK, "{out}");
+    assert_eq!(out["files"][0]["tokens"], 1_000);
+    assert_eq!(out["files"][1]["tokens"], 1_600);
+    assert_eq!(out["tokens"], 2_600);
+    assert_eq!(out["payer"], "credits");
+    assert_eq!(out["cost_idr"], 125, "2,600 tokens at $3 per million, Rp 16,000 to the dollar, rounded up: {out}");
+    assert!(out["threshold_tokens"].as_u64().unwrap() > 0);
+    assert!(out["plan"]["after_pct"].as_u64().is_some(), "{out}");
+
+    let (status, _) = json_request(router.clone(), "POST", "/api/attachments/estimate", json!({ "attachment_ids": ids, "model_key": format!("admin:{model}") }), Some(&ben)).await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "someone else's files");
+    let (status, _) = json_request(router, "POST", "/api/attachments/estimate", json!({ "attachment_ids": ids, "model_key": "nope" }), Some(&ana)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
