@@ -412,6 +412,27 @@ leaves out what v2 or the backend can't do yet, rather than draw it dead:
   pen runs it the screen's width; MentionPicker is the old app's twin) and Export's PDF (the pen's
   "md · pdf": markdown only). The thinking level isn't on the phone's
   toolbar (the pen draws the model and the crew).
+- Files in a chat (Flow / Chat — Attachments, voice & limits, Errors & recovery, Shared link; the UX
+  contract `docs/ux/work/audit-chat-files/40-ux-contract.md`) are built on what the backend has. A
+  file uploads as it's picked (`ComposerFile`): real bytes, then ready, failed (why, from the
+  status: connection lost, server error, storage full, too large) with Retry · Remove (a phone's ⋯
+  opens its sheet), or refused when the server won't take it (415). Retry starts the upload again:
+  the backend can't resume one, so the chip and sheet say "Uploading again" and "starts the upload
+  again" (M1), not the pen's "Resuming · 41%". Send waits, with its reason, until every file is
+  ready or removed. A picture with a model that can't see (`capabilities` without `vision`) gets
+  the fix line (`ModelFix`), the filtered menu (`VisionModelMenu`) and Send text only; its "Sent
+  without…" note shows on this visit only, and the draft is kept in the tab for a trip to Settings.
+  A sent file opens beside the chat (`FileViewer`: a PDF at page 1 in the browser's own reader) or
+  large (`PhotoViewer`); other kinds download. A shared link names each file, locked and private.
+  Its tab order follows the layout: chips, the field, the fix line, then attach and the toolbar
+  (the contract puts attach first; it's drawn last). A message with files isn't edited in place
+  (editing with files is P1). The sent note sits under the bubble (MessageUser is a twin), and the
+  warning chip's icon is 12 (the pen's 11 isn't a size Icon takes).
+  Left out until the backend has them (BACKEND_TODO.md, "Chat files"): the type check before
+  upload and its helper line, resuming, the estimate before a big read (G7), the read results
+  (locked, scanned, damaged, partly read: G9), files Maya makes (G11), citations to a page with
+  highlights (G12 steps 25 and 29), the share dialog's files row and files open to viewers (G16),
+  and masking file names (M3).
 - A chat's flows on a phone (Flow / Mobile Chat — Clarify → plan `GCvfD`, Plan → approve → act
   `G1tK6L`, Approvals & background `xvntx`, Errors & recovery `AyrHG`; UX contract
   `docs/ux/work/phone-chat-flows`): a reply's questions open in `PhoneClarifySheet` on their own;

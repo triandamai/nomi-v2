@@ -14,14 +14,14 @@ Status: `gaps` · `designing` · `design-verified` · `building` · `shipped` ·
 | Plan → approve → act | HU6nc | mjZPs | G1tK6L | EI3k6 | mobile: design-verified (gate 1, 17 Nov 2026 · P1/P2 → UXP-002) |
 | Rich replies | y2Qxt2 | aaAGg | XO7DI | OkCH1 | designed |
 | Like & dislike | HKYo1 | RzVHg | M0VaJC | mg56o | designed |
-| Share & delete | TnscX | lSpCm | yoVD6 | Pjc23 | designed |
+| Share & delete | TnscX | lSpCm | yoVD6 | Pjc23 | designed · steps 6–8 (share with files, G16) design-verified · UXP-001 P0 |
 | Message controls | Cf6GO | AQ91t | ctP7Q | m2cy3I | designed |
-| Attachments, voice & limits | Iyq9S | ORByl | FLwdb | Fpgnv | **gaps · UXP-001** |
+| Attachments, voice & limits | Iyq9S | ORByl | FLwdb | Fpgnv | **design-verified · UXP-001 P0** (contract: `work/audit-chat-files/40-ux-contract.md`; P1/P2 gaps still open) |
 | Manage chat & long threads | J3ks0 | tisDt | W3a8j | N2N1d | designed |
 | Hand-offs, limits & memory | hiAY1 | j8DK1 | YuWzO | M9B8RO | designed |
 | Approvals & background work | bWiWT | t16cU | xvntx | qhcNA | mobile: design-verified (gate 1, 17 Nov 2026 · steps 1–2 and 5 wait on backend · P1/P2 → UXP-002) |
-| Errors & recovery | TpuRc | Nud6J | AyrHG | uuCam | mobile: design-verified except scenario 6 steps 4–6 (gate 1, 17 Nov 2026 · P1/P2 → UXP-002); file errors → UXP-001 |
-| Shared link | b8Flw8 | Wgdu2 | Yyjkb | e0FI49 | designed (attachment visibility → UXP-001) |
+| Errors & recovery | TpuRc | Nud6J | AyrHG | uuCam | mobile: design-verified except scenario 6 steps 4–6 (gate 1, 17 Nov 2026 · P1/P2 → UXP-002); file errors → UXP-001; scenario 6 file steps (desktop 5–7, mobile 4–6) design-verified · UXP-001 P0 |
+| Shared link | b8Flw8 | Wgdu2 | Yyjkb | e0FI49 | designed · steps 5–7 (files private, Maya's file, files open) design-verified · UXP-001 P0 |
 
 ## Build
 | Flow | Desktop dark | Desktop light | Mobile dark | Mobile light | Status |
@@ -55,4 +55,8 @@ Status: `gaps` · `designing` · `design-verified` · `building` · `shipped` ·
 `Chat / Attach Menu` Wh2Sd · `Chat / Attachment / Uploading` o8o2x · `Chat / Attachment / Ready` iAYlM ·
 `Chat / Attachment / Image` vFPxs · `Chat / User / With Files` ENNIK · `Chat / Composer Limit` U9ZWI ·
 `Chat / Mention / File` Hoxfr · `Chat / Citation` C6xkT · `Chat / Sources` mrOeg · `Callout / Error` mhAYP ·
-`Chat / Banner / Offline` i9fRJB · `Chat / User / Queued` JCfti · `Chat / User / Failed` KmbOy
+`Chat / Banner / Offline` i9fRJB · `Chat / User / Queued` JCfti · `Chat / User / Failed` KmbOy ·
+`Chat / Attachment / Failed` BD98f · `Chat / Attachment / Rejected` xpYoV · `Chat / Attachment / Model Warning` rrjYM ·
+`Callout / Warning` S971Sp · `Chat / Agent File` JSxfH · `/ Generating` vRi2e · `/ Expired` s1yQM · `/ Failed` xyZCb ·
+`Chat / File Viewer` G534E (+ Loading HVM9y, Error K1phVf, Sheet l8KfHe, Image rCBA7) · `Mobile / File Viewer` GbEIf (+ b3lX47, nQ4Iq, snTHJ, LiYjQ) ·
+`Chat / Share Dialog / Files` e1shsD · `/ Files Open` zWgDC (pen-only copies of eemXK; build one dialog)

@@ -71,7 +71,7 @@ The old `frontend/` will use the same endpoints.
     - It's public when `anyone` is on; otherwise any signed-in person may open it.
     - A revoked, expired or unknown link is a 404.
   - Only the chat's owner shares it.
-- **Still open:** masking hides amounts ("Rp •••"), email addresses and phone numbers. SharePanel's help text also promises names as initials; the server has no reliable way to tell a name from other words, so names aren't masked yet.
+- **Still open:** masking hides amounts ("Rp •••"), email addresses and phone numbers. SharePanel's help text also promises names as initials; the server has no reliable way to tell a name from other words, so names aren't masked yet. File names in a shared message aren't masked either (they can carry a name: UXP-001, M3).
 
 ### Export a project to GitHub — done
 - **Needed by:** *Build / Export*: ExportPanel push.
@@ -358,6 +358,51 @@ Found while building Invite & build together, steps 9–10 (2026-11-15).
 
 Found while building the phone's Chats (2026-11-16).
 
+
+### Chat files: what the composer and the reply still need (UXP-001, audit-chat-files)
+Checked against `backend/crates/nomi-server/src/app.rs`, `routes/attachments.rs`, `routes/shares.rs` and
+`nomi-agent-core/src/views.rs` on 16 Nov 2026. The UX contract is
+`docs/ux/work/audit-chat-files/40-ux-contract.md`; each part below is left out of the UI until it lands.
+
+- **Upload failure codes (G3).**
+  - **Needed by:** *Flow / Chat — Attachments, voice & limits*, step 8 (D8 · M9).
+  - **What exists today:** `POST /api/attachments` answers plain strings (`413 file is too big`, `507 storage is full`, `400 upload was interrupted`, `415 programs can't be attached`). The chip says why from the status.
+  - **Proposed contract:** errors as `{ "error": "too_large" | "storage_full" | "unsupported_type" | "interrupted" | "server_error", "message": "…" }`, with `max_bytes` on `too_large`.
+- **Resumable uploads (G3, M1).**
+  - **Needed by:** step 9 (D9 · M11), "Resuming · 41%" and "picks up at 41%".
+  - **What exists today:** one streamed request per file; a retry starts again.
+  - **Proposed contract:** `POST /api/attachments/uploads` → `{ upload_id, offset: 0 }`; `PATCH /api/attachments/uploads/:upload_id` with `Content-Range: bytes <from>-<to>/<total>` → `{ offset }`; `HEAD` the same to read the offset after a drop; the last chunk answers the usual `AttachmentResponse`.
+  - **Until then:** the restart copy ("Uploading again · 0% · 0 of 5 MB", "starts the upload again").
+- **The accepted types (G4).**
+  - **Needed by:** step 10 (D10 · M12) and Errors D6 · M5: the type check before any upload, and the helper "Maya reads PDF, images, sheets and zip."
+  - **What exists today:** `GET /api/attachments/limits` gives sizes and counts; the server takes any file but programs (415).
+  - **Proposed contract:** `GET /api/attachments/limits` adds `accepted: { kinds: ["pdf","image","spreadsheet","archive",…], extensions: [".pdf",".jpg",…], mimes: [...] }`, and a refused upload answers `415 { "error": "unsupported_type", "extension": ".dmg" }`.
+  - **Until then:** a file is refused only when the server refuses it (the Rejected chip, after its upload); no helper line.
+- **A pre-send estimate (G7, and `Read as images`).**
+  - **Needed by:** steps 15–16 (D15–D16 · M17–M18), Errors D18 · M20.
+  - **Proposed contract:** `POST /api/attachments/estimate` `{ attachment_ids: [...], model_key }` → `{ files: [{ id, pages, tokens }], tokens, payer: "credits" | "byok", provider_label, cost_idr?, plan: { used_pct, after_pct }? , threshold_tokens }`.
+  - **Until then:** no estimate row; nothing shown.
+- **A read result per file (G9).**
+  - **Needed by:** steps 17–20 (D17–D20 · M19–M22), Errors D7 · M6.
+  - **What exists today:** `status` (`pending | ready | failed`) and `details.scanned`; a scanned PDF is read by the files model, so "couldn't read" would be false.
+  - **Proposed contract:** on `GET /api/attachments/:id` and in the reply's content blocks: `read: { result: "ok" | "locked" | "no_text" | "damaged" | "partial", read?: number, total?: number, skipped?: [{ name, reason }] }`, and `replaces: <attachment id>` on an upload sent as a replacement.
+- **Files Maya makes (G11).**
+  - **Needed by:** steps 21–26 (D21–D26 · M23–M28).
+  - **Proposed contract:** reply events `file_generating { file_id, name, step, started_at }`, `file_ready { file_id, name, mime, size, rows?, summary }`, `file_failed { file_id, code: "write_failed" | "stopped" }`; `GET /api/sessions/:id/files/:file_id/content` (signed or auth'd download), `…/preview?rows=20`, `DELETE …/:file_id` (keeps `deleted_at`, and whether its sources still exist), `POST …/:file_id/remake`; saving goes through `PUT /api/projects/:id/files/*path`, whose 402 should carry `{ "error": "storage_full" }`.
+- **Citations to a file's page and rows (G12).**
+  - **Needed by:** step 27 (D27 · M29): `[3]` opens the file at the cited page with the rows highlighted.
+  - **What exists today:** the `sources` view numbers citations `{ title, url?, detail?, kind: web | file }`; `GET /api/attachments/:id/content` serves the whole file.
+  - **Proposed contract:** a file citation adds `{ file_id, pages: [3, 8], spans: [{ page, rects: [[x,y,w,h]…], label, total_idr? }] }`; `GET /api/attachments/:id/pages/:n` → a rendered page image (so the viewer can draw highlights over it).
+  - **Until then:** a sent PDF opens at page 1 in the browser's own reader, with no cite bar or highlights.
+- **Files in a shared link (G16).**
+  - **Needed by:** *Flow / Chat — Share & delete*, steps 6–8 (Share D6–D8 · M6–M8); *Shared link*, steps 6–7 (Link D6–D7).
+  - **What exists today:** shares keep `mask`, `anyone` and `expires_in_days`; `GET /api/shared/:token` returns the messages, whose reference tags name the files. No file can be opened from a link.
+  - **Proposed contract:** `POST`/`PUT /api/sessions/:id/shares` take `files_open: bool` (default false), refused with `400 { "error": "mask_and_files_open" }` when `mask` is also true; `GET /api/shared/:token` adds `files_open` and `files: [{ message_index, name, kind, size, pages?, made_by_crew: bool, url? }]`, with signed `url`s only when `files_open`.
+  - **Until then:** the dialog has no files row (its switch would do nothing); the shared page names each file with a lock, "private".
+- **"Sent without" kept on the message (G6).**
+  - **Needed by:** step 14 (D14 · M16): the bubble's note `Sent without struk-belanja-nov.jpg · deepseek-v3 can't see images`.
+  - **Proposed contract:** `POST /api/sessions/:id/messages` takes `left_out: [{ name, reason: "model_cannot_see", model_label }]`, kept on the message and passed to the crew (so Maya can say she didn't get the photo).
+  - **Until then:** the note shows on this visit only.
 
 ### Questions: a recommended answer, and a helper line
 - **Needed by:** *Flow / Mobile Chat — Clarify → plan* (GCvfD) steps 1 and 3: an option tagged RECOMMENDED and picked to start; Skip takes it as a DEFAULT ("You skipped the weekend, so I picked 1–2 Nov."); a line under the question ("You and Sari, from Jakarta.").

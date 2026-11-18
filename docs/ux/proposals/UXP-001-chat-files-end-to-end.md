@@ -3,7 +3,9 @@ id: UXP-001
 title: Chat files end to end — upload, agent reading, agent answers with and about files
 area: chat
 author: ux-lead
-status: proposed
+status: accepted
+accepted: 16 Nov 2026
+work: audit-chat-files
 flows: [Iyq9S, ORByl, FLwdb, Fpgnv, TpuRc, Nud6J, AyrHG, uuCam, b8Flw8, Yyjkb]
 audited: 16 Nov 2026
 ---
@@ -201,7 +203,18 @@ G16 extends Shared link (b8Flw8 / Wgdu2 / Yyjkb / e0FI49).
   storage with signed URLs, and a retention job. ui-engineer can't start G3, G6, G7,
   G9, G11 until those exist — flag them in the contract's "Exists?" column.
 
-## Open decisions for Mario
+## Decisions (Mario, 16 Nov 2026)
+- **D1 · Retention — decided:** keep files until the chat is deleted, with per-file
+  delete (G13). Privacy copy and the Files list say exactly that.
+- **D2 · HEIC and other phone formats — decided:** convert on upload. A `.heic`
+  photo becomes an image chip like any other; it never lands in G4's rejected state.
+- **D3 · OCR cost — decided:** estimate first, then the usual payer. `Read as images`
+  (G9, scanned PDF) shows the G7 estimate line and runs on Nomi credits or the
+  user's own key, same as any read.
+
+<details><summary>Original open decisions</summary>
+
+### Open decisions for Mario (as proposed)
 - **D1 · Retention.** How long are uploads kept? Options: keep until the chat is
   deleted / 30 days / per plan. ux-lead recommends *until the chat is deleted*, with
   per-file delete — simplest to explain, matches "your work belongs to you".
@@ -209,3 +222,5 @@ G16 extends Shared link (b8Flw8 / Wgdu2 / Yyjkb / e0FI49).
   recommends convert silently; iPhone users shouldn't hit G4 for a normal photo.
 - **D3 · OCR cost.** Who pays for "Read as images" on scanned PDFs? ux-lead
   recommends same rule as any read: estimate first, then the usual payer.
+
+</details>

@@ -7,6 +7,7 @@
 </script>
 
 <script lang="ts">
+	import type { Snippet } from 'svelte';
 	import { ArrowUp, Check, Cpu, Lightbulb, Mic, Plus, Sparkles, Square } from '@lucide/svelte';
 	import { m } from '$lib/paraglide/messages';
 	import Icon from '../foundations/Icon.svelte';
@@ -35,6 +36,11 @@
 	// - Attach and voice come with attachments (`onattach`, `onrecord`): not drawn without them.
 	// - `enterSends` (Settings › General › Enter sends) off: Enter makes a new line and ⌘ or
 	//   Ctrl+Enter sends, and the keys say so.
+	// - Files (Flow / Chat — Attachments, steps 8–14): `files` sits over the field (the chips, 8
+	//   apart, and their line), `notice` between the field and the toolbar (the model fix line).
+	//   With files attached (`attached`) a message may go without text. `blocked` keeps Send off:
+	//   its words take the keys' place (D8: "1 file didn't upload…"), Send is aria-disabled and
+	//   described by them (or by `describedBy`, the fix line), and Enter does nothing.
 	type Props = {
 		value?: string;
 		placeholder: string;
@@ -60,6 +66,17 @@
 		onthinking?: (value: string) => void;
 		onattach?: () => void;
 		onrecord?: () => void;
+		/** The files over the field. */
+		files?: Snippet;
+		/** A line between the field and the toolbar (the model fix line). */
+		notice?: Snippet;
+		/** Files are attached and ready: the message may go without text. */
+		attached?: boolean;
+		/** Send is off: why, in words beside it, or `true` to wait silently (an upload still going). */
+		blocked?: string | true;
+		/** What else says why Send is off (the fix line's id). */
+		describedBy?: string;
+		/** The attach button, so focus can come back to it. */
 	};
 	let {
 		value = $bindable(''),
@@ -82,10 +99,16 @@
 		onthinking,
 		onattach,
 		onrecord,
+		files,
+		notice,
+		attached = false,
+		blocked,
+		describedBy,
 	}: Props = $props();
 
 	const id = $props.id();
-	const canSend = $derived(value.trim().length > 0);
+	const canSend = $derived((value.trim().length > 0 || attached) && !blocked);
+	const hintId = $derived(typeof blocked === 'string' ? `${id}-blocked` : describedBy);
 
 	// The mention being typed: "@da" right before the caret.
 	let mention = $state<{ start: number; query: string } | null>(null);
@@ -182,6 +205,7 @@
 
 <div class="relative w-full">
 	<div data-composer class={['flex w-full flex-col rounded-md border border-border-strong bg-surface px-2.75 pt-3.25 pb-2.25', roomy ? 'gap-7' : 'gap-3.5']}>
+		{@render files?.()}
 		<textarea
 			bind:this={field}
 			bind:value
@@ -198,6 +222,7 @@
 			use:grow
 			class="w-full resize-none bg-transparent px-1 text-body text-text outline-none placeholder:text-text-3 pointer-coarse:text-phone"
 		></textarea>
+		{@render notice?.()}
 		<div class="flex items-center gap-1.5">
 			{#if onattach}<IconButton icon={Plus} label={m.composer_attach()} onclick={onattach} />{/if}
 			{#if to && toItems.length > 1}
@@ -216,7 +241,7 @@
 				</Menu>
 			{/if}
 			<span class="flex-1"></span>
-			{#if hints}<span class="hidden md:block"><KeyHint
+			{#if typeof blocked === 'string'}<span id={hintId} class="min-w-0 truncate text-caption text-text-2">{blocked}</span>{:else if hints}<span class="hidden md:block"><KeyHint
 						hints={enterSends
 							? [
 									{ keys: '↵', action: m.composer_hint_send() },
@@ -240,7 +265,7 @@
 					>
 				</span>
 			{:else}
-				<IconButton icon={ArrowUp} label={m.composer_send()} variant="send" disabled={!canSend} onclick={send} />
+				<IconButton icon={ArrowUp} label={m.composer_send()} variant="send" disabled={!canSend} aria-disabled={blocked ? 'true' : undefined} aria-describedby={blocked ? hintId : undefined} onclick={send} />
 			{/if}
 		</div>
 	</div>

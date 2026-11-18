@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, tick, untrack, type Snippet } from 'svelte';
-	import { ArrowUpRight, Check, Copy, Cpu, Download, FilePlus2, FolderInput, Hourglass, Info, KeyRound, List, LogIn, Maximize2, Minimize2, Pencil, Pin, PinOff, RefreshCw, RotateCcw, Share, Sparkles, ThumbsDown, ThumbsUp, Trash2, Unplug, Undo2 } from '@lucide/svelte';
+	import { ArrowUpRight, Check, Copy, Cpu, Download, FilePlus2, FolderInput, Hourglass, ImageOff, Info, KeyRound, List, LogIn, Maximize2, Minimize2, Pencil, Pin, PinOff, RefreshCw, RotateCcw, RotateCw, Share, Sparkles, ThumbsDown, ThumbsUp, Trash2, Unplug, Undo2, X } from '@lucide/svelte';
 	import { goto, invalidate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { m } from '$lib/paraglide/messages';
@@ -72,6 +72,17 @@
 	import PhoneChatFlows from './PhoneChatFlows.svelte';
 	import { PhoneFlows } from './phoneFlows.svelte';
 	import type { ChatPageData } from '$lib/server/chatPage';
+	import { blockedReason, composeMessage, extensionOf, formatBytes, hiddenLine, kindLabel, progressParts, readyCount, seesImages, splitAttachments, visionSplit, type SentFile } from '$lib/chat/attachments';
+	import { ComposerUploads, type Chip } from '$lib/chat/uploads.svelte';
+	import { clearDraft, loadDraft, saveDraft } from '$lib/chat/draft';
+	import ComposerFile from '$lib/ds/thread/ComposerFile.svelte';
+	import ModelFix from '$lib/ds/thread/ModelFix.svelte';
+	import VisionModelMenu, { type VisionGroup } from '$lib/ds/thread/VisionModelMenu.svelte';
+	import SentFiles, { type SentFileItem } from '$lib/ds/thread/SentFiles.svelte';
+	import FileNote from '$lib/ds/thread/FileNote.svelte';
+	import FileViewer from '$lib/ds/thread/FileViewer.svelte';
+	import PhotoViewer from '$lib/ds/thread/PhotoViewer.svelte';
+	import FileSheetHeader from '$lib/ds/thread/FileSheetHeader.svelte';
 	import type { Shell } from '$lib/server/shell';
 
 	// A chat, as its page and a project's workspace show it.
@@ -244,6 +255,11 @@
 				modelKey = data.model?.key ?? data.models.current?.key ?? null;
 				thinking = data.thinking;
 				hidden.clear();
+				uploads.clear();
+				removedLine = null;
+				viewer = null;
+				photo = null;
+				restoreDraft(id);
 				flows.reset();
 				retried = null;
 				retryWait = null;
@@ -338,7 +354,7 @@
 
 	// Sending. Offline, it waits in the outbox; signed out, it waits for the sign-in; refused, it
 	// stays where it was written with Retry and Edit.
-	async function send(text: string, options: { late?: boolean } = {}) {
+	async function send(text: string, options: { late?: boolean; note?: string } = {}) {
 		const local: Pending = { key: nextKey++, text, status: 'sending' };
 		pending = [...pending, local];
 		flows.notice = null;
@@ -359,6 +375,7 @@
 			messages = upsert(messages, { ...result.data.message, content_html: '' });
 			onactivity?.();
 			if (options.late) lateNotes = { ...lateNotes, [result.data.message.id]: m.sent_after_signin({ time: clock(new Date(), time.timeZone) }) };
+			if (options.note) sentNotes = { ...sentNotes, [result.data.message.id]: options.note };
 			if (result.data.stopped) {
 				// The supervisor answered on the spot: no turn is coming.
 				hidden.add(result.data.message.id);
@@ -394,7 +411,10 @@
 
 	function editPending(item: Pending) {
 		pending = pending.filter((one) => one.key !== item.key);
-		draft = item.text;
+		// Its files come back as chips (the backend reads each tag against its own records).
+		const parts = splitAttachments(item.text);
+		draft = parts.text;
+		uploads.restore(parts.files.map((file) => ({ id: file.id, name: file.name, kind: file.kind, mime: file.mime ?? '', size: file.size ?? 0, status: 'ready', reference: `<attachment id="${file.id}" name="${file.name}" kind="${file.kind}" mime="${file.mime ?? ''}" size="${file.size ?? 0}"/>` })));
 		field?.focus();
 	}
 
@@ -789,7 +809,7 @@
 	}
 
 	function onkeydown(event: KeyboardEvent) {
-		if (event.defaultPrevented || document.querySelector('dialog[open], [role="menu"], [role="listbox"]')) return;
+		if (event.defaultPrevented || document.querySelector('dialog[open], [role="dialog"], [role="menu"], [role="listbox"]')) return;
 		if (event.key === 'Escape' && working) {
 			event.preventDefault();
 			void stop();
@@ -816,6 +836,7 @@
 		window.addEventListener('online', back);
 		// Signed back in (or reloaded) with a message waiting: it goes now.
 		void flushOutbox();
+		restoreDraft(chatId);
 		if (!matchMedia('(pointer: coarse)').matches) field?.focus();
 		jumpToLatest();
 		return () => {
@@ -840,6 +861,220 @@
 		return m.phase_working();
 	});
 	const retrying = $derived(turn.phase?.phase === 'retrying' ? retryInfo(turn.phase.detail, tickNow) : null);
+
+	// Files (UX contract audit-chat-files: G3, G4, G6, G12, built on what the backend has). Each file
+	// uploads the moment it's picked; a message carries the ready ones as reference tags after its
+	// text. A picture with a model that can't see it waits on the fix line (Switch model, Send text
+	// only); a file that failed or was refused keeps Send off until it's retried or removed. What's in
+	// the composer is kept for a trip to Settings and back (draft.ts).
+	let picker: HTMLInputElement | undefined = $state();
+	let liveText = $state('');
+	let alertText = $state('');
+	/** "bca-oct-2026.pdf removed · 1 file ready", after a file that didn't make it is taken out. */
+	let removedLine = $state<string | null>(null);
+	/** Notes on messages sent from here ("Sent without …"): nothing in the backend keeps them. */
+	let sentNotes = $state<Record<string, string>>({});
+	let visionOpen = $state(false);
+	let switchButton: HTMLButtonElement | undefined = $state();
+	/** The failed file whose sheet is open, on a phone. */
+	let fileSheet = $state<Chip | null>(null);
+	const fixId = $props.id();
+
+	const uploads = new ComposerUploads({
+		announce: ({ kind, name }) => {
+			if (kind === 'failed') alertText = m.files_live_failed({ name });
+			else liveText = kind === 'uploaded' ? m.files_live_uploaded({ name }) : m.files_live_rejected({ name });
+		},
+		discard: (id) => void fetch(`/attachments/${id}`, { method: 'DELETE', keepalive: true }).catch(() => undefined),
+	});
+
+	const currentModel = $derived(data.models.groups.flatMap((group) => group.models).find((option) => option.key === modelKey));
+	const canSee = $derived(seesImages(currentModel));
+	/** The chips as they show: a ready picture the model can't see is a warning. */
+	const chips = $derived(uploads.chips.map((chip): Chip => (chip.status === 'ready' && chip.uploaded?.kind === 'image' && !canSee ? { ...chip, status: 'warning' } : chip)));
+	const blocked = $derived(blockedReason(chips));
+	const warning = $derived(blocked?.kind === 'warning');
+	const blockedText = $derived<string | true | undefined>(
+		!blocked ? undefined : blocked.kind === 'rejected' ? m.files_hint_rejected({ name: blocked.name }) : blocked.kind === 'failed' ? (blocked.count === 1 ? m.files_hint_failed_one() : m.files_hint_failed_many({ count: String(blocked.count) })) : true,
+	);
+	const REASONS = { connection_lost: m.files_reason_connection_lost, server_error: m.files_reason_server_error, storage_full: m.files_reason_storage_full, too_large: m.files_reason_too_large, rejected: m.files_reason_server_error };
+
+	function chipDetail(chip: Chip): string {
+		if (chip.status === 'uploading') {
+			const progress = m.files_progress(progressParts(chip.progress ?? 0, chip.size));
+			return chip.again ? m.files_again({ progress }) : progress;
+		}
+		if (chip.status === 'failed') return m.files_upload_failed({ reason: REASONS[chip.failure ?? 'server_error']() });
+		if (chip.status === 'rejected') return extensionOf(chip.name) ? m.files_rejected({ ext: extensionOf(chip.name) }) : m.files_rejected_plain();
+		if (chip.status === 'warning') return m.files_model_warning({ model: modelLabel ?? '' });
+		return `${kindLabel({ name: chip.name, kind: chip.uploaded?.kind ?? '' })} · ${formatBytes(chip.size)}`;
+	}
+
+	// The warning is said once as it appears; focus moves to Switch model (ModelFix).
+	let warned = false;
+	$effect(() => {
+		if (warning && !warned) liveText = m.files_live_warning({ model: modelLabel ?? '' });
+		warned = warning;
+	});
+
+	function pickFiles(event: Event & { currentTarget: HTMLInputElement }) {
+		const files = event.currentTarget.files;
+		if (files?.length) {
+			removedLine = null;
+			uploads.add([...files]);
+		}
+		event.currentTarget.value = '';
+	}
+
+	/** Takes a file out; focus goes to the next chip, or the field. */
+	async function removeChip(chip: Chip) {
+		const at = chips.findIndex((one) => one.key === chip.key);
+		const unfinished = chip.status === 'failed' || chip.status === 'rejected';
+		uploads.remove(chip.key);
+		if (unfinished) {
+			const ready = readyCount(uploads.chips);
+			removedLine = ready === 0 ? m.files_removed_none({ name: chip.name }) : ready === 1 ? m.files_removed_one({ name: chip.name }) : m.files_removed_many({ name: chip.name, count: String(ready) });
+			liveText = removedLine;
+		}
+		await tick();
+		const next = document.querySelectorAll<HTMLElement>('[data-file-chip]')[at] ?? document.querySelectorAll<HTMLElement>('[data-file-chip]')[at - 1];
+		(next ?? field)?.focus();
+	}
+
+	/** The message as it goes: the text (after any quoted lines), then each ready file's tag. */
+	function submit(text: string, note?: string) {
+		const quoted = quote;
+		if (quoted) onunquote?.();
+		const body = composeMessage(quoted ? `${quoted.text}\n\n${text}` : text, uploads.uploaded.map((file) => file.reference));
+		if (!body) return;
+		uploads.clear();
+		removedLine = null;
+		clearDraft(chatId);
+		void send(body, { note });
+	}
+
+	/** Sends without the pictures the model can't see; they're deleted, never sent. */
+	function sendTextOnly() {
+		visionOpen = false;
+		const left = chips.filter((chip) => chip.status === 'warning');
+		for (const chip of left) uploads.remove(chip.key);
+		const text = draft;
+		draft = '';
+		submit(text, m.files_sent_without({ name: left.map((chip) => chip.name).join(', '), model: modelLabel ?? '' }));
+	}
+
+	const vision = $derived.by(() => {
+		const split = visionSplit(data.models.groups, modelKey);
+		const groups: VisionGroup[] = [];
+		for (const source of ['connection', 'nomi'] as const) {
+			const models = split.groups
+				.filter((group) => group.source === source)
+				.flatMap((group) => group.models.map((model) => ({ key: model.key, label: model.label, meta: m.files_reads_images({ source: source === 'nomi' ? m.models_nomi_credits() : group.label }) })));
+			if (models.length) groups.push({ group: source === 'nomi' ? m.models_nomi_credits() : m.models_your_keys(), models });
+		}
+		const line = split.hidden.length ? hiddenLine(split.hidden, modelLabel ?? '') : null;
+		return { groups, hidden: line ? (line.others ? m.files_hidden_many({ model: line.name, count: String(line.others) }) : m.files_hidden_one({ model: line.name })) : undefined };
+	});
+
+	async function pickVisionModel(key: string) {
+		visionOpen = false;
+		if (await useModel(key)) field?.focus();
+	}
+
+	function closeVision() {
+		visionOpen = false;
+		switchButton?.focus();
+	}
+
+	function restoreDraft(id: string) {
+		const kept = loadDraft(id);
+		if (!kept) return;
+		if (!draft.trim()) draft = kept.text;
+		uploads.restore(kept.files);
+	}
+
+	// What's in the composer is kept as it changes (an empty one keeps nothing).
+	$effect(() => saveDraft(chatId, { text: draft, files: uploads.uploaded }));
+
+	// The viewer (G12): a sent file opened beside the chat (a PDF at page 1, the browser's own
+	// reader drawing it), a photo in the lightbox; anything else downloads.
+	type Viewer = { file: SentFile; trigger: HTMLElement | null; status: 'loading' | 'ready' | 'error'; pages: number | null; started: number; code: string | null; attempt: number };
+	let viewer = $state<Viewer | null>(null);
+	let photo = $state<{ file: SentFile; trigger: HTMLElement | null; index: number; count: number; at: string } | null>(null);
+	let viewerNow = $state(Date.now());
+	const PREVIEW_TIMEOUT_MS = 30_000;
+
+	function openFile(file: SentFile, all: SentFile[], at: string) {
+		const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+		if (file.kind === 'image') {
+			const photos = all.filter((one) => one.kind === 'image');
+			photo = { file, trigger, index: photos.indexOf(file) + 1, count: photos.length, at };
+		} else if (file.kind === 'pdf') {
+			viewer = { file, trigger, status: 'loading', pages: null, started: Date.now(), code: null, attempt: 0 };
+			void loadViewer();
+		} else window.location.assign(`/attachments/${file.id}/content?download`);
+	}
+
+	async function loadViewer() {
+		const opened = viewer;
+		if (!opened) return;
+		const attempt = opened.attempt + 1;
+		viewer = { ...opened, status: 'loading', code: null, started: Date.now(), attempt };
+		const response = await fetch(`/attachments/${opened.file.id}`).catch(() => null);
+		if (viewer?.attempt !== attempt) return;
+		if (!response?.ok) {
+			viewer = { ...viewer, status: 'error', code: `preview_failed · ${response?.status ?? 'offline'}` };
+			liveText = m.files_viewer_error_title();
+			return;
+		}
+		const details = ((await response.json().catch(() => null)) as { details?: { pages?: number } } | null)?.details;
+		viewer = { ...viewer, pages: details?.pages || null };
+		setTimeout(() => {
+			if (viewer?.attempt === attempt && viewer.status === 'loading') {
+				viewer = { ...viewer, status: 'error', code: 'preview_timeout · 30 s' };
+				liveText = m.files_viewer_error_title();
+			}
+		}, PREVIEW_TIMEOUT_MS);
+	}
+
+	function viewerLoaded() {
+		if (!viewer || viewer.status !== 'loading') return;
+		viewer = { ...viewer, status: 'ready' };
+		liveText = viewer.pages ? m.files_live_page({ page: '1', pages: String(viewer.pages) }) : '';
+	}
+
+	async function closeViewer() {
+		const trigger = viewer?.trigger ?? photo?.trigger;
+		viewer = null;
+		photo = null;
+		await tick();
+		trigger?.focus();
+	}
+
+	$effect(() => {
+		if (viewer?.status !== 'loading') return;
+		viewerNow = Date.now();
+		const timer = setInterval(() => (viewerNow = Date.now()), 1000);
+		return () => clearInterval(timer);
+	});
+
+	/** "0:02", as the viewer's step says it. */
+	const shortElapsed = (ms: number) => {
+		const seconds = Math.max(0, Math.floor(ms / 1000));
+		return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+	};
+	const pagesText = (pages: number | null) => (pages === null ? null : pages === 1 ? m.files_pages_one() : m.files_pages_many({ count: String(pages) }));
+	const fileMeta = (file: SentFile) => [kindLabel(file), file.size !== undefined ? formatBytes(file.size) : null].filter(Boolean).join(' · ');
+
+	/** A sent message's files, as the chips over its bubble. */
+	function sentItems(files: SentFile[], at: string): SentFileItem[] {
+		return files.map((file) => ({
+			name: file.name,
+			meta: fileMeta(file),
+			image: file.kind === 'image' ? `/attachments/${file.id}/content` : undefined,
+			onopen: () => openFile(file, files, at),
+		}));
+	}
 </script>
 
 <svelte:window {onkeydown} />
@@ -848,29 +1083,93 @@
 {#snippet userMessage(message: RenderedMessage, latest: boolean)}
 	{@const total = (message.versions ?? 0) + 1}
 	{@const shown = viewing[message.id] ? versions[message.id]?.[viewing[message.id] - 1] : undefined}
+	{@const parts = splitAttachments(shown?.text ?? message.content)}
 	{#if editing === message.id && phone}
 		<PhoneMessageEditor value={message.content} version={m.edit_saves_as({ version: total + 1 })} onsave={(text) => saveEdit(message, text)} oncancel={() => (editing = null)} />
 	{:else if editing === message.id}
 		<MessageEditor value={message.content} version="{total} / {total + 1}" onsave={(text) => saveEdit(message, text)} oncancel={() => (editing = null)} />
 	{:else if phone}
-		<!-- Long-pressing your message opens its sheet (Message controls, step 3). -->
-		<div use:longPress={() => (sheet = { kind: 'mine', message, latest: latest && !working && !shown })}>
-			<PhoneUserMessage text={shown?.text ?? message.content} />
-		</div>
+		{#if parts.files.length}<SentFiles phone files={sentItems(parts.files, clock(message.created_at, time.timeZone))} />{/if}
+		{#if parts.text}
+			<!-- Long-pressing your message opens its sheet (Message controls, step 3). -->
+			<!-- A message with files isn't edited in place (editing with files is P1), so its sheet has no Edit. -->
+			<div use:longPress={() => (sheet = { kind: 'mine', message, latest: latest && !working && !shown && !parts.files.length })}>
+				<PhoneUserMessage text={parts.text} />
+			</div>
+		{/if}
+		{#if sentNotes[message.id]}<FileNote icon={ImageOff} mono align="end" text={sentNotes[message.id]} />{/if}
 		{#if lateNotes[message.id]}<TurnNote icon={LogIn} align="end" text={lateNotes[message.id]} />{/if}
 	{:else}
-		<MessageUser
-			text={shown?.text ?? message.content}
+		{#if parts.files.length}<SentFiles files={sentItems(parts.files, clock(message.created_at, time.timeZone))} />{/if}
+		{#if parts.text}<MessageUser
+			text={parts.text}
 			time={clock(message.edited_at ?? message.created_at, time.timeZone)}
 			edited={Boolean(message.edited_at) && !shown}
 			version={total > 1 && message.edited_at ? { current: viewing[message.id] || total, total, onprev: () => step(message, (viewing[message.id] || total) - 1), onnext: () => step(message, (viewing[message.id] || total) + 1) } : undefined}
-			onedit={latest && !working && !shown ? () => (editing = message.id) : undefined}
-		/>
+			onedit={latest && !working && !shown && !parts.files.length ? () => (editing = message.id) : undefined}
+		/>{/if}
+		{#if sentNotes[message.id]}<FileNote icon={ImageOff} mono align="end" text={sentNotes[message.id]} />{/if}
 		{#if lateNotes[message.id]}<TurnNote icon={LogIn} align="end" text={lateNotes[message.id]} />{/if}
 	{/if}
 {/snippet}
 
-<div class="flex h-full flex-col">
+{#snippet composerFiles()}
+	<div class={['flex flex-col', phone ? 'gap-2' : 'gap-1.5']}>
+		{#if chips.length}
+			<div class={['flex', phone ? 'flex-col items-start gap-1.5' : 'flex-wrap items-center gap-2']}>
+				{#each chips as chip (chip.key)}
+					<ComposerFile
+						name={chip.name}
+						status={chip.status}
+						detail={chipDetail(chip)}
+						progress={chip.progress}
+						thumb={chip.thumb}
+						{phone}
+						onretry={() => uploads.retry(chip.key)}
+						onremove={() => void removeChip(chip)}
+						onmore={() => (fileSheet = chip)}
+					/>
+				{/each}
+			</div>
+		{/if}
+		{#if removedLine}<FileNote icon={phone ? Check : undefined} mono text={removedLine} />{/if}
+	</div>
+{/snippet}
+
+{#snippet modelFix()}
+	<div class="relative">
+		<ModelFix {phone} focus labelId="{fixId}-fix" bind:switchButton onswitch={() => (visionOpen = !visionOpen)} ontextonly={sendTextOnly} />
+		{#if visionOpen && !phone}
+			<div class="absolute right-0 bottom-full z-20 mb-2">
+				<VisionModelMenu groups={vision.groups} hidden={vision.hidden} settingsHref="/settings/models" onpick={(key) => void pickVisionModel(key)} ontextonly={sendTextOnly} onclose={closeVision} />
+			</div>
+		{/if}
+	</div>
+{/snippet}
+
+{#snippet fileViewer(open: Viewer)}
+	{@const pages = pagesText(open.pages)}
+	<FileViewer
+		name={open.file.name}
+		meta={[kindLabel(open.file), pages ?? (open.file.size !== undefined ? formatBytes(open.file.size) : null), phone ? m.files_yours_phone() : m.files_yours()].filter(Boolean).join(' · ')}
+		status={open.status}
+		step={open.pages ? m.files_opening({ page: '1', pages: String(open.pages) }) : m.files_opening_page({ page: '1' })}
+		elapsed={shortElapsed(viewerNow - open.started)}
+		note={phone ? m.files_viewer_note_phone() : m.files_viewer_note()}
+		error={open.code ? { body: m.files_viewer_error_body({ page: '1' }), code: open.code } : undefined}
+		{phone}
+		downloadHref="/attachments/{open.file.id}/content?download"
+		onretry={() => void loadViewer()}
+		onclose={() => void closeViewer()}
+	>
+		{#key open.attempt}
+			<iframe title={open.file.name} src="/attachments/{open.file.id}/content#page=1" class="min-h-0 w-full flex-1 rounded-sm bg-surface outline -outline-offset-1 outline-border" onload={viewerLoaded}></iframe>
+		{/key}
+	</FileViewer>
+{/snippet}
+
+<div class="flex h-full">
+<div class="flex h-full min-w-0 flex-1 flex-col">
 	{#if phone}<NavBar title={shownTitle ?? m.nav_new_chat()} who={answering} onback={() => void goto('/chats')} onmenu={() => (sheet = { kind: 'chat' })} />{/if}
 	<div bind:this={scroller} {onscroll} class={['min-h-0 flex-1 overflow-y-auto', phone ? 'px-4 pt-4' : pane ? 'px-5 pt-5' : 'px-4 pt-6 lg:px-12 lg:pt-10']}>
 		<!-- On a phone a short thread sits at the bottom, over the composer, as the pen draws it. -->
@@ -1024,18 +1323,20 @@
 			{/each}
 
 			{#each pending as item (item.key)}
+				{@const parts = splitAttachments(item.text)}
+				{#if parts.files.length}<SentFiles {phone} files={parts.files.map((file) => ({ name: file.name, meta: fileMeta(file) }))} />{/if}
 				{#if phone && item.status === 'queued'}
-					<PhonePendingMessage text={item.text} status="queued" note={m.phone_net_queued()} action={{ label: m.action_cancel(), onclick: () => cancelQueued(item) }} />
+					<PhonePendingMessage text={parts.text} status="queued" note={m.phone_net_queued()} action={{ label: m.action_cancel(), onclick: () => cancelQueued(item) }} />
 				{:else if phone && item.status === 'failed'}
 					<!-- Not sent (TJhp2): the reason under the bubble with Retry; a long press puts it back to edit. -->
 					<div use:longPress={() => editPending(item)}>
-						<PhonePendingMessage text={item.text} status="failed" note={m.phone_send_failed({ reason: item.reason ?? '' })} action={{ label: m.action_retry(), onclick: () => retryPending(item) }} />
+						<PhonePendingMessage text={parts.text} status="failed" note={m.phone_send_failed({ reason: item.reason ?? '' })} action={{ label: m.action_retry(), onclick: () => retryPending(item) }} />
 					</div>
 				{:else if phone}
-					<PhoneUserMessage text={item.text} />
+					<PhoneUserMessage text={parts.text} />
 				{:else}
 					<MessageUser
-						text={item.text}
+						text={parts.text}
 						status={item.status}
 						oncancel={item.status === 'queued' ? () => cancelQueued(item) : undefined}
 						onretry={item.status === 'failed' ? () => retryPending(item) : undefined}
@@ -1097,7 +1398,12 @@
 				streaming={working}
 				{crew}
 				model={modelLabel}
-				onsend={(text) => void send(text)}
+				attached={uploads.uploaded.length > 0}
+				blocked={blockedText}
+				files={chips.length || removedLine ? composerFiles : undefined}
+				fix={warning ? modelFix : undefined}
+				onattach={() => picker?.click()}
+				onsend={(text) => submit(text)}
 				onstop={stop}
 				onmodel={models.length ? () => (sheet = { kind: 'model' }) : undefined}
 				oncrew={crew.length ? () => (sheet = { kind: 'crew' }) : undefined}
@@ -1116,11 +1422,13 @@
 				model={modelLabel}
 				{models}
 				thinking={thinkingChoice}
-				onsend={(text) => {
-					const quoted = quote;
-					if (quoted) onunquote?.();
-					void send(quoted ? `${quoted.text}\n\n${text}` : text);
-				}}
+				attached={uploads.uploaded.length > 0}
+				blocked={blockedText}
+				describedBy={warning ? `${fixId}-fix` : undefined}
+				files={chips.length || removedLine ? composerFiles : undefined}
+				notice={warning ? modelFix : undefined}
+				onattach={() => picker?.click()}
+				onsend={(text) => submit(text)}
 				onstop={stop}
 				onmodel={(key) => void useModel(key)}
 				onthinking={(level) => void useThinking(level)}
@@ -1128,6 +1436,8 @@
 		</div>
 		{/if}
 	</div>
+</div>
+{#if viewer && !phone}{@render fileViewer(viewer)}{/if}
 </div>
 
 {#if phone}
@@ -1298,4 +1608,61 @@
 		<Button label={m.chat_delete()} variant="danger" iconStart={Trash2} onclick={deleteChat} />
 	{/snippet}
 </Dialog>
+{/if}
+
+<!-- Files: the picker, what's said to a screen reader as uploads finish or fail, a phone's sheets
+     (a failed file's Retry or Remove, the models that can see a picture), and the viewers. -->
+<input bind:this={picker} type="file" multiple hidden onchange={pickFiles} />
+<p role="status" class="sr-only">{liveText}</p>
+<p role="alert" class="sr-only">{alertText}</p>
+
+{#if phone && fileSheet}
+	{@const failed = fileSheet}
+	<BottomSheet open title={failed.name} onclose={() => (fileSheet = null)}>
+		{#snippet header(close)}<FileSheetHeader name={failed.name} reason={chipDetail(failed)} onclose={close} />{/snippet}
+		<SheetRow
+			icon={RotateCw}
+			label={m.files_retry()}
+			meta={m.files_sheet_retry_meta()}
+			onclick={() => {
+				uploads.retry(failed.key);
+				fileSheet = null;
+			}}
+		/>
+		<SheetRow
+			icon={X}
+			danger
+			label={m.files_remove()}
+			meta={m.files_sheet_remove_meta()}
+			onclick={() => {
+				void removeChip(failed);
+				fileSheet = null;
+			}}
+		/>
+	</BottomSheet>
+{/if}
+
+{#if phone && visionOpen}
+	<VisionModelMenu phone groups={vision.groups} hidden={vision.hidden} settingsHref="/settings/models" onpick={(key) => void pickVisionModel(key)} ontextonly={sendTextOnly} onclose={closeVision} />
+{/if}
+
+{#if viewer && phone}{@render fileViewer(viewer)}{/if}
+
+{#if photo}
+	{@const shown = photo}
+	<PhotoViewer
+		name={shown.file.name}
+		meta={[fileMeta(shown.file), phone ? m.files_yours_phone() : m.files_yours(), phone ? null : m.files_sent_at({ time: shown.at })].filter(Boolean).join(' · ')}
+		src="/attachments/{shown.file.id}/content"
+		where={phone
+			? shown.count === 1
+				? m.files_photo_where_phone_one()
+				: m.files_photo_where_phone({ index: String(shown.index), count: String(shown.count) })
+			: shown.count === 1
+				? m.files_photo_where_one()
+				: m.files_photo_where({ index: String(shown.index), count: String(shown.count) })}
+		{phone}
+		downloadHref="/attachments/{shown.file.id}/content?download"
+		onclose={() => void closeViewer()}
+	/>
 {/if}

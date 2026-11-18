@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { ArrowRight, Link2Off, LockKeyhole, LogIn } from '@lucide/svelte';
+	import { ArrowRight, Link2Off, Lock, LockKeyhole, LogIn } from '@lucide/svelte';
 	import { page } from '$app/state';
 	import { m } from '$lib/paraglide/messages';
 	import { getLocale } from '$lib/paraglide/runtime';
@@ -11,13 +11,21 @@
 	import Icon from '$lib/ds/foundations/Icon.svelte';
 	import Tag from '$lib/ds/status/Tag.svelte';
 	import Prose from '$lib/ds/thread/Prose.svelte';
+	import SentFiles from '$lib/ds/thread/SentFiles.svelte';
+	import FileNote from '$lib/ds/thread/FileNote.svelte';
+	import { phoneView } from '$lib/phone.svelte';
 
 	// Flow / Chat — Shared link (b8Flw8): what people see when someone shares a chat or a reply. A
 	// read-only page with no sign-in (unless the link is for signed-in people), masked if the person
 	// sharing chose to: the top bar (Nomi, Sign in, Try Nomi), the share's meta line, the messages in
 	// a 720 column, and a footer. A link that's expired, turned off or unknown shows one screen in the
 	// pen's expired/revoked layout, since the backend tells them apart for nobody (AGENTS.md §9).
+	// Files (Link D5 RCgbo · M5 YWmux): the files a message went with, each locked with its name
+	// and "PDF · private" over the bubble; the meta adds "files private"; under the reply that
+	// answered them, who shared it kept them private. A link never opens or downloads a file.
 	let { data } = $props();
+	const phoneGuess = () => Boolean((data as { phone?: boolean }).phone);
+	const phone = phoneView(phoneGuess());
 
 	const language = getLocale();
 	let timeZone = $state<string | undefined>();
@@ -49,12 +57,16 @@
 					<Tag kind="neutral" label={m.shared_read_only()} />
 					{#if chat.title}<span class="text-caption text-text-2">{chat.title}</span>{/if}
 					<span class="font-mono text-label text-text-3">
-						{[chat.expiresAt ? m.shared_expires({ days: String(daysLeft(chat.expiresAt)) }) : m.shared_no_expiry(), chat.masked ? m.shared_masked() : ''].filter(Boolean).join(' · ')}
+						{[chat.expiresAt ? m.shared_expires({ days: String(daysLeft(chat.expiresAt)) }) : m.shared_no_expiry(), chat.masked ? m.shared_masked() : '', chat.files ? m.files_meta_private() : ''].filter(Boolean).join(' · ')}
 					</span>
 				</div>
 				{#each chat.messages as message, index (index)}
+					{@const asked = message.sender === 'assistant' && chat.messages[index - 1]?.sender === 'user' ? chat.messages[index - 1] : null}
 					{#if message.sender === 'user'}
-						<div class="flex justify-end"><div class="max-w-xl rounded-md bg-surface-2 px-3.5 py-2 text-body text-text"><Prose html={message.html} /></div></div>
+						<div class="flex flex-col items-end gap-1.5">
+							{#if message.files.length}<SentFiles phone={phone.current} files={message.files.map((file) => ({ name: file.name, meta: m.files_private({ type: file.type }), locked: true }))} />{/if}
+							{#if message.html.trim()}<div class="max-w-xl rounded-md bg-surface-2 px-3.5 py-2 text-body text-text"><Prose html={message.html} /></div>{/if}
+						</div>
 					{:else}
 						<article class="flex flex-col gap-4" aria-label={message.by ?? 'Nomi'}>
 							<span class="flex items-center gap-2">
@@ -63,6 +75,9 @@
 								<span class="font-mono text-label text-text-3">{clock(message.at, timeZone)}</span>
 							</span>
 							<Prose html={message.html} />
+							{#if asked?.files.length && chat.sharedBy}
+								<FileNote icon={Lock} phone={phone.current} text={phone.current ? m.files_shared_note_phone({ name: chat.sharedBy }) : m.files_shared_note({ name: chat.sharedBy })} />
+							{/if}
 						</article>
 					{/if}
 				{/each}
