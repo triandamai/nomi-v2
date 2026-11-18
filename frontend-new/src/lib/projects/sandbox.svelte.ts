@@ -28,6 +28,8 @@ export class SandboxRuntime {
 	 * sandbox is (stopped, stopping, not made) until its worker picks the start up.
 	 */
 	#asked = false;
+	/** The crew hasn't finished a first build: the sandbox starts once it has. */
+	#awaitingBuild = false;
 	#offset = 0;
 	#reading = false;
 	#timers: ReturnType<typeof setInterval>[] = [];
@@ -42,9 +44,20 @@ export class SandboxRuntime {
 		void this.#beat();
 		this.#timers = [setInterval(() => void this.#beat(), BEAT_MS), setInterval(() => void this.#refresh(), POLL_MS)];
 		const status = await this.#refresh();
-		// Opening the workspace wakes a sandbox that's asleep or not made yet. One that is still
-		// stopping (the workspace was closed a moment ago) starts again once it has stopped.
-		if (status && (AT_REST.includes(status.phase) || status.state === 'none')) {
+		// Nothing to preview until the crew's first build: the reads below start it once there is.
+		if (status?.preview_ready === false) {
+			this.#awaitingBuild = true;
+			return;
+		}
+		if (status) await this.#wake(status);
+	}
+
+	/**
+	 * Opening the workspace wakes a sandbox that's asleep or not made yet. One that is still
+	 * stopping (the workspace was closed a moment ago) starts again once it has stopped.
+	 */
+	async #wake(status: SandboxStatus) {
+		if (AT_REST.includes(status.phase) || status.state === 'none') {
 			this.phase = 'waking';
 			await this.#command('start');
 		}
@@ -93,6 +106,10 @@ export class SandboxRuntime {
 		this.previewUrl = view.previewUrl;
 		this.error = view.error;
 		if (status.phase === 'waking' || status.phase === 'running' || status.phase === 'error') await this.#readLog();
+		if (this.#awaitingBuild && status.preview_ready !== false) {
+			this.#awaitingBuild = false;
+			await this.#wake(status);
+		}
 		return status;
 	}
 

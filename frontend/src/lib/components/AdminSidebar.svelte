@@ -67,6 +67,8 @@
 			{ href: '/admin/settings/providers', label: m.prov_title(), icon: IconLink, area: 'models' },
 			{ href: '/admin/settings/llm', label: m.admin_models(), icon: IconChip, area: 'models' },
 			{ href: '/admin/settings/embedding', label: m.admin_embeddings(), icon: IconMemory, area: 'models' },
+			{ href: '/admin/projects', label: m.admin_projects(), icon: IconRocket, area: 'projects' },
+			{ href: '/admin/sandboxes', label: m.admin_sandboxes(), icon: IconChip, area: 'projects' },
 			{ href: '/admin/integrations', label: m.admin_integrations(), icon: IconRocket, area: 'integrations' },
 			{ href: '/admin/configuration', label: m.admin_configuration(), icon: IconSliders, area: 'configuration' },
 			{ href: '/admin/support', label: m.admin_support(), icon: IconChatBubble, area: 'support' },

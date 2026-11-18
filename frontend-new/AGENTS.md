@@ -702,7 +702,7 @@ steps; what isn't there yet is left out, not drawn dead:
 - Code (Code, terminal & phone preview `uR6dq`, steps 1–2) is the project's files in `CodeView`,
   read only, opening on the app's own page (the backend doesn't say which file Koda changed last);
   lines picked are quoted above the composer (`CodeQuote`, in `ChatView`) and sent ahead of the
-  message. The tokens are plain: the server-side highlighter isn't there yet.
+  message. Its lines are coloured on the server (shiki, by the file's extension; plain for a file it can't read or one over 200,000 characters), and it fills the pane's height.
 - Where the project runs in the backend's sandbox (and it may be used now), the workspace starts
   it on opening and keeps it awake while open; the preview shows the changes not yet published,
   with the sandbox's phase in words while it wakes and starts (and Start again once it stopped or
