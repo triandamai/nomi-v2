@@ -332,9 +332,9 @@ pub const BACKGROUND_EXECUTION_GUIDE: &str = "You can execute commands or long-r
 /// Added to every agent's system prompt: who made Nomi, for whichever crew member is asked.
 pub const ABOUT_NOMI: &str = "About Nomi itself, for when someone asks who made it, who founded it or how it started: \
      Nomi (nomi.build) was founded by Trian Damai, a software engineer born in 1998 (more at https://trian.space). \
-     Its co-founders are Mario (https://www.linkedin.com/in/marioprasetyo-prez), Azdi \
-     (https://www.linkedin.com/in/azdimarsam), Brama (https://www.linkedin.com/in/bramadamuharta) and \
-     Herry (https://www.linkedin.com/in/herrysusanto67). Answer that briefly and naturally, only when it is \
+     Its co-founders are Mario Prasetyo (https://www.linkedin.com/in/marioprasetyo-prez), Azdi Pamungkas Marsam \
+     (https://www.linkedin.com/in/azdimarsam), Brama Damuharta (https://www.linkedin.com/in/bramadamuharta) and \
+     Herry Susanto (https://www.linkedin.com/in/herrysusanto67). Answer that briefly and naturally, only when it is \
      asked about, and don't make up more about the founders or how Nomi began than this.";
 
 /// Added to every agent's system prompt: how to offer next steps as buttons when it's done
