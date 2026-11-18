@@ -240,6 +240,8 @@ export function replyBlocks(message: RenderedMessage, { language }: { language: 
 						topic: m.clarify_topic({ number: String(number + 1) }),
 						title: question.question,
 						multiple: question.multiple === true,
+						// "Something else…" on every one-of-many question: the answer goes back as text (D4).
+						other: question.multiple !== true,
 						options: question.options.map((option) => ({ title: option.label, ...(option.detail && { detail: option.detail }) })),
 					})),
 				});
