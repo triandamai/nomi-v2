@@ -274,6 +274,7 @@ async fn run_turn_job(turns: &Turns, claimed: queue::ClaimedJob) {
                     &StreamEnvelope::TurnCompleted { turn_job_id: claimed.id, message_id: outcome.message_id.unwrap_or(Uuid::nil()) },
                 )
                 .await;
+            crate::ask_built::announce(&turns.pool, &turns.mqtt, claimed.id, claimed.session_id).await;
             if let Some(message_id) = outcome.message_id {
                 crate::user_events::announce_chat_reply(&turns.pool, &turns.mqtt, user_id, claimed.session_id, message_id, &outcome.reply);
             }

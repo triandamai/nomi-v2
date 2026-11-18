@@ -70,6 +70,17 @@ pub enum StreamEnvelope {
     AgentSessionEnded { agent_session_id: Uuid, session_id: Uuid, reason: String },
     /// The chat's turn queue changed (an ask started running or was moved to the front).
     QueueChanged,
+    /// Koda finished an ask in the preview and files changed: `files` are their paths, `tests`
+    /// what the turn's recorded test run said (null when it ran none).
+    AskBuilt { job_id: Uuid, files: Vec<String>, tests: Option<TestsOutcome> },
+}
+
+/// How a turn's test run ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TestsOutcome {
+    Passed,
+    Failed,
 }
 
 /// Events on `user/{id}/stream`: what a person's apps hear about that isn't tied to a chat they
