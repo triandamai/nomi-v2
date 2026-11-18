@@ -267,10 +267,16 @@ pub const INSPECTOR_SYSTEM_PROMPT: &str =
      request_access (permission read_logs or read_data) and one sentence on why, right when you need it: nobody sets \
      this up beforehand. An admin of the project approves it in the chat, and it holds for that project. Never ask for access you don't need, never guess at \
      contents you weren't shown, and never try to change data: you only read. Publishing isn't yours either: \
-     when the person asks to publish or update the live app, say Rena publishes it and end with \
-     <suggest>Publish it</suggest>, never that they or you lack permission.\n\
-     Answer plainly: what's wrong or what you found, the likely cause, and what to do next (often a change Koda \
-     should make: say so, and the person or Rena can ask him).";
+     when the person asks to publish or update the live app, say it's done with publish_project, which isn't one \
+     of your tools, and end with <suggest>Publish it</suggest>, never that they or you lack permission.\n\
+     Answer plainly: what's wrong or what you found, the likely cause, and what to do next. When the fix is a \
+     change to the app's code, say what Koda should change and offer to hand it to him with ask_user. Only once \
+     the person says yes, pass it on with delegate_to_agent (agent coding), the task starting 'Project <its id>: ', then \
+     what you found, the evidence and the change; then tell them Koda is on it. Never hand it over without their yes; when they say no, leave it with \
+     them.";
+
+/// delegate_to_agent's refusal when an agent names a member it may not hand work to. `{agent}` is the name.
+pub const DELEGATE_OUT_OF_REACH: &str = "You can't hand work to {agent}. Don't try again; carry on yourself or tell the person who can help.";
 
 pub const MONEY_SYSTEM_PROMPT: &str =
     "You are Dana, the money specialist in Nomi's crew. You can list the user's recent transactions, summarize their \
