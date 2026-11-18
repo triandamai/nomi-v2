@@ -99,7 +99,7 @@
 				</span>
 			{:else}
 				<span class="flex gap-2 pt-1">
-					{#if onretry}<Button label={m.files_try_again()} variant="secondary" iconStart={RotateCcw} onclick={onretry} />{/if}
+					{#if onretry}<Button label={m.files_try_again()} variant="secondary" iconEnd={RotateCcw} onclick={onretry} />{/if}
 					<Button label={m.files_download()} variant="ghost" iconStart={Download} href={downloadHref} />
 				</span>
 			{/if}

@@ -258,3 +258,43 @@ describe('PhoneComposer with files', () => {
 		await expect.element(page.getByRole('button', { name: 'Send' })).toBeDisabled();
 	});
 });
+
+describe('gate 3 (build verify, 18 Nov 2026)', () => {
+	it('every chip is drawn 43 high: a 44pt target is a hit area, never a bigger chip (M9, M12, M4)', async () => {
+		await render(ComposerFile, { name: 'bca-sep-2026.pdf', status: 'ready', detail: 'PDF · 4,2 MB', onremove: () => {} });
+		await render(ComposerFile, { name: 'bca-oct-2026.pdf', status: 'failed', detail: 'Upload failed · connection lost', phone: true, onretry: () => {}, onremove: () => {}, onmore: () => {} });
+		await render(ComposerFile, { name: 'kasir-setup.dmg', status: 'rejected', detail: '.dmg files can’t be read', onremove: () => {} });
+		for (const name of ['bca-sep-2026.pdf', 'bca-oct-2026.pdf', 'kasir-setup.dmg']) {
+			const box = (page.getByRole('group', { name }).element() as HTMLElement).firstElementChild as HTMLElement;
+			expect(box.getBoundingClientRect().height).toBe(43);
+		}
+		expect(page.getByRole('button', { name: 'Retry or remove bca-oct-2026.pdf' }).element().getBoundingClientRect().height).toBe(24);
+	});
+
+	it('the phone fix line’s pills are 32 high, 13 medium (M13)', async () => {
+		await render(ModelFix, { onswitch: () => {}, ontextonly: () => {}, phone: true });
+		for (const name of ['Switch model', 'Send text only']) {
+			const pill = page.getByRole('button', { name }).element();
+			expect(pill.getBoundingClientRect().height).toBe(32);
+			expect([getComputedStyle(pill).fontSize, getComputedStyle(pill).fontWeight]).toEqual(['13px', '500']);
+		}
+	});
+
+	it('the phone sheet focuses the first model, not Close (M14)', async () => {
+		await render(VisionModelMenu, { groups: [{ group: 'Nomi credits', models: [{ key: 'n1', label: 'gemini-flash', meta: 'Nomi credits · reads images' }] }], settingsHref: '#', onpick: () => {}, ontextonly: () => {}, onclose: () => {}, phone: true });
+		await expect.element(page.getByRole('button', { name: /gemini-flash/ })).toHaveFocus();
+	});
+
+	it('with none, the sheet focuses Add one, and Send text only has no icon (M15)', async () => {
+		await render(VisionModelMenu, { groups: [], hidden: 'deepseek-v3 hidden · can’t see images', settingsHref: '#', onpick: () => {}, ontextonly: () => {}, onclose: () => {}, phone: true });
+		await expect.element(page.getByRole('link', { name: 'Add one in Models & providers' })).toHaveFocus();
+		expect(page.getByRole('button', { name: 'Send text only' }).element().querySelector('svg')).toBeNull();
+	});
+
+	it('the viewer error’s Try again puts its label before its icon (K1phVf)', async () => {
+		await render(FileViewer, { name: 'a.pdf', meta: 'PDF', status: 'error', error: { body: 'x', code: 'preview_timeout · 30 s' }, downloadHref: '#', onretry: () => {}, onclose: () => {} });
+		const button = page.getByRole('button', { name: 'Try again' }).element();
+		const label = [...button.querySelectorAll('span')].find((span) => span.textContent?.trim() === 'Try again')!;
+		expect(label.getBoundingClientRect().x).toBeLessThan(button.querySelector('svg')!.getBoundingClientRect().x);
+	});
+});

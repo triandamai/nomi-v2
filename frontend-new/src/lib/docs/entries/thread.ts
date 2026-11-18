@@ -304,6 +304,15 @@ export default [
 		related: ['overlays/BottomSheet.svelte', 'chat/FormCard.svelte', 'chat/Reminder.svelte'],
 	},
 	{
+		file: 'thread/PhoneFormCard.svelte',
+		summary: 'A form the crew prefilled from the chat, folded in a phone’s thread: a neutral clipboard tile, the title, what’s filled in (in mono, dates as “25 Jan 2026”), who prefilled it, and “Edit {title}”, which opens its sheet.',
+		use: ['A `form` view that isn’t a reminder, on a phone.'],
+		avoid: ['A reminder form (a date or time, and how it repeats): Reminder.', 'Wider screens: FormCard.'],
+		donts: ['Name the button “Edit reminder” for a form that isn’t one.'],
+		accessibility: ['The edit button is named for the form; its 30 button takes a 44 target on touch.'],
+		related: ['thread/PhoneFormSheet.svelte', 'chat/Reminder.svelte'],
+	},
+	{
 		file: 'thread/PhoneApprovalSheet.svelte',
 		summary: 'Everything an approval would send, in full, before it goes: each field, the message, the attachment, then Approve & send.',
 		use: ['Tapping a phone’s approval card.'],

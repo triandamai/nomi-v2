@@ -1,17 +1,21 @@
 <script lang="ts">
-	import { CircleAlert, Ellipsis, FileX, TriangleAlert, X } from '@lucide/svelte';
+	import { CircleAlert, Ellipsis, FileText, FileX, TriangleAlert, X } from '@lucide/svelte';
 	import { m } from '$lib/paraglide/messages';
 	import Icon from '../foundations/Icon.svelte';
-	import AttachmentChip from '../chat/AttachmentChip.svelte';
 	import AttachmentImage from '../chat/AttachmentImage.svelte';
 
-	// Chat responses → Attachment / Failed (BD98f), Rejected (xpYoV) and Model Warning (rrjYM), with
-	// Uploading and Ready (the design system's AttachmentChip, a picture's AttachmentImage): one file
+	// Chat responses → Attachment / Uploading (o8o2x), Ready (iAYlM), Failed (BD98f), Rejected (xpYoV)
+	// and Model Warning (rrjYM), with a ready picture as the design system's AttachmentImage: one file
 	// in the composer, whatever became of it (UX contract audit-chat-files, G3 · G4 · G6).
+	// - Uploading: the real bytes sent, a 3 track, and Cancel. Ready: the type and size.
 	// - Failed: the reason in danger and Retry · Remove; on a phone (`phone`) the ⋯ that opens the
 	//   file's sheet (Flow / Mobile Chat — Attachments, step 10), since two words don't fit a thumb.
 	// - Rejected: why it can't be read, and Remove.
 	// - Warning: the picture's 28 thumb and which model can't see it, in the warning colour.
+	// Every chip is 43 high, on a phone too: its buttons keep their drawn size and take the 44pt
+	// target on a coarse pointer as a hit area around them (`::after`), never as a bigger chip. That's
+	// why uploading and ready are drawn here rather than by the twin AttachmentChip, whose remove
+	// button grows on a phone.
 	// Each chip is one stop for the keyboard (its actions inside it): Backspace or Delete on it
 	// removes the file, as the contract asks. The warning's icon is 12: the pen draws 11, a size the
 	// design system's Icon doesn't take.
@@ -32,6 +36,8 @@
 	};
 	let { name, status, detail, progress, thumb, phone = false, onretry, onremove, onmore }: Props = $props();
 
+	const percent = $derived(Math.round(Math.min(1, Math.max(0, progress ?? 0)) * 100));
+
 	function onkeydown(event: KeyboardEvent) {
 		if ((event.key === 'Backspace' || event.key === 'Delete') && onremove) {
 			event.preventDefault();
@@ -40,53 +46,67 @@
 	}
 </script>
 
+{#snippet removeX(label: string)}
+	<button
+		type="button"
+		aria-label={label}
+		class="relative inline-flex shrink-0 cursor-pointer rounded-xs p-0.5 text-text-2 outline-offset-1 hover:text-text pointer-coarse:after:absolute pointer-coarse:after:-inset-3.25"
+		onclick={onremove}><Icon icon={X} size={14} /></button
+	>
+{/snippet}
+
 <!-- One stop per chip, as the contract's focus order asks: Backspace on it removes the file. -->
 <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
 <span role="group" aria-label={name} tabindex="0" data-file-chip={status} class="inline-flex max-w-full rounded-sm outline-offset-2" {onkeydown}>
-	{#if status === 'uploading' || (status === 'ready' && !thumb)}
-		<AttachmentChip {name} {detail} progress={status === 'uploading' ? (progress ?? 0) : undefined} {onremove} />
-	{:else if status === 'ready' && thumb}
+	{#if status === 'ready' && thumb}
 		<AttachmentImage src={thumb} alt={name} {onremove} />
 	{:else}
 		<span
 			class={[
 				'flex max-w-full items-center gap-2.5 rounded-sm py-1.5 pr-2 pl-2.5 outline -outline-offset-1',
-				status === 'warning' ? 'bg-warning-bg outline-border-strong' : 'bg-danger-bg outline-danger-border',
+				status === 'warning' ? 'bg-warning-bg outline-border-strong' : status === 'failed' || status === 'rejected' ? 'bg-danger-bg outline-danger-border' : 'bg-surface outline-border-strong',
+				status === 'uploading' && 'w-62.5',
 			]}
 		>
 			{#if status === 'warning' && thumb}
 				<img src={thumb} alt="" class="size-7 shrink-0 rounded-xs object-cover outline -outline-offset-1 outline-border-strong" />
-			{:else}
+			{:else if status === 'failed' || status === 'rejected'}
 				<span class="inline-flex shrink-0 text-danger"><Icon icon={status === 'rejected' ? FileX : CircleAlert} /></span>
+			{:else}
+				<span class="inline-flex shrink-0 text-text-2"><Icon icon={FileText} /></span>
 			{/if}
-			<span class="flex min-w-0 flex-col gap-px">
+			<span class={['flex min-w-0 flex-col', status === 'uploading' ? 'flex-1 gap-1' : 'gap-px']}>
 				<span class="truncate font-mono text-caption text-text">{name}</span>
+				{#if status === 'uploading'}
+					<span role="progressbar" aria-label={name} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent} class="h-0.75 w-full overflow-hidden rounded-xs bg-surface-2">
+						<span class="block h-full rounded-xs bg-accent" style="width: {percent}%"></span>
+					</span>
+				{/if}
 				{#if status === 'warning'}
 					<span class="flex min-w-0 items-center gap-1 text-warning">
 						<Icon icon={TriangleAlert} size={12} />
 						<span class="truncate font-mono text-label text-warning">{detail}</span>
 					</span>
 				{:else}
-					<span class="truncate font-mono text-label text-danger">{detail}</span>
+					<span class={['truncate font-mono text-label', status === 'failed' || status === 'rejected' ? 'text-danger' : 'text-text-3']}>{detail}</span>
 				{/if}
 			</span>
-			{#if status === 'warning'}
-				{#if onremove}
-					<button type="button" aria-label={m.attach_remove({ name })} class="inline-flex shrink-0 cursor-pointer rounded-xs p-0.5 text-text-2 outline-offset-1 hover:text-text pointer-coarse:size-11 pointer-coarse:items-center pointer-coarse:justify-center" onclick={onremove}>
-						<Icon icon={X} size={14} />
-					</button>
-				{/if}
+			{#if status === 'uploading' || status === 'ready' || status === 'warning'}
+				{#if onremove}{@render removeX(status === 'uploading' ? m.attach_cancel({ name }) : m.attach_remove({ name }))}{/if}
 			{:else if phone && onmore}
-				<button type="button" aria-label={m.files_more({ name })} class="inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-xs text-text-2 outline-offset-1 pointer-coarse:size-11" onclick={onmore}>
-					<Icon icon={Ellipsis} />
-				</button>
+				<button
+					type="button"
+					aria-label={m.files_more({ name })}
+					class="relative inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-xs text-text-2 outline-offset-1 pointer-coarse:after:absolute pointer-coarse:after:-inset-2.5"
+					onclick={onmore}><Icon icon={Ellipsis} /></button
+				>
 			{:else}
 				<span class="flex shrink-0 items-center gap-3 pr-0.5 pl-1.5">
 					{#if status === 'failed' && onretry}
-						<button type="button" aria-label={m.files_retry_name({ name })} class="cursor-pointer rounded-xs text-caption font-medium text-text outline-offset-2 hover:underline pointer-coarse:min-h-11" onclick={onretry}>{m.files_retry()}</button>
+						<button type="button" aria-label={m.files_retry_name({ name })} class="relative cursor-pointer rounded-xs text-caption font-medium text-text outline-offset-2 hover:underline pointer-coarse:after:absolute pointer-coarse:after:inset-x-0 pointer-coarse:after:-inset-y-3.5" onclick={onretry}>{m.files_retry()}</button>
 					{/if}
 					{#if onremove}
-						<button type="button" aria-label={m.attach_remove({ name })} class="cursor-pointer rounded-xs text-caption text-text-2 outline-offset-2 hover:text-text pointer-coarse:min-h-11" onclick={onremove}>{m.files_remove()}</button>
+						<button type="button" aria-label={m.attach_remove({ name })} class="relative cursor-pointer rounded-xs text-caption text-text-2 outline-offset-2 hover:text-text pointer-coarse:after:absolute pointer-coarse:after:inset-x-0 pointer-coarse:after:-inset-y-3.5" onclick={onremove}>{m.files_remove()}</button>
 					{/if}
 				</span>
 			{/if}

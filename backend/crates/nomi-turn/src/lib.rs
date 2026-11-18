@@ -131,6 +131,52 @@ mod history_budget_tests {
 }
 
 #[cfg(test)]
+mod summary_history_tests {
+    use super::*;
+
+    fn row(from_person: bool, text: &str) -> HistoryRow {
+        (from_person.then(Uuid::new_v4), text.to_string(), Uuid::new_v4(), None, false)
+    }
+
+    fn summary_row(text: &str) -> HistoryRow {
+        (None, text.to_string(), Uuid::new_v4(), None, true)
+    }
+
+    fn text_of(message: &LlmMessage) -> String {
+        message.content.iter().map(|b| match b { ContentBlock::Text { text } => text.clone(), _ => String::new() }).collect()
+    }
+
+    #[test]
+    fn a_summary_takes_the_place_of_the_messages_it_replaced() {
+        // The query leaves out what the summary replaced; the history is the summary, then the kept messages.
+        let history = history_messages(vec![summary_row("Planning a Bali trip."), row(true, "Book the flights"), row(false, "Done")], false);
+        assert_eq!(history.len(), 2);
+        assert_eq!(history[0].role, LlmRole::User);
+        let first = text_of(&history[0]);
+        assert!(first.contains("Planning a Bali trip."));
+        assert!(first.contains("Summary of the earlier part"));
+        assert!(first.contains("Book the flights"));
+        assert_eq!(history[1].role, LlmRole::Assistant);
+        assert_eq!(text_of(&history[1]), "Done");
+    }
+
+    #[test]
+    fn a_long_summary_is_not_clipped_like_an_older_message() {
+        let long = "Z".repeat(OLDER_MESSAGE_CHARS + 500);
+        let mut rows = vec![summary_row(&long)];
+        rows.extend((0..WHOLE_RECENT_MESSAGES).map(|i| row(i % 2 == 0, "ok")));
+        let history = history_messages(rows, false);
+        assert_eq!(text_of(&history[0]).chars().filter(|c| *c == 'Z').count(), OLDER_MESSAGE_CHARS + 500);
+    }
+
+    #[test]
+    fn without_a_summary_the_history_is_as_it_was() {
+        let history = history_messages(vec![row(true, "hi"), row(false, "hello")], false);
+        assert_eq!(history.iter().map(text_of).collect::<Vec<_>>(), vec!["hi", "hello"]);
+    }
+}
+
+#[cfg(test)]
 mod time_limit_tests {
     use super::time_limit;
     use std::time::Duration;
@@ -230,7 +276,7 @@ pub async fn process_turn(
 /// `DynamicAgent::agent_type`). `None` when neither matches, e.g. a stale `agent_sessions` row
 /// left over from a dynamic agent that's since been deleted... there is no delete in v1, so in
 /// practice this only happens for a genuinely unrecognized `agent_type` string.
-async fn resolve_agent(
+pub async fn resolve_agent(
     conn: &mut PoolConnection<Postgres>,
     registry: &AgentRegistry,
     catalog: &Arc<nomi_agent_core::ToolCatalog>,
@@ -723,6 +769,25 @@ pub async fn resume_paused_turn(
     decision: &str,
     remember: bool,
 ) -> Result<TurnOutcome, TurnError> {
+    resume_paused_turn_with(pool, mqtt, s3, provider, embedding_provider, registry, catalog, message_id, decision, remember, &approval::Extras::default()).await
+}
+
+/// `resume_paused_turn` with what the decision carries beyond approve or deny: the person's
+/// edits to the input, and a "don't ask again" limited to one recipient.
+#[allow(clippy::too_many_arguments)]
+pub async fn resume_paused_turn_with(
+    pool: &PgPool,
+    mqtt: &MqttPublisher,
+    s3: Option<&nomi_storage::S3Config>,
+    provider: &dyn LlmProvider,
+    embedding_provider: &dyn EmbeddingProvider,
+    registry: &AgentRegistry,
+    catalog: &Arc<nomi_agent_core::ToolCatalog>,
+    message_id: Uuid,
+    decision: &str,
+    remember: bool,
+    extras: &approval::Extras,
+) -> Result<TurnOutcome, TurnError> {
     let session_id: Uuid = sqlx::query_scalar("SELECT session_id FROM messages WHERE id = $1")
         .bind(message_id)
         .fetch_one(pool)
@@ -741,7 +806,7 @@ pub async fn resume_paused_turn(
     .flatten();
     let result = nomi_agent_core::reply::continuing_reply(
         reply_id,
-        resume_locked(&mut conn, mqtt, s3, provider, embedding_provider, registry, catalog, session_id, message_id, decision, remember),
+        resume_locked(&mut conn, mqtt, s3, provider, embedding_provider, registry, catalog, session_id, message_id, decision, remember, extras),
     )
     .await;
 
@@ -779,6 +844,7 @@ async fn resume_locked(
     message_id: Uuid,
     decision: &str,
     remember: bool,
+    extras: &approval::Extras,
 ) -> Result<(String, Option<Uuid>), TurnError> {
     let row: Option<(Uuid, String, serde_json::Value, Uuid)> = sqlx::query_as(
         "SELECT id, agent_type, state, sender_channel_identity_id FROM agent_sessions \
@@ -799,21 +865,48 @@ async fn resume_locked(
 
     let agent = resolve_agent(conn, registry, catalog, &agent_type).await.ok_or(TurnError::ApprovalNoLongerPending)?;
 
-    let tool_use_blocks: Vec<LlmContentBlock> =
+    let mut tool_use_blocks: Vec<LlmContentBlock> =
         serde_json::from_value(state["tool_use_blocks"].clone()).map_err(|_| TurnError::ApprovalNoLongerPending)?;
-    let messages: Vec<LlmMessage> =
+    let mut messages: Vec<LlmMessage> =
         serde_json::from_value(state["messages"].clone()).map_err(|_| TurnError::ApprovalNoLongerPending)?;
     let pending_tool_use_id = state["pending_tool_use_id"].as_str().unwrap_or_default().to_string();
+
+    // The person edited the card: the tool runs on their input, and the model's own history shows it.
+    if let Some(edited_input) = extras.edited_input.as_ref().filter(|_| decision == "approve") {
+        apply_edited_input(&mut tool_use_blocks, &mut messages, &pending_tool_use_id, edited_input);
+        let _ = sqlx::query(
+            "UPDATE messages SET content_blocks = jsonb_set(jsonb_set(content_blocks, '{0,input}', $1), '{0,edited}', 'true'::jsonb) WHERE id = $2",
+        )
+        .bind(edited_input)
+        .bind(message_id)
+        .execute(&mut **conn)
+        .await;
+    }
+
     let mut decided_tool_use_ids: Vec<(String, bool)> =
         serde_json::from_value(state["decided_tool_use_ids"].clone()).unwrap_or_default();
 
-    if remember {
+    if remember || extras.remember_scope.is_some() {
         if let Some(LlmContentBlock::ToolUse { name, input, .. }) =
             tool_use_blocks.iter().find(|b| matches!(b, LlmContentBlock::ToolUse { id, .. } if *id == pending_tool_use_id))
         {
-            let path = input.get("path").and_then(|v| v.as_str());
             let rule_decision = if decision == "approve" { "allow" } else { "deny" };
-            let _ = nomi_agent_core::permissions::remember_decision(conn, user_id, name, path, rule_decision).await;
+            let kept = match (extras.remember_scope.as_deref(), extras.remember_value.as_deref()) {
+                (Some(scope), Some(value)) => {
+                    let _ = nomi_agent_core::permissions::remember_scoped_decision(conn, user_id, name, scope, value, rule_decision).await;
+                    serde_json::json!({"scope": scope, "value": value.trim().to_lowercase()})
+                }
+                _ => {
+                    let path = input.get("path").and_then(|v| v.as_str());
+                    let _ = nomi_agent_core::permissions::remember_decision(conn, user_id, name, path, rule_decision).await;
+                    serde_json::json!({"scope": "tool"})
+                }
+            };
+            let _ = sqlx::query("UPDATE messages SET content_blocks = jsonb_set(content_blocks, '{0,remembered}', $1) WHERE id = $2")
+                .bind(kept)
+                .bind(message_id)
+                .execute(&mut **conn)
+                .await;
         }
     }
 
@@ -870,6 +963,7 @@ async fn resume_locked(
         nomi_agent_core::ToolBatchOutcome::Completed { status, summary } => nomi_agent_core::LoopOutcome::Completed { status, summary },
         nomi_agent_core::ToolBatchOutcome::HandOff { target_agent, task } => nomi_agent_core::LoopOutcome::HandOff { target_agent, task },
         nomi_agent_core::ToolBatchOutcome::Resolved(tool_results) => {
+            link_results_to_cards(conn, session_id, &tool_results).await;
             let mut full_messages = messages;
             full_messages.push(LlmMessage { role: LlmRole::User, content: tool_results });
 
@@ -908,6 +1002,37 @@ async fn resume_locked(
     Ok((reply, reply_message_id))
 }
 
+/// Puts `edited` in place of the input of call `tool_use_id`, in the batch and in the history the
+/// model reads, so it sees what was really run.
+fn apply_edited_input(batch: &mut [LlmContentBlock], history: &mut [LlmMessage], tool_use_id: &str, edited: &serde_json::Value) {
+    let swap = |block: &mut LlmContentBlock| {
+        if let LlmContentBlock::ToolUse { id, input, .. } = block {
+            if id == tool_use_id {
+                *input = edited.clone();
+            }
+        }
+    };
+    batch.iter_mut().for_each(swap);
+    history.iter_mut().flat_map(|m| m.content.iter_mut()).for_each(swap);
+}
+
+/// Where a tool that ran says its result can be seen (the sent mail) goes on its approval card.
+async fn link_results_to_cards(conn: &mut PoolConnection<Postgres>, session_id: Uuid, results: &[LlmContentBlock]) {
+    for result in results {
+        let LlmContentBlock::ToolResult { tool_use_id, content, is_error: false } = result else { continue };
+        let Some(url) = nomi_agent_core::input_check::result_url_in(content) else { continue };
+        let _ = sqlx::query(
+            "UPDATE messages SET content_blocks = jsonb_set(content_blocks, '{0,result_url}', to_jsonb($3::text)) \
+             WHERE session_id = $1 AND content_blocks->0->>'kind' = 'approval_request' AND content_blocks->0->>'tool_use_id' = $2",
+        )
+        .bind(session_id)
+        .bind(tool_use_id)
+        .bind(url)
+        .execute(&mut **conn)
+        .await;
+    }
+}
+
 /// The chat so far as the agents read it (what was said, oldest first).
 pub async fn fetch_recent_messages(
     conn: &mut PoolConnection<Postgres>,
@@ -915,11 +1040,13 @@ pub async fn fetch_recent_messages(
 ) -> Result<Vec<LlmMessage>, TurnError> {
     let project_chat = nomi_agent_core::working_memory::is_project_chat(&mut **conn, session_id).await?;
     // Only what was actually said: shown thinking (🧠) and progress notes (💭) are a window
-    // into the work, not replies, and fed back as replies they confuse the next agent.
-    let rows: Vec<(Option<Uuid>, String, Uuid)> = sqlx::query_as(&format!(
-        "SELECT sender_channel_identity_id, content, id FROM ( \
-             SELECT id, sender_channel_identity_id, content, created_at FROM messages \
-             WHERE session_id = $1 AND {} \
+    // into the work, not replies, and fed back as replies they confuse the next agent. What a
+    // summary replaced (`summarized_by`) isn't sent: the summary message stands in for it.
+    let rows: Vec<HistoryRow> = sqlx::query_as(&format!(
+        "SELECT sender_channel_identity_id, content, id, left_out, is_summary FROM ( \
+             SELECT id, sender_channel_identity_id, content, created_at, left_out, \
+                    COALESCE(content_blocks->0->>'kind', '') = 'summary' AS is_summary FROM messages \
+             WHERE session_id = $1 AND summarized_by IS NULL AND {} \
              ORDER BY created_at DESC, id DESC LIMIT $2 \
          ) recent ORDER BY created_at ASC, id ASC",
         nomi_agent_core::working_memory::SAID_IN_CHAT
@@ -928,7 +1055,18 @@ pub async fn fetch_recent_messages(
     .bind(nomi_agent_core::working_memory::recent_window(project_chat))
     .fetch_all(&mut **conn)
     .await?;
+    Ok(history_messages(rows, project_chat))
+}
 
+/// One said message as read from the chat: who sent it, its text, id, the files it went without
+/// and whether it is a summary of earlier messages.
+type HistoryRow = (Option<Uuid>, String, Uuid, Option<serde_json::Value>, bool);
+
+/// The model's view of the chat's latest messages (oldest first): the newest few whole, older
+/// long ones clipped, all within a character budget. A summary stands in for the messages it
+/// replaced: it is never clipped, is introduced as a summary, and reads as context from the
+/// person's side so turns still alternate.
+fn history_messages(rows: Vec<HistoryRow>, project_chat: bool) -> Vec<LlmMessage> {
     // The newest few go in whole; long ones before them are clipped (a pasted file or a long
     // build report is still there in the chat, and the crew can be asked about it).
     let (whole_recent, older_chars, budget) = if project_chat {
@@ -940,14 +1078,31 @@ pub async fn fetch_recent_messages(
     let said: Vec<(bool, String)> = rows
         .into_iter()
         .enumerate()
-        .map(|(i, (sender, content, _id))| {
+        .map(|(i, (sender, content, _id, left_out, is_summary))| {
+            if is_summary {
+                return (true, nomi_agent_core::chat_summary::history_text(&content, true));
+            }
+            let content = with_left_out_notes(content, left_out.as_ref());
             (sender.is_some(), if i < whole_from { nomi_agent_core::context::clip_older_message(content, older_chars) } else { content })
         })
         .collect();
-    Ok(merge_turns(within_budget(said, budget).into_iter().map(|(from_person, text)| LlmMessage {
+    merge_turns(within_budget(said, budget).into_iter().map(|(from_person, text)| LlmMessage {
         role: if from_person { LlmRole::User } else { LlmRole::Assistant },
         content: vec![ContentBlock::Text { text }],
-    })))
+    }))
+}
+
+/// A person's message followed by a line for each file they sent it without, so the crew can say
+/// they didn't get it.
+fn with_left_out_notes(mut content: String, left_out: Option<&serde_json::Value>) -> String {
+    let Some(files) = left_out.and_then(|v| v.as_array()) else { return content };
+    for file in files {
+        let name = file.get("name").and_then(|v| v.as_str()).unwrap_or("a file");
+        let model = file.get("model_label").and_then(|v| v.as_str()).unwrap_or("The model you picked");
+        content.push('\n');
+        content.push_str(&nomi_agent_core::prompts::LEFT_OUT_NOTE.replace("{name}", name).replace("{model}", model));
+    }
+    content
 }
 
 /// The newest messages that fit in `budget` characters, oldest dropped first. The newest one
@@ -1103,5 +1258,27 @@ mod background_wakeup_tests {
         append_background_wakeup_note(&mut after_user, &wakeup);
         assert_eq!(after_user.len(), 1);
         assert_eq!(after_user[0].content.len(), 2);
+    }
+}
+
+#[cfg(test)]
+mod edit_tests {
+    use super::*;
+
+    fn call(id: &str, to: &str) -> LlmContentBlock {
+        LlmContentBlock::ToolUse { id: id.to_string(), name: "gmail.send".to_string(), input: serde_json::json!({"to": to}), thought_signature: None }
+    }
+
+    #[test]
+    fn edited_input_replaces_only_that_call_in_the_batch_and_the_history() {
+        let mut batch = vec![call("a", "old@x.co"), call("b", "other@x.co")];
+        let mut history = vec![LlmMessage { role: LlmRole::Assistant, content: vec![call("a", "old@x.co"), call("b", "other@x.co")] }];
+        apply_edited_input(&mut batch, &mut history, "a", &serde_json::json!({"to": "new@x.co"}));
+        let to = |block: &LlmContentBlock| match block {
+            LlmContentBlock::ToolUse { input, .. } => input["to"].as_str().unwrap().to_string(),
+            _ => panic!(),
+        };
+        assert_eq!((to(&batch[0]), to(&batch[1])), ("new@x.co".to_string(), "other@x.co".to_string()));
+        assert_eq!((to(&history[0].content[0]), to(&history[0].content[1])), ("new@x.co".to_string(), "other@x.co".to_string()));
     }
 }

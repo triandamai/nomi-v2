@@ -424,10 +424,12 @@ leaves out what v2 or the backend can't do yet, rather than draw it dead:
   without…" note shows on this visit only, and the draft is kept in the tab for a trip to Settings.
   A sent file opens beside the chat (`FileViewer`: a PDF at page 1 in the browser's own reader) or
   large (`PhotoViewer`); other kinds download. A shared link names each file, locked and private.
-  Its tab order follows the layout: chips, the field, the fix line, then attach and the toolbar
-  (the contract puts attach first; it's drawn last). A message with files isn't edited in place
-  (editing with files is P1). The sent note sits under the bubble (MessageUser is a twin), and the
-  warning chip's icon is 12 (the pen's 11 isn't a size Icon takes).
+  Its tab order follows the layout, as the amended contract says: chips, the field, the fix line,
+  then attach and the toolbar. A message with files isn't edited in place (editing with files is
+  P1). The sent note sits 6 under the bubble rather than in it (MessageUser is a twin), so that
+  message leaves out its hover copy and time; the warning chip's icon is 12 (the pen's 11 isn't a
+  size Icon takes). On a phone every 44pt target is a hit area around the control, so chips stay 43
+  high and the fix line's pills 32.
   Left out until the backend has them (BACKEND_TODO.md, "Chat files"): the type check before
   upload and its helper line, resuming, the estimate before a big read (G7), the read results
   (locked, scanned, damaged, partly read: G9), files Maya makes (G11), citations to a page with
@@ -438,9 +440,12 @@ leaves out what v2 or the backend can't do yet, rather than draw it dead:
   `docs/ux/work/phone-chat-flows`): a reply's questions open in `PhoneClarifySheet` on their own;
   closed, they park as the `PhoneFlowBar` "{n} questions waiting · Answer" (UXP-002 G1) and come
   back on the same question; the thread keeps their folded line. A proposed plan is
-  `PhoneDraftPlan` (DRAFT, or V{n} with the steps a revision added marked "+") with its bar and
-  `PhoneRunSheet`, whose choice goes as the person's message (D1); Keep planning puts "Changing the
-  plan · v{n}" over the composer. Decisions are `PhoneDecision`, forms the pen's reminder card
+  `PhoneDraftPlan` (DRAFT, or V{n} with the steps a revision added marked "+") with one bar ("Plan
+  ready · nothing runs yet" or "Plan v{n} ready", each with Review & run: the bar opens the sheet and
+  runs nothing, so the pen's S2.1 bar "{n} steps · {owners}" with Run plan is the sheet's sub-line)
+  and `PhoneRunSheet`, whose choice goes as the person's message (D1); Keep planning puts "Changing the
+  plan · v{n}" over the composer. Decisions are `PhoneDecision`, forms the pen's reminder card (a
+  form with a date or time and how it repeats) or `PhoneFormCard` (any other, "Edit {title}"),
   opening `PhoneFormSheet`, approvals the Mobile / Approval Card with `PhoneApprovalSheet` ("Don't
   send" for a tool that sends, Decline for the rest, on both layouts: D5), quick replies
   `PhoneQuickReplies`, the crew at work `PhoneCrewWorking`, a stop `PhoneSupervisor`, and failures
@@ -459,7 +464,11 @@ leaves out what v2 or the backend can't do yet, rather than draw it dead:
   questions' left button (G5); the draft's intro "Tell Nomi what to change. Nothing runs until you
   say so." without reorder or reassign (G3); an approval's time is when it was decided (the pen's
   14:06 is a slip). The answered line counts defaults in its mono summary ("· 1 default"), since
-  ClarifyAnswered is the old app's twin; a sheet's 30 close takes a 44 target from BottomSheet.
+  ClarifyAnswered is the old app's twin; a sheet's 30 close takes a 44 target from BottomSheet. The
+  banners (offline, back online, credits, the crew at work) stay pinned under the nav bar. The pen's
+  sparkles icon on "Switch to Nomi credits" (Mobile / Error Card) and after "Make the plan" is left
+  out: Nomi's UI rules ban sparkles. "Research only" says "Nothing shared." without the research
+  steps the pen names (the plan doesn't say which steps research).
 - Projects on a phone (Flow / Mobile Projects) is the pen's list: `PhoneProjectsHeader` (the
   workspace pill opening the Workspaces sheet, how many people are in it, Invite to the workspace's
   page, the large title and New), `PhoneProjectSearch` with Sort (a sheet of `SheetOption`s), the

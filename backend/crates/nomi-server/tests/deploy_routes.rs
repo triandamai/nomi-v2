@@ -756,3 +756,139 @@ async fn a_request_can_be_declined_or_taken_back_and_stays_open_when_publishing_
     let order: Vec<&str> = list["requests"].as_array().unwrap().iter().map(|r| r["id"].as_str().unwrap()).collect();
     assert_eq!(order, vec![third["id"].as_str().unwrap(), second_id, first_id]);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_running_publish_can_be_cancelled_and_a_finished_one_cannot(pool: PgPool) {
+    let router = build_router(test_state(pool.clone(), None));
+    let token = register(router.clone(), "cancel@example.com").await;
+    let (project_id, _) = project_with_files(router.clone(), &token).await;
+    let running = seed_publish(&pool, project_id, "production", "running", 1, None, None).await;
+    let done = seed_publish(&pool, project_id, "production", "succeeded", 2, None, None).await;
+    let uri = |id: Uuid| format!("/api/projects/{project_id}/deploy/publishes/{id}");
+
+    let (status, body) = request(router.clone(), "DELETE", &uri(running), Some(&token), None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["status"], "cancelled");
+    // Cancelling again changes nothing.
+    let (status, body) = request(router.clone(), "DELETE", &uri(running), Some(&token), None).await;
+    assert_eq!((status, body["status"].as_str()), (StatusCode::OK, Some("cancelled")));
+    // Shipyard's webhook arriving later can't bring it back.
+    let still: String = sqlx::query_scalar("SELECT status FROM project_publishes WHERE id = $1").bind(running).fetch_one(&pool).await.unwrap();
+    assert_eq!(still, "cancelled");
+
+    let (status, _) = request(router.clone(), "DELETE", &uri(done), Some(&token), None).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    let (status, _) = request(router.clone(), "DELETE", &uri(Uuid::new_v4()), Some(&token), None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // Someone who isn't on the project can't stop it.
+    let stranger = register(router.clone(), "stranger@example.com").await;
+    let other = seed_publish(&pool, project_id, "staging", "running", 3, None, None).await;
+    let (status, _) = request(router, "DELETE", &uri(other), Some(&stranger), None).await;
+    assert!(status == StatusCode::NOT_FOUND || status == StatusCode::FORBIDDEN, "{status}");
+    let untouched: String = sqlx::query_scalar("SELECT status FROM project_publishes WHERE id = $1").bind(other).fetch_one(&pool).await.unwrap();
+    assert_eq!(untouched, "running");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn project_summaries_carry_the_last_deploy_and_the_build_in_progress(pool: PgPool) {
+    let router = build_router(test_state(pool.clone(), None));
+    let token = register(router.clone(), "card@example.com").await;
+    let (project_id, org_id) = project_with_files(router.clone(), &token).await;
+    let list = |router: axum::Router, token: String| async move {
+        let (status, body) = request(router, "GET", &format!("/api/projects?org_id={org_id}"), Some(&token), None).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        body["projects"][0].clone()
+    };
+
+    // Nothing built or published yet.
+    let card = list(router.clone(), token.clone()).await;
+    assert!(card["build"].is_null() && card["last_deploy"].is_null(), "{card}");
+
+    // A failed publish says why and which number it was; a cancelled one isn't a deploy.
+    let failed = seed_publish(&pool, project_id, "production", "failed", 5, None, None).await;
+    sqlx::query("UPDATE project_publishes SET error = 'build error in src/lib/pdf.ts', finished_at = now() WHERE id = $1").bind(failed).execute(&pool).await.unwrap();
+    seed_publish(&pool, project_id, "production", "cancelled", 6, None, None).await;
+    let card = list(router.clone(), token.clone()).await;
+    assert_eq!(card["last_deploy"]["status"], "failed", "{card}");
+    assert_eq!(card["last_deploy"]["error"], "build error in src/lib/pdf.ts");
+    assert_eq!(card["last_deploy"]["number"], 5);
+    assert!(card["last_deploy"]["at"].is_string());
+
+    // The crew at work: the step comes from the plan's checklist, the target from its last tool call.
+    let user_id = user_id(&pool, "card@example.com").await;
+    let session_id: Uuid = sqlx::query_scalar("SELECT session_id FROM projects WHERE id = $1").bind(project_id).fetch_one(&pool).await.unwrap();
+    let identity: Uuid = sqlx::query_scalar("INSERT INTO channel_identities (user_id, channel, channel_user_id) VALUES ($1, 'web', 'card-web') RETURNING id")
+        .bind(user_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let agent: Uuid = sqlx::query_scalar("INSERT INTO agent_sessions (session_id, sender_channel_identity_id, agent_type, status) VALUES ($1, $2, 'coding', 'active') RETURNING id")
+        .bind(session_id)
+        .bind(identity)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO agent_plans (session_id, agent_session_id, user_id, title, content, version) VALUES ($1, $2, $3, 'Menu app', $4, 1)")
+        .bind(session_id)
+        .bind(agent)
+        .bind(user_id)
+        .bind("- [x] schema\n- [x] api\n- [ ] menu page\n- [ ] cart\n- [ ] checkout\n- [ ] deploy")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO agent_events (session_id, agent_session_id, agent_type, event_type, payload) VALUES ($1, $2, 'coding', 'ToolCalled', $3)")
+        .bind(session_id)
+        .bind(agent)
+        .bind(json!({ "tool_name": "write_file", "input": { "path": "routes/menu/+page.svelte" }, "result": "ok", "is_error": false }))
+        .execute(&pool)
+        .await
+        .unwrap();
+    // The crew is at work while a turn runs for the project's chat.
+    let turn: Uuid = sqlx::query_scalar("INSERT INTO turn_jobs (session_id, sender_channel_identity_id, text, status, claimed_at) VALUES ($1, $2, 'build the menu', 'processing', now()) RETURNING id")
+        .bind(session_id)
+        .bind(identity)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let card = list(router.clone(), token.clone()).await;
+    assert_eq!(card["build"], json!({ "step": 3, "steps": 6, "doing": "routes/menu/+page.svelte" }), "{card}");
+
+    // Done working: the card stops saying it is building.
+    sqlx::query("UPDATE turn_jobs SET status = 'completed', completed_at = now() WHERE id = $1").bind(turn).execute(&pool).await.unwrap();
+    let card = list(router, token).await;
+    assert!(card["build"].is_null(), "{card}");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn my_plan_counts_the_months_builds_against_the_plans_allowance(pool: PgPool) {
+    let router = build_router(test_state(pool.clone(), None));
+    let token = register(router.clone(), "allowance@example.com").await;
+    let (project_id, _) = project_with_files(router.clone(), &token).await;
+    let me = user_id(&pool, "allowance@example.com").await;
+
+    // No limit set on the plan: unlimited.
+    let (status, plan) = request(router.clone(), "GET", "/api/me/plan", Some(&token), None).await;
+    assert_eq!(status, StatusCode::OK, "{plan}");
+    assert!(plan["builds"]["limit"].is_null() && plan["builds"]["left"].is_null(), "{plan}");
+    assert!(plan["builds"]["resets_at"].is_string());
+    assert!(plan["plan"]["name"].is_string());
+
+    sqlx::query("UPDATE plans SET max_builds_month = 30 WHERE id = (SELECT plan_id FROM user_subscriptions WHERE user_id = $1 UNION ALL SELECT id FROM plans WHERE is_default LIMIT 1)")
+        .bind(me)
+        .execute(&pool)
+        .await
+        .unwrap();
+    for (n, status) in [(1, "succeeded"), (2, "failed"), (3, "cancelled")] {
+        let id = seed_publish(&pool, project_id, "production", status, n, None, None).await;
+        sqlx::query("UPDATE project_publishes SET created_by = $2, created_at = now() WHERE id = $1").bind(id).bind(me).execute(&pool).await.unwrap();
+    }
+    // Last month's don't count.
+    let old = seed_publish(&pool, project_id, "production", "succeeded", 4, None, None).await;
+    sqlx::query("UPDATE project_publishes SET created_by = $2, created_at = now() - interval '40 days' WHERE id = $1").bind(old).bind(me).execute(&pool).await.unwrap();
+
+    let (_, plan) = request(router, "GET", "/api/me/plan", Some(&token), None).await;
+    assert_eq!(plan["builds"]["limit"], 30, "{plan}");
+    assert_eq!(plan["builds"]["used"], 2);
+    assert_eq!(plan["builds"]["left"], 28);
+}

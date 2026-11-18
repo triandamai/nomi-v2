@@ -35,6 +35,20 @@ pub fn display_name_for(agent_type: &str) -> String {
     chars.next().map(|first| first.to_uppercase().chain(chars).collect()).unwrap_or_default()
 }
 
+/// The inverse of `display_name_for`: the `agent_type` a name in `messages.agent_display_name`
+/// stands for. A built-in crew name gives its type; any other name (the supervisor, a name no
+/// longer known) its lowercase form, which is how those types are spelt. A dynamic agent's
+/// name is resolved by the caller against `dynamic_agents`.
+pub fn agent_type_for_name(name: &str) -> String {
+    const BUILT_IN: [&str; 9] = ["chitchat", "money", "reminders", "files", PLANNING_AGENT_TYPE, CODING_AGENT_TYPE, "workspace", "health", "inspector"];
+    BUILT_IN
+        .iter()
+        .chain(std::iter::once(&DESIGN_AGENT_TYPE))
+        .find(|t| crew_name(t) == Some(name))
+        .map(|t| t.to_string())
+        .unwrap_or_else(|| name.to_lowercase())
+}
+
 /// What to call the agent an `agent_sessions` row belongs to: a dynamic agent by its row's
 /// name, anyone else by `display_name_for`.
 pub fn session_agent_name(agent_type: &str, dynamic_name: Option<String>) -> String {
@@ -48,6 +62,14 @@ pub const SESSION_AGENT_COLUMNS: &str = "a.agent_type, (SELECT d.name FROM dynam
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_crew_name_maps_back_to_its_agent_type() {
+        assert_eq!(agent_type_for_name("Dana"), "money");
+        assert_eq!(agent_type_for_name("Nomi"), "chitchat");
+        assert_eq!(agent_type_for_name("Koda"), CODING_AGENT_TYPE);
+        assert_eq!(agent_type_for_name("Supervisor"), "supervisor");
+    }
 
     #[test]
     fn names_the_crew_and_title_cases_the_rest() {

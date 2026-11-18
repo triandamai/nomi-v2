@@ -24,6 +24,7 @@ fn message(id: Uuid, sender: &str, minutes: i64) -> MessageItem {
         versions: 0,
         saved_memories: Vec::new(),
         used_memories: Vec::new(),
+        left_out: Vec::new(),
     }
 }
 

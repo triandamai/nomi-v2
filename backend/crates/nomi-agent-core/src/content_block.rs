@@ -62,6 +62,9 @@ pub struct Question {
     /// Several options can be picked together.
     #[serde(default)]
     pub multiple: bool,
+    /// A line under the question saying why it is asked ("You and Sari, from Jakarta.").
+    #[serde(default)]
+    pub helper: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -70,6 +73,9 @@ pub struct QuestionOption {
     /// A line on what this option means (a design direction's look, a feature's scope).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
+    /// The answer the agent suggests: picked to start, and what Skip takes.
+    #[serde(default)]
+    pub recommended: bool,
 }
 
 /// One file of a [`ContentBlock::FileWrites`] batch.
@@ -127,6 +133,18 @@ pub enum ContentBlock {
         input: Value,
         status: ApprovalStatus,
         decided_at: Option<DateTime<Utc>>,
+        /// The model's call this card is about, so the result finds its card once the batch runs.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tool_use_id: Option<String>,
+        /// The person changed the input before approving; `input` is what ran.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        edited: bool,
+        /// Where what the tool did can be seen (the sent mail), when it returned one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        result_url: Option<String>,
+        /// What "don't ask again" was kept as: `{ "scope": "recipient", "value": ... }` or `{ "scope": "tool" }`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        remembered: Option<Value>,
     },
     /// Questions an agent needs answered before it carries on, each with options to tap and room
     /// for the person's own answer. Their reply is an ordinary message.
@@ -196,6 +214,26 @@ pub enum ContentBlock {
     RunFailed {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         retry: Option<RetryTarget>,
+        /// What kind of failure ("content_filter", "out_of_credits", "rate_limited"…). Named
+        /// `failure_kind` because `kind` is the block's own tag.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        failure_kind: Option<String>,
+        /// The HTTP status the provider answered with.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        status: Option<u16>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider: Option<String>,
+        /// What the provider said, to quote.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_message: Option<String>,
+        /// The model that was asked, when the failing turn knew it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        model: Option<String>,
+    },
+    /// The older part of the chat, summarised by the person's request ("Summarise and continue"):
+    /// the message's text is the summary; `replaced` is how many messages it stands in for.
+    Summary {
+        replaced: u32,
     },
     /// A request to build something moved to its own project chat: a card linking to it.
     ProjectLink {
@@ -221,6 +259,12 @@ pub struct StoppedTask {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
     pub state: String,
+    /// The hand-off this was, so discarding the stop can clear its partial result.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delegation_id: Option<Uuid>,
+    /// The background task this was, likewise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub background_task_id: Option<Uuid>,
 }
 
 impl ToolOutcome {
@@ -251,6 +295,47 @@ impl ToolOutcome {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn questions_carry_a_recommended_option_and_a_helper_line() {
+        let block: ContentBlock = serde_json::from_value(serde_json::json!({
+            "kind": "questions",
+            "questions": [{"question": "Which days?", "helper": "You and Sari, from Jakarta.",
+                           "options": [{"label": "1-2 Nov", "recommended": true}, {"label": "8-9 Nov"}]}]
+        }))
+        .unwrap();
+        let ContentBlock::Questions { questions, .. } = &block else { panic!() };
+        assert_eq!(questions[0].helper.as_deref(), Some("You and Sari, from Jakarta."));
+        assert!(questions[0].options[0].recommended && !questions[0].options[1].recommended);
+        let out = serde_json::to_value(&block).unwrap();
+        assert_eq!(out["questions"][0]["options"][0]["recommended"], true);
+        assert_eq!(out["questions"][0]["options"][1]["recommended"], false);
+    }
+
+    #[test]
+    fn old_questions_without_the_new_fields_still_parse_and_default() {
+        let block: ContentBlock = serde_json::from_value(serde_json::json!({
+            "kind": "questions", "intro": null,
+            "questions": [{"question": "When?", "options": [{"label": "Today", "detail": null}], "multiple": false}]
+        }))
+        .unwrap();
+        let out = serde_json::to_value(&block).unwrap();
+        assert_eq!(out["questions"][0]["helper"], serde_json::Value::Null);
+        assert_eq!(out["questions"][0]["options"][0]["recommended"], false);
+    }
+
+    #[test]
+    fn a_run_failed_block_carries_the_providers_details_and_old_ones_still_parse() {
+        let old: ContentBlock = serde_json::from_value(serde_json::json!({"kind": "run_failed"})).unwrap();
+        assert_eq!(serde_json::to_value(&old).unwrap(), serde_json::json!({"kind": "run_failed"}));
+        let rich: ContentBlock = serde_json::from_value(serde_json::json!({
+            "kind": "run_failed", "failure_kind": "content_filter", "status": 400, "provider": "openai",
+            "provider_message": "filtered", "model": "gpt-x"
+        }))
+        .unwrap();
+        let ContentBlock::RunFailed { failure_kind, status, provider, provider_message, model, .. } = rich else { panic!() };
+        assert_eq!((failure_kind.as_deref(), status, provider.as_deref(), provider_message.as_deref(), model.as_deref()), (Some("content_filter"), Some(400), Some("openai"), Some("filtered"), Some("gpt-x")));
+    }
 
     #[test]
     fn file_write_serializes_with_a_kind_tag_and_snake_case_fields() {
@@ -293,10 +378,27 @@ mod tests {
             input: serde_json::json!({"path": "src/old.js"}),
             status: ApprovalStatus::Pending,
             decided_at: None,
+            tool_use_id: None,
+            edited: false,
+            result_url: None,
+            remembered: None,
         };
         let json = serde_json::to_string(&block).unwrap();
         let parsed: ContentBlock = serde_json::from_str(&json).unwrap();
         assert_eq!(block, parsed);
+    }
+
+    #[test]
+    fn an_old_approval_block_parses_and_new_fields_stay_out_when_unset() {
+        let block: ContentBlock = serde_json::from_value(serde_json::json!({
+            "kind": "approval_request", "id": uuid::Uuid::nil(), "tool_name": "gmail.send", "description": "Send",
+            "input": {}, "status": "approved", "decided_at": null
+        }))
+        .unwrap();
+        let json = serde_json::to_value(&block).unwrap();
+        assert!(json.get("result_url").is_none() && json.get("edited").is_none() && json.get("remembered").is_none());
+        let ContentBlock::ApprovalRequest { edited, .. } = block else { panic!() };
+        assert!(!edited);
     }
 
     #[test]

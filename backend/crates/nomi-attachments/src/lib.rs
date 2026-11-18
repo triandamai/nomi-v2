@@ -4,9 +4,12 @@
 //! preview of an image. Reading images, audio and video takes a model; that happens in the
 //! attachment worker (nomi-server) and the turn (nomi-agent-core::attachments).
 
+pub mod accepted;
 pub mod extract;
 pub mod kind;
 pub mod limits;
+pub mod made;
+pub mod read_result;
 pub mod reference;
 
 pub use extract::{extract, Extracted};

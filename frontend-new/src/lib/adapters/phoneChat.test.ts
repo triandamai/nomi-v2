@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addedSteps, approvalPreview, biggerModel, countdown, finishedIn, isPastDate, ownerList, phoneFailureView, recipientOf, resetsOn, sendsEmail, sendsSomething } from './phoneChat';
+import { addedSteps, approvalPreview, biggerModel, countdown, finishedIn, formDate, isPastDate, isReminderForm, ownerList, phoneFailureView, previewOrder, recipientOf, resetsOn, sendsEmail, sendsSomething } from './phoneChat';
 
 const models = [
 	{ key: 'conn:a:flash', label: 'deepseek-flash', context: 64_000 },
@@ -120,5 +120,24 @@ describe('approvals', () => {
 		];
 		expect(recipientOf(fields)).toBe('bu.sri@example.com');
 		expect(approvalPreview(fields)).toEqual({ to: 'bu.sri@example.com', subject: 'Sewa November', body: 'Selamat siang Bu Sri', attachment: undefined });
+	});
+});
+
+describe('forms (gate 3 #9, answer 2)', () => {
+	it('writes a date as the content rules do', () => {
+		expect(formDate('2026-01-25', 'en')).toBe('25 Jan 2026');
+		expect(formDate('2026-10-25', 'id')).toBe('25 Okt 2026');
+		expect(formDate('09:00', 'en')).toBe('09:00');
+	});
+
+	it('knows a reminder from any other form', () => {
+		expect(isReminderForm([{ key: 'date', label: 'Date', type: 'date' }, { key: 'repeat', label: 'Repeat', type: 'select' }])).toBe(true);
+		expect(isReminderForm([{ key: 'date', label: 'Date', type: 'date' }, { key: 'guests', label: 'Guests', type: 'number' }])).toBe(false);
+	});
+});
+
+describe('the approval preview (gate 3 #3)', () => {
+	it('puts who it goes to first, then the subject', () => {
+		expect(previewOrder([{ key: 'subject' }, { key: 'body' }, { key: 'to' }]).map((field) => field.key)).toEqual(['to', 'subject', 'body']);
 	});
 });

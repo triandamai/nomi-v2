@@ -3142,5 +3142,7 @@
 	"studio_canvas_openpencil": "OpenPencil Vector",
 	"studio_canvas_frames": "Artboards",
 	"studio_openpencil_tokens": "Tokens & Variables",
-	"studio_openpencil_export_svg": "Export SVG"
+	"studio_openpencil_export_svg": "Export SVG",
+	"phone_form_edit": "Edit {title}",
+	"phone_run_option_research_detail": "Nothing shared."
 }

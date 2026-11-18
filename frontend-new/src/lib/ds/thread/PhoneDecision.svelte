@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Check } from '@lucide/svelte';
 	import { m } from '$lib/paraglide/messages';
 	import PhoneOption from '../mobile/PhoneOption.svelte';
 	import PhoneButton from '../mobile/PhoneButton.svelte';
@@ -24,5 +25,5 @@
 			<PhoneOption name="{id}-decision" key={at + 1} title={option.title} detail={option.detail} recommended={option.suggested} checked={chosen === index} onselect={() => (chosen = index)} />
 		{/each}
 	</div>
-	<PhoneButton label={chosen >= 0 ? m.phone_decision_use({ option: options[chosen].title }) : m.phone_decision_use({ option: '' }).trim()} disabled={chosen < 0} onclick={() => chosen >= 0 && onconfirm(chosen)} />
+	<PhoneButton icon={Check} label={chosen >= 0 ? m.phone_decision_use({ option: options[chosen].title }) : m.phone_decision_use({ option: '' }).trim()} disabled={chosen < 0} onclick={() => chosen >= 0 && onconfirm(chosen)} />
 </div>

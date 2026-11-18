@@ -1,6 +1,7 @@
 pub mod agent_permissions;
 pub mod attachments;
 pub mod background;
+pub mod chat_summary;
 pub mod build_flow;
 pub mod build_intent;
 pub mod chat_project;
@@ -20,8 +21,10 @@ pub mod design_handoff;
 pub mod design_review;
 pub mod dynamic_agent;
 pub mod engine;
+pub mod input_check;
 pub mod error;
 pub mod locale;
+pub mod made_files;
 pub mod memory;
 pub mod memory_settings;
 pub mod mention;
