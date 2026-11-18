@@ -7,7 +7,7 @@ import type { PeerPointer } from './peers';
 // the link carries where they are and their pointer, and hears when someone arrives, moves or
 // leaves (then who's here is read again: the events don't say) and where others point.
 
-export type Whereabouts = { view: 'preview' | 'code' | 'terminal'; path?: string | null };
+export type Whereabouts = { view: 'preview' | 'design' | 'code' | 'terminal'; path?: string | null };
 
 /** The person's own pointer goes out at most this often. */
 const POINTER_MS = 120;

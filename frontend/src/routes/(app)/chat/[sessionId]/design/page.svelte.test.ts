@@ -292,4 +292,97 @@ describe('design studio page', () => {
 		expect(text(root)).not.toContain('as the design to build?');
 		expect(root.querySelector('.studio__approved')).toBeNull();
 	});
+
+	it('renders Stage 1 direction style-tile artboards before previews exist and lets the person pick or adjust a direction', async () => {
+		const fetched = vi.fn(async (_url: string, _init?: RequestInit) => new Response(JSON.stringify({ ok: true }), { status: 202 }));
+		vi.stubGlobal('fetch', fetched);
+		const directions = {
+			version: 1,
+			brief_version: 1,
+			directions: [
+				{
+					id: 'editorial',
+					name: 'Editorial',
+					summary: 'Warm paper tones and serif headings.',
+					rationale: 'Fits craft bakery story.',
+					trade_offs: ['Needs strong photos'],
+					palette: [
+						{ name: 'Paper', hex: '#F6EFE4' },
+						{ name: 'Accent', hex: '#B5532A' },
+					],
+					typography: { heading: 'Fraunces', body: 'Inter' },
+					layout: 'Hero, daily bakes, pre-order',
+					recommended: true,
+				},
+			],
+		};
+		const root = render(Page as never, {
+			data: { directions, previews: [], feedback: [], approval: null, wanted: null, sessionId: 's1' } as never,
+			params: { sessionId: 's1' } as never,
+		});
+		expect(text(root)).toContain('Editorial');
+		expect(text(root)).toContain('#F6EFE4');
+		expect(text(root)).toContain('Fraunces');
+		button(root, 'Use this direction').click();
+		await settle();
+		await settle();
+		expect(fetched.mock.calls[0][0]).toBe('/chat/s1/design/refine');
+		expect(JSON.parse(fetched.mock.calls[0][1]?.body as string)).toEqual({
+			text: '@Sora Use the "Editorial" direction (editorial) and build the design system and multi-page preview.',
+		});
+	});
+
+	it('switches to the 2D spatial canvas with Design System and multi-page App Flow artboards and zoom controls', async () => {
+		const root = studio([preview(1)]);
+		button(root, 'Canvas').click();
+		await settle();
+		expect(root.querySelector('[data-artboard="design-system"]')).not.toBeNull();
+		const flowFrames = [...root.querySelectorAll('.studio__artboard--flow iframe')];
+		expect(flowFrames.map((f) => f.getAttribute('src'))).toEqual([
+			`/design-preview/${TOKEN}/index.html`,
+			`/design-preview/${TOKEN}/menu/index.html`,
+		]);
+		expect(text(root)).toContain('100%');
+		(root.querySelector('button[aria-label="Zoom out"]') as HTMLButtonElement).click();
+		await settle();
+		expect(text(root)).toContain('75%');
+	});
+
+	it('opens a direct pin popover when an element is picked and sends batch revisions from the Revise with Sora bar', async () => {
+		const fetched = vi.fn(async (url: string, _init?: RequestInit) => {
+			if (url.endsWith('/feedback')) return new Response(JSON.stringify(said(1)), { status: 201 });
+			return new Response(JSON.stringify({ ok: true }), { status: 202 });
+		});
+		vi.stubGlobal('fetch', fetched);
+		const root = studio([preview(1)]);
+		const heroBtn = [...root.querySelectorAll('button')].find((b) => b.textContent?.includes('Hero')) as HTMLButtonElement;
+		heroBtn.click();
+		await settle();
+		expect(root.querySelector('.studio__pin-popover')).not.toBeNull();
+		await type(root, 'Make it shorter');
+		button(root, 'Save note').click();
+		await settle();
+		await settle();
+		expect(fetched.mock.calls[0][0]).toBe('/chat/s1/design/feedback');
+		expect(root.querySelector('.studio__revise-bar')).not.toBeNull();
+		button(root, 'Revise with Sora').click();
+		await settle();
+		await settle();
+		expect(fetched.mock.calls[1][0]).toBe('/chat/s1/design/refine');
+	});
+
+	it('switches between OpenPencil vector canvas and iframe artboards', async () => {
+		const root = studio([preview(1)]);
+		button(root, 'Canvas').click();
+		await settle();
+		expect(button(root, 'OpenPencil Vector')).toBeDefined();
+		button(root, 'OpenPencil Vector').click();
+		await settle();
+		expect(root.querySelector('canvas')).not.toBeNull();
+		button(root, 'Artboards').click();
+		await settle();
+		expect(root.querySelector('[data-artboard="design-system"]')).not.toBeNull();
+	});
 });
+
+

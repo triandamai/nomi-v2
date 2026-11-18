@@ -9,7 +9,7 @@ use sqlx::Postgres;
 use uuid::Uuid;
 
 use nomi_agent_core::mcp_ops::{format_listing, McpOps, SharedMcpOps, CARRY_ON};
-use nomi_agent_core::design_artifact::{self, ArtifactFile, DesignArtifact, Manifest, ID_ATTRIBUTE};
+use nomi_agent_core::design_artifact::{self, ArtifactFile, DesignArtifact, Manifest, ID_ATTRIBUTE, PEN_ENTRY};
 use nomi_agent_core::design_approval;
 use nomi_agent_core::design_draft;
 use nomi_agent_core::design_feedback::{self, Status};
@@ -328,12 +328,14 @@ impl Tool for SavePreview {
         ToolDefinition {
             name: SAVE_PREVIEW.to_string(),
             description: format!(
-                "Build a preview of one proposed direction as static pages: every file whole (index.html, other pages, css, js, svg), \
-                 responsive, with a {ID_ATTRIBUTE} attribute on each section and component (a lowercase slug, unique in its page, \
-                 the same on every page that shares the element). A preview rarely fits in one call: send a few files per call with \
-                 finished false, and the last ones with finished true, which saves the preview as a new version (describe elements \
-                 on that last call; what you said about an element before carries over). To change a preview, \
-                 send only the files that changed (the rest stay as they were, with the same ids; drop a file with remove), and name in \
+                "Build a preview of one proposed direction as an OpenPencil scene graph ({PEN_ENTRY}): \
+                 do not build raw HTML pages. Include design variables ($color-*, typography, spacing), a design \
+                 system frame (colours, type scale, buttons, form fields, components), and app flow screen frames, \
+                 with a {ID_ATTRIBUTE} / id slug on each frame, section and component (a lowercase slug, unique in its \
+                 screen/frame, the same across screens that share the element). A preview can be sent in pieces if large: \
+                 send calls with finished false, and the last call with finished true, which saves the preview as a new version \
+                 (describe elements on that last call; what you said about an element before carries over). To change a preview, \
+                 send the updated {PEN_ENTRY} (the rest stay as they were, with the same ids; drop a file with remove), and name in \
                  resolves the open feedback the new version dealt with."
             ),
             input_schema: design_artifact::artifact_input_schema(),

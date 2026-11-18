@@ -15,6 +15,20 @@ export default defineConfig({
 	// not a problem with the build.
 	build: { rolldownOptions: { checks: { pluginTimings: false } } },
 	plugins: [
+		{
+			name: 'open-pencil-worker-fix',
+			enforce: 'pre',
+			transform(code, id) {
+				if (id.includes('@open-pencil/core') && (code.includes('export-worker.ts') || code.includes('worker.ts'))) {
+					return {
+						code: code
+							.replace(/new Worker\(new URL\(['"]\.\/export-worker\.ts['"],\s*import\.meta\.url\)[^)]*\)/g, 'null')
+							.replace(/new Worker\(new URL\(['"]\.\/worker\.ts['"],\s*import\.meta\.url\)[^)]*\)/g, 'null'),
+						map: null
+					};
+				}
+			}
+		},
 		tailwindcss(),
 		// English and Indonesian. The person's saved language (Account → Language) lives in the
 		// cookie; before sign-in, the browser's language decides.

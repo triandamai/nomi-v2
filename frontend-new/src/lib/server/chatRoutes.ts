@@ -1,6 +1,7 @@
 import { isRedirect, json } from '@sveltejs/kit';
 import type { ApiEvent } from './api';
 import * as chat from './chat';
+import { addStudioFeedback, approveStudioVersion, loadStudio, publishStudioVersion } from './designStudio';
 
 // The chat page's own JSON endpoints (/chat/[id]/api/…, and POST /chat to start one): the page
 // calls them with fetch, they call the backend as the person through `chat`. A sign-in that can't
@@ -43,6 +44,36 @@ function sessionChange(body: Body): chat.SessionChange | null {
 export function chatRequest(event: ApiEvent, sessionId: string, path: string[], request: Request): Promise<Response> {
 	return signedIn(async () => {
 		const method = request.method;
+		// A chat's Design Studio: GET design, POST design/feedback, POST design/approval, POST design/publish, POST design/refine.
+		if (path[0] === 'design') {
+			if (method === 'GET' && path.length === 1) {
+				const loaded = await loadStudio(event, sessionId);
+				return loaded.studio ? json(loaded.studio) : json({ error: 'not_found' }, { status: loaded.status });
+			}
+			if (method === 'POST' && path.length === 2 && path[1] === 'feedback') {
+				const body = await read(request);
+				const outcome = await addStudioFeedback(event, sessionId, body);
+				return outcome.ok ? json(outcome.data, { status: 201 }) : json({ error: outcome.message, message: outcome.message }, { status: outcome.status });
+			}
+			if (method === 'POST' && path.length === 2 && path[1] === 'approval') {
+				const body = await read(request);
+				if (typeof body.version !== 'number') return bad();
+				const outcome = await approveStudioVersion(event, sessionId, body.version, text(body.note) ? body.note : null);
+				return outcome.ok ? json(outcome.data, { status: 201 }) : json({ error: outcome.message, message: outcome.message }, { status: outcome.status });
+			}
+			if (method === 'POST' && path.length === 2 && path[1] === 'publish') {
+				const body = await read(request);
+				if (typeof body.version !== 'number') return bad();
+				return answer(await publishStudioVersion(event, sessionId, body.version));
+			}
+			if (method === 'POST' && path.length === 2 && path[1] === 'refine') {
+				const body = await read(request);
+				if (!text(body.text) || !body.text.trim()) return bad();
+				const sent = await chat.sendMessage(event, sessionId, body.text);
+				return sent.ok ? json({ ok: true }, { status: 202 }) : json({ error: sent.message, message: sent.message }, { status: sent.status });
+			}
+			return json({ error: 'not_found' }, { status: 404 });
+		}
 		// A crew member's plans: agent-plans/:agentSession, and a step: …/:plan/items/:index.
 		if (path[0] === 'agent-plans' && path[1]) {
 			if (method === 'GET' && path.length === 2) return answer(await chat.agentPlans(event, sessionId, path[1]));

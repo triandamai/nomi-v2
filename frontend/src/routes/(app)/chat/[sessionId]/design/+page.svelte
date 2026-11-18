@@ -9,4 +9,4 @@
 
 <svelte:head><title>{m.studio_title()}</title></svelte:head>
 
-<DesignStudio sessionId={data.sessionId} previews={data.previews} feedback={data.feedback} approval={data.approval} wanted={data.wanted} />
+<DesignStudio sessionId={data.sessionId} directions={data.directions ?? null} previews={data.previews} feedback={data.feedback} approval={data.approval} wanted={data.wanted} />
