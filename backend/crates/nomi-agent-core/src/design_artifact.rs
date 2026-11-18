@@ -422,7 +422,7 @@ pub fn artifact_input_schema() -> Value {
                 "type": "array",
                 "minItems": 1,
                 "maxItems": MAX_FILES,
-                "description": "Every file of the preview, whole: index.html first, then other pages, css, js and svg. Relative lowercase paths",
+                "description": "Every file of the preview, whole: canvas.pen (OpenPencil scene graph). Relative lowercase paths",
                 "items": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}, "required": ["path", "content"]}
             },
             "elements": {

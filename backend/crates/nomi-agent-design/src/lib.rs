@@ -390,6 +390,8 @@ mod tests {
     fn sora_builds_previews_but_never_invents_a_link_or_the_apps_code() {
         let rules = DESIGN_PREVIEW_RULES;
         assert!(rules.contains("save_preview") && rules.contains("data-design-id") && rules.contains("finished"));
+        assert!(rules.contains("canvas.pen") && rules.contains("OpenPencil"));
+        assert!(rules.contains("do not build raw HTML"));
         assert!(rules.contains("Design Studio") && rules.contains("exactly as it is"));
         assert!(rules.contains("never write the app's code"));
     }
