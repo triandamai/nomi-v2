@@ -276,9 +276,7 @@
 						onopen={(index) => {
 							const entry = ws.tree[index];
 							if (entry && entry.kind !== 'folder') {
-								ws.codeText = null;
-								ws.codeLines = null;
-								ws.codePath = entry.path;
+								ws.openFile(entry.path);
 							}
 						}}
 						onask={() => {

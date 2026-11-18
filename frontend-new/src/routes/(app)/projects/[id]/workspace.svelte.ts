@@ -541,6 +541,8 @@ export class Workspace {
 	phoneFile = $state(false);
 	readonly codeOpen = $derived(this.view === 'code' || this.phoneFile);
 	openFile = (path: string) => {
+		// The file already open stays as it's read (clearing it would wait on a read that never comes).
+		if (path === this.codePath) return;
 		this.codeText = null;
 		this.codeLines = null;
 		this.codePath = path;
