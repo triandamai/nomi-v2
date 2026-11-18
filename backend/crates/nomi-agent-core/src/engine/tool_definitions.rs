@@ -90,7 +90,8 @@ pub(super) fn ask_user_tool_definition() -> ToolDefinition {
                       label alone isn't clear, e.g. what a design direction looks like). Skip what they \
                       already told you, and never ask the same thing twice. Your turn ends here; their \
                       answers arrive as their next message. Call it on its own, not alongside other tools, \
-                      and don't repeat the questions in your reply.".to_string(),
+                      and don't repeat the questions in your reply.".to_string()
+            + crate::prompts::ASK_USER_RECOMMEND_GUIDE,
         input_schema: serde_json::json!({
             "type": "object",
             "properties": {
@@ -104,6 +105,7 @@ pub(super) fn ask_user_tool_definition() -> ToolDefinition {
                         "type": "object",
                         "properties": {
                             "question": {"type": "string"},
+                            "helper": {"type": "string", "description": crate::prompts::ASK_USER_HELPER_DESCRIPTION},
                             "options": {
                                 "type": "array",
                                 "maxItems": 5,
@@ -111,7 +113,8 @@ pub(super) fn ask_user_tool_definition() -> ToolDefinition {
                                     "type": "object",
                                     "properties": {
                                         "label": {"type": "string"},
-                                        "detail": {"type": "string"}
+                                        "detail": {"type": "string"},
+                                        "recommended": {"type": "boolean", "description": crate::prompts::ASK_USER_RECOMMENDED_DESCRIPTION}
                                     },
                                     "required": ["label"]
                                 }
@@ -311,4 +314,22 @@ pub fn crew_tool_definitions(registry: &AgentRegistry) -> Vec<ToolDefinition> {
     tools.push(find_tools_tool_definition());
     tools.push(create_agent_tool_definition());
     tools
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ask_user_accepts_a_recommended_option_and_a_helper_line() {
+        let schema = ask_user_tool_definition().input_schema.to_string();
+        assert!(schema.contains("\"recommended\"") && schema.contains("\"helper\""), "{schema}");
+        let (block, _) = parse_questions(&serde_json::json!({
+            "questions": [{"question": "Which days?", "helper": "From Jakarta.", "options": [{"label": "1-2 Nov", "recommended": true}]}]
+        }))
+        .unwrap();
+        let crate::content_block::ContentBlock::Questions { questions, .. } = block else { panic!() };
+        assert_eq!(questions[0].helper.as_deref(), Some("From Jakarta."));
+        assert!(questions[0].options[0].recommended);
+    }
 }

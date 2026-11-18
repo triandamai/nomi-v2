@@ -35,7 +35,7 @@ pub struct RetryResponse {
 fn retry_target(blocks: Option<serde_json::Value>) -> Option<RetryTarget> {
     let blocks: Vec<ContentBlock> = serde_json::from_value(blocks?).ok()?;
     blocks.into_iter().find_map(|block| match block {
-        ContentBlock::RunFailed { retry } => retry,
+        ContentBlock::RunFailed { retry, .. } => retry,
         _ => None,
     })
 }

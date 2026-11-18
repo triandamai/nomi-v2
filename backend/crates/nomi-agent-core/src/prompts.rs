@@ -714,3 +714,14 @@ pub const KODA_BRIEF_GUIDE_LEFT_OUT: &str = "Sections left out here (read_guide 
 /// Told to the crew, after the person's message, for each file they sent it without because the
 /// model they picked can't read it ({name}, {model}).
 pub const LEFT_OUT_NOTE: &str = "(Not sent with this message: {name}. {model} can't read that kind of file, so you did not get it. Say so if it matters.)";
+
+/// In the ask_user tool's description: when to recommend an answer and add a helper line.
+pub const ASK_USER_RECOMMEND_GUIDE: &str = " Mark the one option you would pick yourself with recommended: true, at most one per question \
+     and only where you have a real reason; if the person skips, that answer is used. Add a short helper \
+     line under a question where it needs context (who it is for, what you already know).";
+
+/// The ask_user schema's `recommended` property.
+pub const ASK_USER_RECOMMENDED_DESCRIPTION: &str = "true on the one option you suggest; at most one per question";
+
+/// The ask_user schema's `helper` property.
+pub const ASK_USER_HELPER_DESCRIPTION: &str = "One short line under the question giving it context, optional";
