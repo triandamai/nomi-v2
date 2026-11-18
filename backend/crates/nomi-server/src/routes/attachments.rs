@@ -22,6 +22,24 @@ use crate::app::AppState;
 
 type ApiError = (StatusCode, &'static str);
 
+/// An upload that failed: the status, and a body the composer reads by its `error` code.
+type UploadError = (StatusCode, Json<serde_json::Value>);
+
+fn coded(status: StatusCode, error: &str, message: &str) -> UploadError {
+    (status, Json(json!({ "error": error, "message": message })))
+}
+
+fn too_large(max_bytes: u64) -> UploadError {
+    (
+        StatusCode::PAYLOAD_TOO_LARGE,
+        Json(json!({ "error": "too_large", "message": "file is too big", "max_bytes": max_bytes })),
+    )
+}
+
+fn server_error(message: &str) -> UploadError {
+    coded(StatusCode::INTERNAL_SERVER_ERROR, "server_error", message)
+}
+
 /// Bytes read before deciding what a file is.
 const SNIFF_BYTES: usize = 8 * 1024;
 /// The browser's live transcript of a voice note, kept as a fallback.
@@ -63,6 +81,15 @@ pub struct LimitsResponse {
     pub max_files: usize,
     /// The most a message's text may hold, in characters.
     pub max_message_chars: usize,
+    /// What the composer checks a file against before uploading.
+    pub accepted: Accepted,
+}
+
+#[derive(Serialize)]
+pub struct Accepted {
+    pub kinds: &'static [&'static str],
+    pub extensions: &'static [&'static str],
+    pub mimes: &'static [&'static str],
 }
 
 /// `GET /api/attachments/limits`: what the composer checks before uploading.
@@ -74,6 +101,11 @@ pub async fn limits(AuthClaims(_claims): AuthClaims) -> Json<LimitsResponse> {
         max_message_bytes: limits.max_message_bytes,
         max_files: limits.max_files,
         max_message_chars: super::sessions::MAX_MESSAGE_CHARS,
+        accepted: Accepted {
+            kinds: nomi_attachments::accepted::ACCEPTED_KINDS,
+            extensions: nomi_attachments::accepted::ACCEPTED_EXTENSIONS,
+            mimes: nomi_attachments::accepted::ACCEPTED_MIMES,
+        },
     })
 }
 
@@ -131,20 +163,20 @@ impl Drop for TempFile {
 /// `POST /api/attachments`: the raw file as the body, its name in `X-File-Name` (%-encoded),
 /// `X-Attachment-Kind: voice` for a composer voice note, with the browser's own transcript (if it
 /// made one) in `X-Transcript`.
-pub async fn upload(State(state): State<AppState>, AuthClaims(claims): AuthClaims, headers: HeaderMap, body: Body) -> Result<(StatusCode, Json<AttachmentResponse>), ApiError> {
+pub async fn upload(State(state): State<AppState>, AuthClaims(claims): AuthClaims, headers: HeaderMap, body: Body) -> Result<(StatusCode, Json<AttachmentResponse>), UploadError> {
     let limits = current_limits().await;
     let max = limits.max_upload_bytes();
     let declared: Option<u64> = headers.get(header::CONTENT_LENGTH).and_then(|v| v.to_str().ok()).and_then(|v| v.parse().ok());
     if declared.is_some_and(|len| len > max) {
-        return Err((StatusCode::PAYLOAD_TOO_LARGE, "file is too big"));
+        return Err(too_large(max));
     }
     let used: i64 = sqlx::query_scalar("SELECT COALESCE(SUM(size_bytes), 0)::bigint FROM attachments WHERE user_id = $1")
         .bind(claims.sub)
         .fetch_one(&state.pool)
         .await
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to check storage"))?;
+        .map_err(|_| server_error("failed to check storage"))?;
     if used + declared.unwrap_or(0) as i64 > per_person_quota_bytes().await {
-        return Err((StatusCode::INSUFFICIENT_STORAGE, "storage is full"));
+        return Err(coded(StatusCode::INSUFFICIENT_STORAGE, "storage_full", "storage is full"));
     }
 
     let name = clean_name(&header_text(&headers, "x-file-name").unwrap_or_default());
@@ -156,44 +188,48 @@ pub async fn upload(State(state): State<AppState>, AuthClaims(claims): AuthClaim
 
     // Stream to a temp file, counting as it goes, so a big upload never sits in memory.
     let dir = std::env::temp_dir().join("nomi-uploads");
-    tokio::fs::create_dir_all(&dir).await.map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to store file"))?;
+    tokio::fs::create_dir_all(&dir).await.map_err(|_| server_error("failed to store file"))?;
     let temp = TempFile(dir.join(Uuid::new_v4().to_string()));
-    let mut file = tokio::fs::File::create(&temp.0).await.map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to store file"))?;
+    let mut file = tokio::fs::File::create(&temp.0).await.map_err(|_| server_error("failed to store file"))?;
     let mut head = Vec::with_capacity(SNIFF_BYTES);
     let mut size: u64 = 0;
     let mut stream = body.into_data_stream();
     while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|_| (StatusCode::BAD_REQUEST, "upload was interrupted"))?;
+        let chunk = chunk.map_err(|_| coded(StatusCode::BAD_REQUEST, "interrupted", "upload was interrupted"))?;
         size += chunk.len() as u64;
         if size > max {
-            return Err((StatusCode::PAYLOAD_TOO_LARGE, "file is too big"));
+            return Err(too_large(max));
         }
         if head.len() < SNIFF_BYTES {
             let take = (SNIFF_BYTES - head.len()).min(chunk.len());
             head.extend_from_slice(&chunk[..take]);
         }
-        file.write_all(&chunk).await.map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to store file"))?;
+        file.write_all(&chunk).await.map_err(|_| server_error("failed to store file"))?;
     }
-    file.flush().await.map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to store file"))?;
+    file.flush().await.map_err(|_| server_error("failed to store file"))?;
     drop(file);
 
     let sniffed = nomi_attachments::sniff(&head, &name, &claimed, voice).map_err(|refused| match refused {
-        nomi_attachments::kind::Refused::Executable => (StatusCode::UNSUPPORTED_MEDIA_TYPE, "programs can't be attached"),
-        nomi_attachments::kind::Refused::Empty => (StatusCode::BAD_REQUEST, "file is empty"),
+        nomi_attachments::kind::Refused::Executable => {
+            let mut refusal = coded(StatusCode::UNSUPPORTED_MEDIA_TYPE, "unsupported_type", "programs can't be attached");
+            refusal.1 .0["extension"] = json!(nomi_attachments::accepted::extension_of(&name));
+            refusal
+        }
+        nomi_attachments::kind::Refused::Empty => coded(StatusCode::BAD_REQUEST, "empty_file", "file is empty"),
     })?;
     if size > limits.max_bytes_for(sniffed.kind) {
-        return Err((StatusCode::PAYLOAD_TOO_LARGE, "file is too big"));
+        return Err(too_large(limits.max_bytes_for(sniffed.kind)));
     }
 
     // Documents, spreadsheets, slides and PDFs are read now; media is left to the files model.
     let extracted = if matches!(sniffed.kind, Kind::Audio | Kind::Voice | Kind::Video) {
         nomi_attachments::Extracted { needs_model: true, details: json!({}), ..Default::default() }
     } else {
-        let bytes = tokio::fs::read(&temp.0).await.map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to store file"))?;
+        let bytes = tokio::fs::read(&temp.0).await.map_err(|_| server_error("failed to store file"))?;
         let sniffed = sniffed.clone();
         tokio::task::spawn_blocking(move || nomi_attachments::extract(&bytes, &sniffed))
             .await
-            .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to read file"))?
+            .map_err(|_| server_error("failed to read file"))?
     };
 
     let id = Uuid::new_v4();
@@ -201,7 +237,7 @@ pub async fn upload(State(state): State<AppState>, AuthClaims(claims): AuthClaim
     let key = storage_key(claims.sub, id);
     store.put_file(&key, &temp.0, &sniffed.mime).await.map_err(|e| {
         tracing::error!(error = %e, "failed to store attachment");
-        (StatusCode::INTERNAL_SERVER_ERROR, "failed to store file")
+        server_error("failed to store file")
     })?;
     let preview = match extracted.preview_jpeg {
         Some(jpeg) => {
@@ -243,7 +279,7 @@ pub async fn upload(State(state): State<AppState>, AuthClaims(claims): AuthClaim
     .await
     .map_err(|e| {
         tracing::error!(error = %e, "failed to save attachment");
-        (StatusCode::INTERNAL_SERVER_ERROR, "failed to store file")
+        server_error("failed to store file")
     })?;
 
     let reference = Reference { id, name: name.clone(), kind: sniffed.kind, mime: sniffed.mime.clone(), size };

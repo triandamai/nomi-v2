@@ -225,3 +225,114 @@ async fn unsent_uploads_are_swept_after_six_hours_and_sent_ones_stay(pool: PgPoo
     left.sort();
     assert_eq!(left, vec!["fresh-draft.txt".to_string(), "old-sent.txt".to_string()]);
 }
+
+async fn raw_upload(router: axum::Router, token: &str, name: &str, body: Body) -> (StatusCode, Value) {
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/attachments")
+        .header("authorization", format!("Bearer {token}"))
+        .header("content-type", "application/octet-stream")
+        .header("x-file-name", name)
+        .body(body)
+        .unwrap();
+    let response = router.oneshot(request).await.unwrap();
+    let status = response.status();
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn upload_failures_carry_a_code_the_composer_can_act_on(pool: PgPool) {
+    use_temp_attachment_dir();
+    let router = build_router(test_state(pool.clone()));
+    let token = register_and_login(router.clone(), "code@example.com").await;
+
+    // Too big: the code, a sentence, and the biggest a file of that kind may be.
+    let mut big = b"a,b\n".to_vec();
+    big.resize(10 * 1024 * 1024 + 1, b'x');
+    let (status, body) = upload(router.clone(), &token, "huge.csv", "text/csv", big).await;
+    assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
+    assert_eq!(body["error"], "too_large", "{body}");
+    assert_eq!(body["max_bytes"], 10 * 1024 * 1024);
+    assert!(body["message"].as_str().is_some_and(|m| !m.is_empty()));
+
+    // A program: the code and the extension that was refused.
+    let (status, body) = upload(router.clone(), &token, "Setup.DMG", "application/octet-stream", b"MZ\x90\x00 program".to_vec()).await;
+    assert_eq!(status, StatusCode::UNSUPPORTED_MEDIA_TYPE);
+    assert_eq!(body["error"], "unsupported_type", "{body}");
+    assert_eq!(body["extension"], ".dmg");
+
+    // A connection that drops part-way.
+    let chunks: Vec<Result<Vec<u8>, std::io::Error>> = vec![Ok(b"a,b\n1,2\n".to_vec()), Err(std::io::Error::other("connection reset"))];
+    let (status, body) = raw_upload(router.clone(), &token, "cut.csv", Body::from_stream(futures_util::stream::iter(chunks))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"], "interrupted", "{body}");
+
+    // A full store.
+    let user_id: Uuid = sqlx::query_scalar("SELECT user_id FROM web_credentials WHERE email = 'code@example.com'").fetch_one(&pool).await.unwrap();
+    sqlx::query(
+        "INSERT INTO attachments (user_id, name, mime, kind, size_bytes, storage_key, status) VALUES ($1, 'old.bin', 'text/plain', 'text', $2, 'old', 'ready')",
+    )
+    .bind(user_id)
+    .bind(2048_i64 * 1024 * 1024)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let (status, body) = upload(router, &token, "one.csv", "text/csv", b"a,b\n1,2\n".to_vec()).await;
+    assert_eq!(status, StatusCode::INSUFFICIENT_STORAGE);
+    assert_eq!(body["error"], "storage_full", "{body}");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn limits_list_what_can_be_attached(pool: PgPool) {
+    let router = build_router(test_state(pool));
+    let token = register_and_login(router.clone(), "types@example.com").await;
+    let (status, body) = json_request(router, "GET", "/api/attachments/limits", Value::Null, Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+    let list = |key: &str| body["accepted"][key].as_array().unwrap_or_else(|| panic!("accepted.{key} in {body}")).iter().map(|v| v.as_str().unwrap().to_string()).collect::<Vec<_>>();
+    let kinds = list("kinds");
+    for kind in ["pdf", "image", "spreadsheet", "archive"] {
+        assert!(kinds.iter().any(|k| k == kind), "{kind} in {kinds:?}");
+    }
+    let extensions = list("extensions");
+    assert!(extensions.iter().all(|e| e.starts_with('.')));
+    assert!(extensions.iter().any(|e| e == ".pdf") && extensions.iter().any(|e| e == ".jpg") && extensions.iter().any(|e| e == ".zip"));
+    assert!(!extensions.iter().any(|e| e == ".exe"));
+    assert!(list("mimes").iter().any(|m| m == "application/pdf"));
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn files_left_out_of_a_message_stay_on_it_and_the_crew_is_told(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let token = register_and_login(router.clone(), "leftout@example.com").await;
+    let (_, mine) = json_request(router.clone(), "POST", "/api/sessions", Value::Null, Some(&token)).await;
+    let session = mine["session_id"].as_str().unwrap();
+    let uri = format!("/api/sessions/{session}/messages");
+
+    let left_out = json!([{ "name": "struk-belanja-nov.jpg", "reason": "model_cannot_see", "model_label": "deepseek-v3" }]);
+    let (status, sent) = json_request(router.clone(), "POST", &uri, json!({ "text": "ini struknya", "left_out": left_out }), Some(&token)).await;
+    assert_eq!(status, StatusCode::ACCEPTED, "{sent}");
+    assert_eq!(sent["user_message"]["content"], "ini struknya");
+    assert_eq!(sent["user_message"]["left_out"], left_out);
+
+    // It's still there when the chat is loaded again.
+    let (_, listed) = json_request(router.clone(), "GET", &uri, Value::Null, Some(&token)).await;
+    assert_eq!(listed["messages"][0]["left_out"], left_out, "{listed}");
+
+    // The crew reads a line naming the file and why.
+    let session_id: Uuid = session.parse().unwrap();
+    let mut conn = pool.acquire().await.unwrap();
+    let history = nomi_turn::fetch_recent_messages(&mut conn, session_id).await.unwrap();
+    let text = format!("{:?}", history.last().unwrap().content);
+    assert!(text.contains("struk-belanja-nov.jpg") && text.contains("deepseek-v3"), "{text}");
+
+    // A reason the contract doesn't know is refused.
+    let bad = json!([{ "name": "a.jpg", "reason": "because", "model_label": "x" }]);
+    let (status, _) = json_request(router.clone(), "POST", &uri, json!({ "text": "hi", "left_out": bad }), Some(&token)).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+
+    // A message without any keeps none.
+    let (status, plain) = json_request(router, "POST", &uri, json!({ "text": "hello" }), Some(&token)).await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    assert!(plain["user_message"].get("left_out").is_none());
+}

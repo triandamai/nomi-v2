@@ -710,3 +710,7 @@ pub const KODA_BRIEF_RELAY_PACKAGES: &str = "Packages on this Nomi: the client i
 /// After a guide in Koda's brief that had sections left out. `{topic}` is the guide, `{sections}`
 /// their headings.
 pub const KODA_BRIEF_GUIDE_LEFT_OUT: &str = "Sections left out here (read_guide {topic} returns them): {sections}.";
+
+/// Told to the crew, after the person's message, for each file they sent it without because the
+/// model they picked can't read it ({name}, {model}).
+pub const LEFT_OUT_NOTE: &str = "(Not sent with this message: {name}. {model} can't read that kind of file, so you did not get it. Say so if it matters.)";

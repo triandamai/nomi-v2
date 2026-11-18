@@ -280,6 +280,39 @@ pub struct MessageItem {
     /// What this reply drew on from memory (the viewer's own memories only), most relevant first.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub used_memories: Vec<SavedMemory>,
+    /// Files the person sent this message without, and why (the bubble's "Sent without" note).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub left_out: Vec<LeftOut>,
+}
+
+/// Why a file was left out of a message.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum LeftOutReason {
+    /// The chosen model can't read that kind of file.
+    ModelCannotSee,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct LeftOut {
+    pub name: String,
+    pub reason: LeftOutReason,
+    pub model_label: String,
+}
+
+/// Most files a message may list as left out, and the longest name or model label kept.
+const MAX_LEFT_OUT: usize = 20;
+const MAX_LEFT_OUT_NAME_CHARS: usize = 200;
+const MAX_LEFT_OUT_LABEL_CHARS: usize = 80;
+
+/// The notes as stored: bounded, with control characters dropped (the crew reads them).
+fn clean_left_out(items: Vec<LeftOut>) -> Vec<LeftOut> {
+    let tidy = |s: String, max: usize| s.chars().filter(|c| !c.is_control()).take(max).collect::<String>();
+    items
+        .into_iter()
+        .take(MAX_LEFT_OUT)
+        .map(|i| LeftOut { name: tidy(i.name, MAX_LEFT_OUT_NAME_CHARS), reason: i.reason, model_label: tidy(i.model_label, MAX_LEFT_OUT_LABEL_CHARS) })
+        .collect()
 }
 
 #[derive(Serialize, Clone, Debug, sqlx::FromRow)]
@@ -370,12 +403,12 @@ pub struct ListMessagesResponse {
 /// begins halfway through the crew's replies to one request.
 const MESSAGE_COLUMNS: &str = "m.id, m.sender_channel_identity_id, m.content, m.created_at, m.content_blocks, mf.rating, m.agent_display_name, \
      (SELECT count(*) FROM message_memory_usage u WHERE u.message_id = m.id) AS memory_count, m.edited_at, \
-     (SELECT count(*) FROM message_versions v WHERE v.message_id = m.id) AS versions";
+     (SELECT count(*) FROM message_versions v WHERE v.message_id = m.id) AS versions, m.left_out";
 
-type MessageRow = (Uuid, Option<Uuid>, String, DateTime<Utc>, Option<serde_json::Value>, Option<String>, Option<String>, i64, Option<DateTime<Utc>>, i64);
+type MessageRow = (Uuid, Option<Uuid>, String, DateTime<Utc>, Option<serde_json::Value>, Option<String>, Option<String>, i64, Option<DateTime<Utc>>, i64, Option<serde_json::Value>);
 
 fn to_message_item(
-    (id, sender, content, created_at, content_blocks, my_feedback, agent_display_name, memory_count, edited_at, versions): MessageRow,
+    (id, sender, content, created_at, content_blocks, my_feedback, agent_display_name, memory_count, edited_at, versions, left_out): MessageRow,
 ) -> MessageItem {
     MessageItem {
         id,
@@ -394,6 +427,7 @@ fn to_message_item(
         versions,
         saved_memories: Vec::new(),
         used_memories: Vec::new(),
+        left_out: left_out.and_then(|v| serde_json::from_value(v).ok()).unwrap_or_default(),
     }
 }
 
@@ -878,6 +912,9 @@ pub async fn rename_session(
 #[derive(Deserialize)]
 pub struct SendMessageRequest {
     pub text: String,
+    /// Files the person sent this without (the model they chose can't read them).
+    #[serde(default)]
+    pub left_out: Vec<LeftOut>,
 }
 
 /// The most a message's text may hold, in characters (attached files are counted by name only;
@@ -903,7 +940,7 @@ pub async fn send_message(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
     Path(session_id): Path<Uuid>,
-    Json(req): Json<SendMessageRequest>,
+    Json(mut req): Json<SendMessageRequest>,
 ) -> Result<(StatusCode, Json<IngestMessageResponse>), (StatusCode, &'static str)> {
     authorize_session_access(&state.pool, claims.sub, session_id).await?;
     refuse_project_viewer(&state.pool, claims.sub, session_id).await?;
@@ -934,7 +971,8 @@ pub async fn send_message(
     // Files the message points at must be the sender's own; their tags are rewritten from our
     // records so what agents read about a file is what was really uploaded.
     let (text, attachment_ids) = crate::routes::attachments::check_message_references(&state.pool, claims.sub, &req.text).await?;
-    let req = SendMessageRequest { text };
+    let left_out = clean_left_out(std::mem::take(&mut req.left_out));
+    let req = SendMessageRequest { text, left_out: Vec::new() };
 
     // Someone working in a teammate's project chat may never have opened a chat of their own:
     // without their web identity, ingesting would file the message under a brand-new person.
@@ -944,7 +982,8 @@ pub async fn send_message(
     })?;
 
     tracing::debug!(channel = %channel, chat_type = %chat_type, "ingesting inbound message");
-    let ingested = nomi_turn::ingest::ingest_inbound_message(
+    let left_out_json = (!left_out.is_empty()).then(|| serde_json::to_value(&left_out).unwrap_or_default());
+    let ingested = nomi_turn::ingest::ingest_inbound_message_with(
         &state.pool,
         &channel,
         &chat_type,
@@ -952,6 +991,7 @@ pub async fn send_message(
         &claims.sub.to_string(),
         &req.text,
         Some(claims.active_org_id),
+        left_out_json.as_ref(),
     )
     .await
     .map_err(|e| {
@@ -1002,6 +1042,7 @@ pub async fn send_message(
         versions: 0,
         saved_memories: Vec::new(),
         used_memories: Vec::new(),
+        left_out,
     };
 
     Ok((StatusCode::ACCEPTED, Json(IngestMessageResponse { user_message, supervisor_reply: None })))
@@ -1122,6 +1163,7 @@ async fn try_stop_command(
         versions: 0,
         saved_memories: Vec::new(),
         used_memories: Vec::new(),
+        left_out: Vec::new(),
     };
     // Background task cards the stop ended: every device fetches them again.
     for (session_id, message_id) in &outcome.report.updated_message_ids {
@@ -1144,6 +1186,7 @@ async fn try_stop_command(
         versions: 0,
         saved_memories: Vec::new(),
         used_memories: Vec::new(),
+        left_out: Vec::new(),
     };
     Ok(Some(IngestMessageResponse { user_message, supervisor_reply: Some(supervisor_reply) }))
 }

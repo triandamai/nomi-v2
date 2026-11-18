@@ -916,9 +916,9 @@ pub async fn fetch_recent_messages(
     let project_chat = nomi_agent_core::working_memory::is_project_chat(&mut **conn, session_id).await?;
     // Only what was actually said: shown thinking (🧠) and progress notes (💭) are a window
     // into the work, not replies, and fed back as replies they confuse the next agent.
-    let rows: Vec<(Option<Uuid>, String, Uuid)> = sqlx::query_as(&format!(
-        "SELECT sender_channel_identity_id, content, id FROM ( \
-             SELECT id, sender_channel_identity_id, content, created_at FROM messages \
+    let rows: Vec<(Option<Uuid>, String, Uuid, Option<serde_json::Value>)> = sqlx::query_as(&format!(
+        "SELECT sender_channel_identity_id, content, id, left_out FROM ( \
+             SELECT id, sender_channel_identity_id, content, created_at, left_out FROM messages \
              WHERE session_id = $1 AND {} \
              ORDER BY created_at DESC, id DESC LIMIT $2 \
          ) recent ORDER BY created_at ASC, id ASC",
@@ -940,7 +940,8 @@ pub async fn fetch_recent_messages(
     let said: Vec<(bool, String)> = rows
         .into_iter()
         .enumerate()
-        .map(|(i, (sender, content, _id))| {
+        .map(|(i, (sender, content, _id, left_out))| {
+            let content = with_left_out_notes(content, left_out.as_ref());
             (sender.is_some(), if i < whole_from { nomi_agent_core::context::clip_older_message(content, older_chars) } else { content })
         })
         .collect();
@@ -948,6 +949,19 @@ pub async fn fetch_recent_messages(
         role: if from_person { LlmRole::User } else { LlmRole::Assistant },
         content: vec![ContentBlock::Text { text }],
     })))
+}
+
+/// A person's message followed by a line for each file they sent it without, so the crew can say
+/// they didn't get it.
+fn with_left_out_notes(mut content: String, left_out: Option<&serde_json::Value>) -> String {
+    let Some(files) = left_out.and_then(|v| v.as_array()) else { return content };
+    for file in files {
+        let name = file.get("name").and_then(|v| v.as_str()).unwrap_or("a file");
+        let model = file.get("model_label").and_then(|v| v.as_str()).unwrap_or("The model you picked");
+        content.push('\n');
+        content.push_str(&nomi_agent_core::prompts::LEFT_OUT_NOTE.replace("{name}", name).replace("{model}", model));
+    }
+    content
 }
 
 /// The newest messages that fit in `budget` characters, oldest dropped first. The newest one
