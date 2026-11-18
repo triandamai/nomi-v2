@@ -742,6 +742,10 @@ open questions or unfinished tasks. Drop greetings, small talk and anything sett
 matters. Write short plain lines in the language of the chat, at most 300 words. Reply with the \
 summary only.";
 
+/// Put in the summariser's input when the chat was too long to give it all: the oldest messages
+/// were left out.
+pub const SUMMARY_INPUT_TRIMMED_NOTE: &str = "(Some of the oldest messages are left out here because the chat is very long.)";
+
 /// How a chat's summary reads to the model in the history, in place of the messages it replaced
 /// ({summary}).
 pub const SUMMARY_IN_HISTORY: &str = "(Summary of the earlier part of this chat, whose messages are no longer sent:)\n{summary}";

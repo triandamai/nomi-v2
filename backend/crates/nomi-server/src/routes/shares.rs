@@ -448,7 +448,7 @@ pub async fn read(State(state): State<AppState>, headers: HeaderMap, Path(token)
     }
     let rows: Vec<SharedRow> = sqlx::query_as(&format!("{SHARED_MESSAGES} ORDER BY m.created_at")).bind(session_id).fetch_all(&state.pool).await.map_err(failed)?;
     let shown = shown_message_ids(&rows, &scope, message_id);
-    let files = shared_files(chat_files(&state.pool, &shown).await?, &shown, files_open, &token, mask_on);
+    let files = shared_files(chat_files(&state.pool, session_id, &rows, &shown).await?, &shown, files_open, &token, mask_on);
     let messages = rows
         .into_iter()
         .filter(|row| scope == "chat" || Some(row.0) == message_id)
@@ -476,10 +476,26 @@ pub async fn read(State(state): State<AppState>, headers: HeaderMap, Path(token)
     }))
 }
 
-/// The files attached to `shown` messages (only ever those of the shared chat), oldest first.
-async fn chat_files(pool: &sqlx::PgPool, shown: &[Uuid]) -> Result<Vec<FileRow>, (StatusCode, &'static str)> {
-    let rows: Vec<(Uuid, Uuid, String, String, i64, serde_json::Value, bool)> = sqlx::query_as(
-        "SELECT a.id, a.message_id, a.name, a.kind, a.size_bytes, a.details, m.sender_channel_identity_id IS NULL \
+/// A file the crew made in the chat: it belongs to the chat, not to one message.
+type MadeRow = (Uuid, String, String, i64, serde_json::Value, DateTime<Utc>);
+
+/// Sets each made file at the message it came with: the last one written at or before it (the
+/// chat's first when none was). Only files that land on a shown message are kept, so a reply's
+/// link lists just the files that reply brought.
+fn place_made_files(made: Vec<MadeRow>, rows: &[SharedRow], shown: &[Uuid]) -> Vec<FileRow> {
+    made.into_iter()
+        .filter_map(|(id, name, kind, size_bytes, details, created_at)| {
+            let nearest = rows.iter().rev().find(|row| row.4 <= created_at).or(rows.first())?;
+            shown.contains(&nearest.0).then_some(FileRow { id, message_id: nearest.0, name, kind, size_bytes, details, from_crew: true })
+        })
+        .collect()
+}
+
+/// The files of the chat a link shows: those attached to `shown` messages, and those the crew made
+/// in the chat (by session, as they carry no message), oldest first.
+async fn chat_files(pool: &sqlx::PgPool, session_id: Uuid, rows: &[SharedRow], shown: &[Uuid]) -> Result<Vec<FileRow>, (StatusCode, &'static str)> {
+    let attached: Vec<(Uuid, Uuid, String, String, i64, serde_json::Value, bool)> = sqlx::query_as(
+        "SELECT a.id, a.message_id, a.name, a.kind, a.size_bytes, a.details, a.made_by IS NOT NULL \
          FROM attachments a JOIN messages m ON m.id = a.message_id \
          WHERE a.message_id = ANY($1) ORDER BY m.created_at, a.created_at, a.id",
     )
@@ -487,7 +503,17 @@ async fn chat_files(pool: &sqlx::PgPool, shown: &[Uuid]) -> Result<Vec<FileRow>,
     .fetch_all(pool)
     .await
     .map_err(failed)?;
-    Ok(rows.into_iter().map(|(id, message_id, name, kind, size_bytes, details, from_crew)| FileRow { id, message_id, name, kind, size_bytes, details, from_crew }).collect())
+    let made: Vec<MadeRow> = sqlx::query_as(
+        "SELECT id, name, kind, size_bytes, details, created_at FROM attachments \
+         WHERE session_id = $1 AND made_by IS NOT NULL AND message_id IS NULL AND deleted_at IS NULL ORDER BY created_at, id",
+    )
+    .bind(session_id)
+    .fetch_all(pool)
+    .await
+    .map_err(failed)?;
+    let mut files: Vec<FileRow> = attached.into_iter().map(|(id, message_id, name, kind, size_bytes, details, from_crew)| FileRow { id, message_id, name, kind, size_bytes, details, from_crew }).collect();
+    files.extend(place_made_files(made, rows, shown));
+    Ok(files)
 }
 
 /// GET /api/shared/:token/files/:file_id — one file of a shared message, for a link that has its
@@ -504,9 +530,11 @@ pub async fn open_file(State(state): State<AppState>, headers: HeaderMap, Path((
     }
     let rows: Vec<SharedRow> = sqlx::query_as(&format!("{SHARED_MESSAGES} ORDER BY m.created_at")).bind(session_id).fetch_all(&state.pool).await.map_err(failed)?;
     let shown = shown_message_ids(&rows, &scope, message_id);
-    let file: Option<(String, String, String)> = sqlx::query_as("SELECT name, mime, storage_key FROM attachments WHERE id = $1 AND message_id = ANY($2)")
+    if !chat_files(&state.pool, session_id, &rows, &shown).await?.iter().any(|f| f.id == file_id) {
+        return Err((StatusCode::NOT_FOUND, "file not found"));
+    }
+    let file: Option<(String, String, String)> = sqlx::query_as("SELECT name, mime, storage_key FROM attachments WHERE id = $1")
         .bind(file_id)
-        .bind(&shown)
         .fetch_optional(&state.pool)
         .await
         .map_err(failed)?;
@@ -688,6 +716,22 @@ mod tests {
         let (shown, hidden) = (Uuid::new_v4(), Uuid::new_v4());
         let files = shared_files(vec![file(shown, "a.pdf", false), file(hidden, "b.pdf", false)], &[shown], true, "tok", false);
         assert_eq!(files.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(), vec!["a.pdf"]);
+    }
+
+    #[test]
+    fn a_made_file_lands_on_the_message_before_it_and_a_reply_link_keeps_only_its_own() {
+        let (ask, reply, later) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+        let t0 = Utc::now();
+        let at = |s: i64| t0 + chrono::Duration::seconds(s);
+        let rows: Vec<SharedRow> = vec![(ask, true, None, "q".into(), at(0)), (reply, false, None, "a".into(), at(10)), (later, false, None, "b".into(), at(100))];
+        let made = || vec![(Uuid::new_v4(), "rows.csv".to_string(), "csv".to_string(), 10, serde_json::json!({}), at(11))];
+        let whole = place_made_files(made(), &rows, &[ask, reply, later]);
+        assert_eq!(whole.len(), 1);
+        assert_eq!(whole[0].message_id, reply);
+        assert!(whole[0].from_crew);
+        assert_eq!(place_made_files(made(), &rows, &[reply]).len(), 1);
+        assert!(place_made_files(made(), &rows, &[later]).is_empty());
+        assert!(place_made_files(made(), &[], &[]).is_empty());
     }
 
     #[test]

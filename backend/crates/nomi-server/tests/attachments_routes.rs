@@ -627,3 +627,30 @@ async fn an_images_only_page_is_its_preview(pool: PgPool) {
     let (status, _) = get_status(router, &format!("/api/attachments/{id}/pages/2"), &token).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_file_the_crew_made_is_not_swept_or_removed_as_an_unsent_draft(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let token = register_and_login(router.clone(), "keeper@example.com").await;
+    let user_id: Uuid = sqlx::query_scalar("SELECT user_id FROM web_credentials WHERE email = 'keeper@example.com'").fetch_one(&pool).await.unwrap();
+    let made: Uuid = sqlx::query_scalar(
+        "INSERT INTO attachments (user_id, name, mime, kind, size_bytes, storage_key, status, made_by, created_at) \
+         VALUES ($1, 'made.csv', 'text/csv', 'csv', 1, 'made.csv', 'ready', 'files', now() - interval '30 hours') RETURNING id",
+    )
+    .bind(user_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    nomi_server::attachment_worker::pass(&pool, &[7u8; 32], &reqwest::Client::new()).await.unwrap();
+    let still: i64 = sqlx::query_scalar("SELECT count(*) FROM attachments WHERE id = $1").bind(made).fetch_one(&pool).await.unwrap();
+    assert_eq!(still, 1, "the sweep leaves made files");
+
+    let response = router
+        .oneshot(Request::builder().method("DELETE").uri(format!("/api/attachments/{made}")).header("authorization", format!("Bearer {token}")).body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+    let still: i64 = sqlx::query_scalar("SELECT count(*) FROM attachments WHERE id = $1").bind(made).fetch_one(&pool).await.unwrap();
+    assert_eq!(still, 1);
+}

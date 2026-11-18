@@ -659,10 +659,24 @@ pub fn web_push_rejects_subscription(status: u16) -> bool {
     status == WEB_PUSH_STATUS_NOT_FOUND || status == WEB_PUSH_STATUS_GONE
 }
 
+/// Whether an endpoint's host is a public push service's name, never somewhere inside the
+/// network: no IP literal (v4, v6 or a short numeric form), no `localhost`, no single-label or
+/// internal-looking names. Names are matched as written; the push service's own hosts all are
+/// ordinary public domain names.
+pub fn is_public_push_host(host: &str) -> bool {
+    let host = host.trim().trim_end_matches('.').to_ascii_lowercase();
+    if host.is_empty() || host.starts_with('[') || host.contains(':') || host.parse::<std::net::IpAddr>().is_ok() {
+        return false;
+    }
+    let internal_suffix = ["localhost", "local", "localdomain", "internal", "intranet", "lan", "home", "corp"].iter().any(|s| host == *s || host.ends_with(&format!(".{s}")));
+    let last_label_numeric = host.rsplit('.').next().is_some_and(|label| label.chars().all(|c| c.is_ascii_digit()));
+    host.contains('.') && !internal_suffix && !last_label_numeric
+}
+
 /// Whether a browser's subscription can ever be sent to: an https endpoint, a P-256 public key
 /// and a 16-byte auth secret.
 pub fn is_valid_web_subscription(subscription: &WebSubscription) -> bool {
-    let https = subscription.endpoint.parse::<http::Uri>().is_ok_and(|uri| uri.scheme_str() == Some("https") && uri.host().is_some());
+    let https = subscription.endpoint.parse::<http::Uri>().is_ok_and(|uri| uri.scheme_str() == Some("https") && uri.host().is_some_and(is_public_push_host));
     let public = decode_b64url(&subscription.p256dh).is_some_and(|bytes| web_push_native::p256::PublicKey::from_sec1_bytes(&bytes).is_ok());
     let auth = decode_b64url(&subscription.auth).is_some_and(|bytes| bytes.len() == WEB_PUSH_AUTH_BYTES);
     https && public && auth
@@ -1049,6 +1063,10 @@ mod tests {
         let (_, good, _) = browser();
         assert!(is_valid_web_subscription(&good));
         assert!(!is_valid_web_subscription(&WebSubscription { endpoint: "http://push.example.test/x".into(), ..good.clone() }));
+        for host in ["https://127.0.0.1/x", "https://localhost/x", "https://[::1]/x", "https://10.0.0.5/x", "https://169.254.169.254/x", "https://192.168.1.1:8443/x", "https://db.internal/x", "https://printer.local/x", "https://intranet/x", "https://2130706433/x", "https://127.1/x"] {
+            assert!(!is_valid_web_subscription(&WebSubscription { endpoint: host.into(), ..good.clone() }), "{host}");
+        }
+        assert!(is_public_push_host("fcm.googleapis.com") && is_public_push_host("updates.push.services.mozilla.com") && is_public_push_host("web.push.apple.com."));
         assert!(!is_valid_web_subscription(&WebSubscription { p256dh: "nope".into(), ..good.clone() }));
         assert!(!is_valid_web_subscription(&WebSubscription { auth: "AAAA".into(), ..good }));
     }

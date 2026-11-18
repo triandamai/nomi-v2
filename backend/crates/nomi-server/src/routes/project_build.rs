@@ -39,9 +39,17 @@ pub fn doing_from(tool: &str, input: &Value) -> Option<String> {
     (!text.is_empty()).then(|| text.chars().take(DOING_MAX_CHARS).collect())
 }
 
+/// Whether the crew is at work: a turn is being run for the project's chats. An agent session
+/// that stays `active` while it waits for the person's next message is not work.
+pub fn at_work(turn_running: bool, _agent_waiting_on_person: bool) -> bool {
+    turn_running
+}
+
 #[derive(sqlx::FromRow)]
 struct Building {
     project_id: Uuid,
+    turn_running: bool,
+    agent_active: bool,
     tool: Option<Value>,
     plan_content: Option<String>,
 }
@@ -53,10 +61,13 @@ pub async fn attach(pool: &PgPool, projects: &mut [ProjectSummary]) -> Result<()
     }
     let ids: Vec<Uuid> = projects.iter().map(|p| p.id).collect();
     let rows: Vec<Building> = sqlx::query_as(
-        "SELECT p.id AS project_id, a.last_tool AS tool, pl.content AS plan_content \
+        "SELECT p.id AS project_id, \
+                EXISTS (SELECT 1 FROM turn_jobs j WHERE j.status = 'processing' \
+                        AND j.session_id IN (SELECT s.id FROM sessions s WHERE s.id = p.session_id OR s.in_project_id = p.id)) AS turn_running, \
+                a.last_tool IS NOT NULL OR a.active AS agent_active, a.last_tool AS tool, pl.content AS plan_content \
          FROM projects p \
-         JOIN LATERAL ( \
-             SELECT (SELECT e.payload FROM agent_events e WHERE e.agent_session_id = ag.id AND e.event_type = 'ToolCalled' \
+         LEFT JOIN LATERAL ( \
+             SELECT true AS active, (SELECT e.payload FROM agent_events e WHERE e.agent_session_id = ag.id AND e.event_type = 'ToolCalled' \
                      ORDER BY e.created_at DESC LIMIT 1) AS last_tool \
              FROM agent_sessions ag \
              WHERE ag.status = 'active' AND ag.session_id IN (SELECT s.id FROM sessions s WHERE s.id = p.session_id OR s.in_project_id = p.id) \
@@ -72,7 +83,7 @@ pub async fn attach(pool: &PgPool, projects: &mut [ProjectSummary]) -> Result<()
     .await?;
     let mut by_project: HashMap<Uuid, Building> = rows.into_iter().map(|row| (row.project_id, row)).collect();
     for project in projects {
-        if let Some(row) = by_project.remove(&project.id) {
+        if let Some(row) = by_project.remove(&project.id).filter(|row| at_work(row.turn_running, row.agent_active)) {
             let (done, total) = row.plan_content.as_deref().map(nomi_agent_core::plans::checklist_progress).unwrap_or((0, 0));
             let doing = row.tool.as_ref().and_then(|payload| {
                 let tool = payload.get("tool_name").and_then(Value::as_str)?;
@@ -97,6 +108,14 @@ mod tests {
         assert_eq!(build_progress(6, 6, None).step, 6);
         // No plan to count in.
         assert_eq!(build_progress(0, 0, None), BuildProgress { step: 0, steps: 0, doing: None });
+    }
+
+    #[test]
+    fn an_agent_waiting_on_the_person_is_not_building() {
+        assert!(!at_work(false, true));
+        assert!(!at_work(false, false));
+        assert!(at_work(true, true));
+        assert!(at_work(true, false));
     }
 
     #[test]

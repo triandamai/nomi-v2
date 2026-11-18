@@ -114,13 +114,16 @@ pub async fn list_sessions(
     .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to list sessions"))?;
 
     // A custom agent goes by its own name in a chat and by its id as an agent type.
-    let dynamic: std::collections::HashMap<String, String> = sqlx::query_as::<_, (String, String)>("SELECT name, id::text FROM dynamic_agents")
-        .fetch_all(&state.pool)
+    let dynamic: std::collections::HashMap<String, String> = sqlx::query_as::<_, (String, String)>(
+        "SELECT name, id::text FROM dynamic_agents WHERE owner_user_id IS NULL OR owner_user_id = $1 ORDER BY owner_user_id NULLS FIRST, created_at",
+    )
+    .bind(claims.sub)
+    .fetch_all(&state.pool)
         .await
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to list sessions"))?
         .into_iter()
         .collect();
-    let agent_type_of = |name: &str| dynamic.get(name).cloned().unwrap_or_else(|| nomi_agent_core::crew::agent_type_for_name(name));
+    let agent_type_of = |name: &str| resolve_agent_type(&dynamic, name);
 
     let sessions = rows
         .into_iter()
@@ -1967,5 +1970,30 @@ mod plan_item_tests {
     fn no_such_item_is_none() {
         assert_eq!(set_plan_item_done(PLAN, 4, true), None);
         assert_eq!(set_plan_item_done("no tasks", 0, true), None);
+    }
+}
+
+/// The `agent_type` a name in a chat stands for: a built-in crew name always means its crew
+/// member; any other name is the caller's visible custom agent of that name (its id), else the
+/// name's lowercase form.
+fn resolve_agent_type(dynamic: &std::collections::HashMap<String, String>, name: &str) -> String {
+    let built_in = nomi_agent_core::crew::agent_type_for_name(name);
+    if built_in != name.to_lowercase() {
+        return built_in;
+    }
+    dynamic.get(name).cloned().unwrap_or(built_in)
+}
+
+#[cfg(test)]
+mod resolve_tests {
+    use super::*;
+
+    #[test]
+    fn a_custom_agent_never_takes_a_crew_name_and_unknown_names_stay_plain() {
+        let dynamic: std::collections::HashMap<String, String> =
+            [("Koda".to_string(), "u-koda".to_string()), ("Scout".to_string(), "u-scout".to_string())].into_iter().collect();
+        assert_eq!(resolve_agent_type(&dynamic, "Koda"), nomi_agent_core::crew::CODING_AGENT_TYPE);
+        assert_eq!(resolve_agent_type(&dynamic, "Scout"), "u-scout");
+        assert_eq!(resolve_agent_type(&dynamic, "Other"), "other");
     }
 }

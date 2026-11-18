@@ -97,7 +97,31 @@ async fn run(state: AppState, user_id: Uuid, session_id: Uuid) {
             retry_failed_turn(&state.pool, user_id, session_id).await;
         }
         Ok(Summarized::NothingToSummarise) => {}
-        Err(e) => tracing::warn!(error = %e, %session_id, "summarising the chat failed"),
+        Err(e) => {
+            tracing::warn!(error = %e, %session_id, "summarising the chat failed");
+            post_failure(&state.pool, user_id, session_id, e.into_turn_error()).await;
+        }
+    }
+}
+
+/// Shows a failed summary in the chat like any other failed run: an error notice, so the
+/// composer isn't left waiting.
+async fn post_failure(pool: &PgPool, user_id: Uuid, session_id: Uuid, err: nomi_agent_core::TurnError) {
+    let locale = match pool.acquire().await {
+        Ok(mut conn) => nomi_agent_core::user_locale(&mut conn, user_id).await,
+        Err(_) => nomi_agent_core::Locale::En,
+    };
+    let inserted: Result<Uuid, sqlx::Error> = sqlx::query_scalar(
+        "INSERT INTO messages (session_id, sender_channel_identity_id, content, content_blocks, agent_display_name, is_notice) VALUES ($1, NULL, $2, $3, NULL, true) RETURNING id",
+    )
+    .bind(session_id)
+    .bind(err.user_message_in(locale))
+    .bind(err.notice_blocks(None))
+    .fetch_one(pool)
+    .await;
+    match inserted {
+        Ok(message_id) => crate::routes::sessions::announce_sent(pool, user_id, session_id, None, [message_id]).await,
+        Err(e) => tracing::warn!(error = %e, %session_id, "couldn't post the failed summary to the chat"),
     }
 }
 

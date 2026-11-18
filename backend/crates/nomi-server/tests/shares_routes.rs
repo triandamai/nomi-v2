@@ -490,3 +490,27 @@ async fn a_link_for_signed_in_viewers_keeps_its_files_behind_the_sign_in(pool: P
     let (status, _) = json_request(router, "GET", &format!("/api/shared/{}/files/{file}", share["token"].as_str().unwrap()), Value::Null, None).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_file_the_crew_made_in_the_chat_is_listed_and_opens_from_a_link(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let token = register_and_login(router.clone(), "made@example.com").await;
+    let session_id = start_chat(router.clone(), &token).await;
+    reply(&pool, &session_id, "Here is the sheet.").await;
+    // A made file belongs to the chat: it has no message.
+    let made: Uuid = sqlx::query_scalar(
+        "INSERT INTO attachments (user_id, session_id, name, mime, kind, size_bytes, storage_key, status, made_by, created_at) \
+         SELECT s.user_id, s.id, 'rows.csv', 'text/csv', 'csv', 10, 'attachments/test/rows.csv', 'ready', 'files', now() + interval '2 seconds' FROM sessions s WHERE s.id = $1::uuid RETURNING id",
+    )
+    .bind(&session_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let (_, share) = json_request(router.clone(), "POST", &format!("/api/sessions/{session_id}/shares"), json!({ "scope": "chat", "mask": false, "files_open": true }), Some(&token)).await;
+    let link = share["token"].as_str().unwrap();
+    let (_, shared) = json_request(router, "GET", &format!("/api/shared/{link}"), Value::Null, None).await;
+    let files = shared["files"].as_array().unwrap();
+    assert_eq!(files.len(), 1);
+    assert_eq!((files[0]["name"].as_str(), files[0]["made_by_crew"].as_bool()), (Some("rows.csv"), Some(true)));
+    assert_eq!(files[0]["url"], format!("/api/shared/{link}/files/{made}"));
+}

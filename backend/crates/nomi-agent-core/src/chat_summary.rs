@@ -17,6 +17,9 @@ pub const KEEP_RECENT_MESSAGES: usize = 6;
 /// Each message's share of the summariser's input.
 const MESSAGE_CHARS: usize = 3000;
 const SUMMARY_MAX_TOKENS: u32 = 1536;
+/// The most the summariser is given to read, in estimated tokens (see `nomi_embedding::estimate_tokens`),
+/// well inside any model's context. When a chat has more, its oldest messages are left out first.
+pub const SUMMARY_INPUT_MAX_TOKENS: u32 = 24_000;
 /// The kept messages come just after the summary: it is placed this many microseconds before
 /// the first of them.
 const SUMMARY_LEAD_MICROS: i64 = 1;
@@ -48,14 +51,37 @@ pub fn worth_summarising(older: &[Candidate]) -> bool {
 pub fn summary_input(older: &[Candidate]) -> String {
     let clip = |text: &str| text.chars().take(MESSAGE_CHARS).collect::<String>();
     let earlier: Vec<String> = older.iter().filter(|m| m.is_summary).map(|m| clip(&m.content)).collect();
-    let mut input = format!("Summary so far:\n{}\n\nMessages to fold in:\n", if earlier.is_empty() { "(none yet)".to_string() } else { earlier.join("\n") });
-    for m in older.iter().filter(|m| !m.is_summary) {
-        let who = match (m.from_person, &m.agent) {
-            (true, _) => "Person".to_string(),
-            (false, Some(agent)) => format!("Assistant ({agent})"),
-            (false, None) => "Assistant".to_string(),
-        };
-        input.push_str(&format!("{who}: {}\n", clip(&m.content)));
+    let head = format!("Summary so far:\n{}\n\nMessages to fold in:\n", if earlier.is_empty() { "(none yet)".to_string() } else { earlier.join("\n") });
+    let lines: Vec<String> = older
+        .iter()
+        .filter(|m| !m.is_summary)
+        .map(|m| {
+            let who = match (m.from_person, &m.agent) {
+                (true, _) => "Person".to_string(),
+                (false, Some(agent)) => format!("Assistant ({agent})"),
+                (false, None) => "Assistant".to_string(),
+            };
+            format!("{who}: {}\n", clip(&m.content))
+        })
+        .collect();
+    // Newest first until the budget is used, so a long chat loses its oldest messages.
+    let mut budget = SUMMARY_INPUT_MAX_TOKENS.saturating_sub(nomi_embedding::estimate_tokens(&head) + nomi_embedding::estimate_tokens(crate::prompts::SUMMARY_INPUT_TRIMMED_NOTE));
+    let mut kept_from = lines.len();
+    for (at, line) in lines.iter().enumerate().rev() {
+        let cost = nomi_embedding::estimate_tokens(line);
+        if cost > budget {
+            break;
+        }
+        budget -= cost;
+        kept_from = at;
+    }
+    let mut input = head;
+    if kept_from > 0 {
+        input.push_str(crate::prompts::SUMMARY_INPUT_TRIMMED_NOTE);
+        input.push('\n');
+    }
+    for line in &lines[kept_from..] {
+        input.push_str(line);
     }
     input
 }
@@ -109,7 +135,7 @@ pub async fn summarize_chat(pool: &PgPool, provider: &dyn LlmProvider, session_i
         enable_reasoning: false,
         reasoning_effort: Default::default(),
     };
-    let response = nomi_llm::complete(provider, request).await.map_err(|e| SummarizeError::Model(e.to_string()))?;
+    let response = nomi_llm::complete(provider, request).await.map_err(SummarizeError::Model)?;
     let text = response
         .content
         .into_iter()
@@ -118,7 +144,7 @@ pub async fn summarize_chat(pool: &PgPool, provider: &dyn LlmProvider, session_i
             _ => None,
         })
         .filter(|t| !t.is_empty())
-        .ok_or_else(|| SummarizeError::Model("the model's answer was empty".to_string()))?;
+        .ok_or_else(|| SummarizeError::Model(nomi_llm::LlmError::ParseError("the model's answer was empty".to_string())))?;
 
     let replaced = older.iter().filter(|m| !m.is_summary).count() as u32;
     let blocks = serde_json::json!([RichBlock::Summary { replaced }]);
@@ -145,7 +171,17 @@ pub enum SummarizeError {
     #[error(transparent)]
     Db(#[from] sqlx::Error),
     #[error("the model couldn't write the summary: {0}")]
-    Model(String),
+    Model(nomi_llm::LlmError),
+}
+
+impl SummarizeError {
+    /// The failure as a run failure, so it shows in the chat like any other.
+    pub fn into_turn_error(self) -> crate::TurnError {
+        match self {
+            SummarizeError::Db(e) => crate::TurnError::Db(e),
+            SummarizeError::Model(e) => crate::TurnError::LlmCallFailed(e),
+        }
+    }
 }
 
 /// What a summary did.
@@ -203,6 +239,29 @@ mod tests {
         long.content = "x".repeat(MESSAGE_CHARS + 500);
         let input = summary_input(&[long]);
         assert!(input.chars().filter(|c| *c == 'x').count() == MESSAGE_CHARS);
+    }
+
+    #[test]
+    fn a_long_chat_is_cut_to_the_input_budget_oldest_first() {
+        let many: Vec<Candidate> = (0..400)
+            .map(|n| {
+                let mut c = candidate(n, false);
+                c.content = format!("m{n} {}", "x".repeat(MESSAGE_CHARS));
+                c
+            })
+            .collect();
+        let input = summary_input(&many);
+        assert!(nomi_embedding::estimate_tokens(&input) <= SUMMARY_INPUT_MAX_TOKENS);
+        assert!(input.contains("m399 "));
+        assert!(!input.contains("m0 "));
+        assert!(input.contains(crate::prompts::SUMMARY_INPUT_TRIMMED_NOTE));
+    }
+
+    #[test]
+    fn a_chat_within_the_budget_is_not_cut() {
+        let input = summary_input(&[candidate(0, false), candidate(1, false)]);
+        assert!(input.contains("message 0") && input.contains("message 1"));
+        assert!(!input.contains(crate::prompts::SUMMARY_INPUT_TRIMMED_NOTE));
     }
 
     #[test]

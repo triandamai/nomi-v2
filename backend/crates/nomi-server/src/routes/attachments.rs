@@ -365,11 +365,12 @@ struct StoredFile {
     details: serde_json::Value,
     extracted_text: Option<String>,
     replaces_attachment_id: Option<Uuid>,
+    made_by: Option<String>,
 }
 
 async fn find_own(state: &AppState, user_id: Uuid, id: Uuid) -> Result<StoredFile, ApiError> {
     sqlx::query_as::<_, StoredFile>(
-        "SELECT name, mime, kind, size_bytes, storage_key, preview_key, status, message_id, details, extracted_text, replaces_attachment_id FROM attachments WHERE id = $1 AND user_id = $2",
+        "SELECT name, mime, kind, size_bytes, storage_key, preview_key, status, message_id, details, extracted_text, replaces_attachment_id, made_by FROM attachments WHERE id = $1 AND user_id = $2",
     )
     .bind(id)
     .bind(user_id)
@@ -496,10 +497,10 @@ pub async fn get_page(State(state): State<AppState>, AuthClaims(claims): AuthCla
 /// Files already in a message stay, as part of the chat.
 pub async fn delete_attachment(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(id): Path<Uuid>) -> Result<StatusCode, ApiError> {
     let file = find_own(&state, claims.sub, id).await?;
-    if file.message_id.is_some() {
+    if file.message_id.is_some() || file.made_by.is_some() {
         return Err((StatusCode::CONFLICT, "file was already sent"));
     }
-    sqlx::query("DELETE FROM attachments WHERE id = $1 AND user_id = $2 AND message_id IS NULL")
+    sqlx::query("DELETE FROM attachments WHERE id = $1 AND user_id = $2 AND message_id IS NULL AND made_by IS NULL")
         .bind(id)
         .bind(claims.sub)
         .execute(&state.pool)

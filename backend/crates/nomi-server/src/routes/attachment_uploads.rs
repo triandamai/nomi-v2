@@ -177,6 +177,20 @@ pub async fn offset(State(state): State<AppState>, AuthClaims(claims): AuthClaim
     Ok(with_offset(StatusCode::OK.into_response(), received as u64, total.map(|t| t as u64)))
 }
 
+/// Where a piece is written before it's claimed; one file per request, so two pieces never share.
+fn part_path(id: Uuid) -> PathBuf {
+    let mut name = staged_path(id).into_os_string();
+    name.push(format!(".part-{}", Uuid::new_v4()));
+    PathBuf::from(name)
+}
+
+/// The 409 for a piece that doesn't start where the upload stands, saying where it does.
+fn offset_mismatch(current: u64) -> UploadError {
+    let mut refusal = coded(StatusCode::CONFLICT, "offset_mismatch", "the piece doesn't start where the upload stands");
+    refusal.1 .0["offset"] = json!(current);
+    refusal
+}
+
 async fn drop_upload(pool: &sqlx::PgPool, id: Uuid) {
     let _ = sqlx::query("DELETE FROM attachment_uploads WHERE id = $1").bind(id).execute(pool).await;
     let _ = tokio::fs::remove_file(staged_path(id)).await;
@@ -198,12 +212,12 @@ pub async fn append(
         .and_then(parse_content_range)
         .ok_or_else(|| coded(StatusCode::BAD_REQUEST, "invalid_range", "Content-Range must be bytes <from>-<to>/<total>"))?;
 
-    // The row stays locked while the piece is written, so two pieces can't both land at one offset.
-    let mut tx = state.pool.begin().await.map_err(db_error)?;
-    let row: UploadRow = sqlx::query_as(&format!("SELECT {UPLOAD_COLUMNS} FROM attachment_uploads WHERE id = $1 AND user_id = $2 AND expires_at > now() FOR UPDATE"))
+    // No connection is held while the body streams in: the piece is written to a file of its own
+    // first, and only then is the row locked, for a local copy and one UPDATE.
+    let row: UploadRow = sqlx::query_as(&format!("SELECT {UPLOAD_COLUMNS} FROM attachment_uploads WHERE id = $1 AND user_id = $2 AND expires_at > now()"))
         .bind(upload_id)
         .bind(claims.sub)
-        .fetch_optional(&mut *tx)
+        .fetch_optional(&state.pool)
         .await
         .map_err(db_error)?
         .ok_or_else(not_found)?;
@@ -212,31 +226,57 @@ pub async fn append(
     let limits = current_limits().await;
     let plan = match plan_chunk(received, row.total_bytes.map(|t| t as u64), range, limits.max_upload_bytes()) {
         Ok(plan) => plan,
-        Err(ChunkRefusal::OffsetMismatch { current }) => {
-            let mut refusal = coded(StatusCode::CONFLICT, "offset_mismatch", "the piece doesn't start where the upload stands");
-            refusal.1 .0["offset"] = json!(current);
-            return Err(refusal);
-        }
+        Err(ChunkRefusal::OffsetMismatch { current }) => return Err(offset_mismatch(current)),
         Err(ChunkRefusal::TotalChanged) => return Err(coded(StatusCode::BAD_REQUEST, "total_changed", "the total size changed since the upload began")),
         Err(ChunkRefusal::TooLarge { max }) => {
-            drop(tx);
             drop_upload(&state.pool, upload_id).await;
             return Err(too_large(max));
         }
     };
     if row.total_bytes.is_none() {
         if let Err(refusal) = check_quota(&state, claims.sub, plan.total).await {
-            drop(tx);
             drop_upload(&state.pool, upload_id).await;
             return Err(refusal);
         }
     }
 
-    // Append at the offset. Whatever an earlier dropped piece left past it is cut off first.
     let path = staged_path(upload_id);
     if let Some(dir) = path.parent() {
         tokio::fs::create_dir_all(dir).await.map_err(|_| server_error("failed to store file"))?;
     }
+    let part = TempFile(part_path(upload_id));
+    let mut part_file = tokio::fs::File::create(&part.0).await.map_err(|_| server_error("failed to store file"))?;
+    let expected = range.byte_len();
+    let mut written: u64 = 0;
+    let mut stream = body.into_data_stream();
+    while let Some(piece) = stream.next().await {
+        let piece = piece.map_err(|_| coded(StatusCode::BAD_REQUEST, "interrupted", "upload was interrupted"))?;
+        written += piece.len() as u64;
+        if written > expected {
+            return Err(coded(StatusCode::BAD_REQUEST, "invalid_range", "the piece is longer than its Content-Range says"));
+        }
+        part_file.write_all(&piece).await.map_err(|_| server_error("failed to store file"))?;
+    }
+    if written != expected {
+        return Err(coded(StatusCode::BAD_REQUEST, "interrupted", "upload was interrupted"));
+    }
+    part_file.flush().await.map_err(|_| server_error("failed to store file"))?;
+    drop(part_file);
+
+    // Now claim the offset. The lock is held only for the copy and the update; a piece that lost
+    // the race finds the offset moved and gets the 409.
+    let mut tx = state.pool.begin().await.map_err(db_error)?;
+    let current: i64 = sqlx::query_scalar("SELECT received_bytes FROM attachment_uploads WHERE id = $1 AND user_id = $2 AND expires_at > now() FOR UPDATE")
+        .bind(upload_id)
+        .bind(claims.sub)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(db_error)?
+        .ok_or_else(not_found)?;
+    if current as u64 != received {
+        return Err(offset_mismatch(current as u64));
+    }
+    // Append at the offset. Whatever an earlier dropped piece left past it is cut off first.
     let mut file = tokio::fs::OpenOptions::new().write(true).create(true).truncate(false).open(&path).await.map_err(|_| server_error("failed to store file"))?;
     let on_disk = file.metadata().await.map_err(|_| server_error("failed to store file"))?.len();
     if on_disk < received {
@@ -247,39 +287,16 @@ pub async fn append(
     }
     file.set_len(received).await.map_err(|_| server_error("failed to store file"))?;
     file.seek(std::io::SeekFrom::Start(received)).await.map_err(|_| server_error("failed to store file"))?;
-
-    let expected = range.byte_len();
-    let mut written: u64 = 0;
-    let mut stream = body.into_data_stream();
-    let mut failure: Option<UploadError> = None;
-    while let Some(piece) = stream.next().await {
-        let piece = match piece {
-            Ok(piece) => piece,
-            Err(_) => {
-                failure = Some(coded(StatusCode::BAD_REQUEST, "interrupted", "upload was interrupted"));
-                break;
-            }
-        };
-        written += piece.len() as u64;
-        if written > expected {
-            failure = Some(coded(StatusCode::BAD_REQUEST, "invalid_range", "the piece is longer than its Content-Range says"));
-            break;
-        }
-        if file.write_all(&piece).await.is_err() {
-            failure = Some(server_error("failed to store file"));
-            break;
-        }
+    let copied = async {
+        let mut source = tokio::fs::File::open(&part.0).await?;
+        tokio::io::copy(&mut source, &mut file).await?;
+        file.flush().await
     }
-    if failure.is_none() && written != expected {
-        failure = Some(coded(StatusCode::BAD_REQUEST, "interrupted", "upload was interrupted"));
-    }
-    if failure.is_none() && file.flush().await.is_err() {
-        failure = Some(server_error("failed to store file"));
-    }
-    if let Some(failure) = failure {
+    .await;
+    if copied.is_err() {
         // Back to where the upload stood, so the same piece can be sent again.
         let _ = file.set_len(received).await;
-        return Err(failure);
+        return Err(server_error("failed to store file"));
     }
     drop(file);
 
