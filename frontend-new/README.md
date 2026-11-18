@@ -11,6 +11,7 @@ Node 22.12 or newer.
 npm ci
 npx playwright install chromium   # once, for the component tests
 npm run dev                        # http://localhost:5175
+npm run dev:demo                   # the same, with demo data: no backend, no sign-in (scripts/demo)
 ```
 
 ## Check it

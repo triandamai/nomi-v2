@@ -8,6 +8,7 @@
 	},
 	"scripts": {
 		"dev": "vite dev --port 5175 --strictPort",
+		"dev:demo": "node scripts/demo/run.mjs",
 		"build": "vite build",
 		"build:gallery": "DS_STATIC=1 vite build && node scripts/docs/relative-assets.mjs",
 		"docs:deploy": "npm run build:gallery && node scripts/docs/deploy.mjs",
