@@ -72,14 +72,7 @@ pub struct AttachmentResponse {
     pub replaces: Option<Uuid>,
 }
 
-/// What each person may keep stored, unless Admin → Configuration (or ATTACHMENT_QUOTA_MB) says.
-const DEFAULT_QUOTA_MB: u64 = 2048;
-const MB: u64 = 1024 * 1024;
-
-async fn per_person_quota_bytes() -> i64 {
-    let mb = config::current(&config::ATTACHMENTS).await.number("quota_mb").unwrap_or(DEFAULT_QUOTA_MB);
-    (mb * MB) as i64
-}
+use nomi_agent_core::made_files::per_person_quota_bytes;
 
 /// The limits now: Admin → Configuration, else the environment, else the defaults.
 pub(crate) async fn current_limits() -> Limits {
@@ -158,7 +151,7 @@ pub(crate) fn clean_name(name: &str) -> String {
 }
 
 pub(crate) fn storage_key(user_id: Uuid, id: Uuid) -> String {
-    format!("attachments/{user_id}/{id}")
+    nomi_attachments::made::storage_key(user_id, id)
 }
 
 fn preview_key(user_id: Uuid, id: Uuid) -> String {
@@ -176,7 +169,7 @@ impl Drop for TempFile {
 
 /// Refuses an upload that would take the person past their stored-bytes quota.
 pub(crate) async fn check_quota(state: &AppState, user_id: Uuid, incoming: u64) -> Result<(), UploadError> {
-    let used: i64 = sqlx::query_scalar("SELECT COALESCE(SUM(size_bytes), 0)::bigint FROM attachments WHERE user_id = $1")
+    let used: i64 = sqlx::query_scalar("SELECT COALESCE(SUM(size_bytes), 0)::bigint FROM attachments WHERE user_id = $1 AND deleted_at IS NULL")
         .bind(user_id)
         .fetch_one(&state.pool)
         .await

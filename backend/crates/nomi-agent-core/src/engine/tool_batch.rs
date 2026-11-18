@@ -373,6 +373,11 @@ pub(super) async fn resolve_tool_batch_in_reply(
                     }
                     Err(err) => (err, true, None),
                 }
+            } else if name.as_str() == crate::made_files::MAKE_FILE_TOOL_NAME && agent.agent_type().as_ref() == crate::attachments::FILES_AGENT_TYPE {
+                match crate::made_files::make_file(conn, mqtt.map(|(p, _)| p), session_id, user_id, agent.agent_type().as_ref(), input).await {
+                    Ok(text) => (text, false, None),
+                    Err(err) => (err, true, None),
+                }
             } else if name.as_str() == crate::attachments::READ_ATTACHMENT_TOOL_NAME {
                 match crate::attachments::read_attachment(conn, user_id, input).await {
                     Ok(text) => (text, false, None),

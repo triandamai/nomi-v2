@@ -503,8 +503,27 @@ pub struct PutFileRequest {
     pub encoding: Option<String>,
 }
 
+/// A refused file save: plain text as ever, except a full storage (402), which carries
+/// `{"error":"storage_full"}` for the app to read.
+fn put_file_error((status, message): (StatusCode, String)) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    if status == StatusCode::PAYMENT_REQUIRED {
+        return (status, Json(serde_json::json!({ "error": "storage_full", "message": message }))).into_response();
+    }
+    (status, message).into_response()
+}
+
 #[tracing::instrument(skip(state, claims, req))]
 pub async fn put_project_file(
+    state: State<AppState>,
+    claims: AuthClaims,
+    path: Path<(Uuid, String)>,
+    req: Json<PutFileRequest>,
+) -> Result<StatusCode, axum::response::Response> {
+    save_project_file(state, claims, path, req).await.map_err(put_file_error)
+}
+
+async fn save_project_file(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
     Path((project_id, path)): Path<(Uuid, String)>,
@@ -962,6 +981,18 @@ async fn notify_transfer(pool: &sqlx::PgPool, project_id: Uuid, project_name: &s
 
 #[cfg(test)]
 mod tests {
+    #[tokio::test]
+    async fn a_full_project_storage_is_a_402_with_a_coded_json_body() {
+        use http_body_util::BodyExt;
+        let full = put_file_error((StatusCode::PAYMENT_REQUIRED, "it's full".to_string()));
+        assert_eq!(full.status(), StatusCode::PAYMENT_REQUIRED);
+        let body: serde_json::Value = serde_json::from_slice(&full.into_body().collect().await.unwrap().to_bytes()).unwrap();
+        assert_eq!(body["error"], "storage_full");
+        let other = put_file_error((StatusCode::BAD_REQUEST, "bad".to_string()));
+        assert_eq!(other.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(&other.into_body().collect().await.unwrap().to_bytes()[..], b"bad");
+    }
+
     use super::*;
     use uuid::Uuid;
 

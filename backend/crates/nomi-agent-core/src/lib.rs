@@ -24,6 +24,7 @@ pub mod engine;
 pub mod input_check;
 pub mod error;
 pub mod locale;
+pub mod made_files;
 pub mod memory;
 pub mod memory_settings;
 pub mod mention;

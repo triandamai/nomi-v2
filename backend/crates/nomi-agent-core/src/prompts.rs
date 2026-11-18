@@ -745,3 +745,18 @@ summary only.";
 /// How a chat's summary reads to the model in the history, in place of the messages it replaced
 /// ({summary}).
 pub const SUMMARY_IN_HISTORY: &str = "(Summary of the earlier part of this chat, whose messages are no longer sent:)\n{summary}";
+
+/// The make_file tool: what the Files agent (Maya) makes a file with.
+pub const MAKE_FILE_TOOL_DESCRIPTION: &str = "Make a file for the person and put it in the chat: a CSV or spreadsheet from rows, or a text, \
+     Markdown or JSON file from text. Use it when they ask for a file, an export or a download (\"put this in a spreadsheet\", \
+     \"make me a CSV of May's spending\"). Give it a short name with the right extension, a one-line summary of what's in it, \
+     and the ids of the attachments it was made from. It tells the person the file is being made and shows it when it's ready.";
+
+/// What the Files agent is told about making files, added to its prompt.
+pub const FILES_MAKE_FILE_GUIDANCE: &str = "\nWhen the user wants a file made (a spreadsheet, a CSV, a text or Markdown file), call make_file with the \
+     rows or the text, and tell them in a sentence what's in it. Don't paste the whole file into your reply.";
+
+/// What the person's message says when they ask for a file the crew made to be made again.
+/// `{name}`, `{summary}` and `{id}` are filled in.
+pub const REMAKE_FILE_REQUEST: &str = "Make the file \"{name}\" again ({summary}). The earlier one is attachment {id}: make it again from the same \
+     sources, with make_file, passing replaces={id}.";

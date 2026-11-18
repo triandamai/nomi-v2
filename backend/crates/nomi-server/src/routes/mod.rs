@@ -16,6 +16,7 @@ pub mod admin_users;
 pub mod attachment_estimate;
 pub mod attachment_uploads;
 pub mod attachments;
+pub mod session_files;
 pub mod project_transfers;
 pub mod me_plan;
 pub mod project_build;
