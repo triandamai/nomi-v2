@@ -38,6 +38,7 @@ export const ADMIN_AREAS: AdminArea[] = [
 	{ resource: 'maintenance', label: () => m.admin_maintenance(), description: () => m.perm_maintenance_desc(), paths: ['/admin/maintenance'] },
 	{ resource: 'integrations', label: () => m.admin_integrations(), description: () => m.perm_integrations_desc(), paths: ['/admin/integrations'] },
 	{ resource: 'configuration', label: () => m.admin_configuration(), description: () => m.perm_configuration_desc(), paths: ['/admin/configuration'] },
+	{ resource: 'projects', label: () => m.admin_projects(), description: () => m.perm_projects_desc(), paths: ['/admin/projects', '/admin/sandboxes'] },
 ];
 
 export const areaFor = (resource: string) => ADMIN_AREAS.find((a) => a.resource === resource);

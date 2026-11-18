@@ -2858,5 +2858,7 @@
 	"mine_sheet_title": "Pesanmu",
 	"mine_edit": "Ubah dan kirim ulang",
 	"mine_copy": "Salin teks",
-	"feedback_thanks": "Terima kasih. Kru belajar dari ini."
+	"feedback_thanks": "Terima kasih. Kru belajar dari ini.",
+	"admin_area_projects": "Proyek",
+	"admin_area_projects_desc": "Semua proyek beserta sandbox dan isunya."
 }

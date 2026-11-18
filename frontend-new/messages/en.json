@@ -2858,5 +2858,7 @@
 	"mine_sheet_title": "Your message",
 	"mine_edit": "Edit and resend",
 	"mine_copy": "Copy text",
-	"feedback_thanks": "Thanks. The crew learns from this."
+	"feedback_thanks": "Thanks. The crew learns from this.",
+	"admin_area_projects": "Projects",
+	"admin_area_projects_desc": "Every project with its sandboxes and issues."
 }
