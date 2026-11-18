@@ -54,3 +54,84 @@ the G6 warning moves focus to `Switch model`; the menu focuses its first model (
 returns to `Switch model`; the viewer focuses Close and gives focus back to the chip that opened it.
 Live regions: upload done / failed (assertive) / rejected / model warning / viewer page.
 
+## What was built
+
+Components (all `frontend-new/src/lib/ds/thread/`, presentational, each with its `ComponentDoc` in
+`src/lib/docs/entries/thread.ts` and live examples in `src/lib/docs/examples/<slug>/`):
+
+| Component | Pen | Example(s) |
+|---|---|---|
+| `ComposerFile` | BD98f Failed, xpYoV Rejected, rrjYM Model Warning (+ AttachmentChip / AttachmentImage for uploading and ready) | `composer-file/01-what-became-of-each`, `02-phone` |
+| `ModelFix` | kthOB (D11), mobile Notice (M13) | `model-fix/01-desktop-and-phone` |
+| `VisionModelMenu` | PZvaP, er95B; mobile sheets M14–M15 | `vision-model-menu/01-can-see-images`, `02-no-match` |
+| `FileSheetHeader` | BhXcx Sheet Header r9vDW | `file-sheet-header/01-failed-upload` |
+| `SentFiles` | ENNIK files; Link D5 private files (RCgbo · YWmux) | `sent-files/01-in-the-chat`, `02-shared-link` |
+| `FileNote` | JVUHc "Left Out", yhuBX helper, RCgbo "Files Note" | `file-note/01-notes` |
+| `FileViewer` | G534E, HVM9y, K1phVf; GbEIf, b3lX47, nQ4Iq | `file-viewer/01-opening`, `02-error` |
+| `PhotoViewer` | rCBA7, LiYjQ | `photo-viewer/01-lightbox` |
+
+Changed (not twins): `thread/ChatComposer` and `thread/PhoneComposer` (`files`, `notice`,
+`attached`, `blocked`, `describedBy`; example `chat-composer/04-file-did-not-upload`),
+`overlays/BottomSheet` (`header` snippet). App: `lib/chat/attachments.ts`, `uploads.svelte.ts`,
+`draft.ts`, `ChatView.svelte`, the `/attachments` routes, and the shared page.
+
+## How to reach each built scenario
+
+Run the app against the backend (`npm run dev`, or `node server.js` after `npm run build`), sign in,
+and open a chat (`/chat/<id>`, New chat from the sidebar). The composer's `+` opens the file picker.
+Desktop is ≥ 768 wide; the phone screens show below 768 (or with a phone user agent). Dark and
+light follow the account's theme or the system's.
+
+| # | Scenario | How |
+|---|---|---|
+| 1 | Upload fails mid-way | Pick two PDFs; cut the network for one (DevTools › Network › Offline as it uploads, or block the `/attachments` request). The failed chip shows `Upload failed · connection lost` with Retry · Remove; Send is off with `1 file didn't upload…`; Enter does nothing. A full storage quota gives `storage full`. |
+| 2 | Mobile sheet | Same, on a phone: the chip's ⋯ opens the sheet (file name, reason, Retry `starts the upload again`, Remove `stays on your phone`). |
+| 3 | Retrying | Retry: the chip shows `Uploading again · 0% · 0 of … ` and real bytes, then ready. |
+| 4 | Removed | Remove on the failed chip: `<name> removed · N files ready`; Send is free. |
+| 5–6 | Refused file | Pick a program (a Windows `.exe`): the chip shows `.exe files can't be read`, Send hint `Remove kasir-setup.exe to send.`; Backspace on the focused chip removes it. Other files in the same pick carry on. |
+| 7 | Model warning | Use a chat whose model has no `vision` capability (the e2e fake model, or any text-only model) and attach a PNG/JPG: the chip names the model, the fix line appears, focus lands on Switch model, Send is off. |
+| 8 | Switch model | Have a model that can see images (Admin › Models with Images, or a key for one): Switch model lists only those, `<model> hidden · can't see images`; picking one clears the warning. |
+| 9 | No capable model | With none (hide them in Settings › Models & providers): `No model here can see images`, `Add one in Models & providers` (→ /settings/models), Send text only. Go there and press Back: text and picture are still in the composer. |
+| 10 | Send text only | Click it: the message goes without the picture (deleted, never sent); `Sent without <name> · <model> can't see images` under the bubble (this visit only). |
+| 26–27, 30 | Viewer | Send a PDF, then click its card over the bubble: desktop opens the 440 panel (`Opening page 1 of N · 0:0s` while it loads, focus on Close, Esc closes and returns focus); phone opens full screen (swipe down closes). If it doesn't load in 30 s: `The preview didn't load`, `preview_timeout · 30 s`, Try again, Download. |
+| 28 | Photo | Send a picture with a model that can see it, then click its photo: the lightbox with zoom, Download, `1 of 1 photo in this message`, `esc closes`. |
+| 34 | Shared link, files private | Share the whole chat (top bar › Share) after sending files, open the link signed out: each file is locked, `PDF · private`; the meta adds `files private`; under the reply, `<who shared> kept the files in this reply private. You see their names only.` No address of a file is in the page. A shared single reply carries no user message, so it has no files to name. |
+
+The real-backend e2e (`e2e/backend/chat-files.e2e.ts`) walks 1–10, 26–28, 30 and 34.
+
+## Left out, and why (never faked)
+
+- **G3** server reason codes (the chip reads the HTTP status) and resuming (M1: restart copy).
+- **G4** the type check before upload and its helper line: no accepted-type list; only the server's
+  own refusal (415) is shown, after the upload. AC "zero requests for it" can't hold yet.
+- **G7** the estimate row and meter: no estimate endpoint.
+- **G9** every read-result callout: no locked / no_text / damaged / partial codes; a scanned PDF is
+  read by the files model today.
+- **G11** every agent-file state: no output files, events, download, delete or remake.
+- **G12** citations (#25) and previewing Maya's file (#29): no `file_id` / pages / spans on
+  citations, no output files. PDFs open in the browser's own reader at page 1 (no page images to
+  draw highlights on).
+- **G16** the share dialog's files row and `Let viewers open files` (#31–33), files open on a link
+  (#35–36): no `files_open` on shares and no files on the shared page.
+- **M3** masking file names. Entries for all of these: `frontend-new/BACKEND_TODO.md`, "Chat files".
+
+## Differences from the contract (listed in AGENTS.md §9)
+
+- Tab order follows the layout (chips → field → fix line → attach → model → Send); the contract puts
+  attach first, but attach is drawn last in the toolbar.
+- The "Sent without…" note sits under the bubble (MessageUser is a twin and has no slot), and lasts
+  for the visit only.
+- A message with files can't be edited in place (G14 is P1; editing it would show its tags).
+- The warning chip's icon is 12, not the pen's 11 (not a size Icon takes).
+- The removed line counts the picture waiting on the fix line as one of the files ready (it uploaded).
+- Sent PDF cards say `PDF · 4,2 MB` (the size from the message), not `PDF · 12 pages`: pages need a
+  call per file.
+
+## Question for ux-lead
+
+1. **Focus order (Accessibility).** The contract's order starts with attach `+`, but attach sits in
+   the toolbar under the field, so DOM and visual order put it after the chips and the field. Keep the
+   visual order (built), or move attach before the chips in the tab order only?
+2. **Hint priority.** With a failed upload and a picture the model can't see in the same composer,
+   the failed-upload hint wins and the fix line waits until the failure is retried or removed. Is that
+   the intended order?
