@@ -418,16 +418,20 @@ leaves out what v2 or the backend can't do yet, rather than draw it dead:
   Good, Bad, Copy, Share) over Regenerate (its own sheet: "Each result is kept as a version", the
   styles, then With another model), Try another model (the same sheet) and Edit question. Picking
   another model moves the chat to it, as the composer's chip then says, and runs the turn again on
-  it: the backend regenerates on the chat's model. Left out of the reply's sheet: Save to memory
-  (nothing in the backend makes a memory from a reply: BACKEND_TODO.md) and, for now, Delete reply
-  (the backend deletes a reply with what it made, but how the pen confirms it isn't measured yet).
+  it: the backend regenerates on the chat's model; each of those models reads its name with what
+  pays in mono ("your key", "Nomi credits"). Left out of the reply's sheet: Save to memory (nothing
+  in the backend makes a memory from a reply: BACKEND_TODO.md). Delete reply asks in an
+  `ActionSheet`: the pen's "Things the crew already did aren't undone" only where the reply's cards
+  made nothing; where they did, it names what goes with it (the backend deletes the reminders and
+  plans its cards show). Undo is the app holding the delete back for ten seconds (the backend can't
+  bring a reply back: BACKEND_TODO.md), and the placeholder (`DeletedReply`) has no Regenerate: a
+  deleted reply can't be asked again in its place.
   Bad opens `PhoneDislikeSheet` with the pen's six reasons (the desktop's "Unsafe or harmful" isn't
   drawn); Share opens `PhoneShareSheet`, whose footnote says when the link expires without the
   pen's "· revoke in Settings › Data" (v2 has no such page); deleting asks in an `ActionSheet`. A
   long press on your own message opens its sheet (Edit, Copy, Select text, which selects it where
-  it stands), and editing is `PhoneMessageEditor` in place of the bubble. The pen lifts your
-  bubble above the scrim while its sheet is open; here it stays in the thread under the scrim
-  until that placement is measured. Still the desktop's: the crew picker's 300 width (the
+  it stands), lifting your bubble over the scrim just above it (`BottomSheet`'s `lifted`), and
+  editing is `PhoneMessageEditor` in place of the bubble. Still the desktop's: the crew picker's 300 width (the
   pen runs it the screen's width; MentionPicker is the old app's twin) and Export's PDF (the pen's
   "md · pdf": markdown only). The thinking level isn't on the phone's
   toolbar (the pen draws the model and the crew).
@@ -444,7 +448,17 @@ leaves out what v2 or the backend can't do yet, rather than draw it dead:
   deploys from the `DeploySheet`, and deleting a project wants its name typed in the
   `DeleteProjectSheet`, and moving it picks among workspace cards in the `ProjectMoveSheet`, as the
   pen draws them. Loading and a list that couldn't load keep the search and filters (counts left
-  out while there are none) over phone loading cards or the centred error with Retry. Not yet:
+  out while there are none) over phone loading cards or the centred error with Retry; that error's
+  line names "Nomi's server" where the pen writes "api.nomi.app": the app reaches the backend at
+  its own internal address, which means nothing to the person. The card's sheet and the project's
+  screen say its state ("deploy #6 failed · #5 still live", "Koda is changing it · #15 stays live")
+  without the pen's "1 of 3" (Koda's step isn't given: BACKEND_TODO.md) and, under what broke,
+  without the build's error (not given with the list, as on a desktop). Deleting says what the backend does: the pen's "Your code stays in
+  your account for 30 days" isn't so (the files go at once), so the sheet says the code goes for
+  good, to export first. The project's ask bar has no mic until voice notes come to the composers
+  (UXP-001), and what's typed in it is 16pt (the pen's 15) so iOS doesn't zoom. The Workspaces
+  sheet's note says "Projects and their chats" are shared, without the pen's "shared crew
+  templates", as the desktop switcher does. Not yet:
   offline (the desktop has none either), Koda checking an app that's down from its own flow, and
   Import from GitHub (BACKEND_TODO.md). The sort isn't saved per workspace (the pen's "Saved for Trian's space"):
   nothing keeps it. The Workspaces sheet's "Join" for an invitation waits for that flow.

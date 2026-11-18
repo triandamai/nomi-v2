@@ -11,6 +11,9 @@ Built from the pen values recorded in `50-build-verify.md` only: pen.dev was una
 usage limit), so no frame was opened again. Where the audit doesn't give a value the fix needs, the
 item is marked **needs the pen** and left as it is. Projects wasn't audited and isn't touched.
 
+Update, 18 Nov: pen.dev is back. 14c and 31 are built from their frames, 14a and 18 confirmed, and
+the Projects part of the audit is fixed (the second half of this file).
+
 Twin files (`src/lib/ds/{build,chat,conversation,mobile}`) are unchanged: where the fix lands in a
 twin (Mobile / Nav Bar, Mobile / User Message, Suggestion Row), the chat's screens use a new
 component of their own (`thread/PhoneChatNavBar`, `thread/PhoneMessageBubble`,
@@ -20,13 +23,12 @@ component of their own (`thread/PhoneChatNavBar`, `thread/PhoneMessageBubble`,
 
 | | Count | Items |
 |---|---|---|
-| Fixed | 28 | 3, 4, 5, 6, 7, 8, 10, 12, 14a, 15, 16, 17, 18, 19, 20, 21, 22, 23, 25, 26, 27, 28, 29, 30, 32, 33, 34, 35 |
+| Fixed | 30 | 3, 4, 5, 6, 7, 8, 10, 12, 14a, 14c, 15, 16, 17, 18, 19, 20, 21, 22, 23, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35 |
 | Left out (with the reason, in AGENTS.md §9) | 7 | 1, 9, 2, 11, 14b, 24, Chats "Name:" prefix |
-| Needs the pen | 2 | 14c, 31 |
 | Not a deviation | 1 | 13 |
 
 Item 14 is three rows: Try another model (14a, fixed), Save to memory (14b, left out), Delete
-reply (14c, needs the pen).
+reply (14c, fixed once the pen was back).
 
 ## Per deviation
 
@@ -76,15 +78,22 @@ reply (14c, needs the pen).
 ### Reply sheet
 14a. **Try another model: fixed.** Under Regenerate, while the latest reply can run again and the
      chat has another model: cpu, the first other model as its meta (mono), and the chevron; it
-     opens Regenerate's sheet, whose last group is the other models. The order of the rows (after
-     Regenerate, before Edit my question) isn't in the audit: confirm with the pen.
+     opens Regenerate's sheet, whose last group is the other models. Confirmed with the pen (SwByh):
+     Regenerate, Try another model, Edit my question (Save to memory, left out), then Delete reply.
 14b. **Save to memory: left out.** Nothing in the backend creates a memory (`/api/memory` lists,
      edits, forgets, confirms). BACKEND_TODO "Save a reply to memory"; §9.
-14c. **Delete reply: needs the pen.** The backend has it (`GET …/messages/:id/delete` for what goes
-     with it, then `DELETE …/messages/:id`); the desktop doesn't use it yet, and the chat's API proxy
-     (`lib/server/chatRoutes.ts`) would need both routes. The audit gives the row (divider, trash-2,
-     danger) but not what follows the tap (a confirmation naming the cards and records that go, or
-     an undo): the pen's frame for that is needed before building it.
+14c. **Delete reply: fixed** (pen read 18 Nov: SwByh XPHtc, Share & delete EQUZo and y6rgt). The
+     row sits last under a 1px line (trash-2, danger), for any reply except the one being written.
+     The tap reads the backend's preview (`GET …/messages/:id/delete`), then asks in an
+     `ActionSheet`: "Delete this reply?", the pen's "Your message stays so you can ask again.
+     Things the crew already did aren't undone." where the reply's cards made nothing, else "What
+     its cards made goes with it: {items}" (the backend deletes those reminders and plans), Delete
+     reply, Cancel. Deleting puts `DeletedReply` in the reply's place with Undo, and the toast
+     "Reply deleted · Undo within 10 seconds"; the `DELETE` goes after ten seconds (or at once on
+     `pagehide`), as a deleted chat's does, since the backend can't restore one. The placeholder
+     has no Regenerate (a deleted reply can't be asked again in its place). §9 and BACKEND_TODO
+     "Bring a deleted reply back". Proxy routes in `chatRoutes.ts` (unit test), backend e2e: asked,
+     undone, then deleted for good.
 15. **Quick tiles: fixed.** `SheetTiles`: 68 tall, icon 6 over the label, the label `text-2` (accent
     when on), the row [0,16,10,16]. Width stays 83.5 at 390: four tiles 8 apart in 358 can't be 84
     each (the audit's 84 would need 360). Test.
@@ -93,8 +102,9 @@ reply (14c, needs the pen).
 ### Regenerate sheet
 17. **Subtitle: fixed.** "Each result is kept as a version" (en + id).
 18. **With another model: fixed.** The mono label "WITH ANOTHER MODEL" (`regen_models`, upper case in
-    CSS, styled as the model sheet's group labels: the audit gives no label metrics), then each other
-    model as "claude-sonnet · your key" / "deepseek-flash · Nomi credits" with the cpu icon. Picking
+    CSS, styled as the model sheet's group labels; confirmed with the pen, lVDqs: [12,20,4,20], 30 tall), then each other
+    model as the pen draws it (lVDqs): its name as the label, "your key" / "Nomi credits" as the mono
+    meta, cpu for a key and sparkles for Nomi credits (was one label "name · source" in cpu). Picking
     one sets the chat's model (`PUT …/model`) and then regenerates (`again`): the backend runs the
     turn on the chat's model, as BACKEND_TODO's regenerate entry says. The chat stays on that
     model afterwards, and the composer's chip shows it. Backend e2e asserts the group shows exactly
@@ -131,10 +141,13 @@ reply (14c, needs the pen).
 30. **Line height 1.4: fixed.** `ActionSheet`'s message is 13 / 18. Test.
 
 ### Your message and editing
-31. **Lifted bubble: needs the pen.** The audit says the pen lifts the bubble above the scrim,
-    right-aligned just over the sheet, with a `border-strong` stroke and a shadow, but not how far
-    above the sheet, how wide, or which shadow (the design system has one, `shadow-float`). Left as
-    it is until those are read; §9 says so.
+31. **Lifted bubble: fixed** (pen read 18 Nov: nzT7f). While your message's sheet is open the bubble
+    is held over the scrim, right-aligned, 12 above the sheet and 16 from the edge
+    ([0,16,12,16]), 278 wide at most, surface-2 with a 1px border-strong stroke, 18 corners and the
+    shadow 0 6 18 in `shadow` (new token `shadow-lift`, allowed in the class lint). `BottomSheet`
+    takes a `lifted` snippet (a tap beside it closes the sheet like the scrim); `PhoneMessageBubble`
+    takes `lifted`; the bubble's place in the thread stays, empty, until the sheet closes. Component
+    test (12 / 16 / 278, stroke, shadow) and backend e2e.
 32. **Select text: fixed.** The third row (text-select icon, "Select text", en + id) selects your
     message where it stands, once the sheet is gone, so the phone's own handles and menu take over
     (the long press itself can't, it opens the sheet). Backend e2e checks the selection.
@@ -151,11 +164,8 @@ reply (14c, needs the pen).
   (BACKEND_TODO "Who last answered in each chat"); now named in §9.
 
 ## Needs the pen
-- 14c: Delete reply: what follows the tap (confirmation or undo), its copy and layout.
-- 31: The lifted bubble: its gap above the sheet, its width and position, the shadow.
-- To confirm when pen.dev is back: the reply sheet's row order with Try another model (14a), the
-  "WITH ANOTHER MODEL" label's paddings (18), and the attach sheet, chips and recorder states for
-  item 1.
+Nothing left: 14c and 31 are built from the pen, and 14a's row order and 18's label paddings are
+confirmed. Item 1's attach sheet, chips and recorder wait for PR #305 (attach) and the voice work.
 
 ## How to reach each fix in the running app (390 wide)
 - New chat: Chats → New chat (starters, nav bar mascot, composer).
@@ -164,3 +174,56 @@ reply (14c, needs the pen).
   Regenerate opens its sheet; Bad opens the dislike sheet; Share opens the share sheet.
 - Your message: a long press on it (Select text, Edit and resend → the editor).
 - Delete chat: the chat's sheet → Delete chat.
+- Delete reply: a reply's sheet → Delete reply → the action sheet → the placeholder with Undo.
+- The lifted bubble: a long press on your message.
+
+# Projects (gate 3, the Projects part of 50-build-verify.md)
+
+Built 18 Nov 2026 with the pen back: every frame below was read with `Get`/`ctx.bounds` before
+coding. 29 deviations: **27 fixed**, **2 fixed in part** (P6, M12: the layout fixed, a line of the
+pen's copy left out as untrue, §9). Nothing touches the twins: new phone parts are
+`projects/PhoneProjectEmpty`, `PhoneProjectMenu`, `PhoneWorkspaceList`, `PhoneAskBar`, each with its
+docs entry and live example; changed ones had theirs updated. Tests: `projects/phoneFidelity.svelte.test.ts`
+(one per frame), `projects/list.test.ts`, `projects/about.test.ts`, `server/projects.test.ts`, and
+the backend phone e2e (sort sheet, search, no match, Workspaces sheet, ask bar).
+
+| # | Frame | Deviation | Status |
+|---|---|---|---|
+| P1 | oFdFf | Searching doesn't change the bar | Fixed: 1px `focus` stroke (no glow), 20 round clear (text-3, x 12 in surface-2) once typed, a text Cancel (16, text) in Sort's place that empties and blurs; the field is 299 beside it. |
+| P2 | OC2PS | No match is the desktop's | Fixed: `PhoneProjectEmpty`, no box, [40,24] gap 10, 48 tile r14 surface-2 with the 22 glyph in text-2, 17/600, 14/1.45, the 40 pill with x. Also used for an empty filter (uDnnd, circle-check for Needs you) and couldn't-load. |
+| P3 | M7SCRS | Sort sheet order and labels | Fixed: Updated, "Status · needs you first", "Name · A–Z", Created (phone-only labels; the desktop menu keeps its own). |
+| P4 | rbozn | Move title repeats the subtitle | Fixed: "Move {name}" over "To another workspace". |
+| P5 | KEIJW | "current · current · only you" | Fixed: the meta is said once ("current · 3 members"). |
+| P6 | AHDzi | Delete sheet copy | Fixed in part: "The live URL stops working and the database is removed." as drawn; the pen's "Your code stays in your account for 30 days" is untrue (the backend's `DELETE /api/projects/:id` removes the files, every publish and the database at once), so: "Its code goes too, for good: export it first if you want a copy. Its chat stays." §9. |
+| P7 | a9NrP | Workspaces are rows, not cards | Fixed: `PhoneWorkspaceList`, cards 64 [12,14] r14 in [4,16] gap 8, tile 36 r9 on bg, name 16/500, the chosen one surface-2 with the 20 accent check. PERSONAL and Join stay out (§9). |
+| P8 | C8evkZ | Boundary note missing | Fixed: bg box, 14 in, r12, gap 10; users / lock at 16, 14/500 titles over 13 lines. "Shared crew templates" left out, as the desktop switcher (§9). |
+| P9 | kB2Dt | Ask bar | Fixed: `PhoneAskBar`, wrap [10,16,4,16] on bg under a top stroke (66), the 52 round bar (surface, border-strong, float shadow, [0,6,0,14] gap 10), Koda's 20 mascot, placeholder 15 in text-3, the 40 surface-2 send (arrow-up 18) once typed (eiQ7z). The mic is left out until voice notes (§9); typed text 16pt so iOS doesn't zoom (§9). |
+| P10 | AL711 | Status line is the footer | Fixed: `detailLine`: "deploy #6 failed · #5 still live" (the latest production publish failed: its number, and the live one's), "deploy #6 failed" with nothing live, "Koda is changing it · #15 stays live" with the warning dot, the live line once live, else the footer. The failed number comes from the deploy overview (`failedNumber` added to `ProjectAbout`). "1 of 3" isn't given (§9, BACKEND_TODO "a card's progress"). |
+| P11 | — | "deploy #0" | Fixed: a live number of 0 or none falls back to the card's count, and with neither the part is left out ("live · 2d ago"). The seeded publish had `files_version` 0. |
+| M1 | wDi32 | Filter counts ignore the search | Fixed: `filterCounts(cards, query)` for the phone's chips (desktop toolbar unchanged). |
+| M2 | AXKpW | Pill initial in mono | Fixed: sans 12/600. |
+| M3 | G8cFz | Card sheet subtitle | Fixed: the project's state (`detailLine`), its deploys read when the sheet opens so "live · deploy #15 · 2d ago" gets its age. |
+| M4 | R4a7xS | Icons | Fixed: app-window, arrow-up-right, power (`PhoneProjectMenu`). Delete's `trash-2` was already right: in @lucide/svelte 1.63 `trash-2` is an alias of `trash` (as chat item 13). |
+| M5 | XDW6C, ZRj78 | Separators | Fixed: 9 tall, [4,20], the line inset to 350; the phone's groups (open · change and share · remove). |
+| M6 | VvKNR, gvrNK, nEjEw | No chevrons | Fixed: Move to workspace…, Share… and Settings end in the 16 chevron. |
+| M7 | I5UHw | Move cards | Fixed: 68 tall, 14 in, tile 36 r9 (`radius-workspace`, new token), name 16/500, the radio drawn as the pen's (1.5 stroke; chosen, an accent ring 7 thick), body pt 4; the note at 14/1.45. |
+| M8 | eTxpl | Rows under the workspaces | Fixed: no divider, 8 above, "Create workspace" without a chevron; Workspace settings keeps its chevron as drawn. |
+| M9 | CvjGu | Chip labels text-2 | Fixed: text-3. The accent database chip still needs Koda to say what the database is for. |
+| M10 | x7xv6 | Alert title without the number | Fixed: "Deploy #6 failed" once the overview is read ("Deploy failed" before). |
+| M11 | V6bMR | Loading cards | Fixed: 194, border-strong, bars 12 and 10 r4 3 apart, the 46 state box holding 90 × 10 and 220 × 10, footer bar 10. |
+| M12 | tDuEM | Couldn't-load spacing and copy | Fixed in part: top padding 40. The code line keeps "503 from Nomi's server · 09:14": the pen's "api.nomi.app" would be the app's internal backend address (`API_URL`), meaningless or misleading to the person. §9. |
+| L1 | J8au5J | Filters row 44 | Fixed: 46 ([0,16,12,16]). |
+| L2 | fbJBa | Card name spacing | Fixed: 3 apart, the line at 13/1.35 (18). |
+| L3 | i7GQct | Sort check 20 | Fixed: 18 (`SheetOption`, used only by the sort sheet now). |
+| L4 | v81Hi | Delete line height, icon | Fixed: 15/1.4 (21). The icon is already trash-2 (alias, as M4). |
+| L5 | tDuEM | Couldn't-load sizes | Fixed (with P2's component): tile r14, title 17, gap 10, code 12/16, line 1.45 (20). |
+| L6 | hkMeL | Sheet body top padding | Fixed: 4 on New project and Move. |
+
+## How to reach each Projects fix (390 wide)
+- Search, chips, no match: Projects → type in the search (Cancel, the clear, the counts); type
+  something nothing matches.
+- Sort: the Sort button. Workspaces: the workspace pill.
+- A card's sheet: ⋯ on a card (Move, Delete from there). New project: New.
+- The project's screen: tap a card's name (ask bar at the foot; a failed deploy shows its line and
+  alert).
+- Loading and couldn't load: stop the backend and reload (couldn't load), then Retry (loading).

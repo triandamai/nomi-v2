@@ -385,3 +385,12 @@ Found while matching the phone's chat screens to the pen (phone-fidelity, 2026-1
 - **Until then:** the reply's sheet leaves Save to memory out.
 
 Found while matching the phone's chat screens to the pen (phone-fidelity, 2026-11-18).
+
+### Bring a deleted reply back
+- **Needed by:** *Flow / Mobile Chat — Share & delete* (yoVD6) step 5: "Reply deleted · Undo within 10 seconds", and the placeholder's Undo and Regenerate.
+- **Why:** `DELETE` removes a reply and what its cards made at once and for good, so Undo can only work by holding the delete back; a tab closed in those ten seconds deletes it straight away (the app sends it on `pagehide`), and a reply that's gone can't be asked again in its place.
+- **What exists today:** `GET /api/sessions/:id/messages/:message_id/delete` (what goes with it) and `DELETE /api/sessions/:id/messages/:message_id`; `POST …/regenerate` works on a reply that still exists.
+- **Proposed contract:** a soft delete (`deleted_at` on the message and what it lists) with `POST /api/sessions/:id/messages/:message_id/restore` inside a window, and `POST /api/sessions/:id/messages/:message_id/rerun` (on the person's message) to answer it again once its reply is gone.
+- **Until then:** the app waits ten seconds before it deletes, with Undo on the toast and the placeholder; the placeholder has no Regenerate.
+
+Found while matching the phone's chat screens to the pen (phone-fidelity, 2026-11-18).
