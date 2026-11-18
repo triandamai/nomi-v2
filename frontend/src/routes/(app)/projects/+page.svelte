@@ -569,6 +569,9 @@
 						</div>
 					</div>
 				</form>
+				{#if form && 'limitError' in form && form.limitError}
+					<p class="-mt-4 mb-6 text-caption text-danger" role="alert">{form.limitError}</p>
+				{/if}
 
 				<!-- Filter & Search Toolbar -->
 				<div class="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
