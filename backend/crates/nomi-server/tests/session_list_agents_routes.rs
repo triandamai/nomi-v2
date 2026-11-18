@@ -68,6 +68,10 @@ async fn register(router: axum::Router, email: &str) -> String {
 async fn login_and_project(pool: &PgPool) -> (axum::Router, String, Uuid) {
     let router = build_router(test_state(pool.clone(), None));
     let ana = register(router.clone(), "ana@acme.test").await;
+    // A project goes in the organization chosen for projects, so choose Ana's first.
+    let (_, orgs) = request(router.clone(), "GET", "/api/orgs", Some(&ana), None).await;
+    let org_id: Uuid = orgs["orgs"][0]["id"].as_str().unwrap().parse().unwrap();
+    request(router.clone(), "PUT", "/api/preferences/project-org", Some(&ana), Some(json!({ "org_id": org_id }))).await;
     let (_, created) = request(router.clone(), "POST", "/api/projects", Some(&ana), None).await;
     let project_id: Uuid = created["project_id"].as_str().unwrap().parse().unwrap();
     let session: Uuid = sqlx::query_scalar("SELECT session_id FROM projects WHERE id = $1").bind(project_id).fetch_one(pool).await.unwrap();
