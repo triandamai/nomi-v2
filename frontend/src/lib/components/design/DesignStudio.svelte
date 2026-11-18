@@ -110,15 +110,8 @@
 	let frame = $state<HTMLIFrameElement | null>(null);
 	let canvasFrames = $state<Record<string, HTMLIFrameElement | null>>({});
 
-	// Looking at a version, exploring the 2D spatial canvas, giving feedback, or comparing two versions.
 	type Mode = 'preview' | 'canvas' | 'feedback' | 'compare';
-	const MODES: { mode: Mode; label: string }[] = [
-		{ mode: 'preview', label: m.studio_mode_preview() },
-		{ mode: 'canvas', label: m.studio_mode_canvas() },
-		{ mode: 'feedback', label: m.studio_mode_feedback() },
-		{ mode: 'compare', label: m.studio_mode_compare() },
-	];
-	let mode = $state<Mode>('preview');
+	let mode = $state<Mode>('canvas');
 	const picking = $derived(selecting || mode === 'feedback' || mode === 'canvas');
 
 	// Spatial canvas state: zoom, pan, stage filter, and direct click-to-pin popover.
@@ -639,20 +632,13 @@
 						</button>
 					{/each}
 				</div>
-				<div class="studio__devices" role="group" aria-label={m.studio_mode()}>
-					{#each MODES as option (option.mode)}
-						<button type="button" class="studio__tool studio__tool--wide" aria-pressed={mode === option.mode} onclick={() => openMode(option.mode)}>{option.label}</button>
-					{/each}
+				<div class="studio__devices" role="group" aria-label="Zoom">
+					<button type="button" class="studio__tool" aria-label={m.studio_zoom_out()} title={m.studio_zoom_out()} onclick={zoomOut}><Icon icon={ZoomOut} size={18} /></button>
+					<span class="studio__mono studio__zoom-readout">{zoomLabel(zoom)}</span>
+					<button type="button" class="studio__tool" aria-label={m.studio_zoom_in()} title={m.studio_zoom_in()} onclick={zoomIn}><Icon icon={ZoomIn} size={18} /></button>
+					<button type="button" class="studio__tool studio__tool--wide" onclick={fitCanvas}><Icon icon={Maximize2} size={16} /><span>{m.studio_zoom_fit()}</span></button>
 				</div>
-				{#if mode === 'canvas'}
-					<div class="studio__devices" role="group" aria-label="Zoom">
-						<button type="button" class="studio__tool" aria-label={m.studio_zoom_out()} title={m.studio_zoom_out()} onclick={zoomOut}><Icon icon={ZoomOut} size={18} /></button>
-						<span class="studio__mono studio__zoom-readout">{zoomLabel(zoom)}</span>
-						<button type="button" class="studio__tool" aria-label={m.studio_zoom_in()} title={m.studio_zoom_in()} onclick={zoomIn}><Icon icon={ZoomIn} size={18} /></button>
-						<button type="button" class="studio__tool studio__tool--wide" onclick={fitCanvas}><Icon icon={Maximize2} size={16} /><span>{m.studio_zoom_fit()}</span></button>
-					</div>
-				{/if}
-				<button type="button" class="studio__tool studio__tool--wide" aria-pressed={picking} disabled={mode === 'feedback' || mode === 'canvas'} onclick={toggleSelecting}>
+				<button type="button" class="studio__tool studio__tool--wide" aria-pressed={picking} onclick={toggleSelecting}>
 					<Icon icon={MousePointerClick} size={18} /><span>{m.studio_select()}</span>
 				</button>
 				{#if approval?.version === current.version}
@@ -760,75 +746,46 @@
 		{/if}
 	{:else}
 		<div class="studio__body">
-			<nav class="studio__rail" aria-label={m.studio_versions()}>
-				<h2 class="md-label-large studio__label">{m.studio_versions()}</h2>
-				<ul class="studio__list">
-					{#each versions as version (version.version)}
-						<li>
-							<button type="button" class="studio__row" aria-current={version.version === current.version ? 'true' : undefined} onclick={() => openVersion(version.version)}>
-								<span class="md-label-large">{m.studio_version({ version: version.version })}{#if version.version === approval?.version} · {m.studio_approved()}{/if}{#if version.version === newest} · {m.studio_latest()}{/if}</span>
-								<span class="md-body-small studio__muted">{version.title}</span>
-								<span class="md-body-small studio__muted">{version.direction_id} · {formatDate(version.created_at, getLocale())}</span>
-							</button>
-						</li>
-					{/each}
-				</ul>
-				{#if current.pages.length > 1}
-					<h2 class="md-label-large studio__label">{m.studio_pages()}</h2>
-					<ul class="studio__list">
-						{#each current.pages as page (page.path)}
-							<li>
-								<button type="button" class="studio__row" aria-current={page.path === shownPage ? 'page' : undefined} onclick={() => openPage(page.path)}>
-									<span class="md-label-large">{page.title}</span>
-									<span class="md-body-small studio__muted">{page.path}</span>
-								</button>
-							</li>
-						{/each}
-					</ul>
-				{/if}
-			</nav>
+			<div class="studio__stage studio__stage--canvas">
+				<div class="studio__canvas-toolbar" role="group" aria-label="Canvas stages">
+					<button type="button" class="studio__tool studio__tool--wide" aria-pressed={stageFilter === 'all'} onclick={() => (stageFilter = 'all')}>{m.studio_stage_all()}</button>
+					{#if directionList.length > 0}
+						<button type="button" class="studio__tool studio__tool--wide" aria-pressed={stageFilter === 'directions'} onclick={() => (stageFilter = 'directions')}>{m.studio_stage_directions()}</button>
+					{/if}
+					<button type="button" class="studio__tool studio__tool--wide" aria-pressed={stageFilter === 'system'} onclick={() => (stageFilter = 'system')}>{m.studio_stage_system()}</button>
+					<button type="button" class="studio__tool studio__tool--wide" aria-pressed={stageFilter === 'flow'} onclick={() => (stageFilter = 'flow')}>{m.studio_stage_flow()}</button>
 
-			<div class="studio__stage" class:studio__stage--device={device !== 'desktop' && mode !== 'canvas'} class:studio__stage--compare={mode === 'compare'} class:studio__stage--canvas={mode === 'canvas'}>
-				{#if mode === 'canvas'}
-					<div class="studio__canvas-toolbar" role="group" aria-label="Canvas stages">
-						<button type="button" class="studio__tool studio__tool--wide" aria-pressed={stageFilter === 'all'} onclick={() => (stageFilter = 'all')}>{m.studio_stage_all()}</button>
-						{#if directionList.length > 0}
-							<button type="button" class="studio__tool studio__tool--wide" aria-pressed={stageFilter === 'directions'} onclick={() => (stageFilter = 'directions')}>{m.studio_stage_directions()}</button>
-						{/if}
-						<button type="button" class="studio__tool studio__tool--wide" aria-pressed={stageFilter === 'system'} onclick={() => (stageFilter = 'system')}>{m.studio_stage_system()}</button>
-						<button type="button" class="studio__tool studio__tool--wide" aria-pressed={stageFilter === 'flow'} onclick={() => (stageFilter = 'flow')}>{m.studio_stage_flow()}</button>
-
-						<button type="button" class="studio__tool studio__tool--wide" aria-pressed={canvasEngine === 'openpencil'} onclick={() => (userEngine = 'openpencil')}>
-							{m.studio_canvas_openpencil()}
-						</button>
-						<button type="button" class="studio__tool studio__tool--wide" aria-pressed={canvasEngine === 'frames'} onclick={() => (userEngine = 'frames')}>
-							{m.studio_canvas_frames()}
-						</button>
-					</div>
-					{#if canvasEngine === 'openpencil'}
-						<OpenPencilViewer
-							model={openPencilModel}
-							bind:zoom
-							bind:panX
-							bind:panY
-							selectedNodeId={selection?.id ?? null}
-							onhit={handleOpenPencilHit}
-							onpickDirection={(dirId) => {
-								const dir = directionList.find((d) => d.id === dirId);
-								if (dir) useDirection(dir);
-							}}
-						/>
-					{:else}
-						<!-- svelte-ignore a11y_no_static_element_interactions -->
-						<div
-							bind:this={viewportEl}
-							class="studio__canvas-viewport"
-							onpointerdown={startCanvasPan}
-							onpointermove={moveCanvasPan}
-							onpointerup={endCanvasPan}
-							onpointercancel={endCanvasPan}
-							onwheel={handleCanvasWheel}
-						>
+					<button type="button" class="studio__tool studio__tool--wide" aria-pressed={canvasEngine === 'openpencil'} onclick={() => (userEngine = 'openpencil')}>
+						{m.studio_canvas_openpencil()}
+					</button>
+					<button type="button" class="studio__tool studio__tool--wide" aria-pressed={canvasEngine === 'frames'} onclick={() => (userEngine = 'frames')}>
+						{m.studio_canvas_frames()}
+					</button>
+				</div>
+				{#if canvasEngine === 'openpencil'}
+					<OpenPencilViewer
+						model={openPencilModel}
+						bind:zoom
+						bind:panX
+						bind:panY
+						selectedNodeId={selection?.id ?? null}
+						onhit={handleOpenPencilHit}
+						onpickDirection={(dirId) => {
+							const dir = directionList.find((d) => d.id === dirId);
+							if (dir) useDirection(dir);
+						}}
+					/>
+				{:else}
+					<!-- svelte-ignore a11y_no_static_element_interactions -->
+					<div
+						bind:this={viewportEl}
+						class="studio__canvas-viewport"
+						onpointerdown={startCanvasPan}
+						onpointermove={moveCanvasPan}
+						onpointerup={endCanvasPan}
+						onpointercancel={endCanvasPan}
+						onwheel={handleCanvasWheel}
+					>
 						<div class="studio__canvas-plane" style:transform={`translate(${panX}px, ${panY}px) scale(${zoom})`}>
 							{#if (stageFilter === 'all' || stageFilter === 'directions') && directionList.length > 0}
 								{@render directionBoards()}
@@ -916,44 +873,9 @@
 							{/if}
 						</div>
 					</div>
-					{/if}
-				{:else}
-					{#if mode === 'compare'}
-						{#if compared}
-							<div class="studio__side">
-								<label class="studio__side-label md-label-large">
-									<span>{m.studio_compare_with()}</span>
-									<select class="studio__pick md-body-medium" value={String(compared.version)} onchange={(event) => (comparedVersion = Number(event.currentTarget.value))}>
-										{#each otherVersions as version (version.version)}
-											<option value={String(version.version)}>{m.studio_compare_frame({ version: version.version, title: version.title })}</option>
-										{/each}
-									</select>
-								</label>
-								{#key `${compared.preview_token}/${openedPage}`}
-									<iframe class="studio__frame" title={m.studio_compare_frame({ version: compared.version, title: compared.title })} src={previewUrl(compared, openedPage)} sandbox="allow-scripts" referrerpolicy="no-referrer" style:width={frameWidth}></iframe>
-								{/key}
-							</div>
-						{:else}
-							<p class="md-body-large studio__lone">{m.studio_compare_none()}</p>
-						{/if}
-					{/if}
-					<div class="studio__side">
-						{#if mode === 'compare' && compared}<p class="studio__side-label md-label-large">{m.studio_compare_frame({ version: current.version, title: current.title })}</p>{/if}
-						{#key `${current.preview_token}/${openedPage}`}
-							<iframe
-								bind:this={frame}
-								class="studio__frame"
-								title={m.studio_frame_title({ title: current.title })}
-								src={frameSrc}
-								sandbox="allow-scripts"
-								referrerpolicy="no-referrer"
-								style:width={frameWidth}
-							></iframe>
-						{/key}
-					</div>
 				{/if}
 
-				{#if pinPopoverOpen && selection && mode !== 'feedback'}
+				{#if pinPopoverOpen && selection}
 					<div class="studio__pin-popover" role="dialog" aria-label={selection.label}>
 						<div class="studio__pin-popover-head">
 							<strong>{selection.label}</strong>
@@ -980,7 +902,7 @@
 					</div>
 				{/if}
 
-				{#if waiting > 0 && mode !== 'feedback'}
+				{#if waiting > 0}
 					<div class="studio__revise-bar" role="region" aria-label={m.studio_refine_title()}>
 						<span class="studio__mono">{m.studio_revise_bar_count({ count: waiting })}</span>
 						{#if asked}
@@ -994,95 +916,6 @@
 					</div>
 				{/if}
 			</div>
-
-			<aside class="studio__panel">
-				<h2 class="md-label-large studio__label">{m.studio_selected()}</h2>
-				{#if selection}
-					<div class="studio__selected">
-						<p class="md-title-small">{selection.label}</p>
-						<p class="md-body-small studio__muted">{KIND_LABELS[selection.kind]} · <code>{selection.id}</code></p>
-						<p class="md-body-small studio__muted">{m.studio_selected_on({ page: selection.page })}</p>
-						{#if selection.text}<p class="md-body-medium studio__quote">{selection.text}</p>{/if}
-						<button type="button" class="studio__clear md-label-large" onclick={clearSelection}>{m.studio_clear()}</button>
-					</div>
-				{:else}
-					<p class="md-body-medium studio__muted">{picking ? m.studio_select_hint() : m.studio_selected_none()}</p>
-				{/if}
-
-				{#if mode === 'feedback'}
-					<form class="studio__form" onsubmit={addFeedback}>
-						<fieldset class="studio__scopes">
-							<legend class="md-label-large studio__label">{m.studio_feedback_about()}</legend>
-							{#each SCOPES as option (option.scope)}
-								<label class="studio__choice md-body-medium">
-									<input type="radio" name="scope" value={option.scope} checked={scope === option.scope} onchange={() => (scope = option.scope)} />
-									<span>{option.label}</span>
-								</label>
-							{/each}
-						</fieldset>
-						{#if scope === 'element' && !(selection && selection.page === shownPage)}
-							<p class="md-body-small studio__muted">{m.studio_feedback_pick_first()}</p>
-						{/if}
-						{#if scope !== 'global'}
-							<label class="studio__choice md-body-medium">
-								<input type="checkbox" bind:checked={interaction} />
-								<span>{m.studio_feedback_interaction()}</span>
-							</label>
-						{/if}
-						<label class="md-label-large studio__label" for="studio-feedback">{m.studio_feedback_label()}</label>
-						<textarea id="studio-feedback" class="studio__words md-body-medium" rows="4" maxlength={FEEDBACK_CHARS} placeholder={m.studio_feedback_placeholder()} bind:value={words}></textarea>
-						{#if feedbackError}<p class="md-body-small studio__error" role="alert">{feedbackError}</p>{/if}
-						<button type="submit" class="studio__send md-label-large" disabled={!draft || sending}>{m.studio_feedback_add()}</button>
-					</form>
-
-					<h2 class="md-label-large studio__label">{m.studio_feedback_history()}</h2>
-					{#if history.length === 0}
-						<p class="md-body-medium studio__muted">{m.studio_feedback_none()}</p>
-					{:else}
-						<ol class="studio__list studio__history">
-							{#each history as item (item.id)}
-								<li>
-									<button type="button" class="studio__row" aria-label={m.studio_feedback_show({ number: item.number })} onclick={() => showFeedback(item)}>
-										<span class="md-label-large">{m.studio_feedback_number({ number: item.number })} · {where(item)}</span>
-										<span class="md-body-medium">{item.body}</span>
-										<span class="md-body-small studio__muted">
-											{m.studio_feedback_given_on({ version: item.version })} ·
-											{item.status === 'resolved' && item.resolved_in_version !== null ? m.studio_feedback_resolved({ version: item.resolved_in_version }) : m.studio_feedback_open()}
-										</span>
-										{#if item.resolution}<span class="md-body-small studio__quote">{item.resolution}</span>{/if}
-									</button>
-								</li>
-							{/each}
-						</ol>
-					{/if}
-
-					<h2 class="md-label-large studio__label">{m.studio_refine_title()}</h2>
-					<form class="studio__form" onsubmit={askSora}>
-						<label class="md-body-small studio__muted" for="studio-ask">{m.studio_refine_label()}</label>
-						<textarea id="studio-ask" class="studio__words md-body-medium" rows="2" maxlength={FEEDBACK_CHARS} placeholder={m.studio_refine_placeholder()} bind:value={ask}></textarea>
-						{#if askError}<p class="md-body-small studio__error" role="alert">{askError}</p>{/if}
-						<button type="submit" class="studio__send md-label-large" disabled={!request || asking}>{m.studio_refine_send()}</button>
-						{#if asked}
-							<p class="md-body-small studio__muted" role="status">
-								{m.studio_refine_sent()}{#if !embedded} <a href={`/chat/${data.sessionId}`}>{m.studio_refine_chat()}</a>{/if}
-							</p>
-							<button type="button" class="studio__clear md-label-large" onclick={refresh}>{m.studio_refine_refresh()}</button>
-						{/if}
-					</form>
-				{/if}
-
-				<h2 class="md-label-large studio__label">{m.studio_elements()}</h2>
-				<ul class="studio__list">
-					{#each pageElements as element (element.id)}
-						<li>
-							<button type="button" class="studio__row" aria-current={selection?.id === element.id ? 'true' : undefined} onclick={() => pick(element)}>
-								<span class="md-label-large">{element.label}</span>
-								<span class="md-body-small studio__muted">{KIND_LABELS[element.kind]}</span>
-							</button>
-						</li>
-					{/each}
-				</ul>
-			</aside>
 		</div>
 	{/if}
 </div>
@@ -1129,8 +962,7 @@
 		padding: 0 12px;
 	}
 	.studio__back:hover,
-	.studio__tool:hover,
-	.studio__row:hover {
+	.studio__tool:hover {
 		background: color-mix(in srgb, var(--md-sys-color-on-surface) 8%, transparent);
 	}
 	.studio__tool[aria-pressed='true'] {
@@ -1139,7 +971,6 @@
 	}
 	.studio__back:focus-visible,
 	.studio__tool:focus-visible,
-	.studio__row:focus-visible,
 	.studio__clear:focus-visible {
 		outline: 2px solid var(--md-sys-color-primary);
 		outline-offset: -2px;
@@ -1185,57 +1016,12 @@
 		text-align: center;
 	}
 	.studio__body {
-		display: grid;
-		grid-template-columns: 240px minmax(0, 1fr) 280px;
+		display: flex;
+		flex-direction: column;
 		flex: 1;
 		min-height: 0;
-	}
-	.studio__rail,
-	.studio__panel {
-		padding: 12px;
-		overflow-y: auto;
-	}
-	.studio__rail {
-		border-right: 1px solid var(--md-sys-color-outline-variant);
-	}
-	.studio__panel {
-		border-left: 1px solid var(--md-sys-color-outline-variant);
-	}
-	.studio__label {
-		margin: 12px 4px 8px;
-		color: var(--md-sys-color-on-surface-variant);
-	}
-	.studio__label:first-child {
-		margin-top: 0;
-	}
-	.studio__list {
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
-		margin: 0;
-		padding: 0;
-		list-style: none;
-	}
-	.studio__row {
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
 		width: 100%;
-		padding: 8px 12px;
-		border: 0;
-		border-radius: var(--md-sys-shape-corner-medium);
-		background: none;
-		color: inherit;
-		font: inherit;
-		text-align: left;
-		cursor: pointer;
-	}
-	.studio__row[aria-current] {
-		background: var(--md-sys-color-secondary-container);
-		color: var(--md-sys-color-on-secondary-container);
-	}
-	.studio__row[aria-current] .studio__muted {
-		color: inherit;
+		position: relative;
 	}
 	.studio__stage {
 		position: relative;
@@ -1246,6 +1032,8 @@
 		background: var(--md-sys-color-surface-container);
 	}
 	.studio__stage--canvas {
+		flex: 1;
+		width: 100%;
 		flex-direction: column;
 		justify-content: flex-start;
 	}
@@ -1456,46 +1244,7 @@
 		background: var(--md-sys-color-surface);
 		box-shadow: 0 6px 20px rgba(0, 0, 0, 0.16);
 	}
-	.studio__side {
-		display: flex;
-		flex: 1;
-		flex-direction: column;
-		align-items: center;
-		min-width: 0;
-		min-height: 0;
-	}
-	.studio__side-label {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		width: 100%;
-		min-height: 40px;
-		margin: 0;
-		padding: 4px 12px;
-		box-sizing: border-box;
-		color: var(--md-sys-color-on-surface-variant);
-	}
-	.studio__pick {
-		min-width: 0;
-		height: 32px;
-		border: 1px solid var(--md-sys-color-outline);
-		border-radius: var(--md-sys-shape-corner-small);
-		background: var(--md-sys-color-surface);
-		color: var(--md-sys-color-on-surface);
-	}
-	.studio__stage--compare {
-		gap: 1px;
-	}
-	.studio__stage--compare .studio__side + .studio__side {
-		border-left: 1px solid var(--md-sys-color-outline-variant);
-	}
-	.studio__lone {
-		margin: auto;
-		padding: 24px;
-		max-width: 320px;
-		text-align: center;
-		color: var(--md-sys-color-on-surface-variant);
-	}
+
 	.studio__approved {
 		display: inline-flex;
 		align-items: center;
@@ -1532,10 +1281,6 @@
 	.studio__confirm .studio__send {
 		align-self: center;
 	}
-	.studio__stage--device {
-		padding: 16px;
-		overflow-x: auto;
-	}
 	.studio__frame {
 		flex: none;
 		max-width: 100%;
@@ -1543,44 +1288,11 @@
 		border: 0;
 		background: #fff;
 	}
-	.studio__stage--device .studio__frame {
-		border: 1px solid var(--md-sys-color-outline-variant);
-		border-radius: var(--md-sys-shape-corner-large);
-	}
-	.studio__selected {
-		padding: 12px;
-		border-radius: var(--md-sys-shape-corner-medium);
-		background: var(--md-sys-color-surface-container-high);
-	}
-	.studio__selected p {
-		margin: 0 0 4px;
-	}
-	.studio__quote {
-		padding-left: 8px;
-		border-left: 2px solid var(--md-sys-color-outline);
-	}
 	.studio__form {
 		display: flex;
 		flex-direction: column;
 		gap: 8px;
 		margin-top: 12px;
-	}
-	.studio__scopes {
-		display: flex;
-		flex-direction: column;
-		gap: 4px;
-		margin: 0;
-		padding: 0;
-		border: 0;
-	}
-	.studio__scopes legend {
-		padding: 0;
-	}
-	.studio__choice {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		min-height: 32px;
 	}
 	.studio__words {
 		width: 100%;
@@ -1644,23 +1356,8 @@
 		cursor: pointer;
 	}
 	@container (max-width: 900px) {
-		.studio__body {
-			grid-template-columns: minmax(0, 1fr);
-			flex: none;
-		}
-		.studio__rail,
-		.studio__panel {
-			border: 0;
-			border-top: 1px solid var(--md-sys-color-outline-variant);
-		}
 		.studio__stage {
-			order: -1;
-			height: 70dvh;
-			flex: none;
-		}
-		.studio__stage--compare {
-			flex-direction: column;
-			height: 140dvh;
+			min-height: 0;
 		}
 	}
 	@media (pointer: coarse) {
