@@ -1,5 +1,5 @@
 //! Pushes to phones, for when no socket can stay open: inbox items and chat replies as alerts
-//! (FCM HTTP v1 on Android, APNs on iOS), and iOS Live Activity updates and starts (APNs
+//! (FCM HTTP v1 on Android, APNs on iOS, Web Push in a phone's browser), and iOS Live Activity updates and starts (APNs
 //! `liveactivity` pushes). Desktops never get pushes; they rely on the live socket.
 //!
 //! Every push is fail-open: a provider that is down or misconfigured is logged and skipped, and
@@ -149,6 +149,11 @@ pub trait PushSender: Send + Sync {
     fn is_enabled(&self) -> bool {
         true
     }
+
+    /// The VAPID public key browsers subscribe with, when web push is set up.
+    fn web_public_key(&self) -> Option<String> {
+        None
+    }
 }
 
 /// Sends nothing: no provider is configured (and in tests).
@@ -206,6 +211,37 @@ pub async fn dispatch(pool: PgPool, sender: Arc<dyn PushSender>, user_id: Uuid, 
             Ok(()) => {}
             Err(PushError::Invalid) => forget(&pool, id, live_activity).await,
             Err(e) => tracing::warn!(error = %e, device_id = %id, "couldn't push to a device"),
+        }
+    }
+    if !live_activity {
+        dispatch_web(&pool, &sender, user_id, &message).await;
+    }
+}
+
+/// Sends `message` to each of `user_id`'s browser subscriptions, forgetting the ones the push
+/// service says are gone.
+async fn dispatch_web(pool: &PgPool, sender: &Arc<dyn PushSender>, user_id: Uuid, message: &PushMessage) {
+    let rows: Vec<(Uuid, String, String, String)> = match sqlx::query_as("SELECT id, endpoint, p256dh, auth FROM web_push_subscriptions WHERE user_id = $1")
+        .bind(user_id)
+        .fetch_all(pool)
+        .await
+    {
+        Ok(rows) => rows,
+        Err(e) => {
+            tracing::warn!(error = %e, %user_id, "couldn't load browsers to push to");
+            return;
+        }
+    };
+    for (id, endpoint, p256dh, auth) in rows {
+        let Ok(token) = serde_json::to_string(&WebSubscription { endpoint, p256dh, auth }) else { continue };
+        let target = DeviceTarget { id, platform: PLATFORM_WEB.to_string(), token };
+        match sender.send(&target, message).await {
+            Ok(()) => {}
+            Err(PushError::Invalid) => match sqlx::query("DELETE FROM web_push_subscriptions WHERE id = $1").bind(id).execute(pool).await {
+                Ok(_) => tracing::info!(subscription_id = %id, "forgot a browser the push service says is gone"),
+                Err(e) => tracing::warn!(error = %e, subscription_id = %id, "couldn't forget a gone browser"),
+            },
+            Err(e) => tracing::warn!(error = %e, subscription_id = %id, "couldn't push to a browser"),
         }
     }
 }
@@ -593,29 +629,163 @@ impl PushSender for ApnsSender {
 }
 
 // ------------------------------------------------------------------------------------------------
+// Web Push (a phone's browser)
+// ------------------------------------------------------------------------------------------------
+
+/// The platform of a browser's push subscription, as its `DeviceTarget` says.
+pub const PLATFORM_WEB: &str = "web";
+/// A push service answers 404 or 410 for a subscription that is gone for good.
+const WEB_PUSH_STATUS_NOT_FOUND: u16 = 404;
+const WEB_PUSH_STATUS_GONE: u16 = 410;
+/// How long a push service keeps a message for a browser that is off, and how long the VAPID
+/// signature stays valid (RFC 8292 allows up to a day).
+const WEB_PUSH_VALID_FOR: Duration = Duration::from_secs(12 * 60 * 60);
+/// A VAPID private key is one P-256 scalar.
+const VAPID_PRIVATE_KEY_BYTES: usize = 32;
+/// A browser's `auth` secret is 16 bytes.
+const WEB_PUSH_AUTH_BYTES: usize = 16;
+
+/// A browser's push subscription: where the push service takes messages, and the keys they are
+/// sealed with. It travels as a `DeviceTarget`'s token, as JSON.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WebSubscription {
+    pub endpoint: String,
+    pub p256dh: String,
+    pub auth: String,
+}
+
+/// Whether a push service's status says the subscription is gone for good.
+pub fn web_push_rejects_subscription(status: u16) -> bool {
+    status == WEB_PUSH_STATUS_NOT_FOUND || status == WEB_PUSH_STATUS_GONE
+}
+
+/// Whether a browser's subscription can ever be sent to: an https endpoint, a P-256 public key
+/// and a 16-byte auth secret.
+pub fn is_valid_web_subscription(subscription: &WebSubscription) -> bool {
+    let https = subscription.endpoint.parse::<http::Uri>().is_ok_and(|uri| uri.scheme_str() == Some("https") && uri.host().is_some());
+    let public = decode_b64url(&subscription.p256dh).is_some_and(|bytes| web_push_native::p256::PublicKey::from_sec1_bytes(&bytes).is_ok());
+    let auth = decode_b64url(&subscription.auth).is_some_and(|bytes| bytes.len() == WEB_PUSH_AUTH_BYTES);
+    https && public && auth
+}
+
+/// The notification a service worker shows and acts on: title, body and what to open.
+pub fn web_push_body(message: &PushMessage) -> Vec<u8> {
+    json!({ "title": message.title, "body": message.body, "data": message.data }).to_string().into_bytes()
+}
+
+fn decode_b64url(value: &str) -> Option<Vec<u8>> {
+    use base64::Engine;
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(value.trim().trim_end_matches('=')).ok()
+}
+
+/// The sealed, VAPID-signed request carrying `message` to `subscription`. A subscription whose
+/// endpoint or keys can't be used will never work, so it counts as gone.
+pub fn web_push_request(key: &web_push_native::jwt_simple::algorithms::ES256KeyPair, contact: &str, subscription: &WebSubscription, message: &PushMessage) -> Result<http::Request<Vec<u8>>, PushError> {
+    let endpoint: http::Uri = subscription.endpoint.parse().map_err(|_| PushError::Invalid)?;
+    let public = decode_b64url(&subscription.p256dh)
+        .and_then(|bytes| web_push_native::p256::PublicKey::from_sec1_bytes(&bytes).ok())
+        .ok_or(PushError::Invalid)?;
+    let auth: [u8; WEB_PUSH_AUTH_BYTES] = decode_b64url(&subscription.auth).and_then(|bytes| bytes.try_into().ok()).ok_or(PushError::Invalid)?;
+    web_push_native::WebPushBuilder::new(endpoint, public, auth.into())
+        .with_valid_duration(WEB_PUSH_VALID_FOR)
+        .with_vapid(key, contact)
+        .build(web_push_body(message))
+        .map_err(|e| PushError::Failed(format!("sealing the web push: {e}")))
+}
+
+/// The VAPID key pair from its private half, as the base64url scalar web push tooling prints.
+pub fn vapid_key_from_private(encoded: &str) -> Result<web_push_native::jwt_simple::algorithms::ES256KeyPair, String> {
+    let bytes = decode_b64url(encoded).ok_or("not base64url")?;
+    if bytes.len() != VAPID_PRIVATE_KEY_BYTES {
+        return Err(format!("expected {VAPID_PRIVATE_KEY_BYTES} bytes, got {}", bytes.len()));
+    }
+    web_push_native::jwt_simple::algorithms::ES256KeyPair::from_bytes(&bytes).map_err(|e| e.to_string())
+}
+
+/// Sends to browsers, signed with the app's VAPID key.
+pub struct WebPushSender {
+    http: reqwest::Client,
+    key: web_push_native::jwt_simple::algorithms::ES256KeyPair,
+    contact: String,
+}
+
+impl WebPushSender {
+    /// From `VAPID_PRIVATE_KEY` (base64url scalar) and `VAPID_SUBJECT` (a `mailto:` or https
+    /// contact); None when the key is unset, which turns web push off.
+    pub fn from_env(http: reqwest::Client) -> Option<Result<Self, String>> {
+        let raw = env_nonempty("VAPID_PRIVATE_KEY")?;
+        Some((|| {
+            let key = vapid_key_from_private(&raw).map_err(|e| format!("VAPID_PRIVATE_KEY: {e}"))?;
+            let contact = env_nonempty("VAPID_SUBJECT").ok_or("VAPID_SUBJECT is not set")?;
+            tracing::info!(public_key = %vapid_public_key(&key), "web push is on");
+            Ok(WebPushSender { http, key, contact })
+        })())
+    }
+
+    /// The key a browser subscribes with (`applicationServerKey`), base64url.
+    pub fn public_key(&self) -> String {
+        vapid_public_key(&self.key)
+    }
+}
+
+fn vapid_public_key(key: &web_push_native::jwt_simple::algorithms::ES256KeyPair) -> String {
+    use base64::Engine;
+    use web_push_native::jwt_simple::prelude::ECDSAP256PublicKeyLike;
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(key.public_key().public_key().to_bytes_uncompressed())
+}
+
+#[async_trait::async_trait]
+impl PushSender for WebPushSender {
+    async fn send(&self, device: &DeviceTarget, message: &PushMessage) -> Result<(), PushError> {
+        if message.is_live_activity() {
+            return Err(PushError::Unsupported("web Live Activity".into()));
+        }
+        let subscription: WebSubscription = serde_json::from_str(&device.token).map_err(|_| PushError::Invalid)?;
+        let request = web_push_request(&self.key, &self.contact, &subscription, message)?;
+        let request = reqwest::Request::try_from(request).map_err(|e| PushError::Failed(format!("web push request: {e}")))?;
+        let response = self.http.execute(request).await.map_err(|e| PushError::Failed(format!("web push: {e}")))?;
+        let status = response.status();
+        if status.is_success() {
+            Ok(())
+        } else if web_push_rejects_subscription(status.as_u16()) {
+            Err(PushError::Invalid)
+        } else {
+            Err(PushError::Failed(format!("web push {status}")))
+        }
+    }
+}
+
+// ------------------------------------------------------------------------------------------------
 // Both providers
 // ------------------------------------------------------------------------------------------------
 
-/// Routes each push to FCM (Android) or APNs (iOS), whichever is set up.
+/// Routes each push to FCM (Android), APNs (iOS) or a browser's push service, whichever is set up.
 pub struct ProviderPush {
     pub fcm: Option<FcmSender>,
     pub apns: Option<ApnsSender>,
+    pub web: Option<WebPushSender>,
 }
 
 #[async_trait::async_trait]
 impl PushSender for ProviderPush {
     async fn send(&self, device: &DeviceTarget, message: &PushMessage) -> Result<(), PushError> {
-        match (device.platform.as_str(), &self.fcm, &self.apns) {
-            (PLATFORM_ANDROID, Some(fcm), _) => fcm.send(device, message).await,
-            (PLATFORM_IOS, _, Some(apns)) => apns.send(device, message).await,
-            (platform, _, _) => Err(PushError::Unsupported(platform.to_string())),
+        match (device.platform.as_str(), &self.fcm, &self.apns, &self.web) {
+            (PLATFORM_ANDROID, Some(fcm), _, _) => fcm.send(device, message).await,
+            (PLATFORM_IOS, _, Some(apns), _) => apns.send(device, message).await,
+            (PLATFORM_WEB, _, _, Some(web)) => web.send(device, message).await,
+            (platform, _, _, _) => Err(PushError::Unsupported(platform.to_string())),
         }
+    }
+
+    fn web_public_key(&self) -> Option<String> {
+        self.web.as_ref().map(WebPushSender::public_key)
     }
 }
 
-/// The push sender the environment sets up: FCM and/or APNs, or `NoopPush` when neither is
+/// The push sender the environment sets up: FCM, APNs and/or web push, or `NoopPush` when neither is
 /// configured (or both fail to load, which is logged).
 pub fn from_env(http: reqwest::Client) -> Arc<dyn PushSender> {
+    let http_for_web = http.clone();
     let fcm = match FcmSender::from_env(http) {
         Some(Ok(fcm)) => Some(fcm),
         Some(Err(e)) => {
@@ -632,11 +802,19 @@ pub fn from_env(http: reqwest::Client) -> Arc<dyn PushSender> {
         }
         None => None,
     };
-    tracing::info!(fcm = fcm.is_some(), apns = apns.is_some(), "push providers");
-    if fcm.is_none() && apns.is_none() {
+    let web = match WebPushSender::from_env(http_for_web) {
+        Some(Ok(web)) => Some(web),
+        Some(Err(e)) => {
+            tracing::warn!(error = %e, "web push not set up");
+            None
+        }
+        None => None,
+    };
+    tracing::info!(fcm = fcm.is_some(), apns = apns.is_some(), web = web.is_some(), "push providers");
+    if fcm.is_none() && apns.is_none() && web.is_none() {
         return Arc::new(NoopPush);
     }
-    Arc::new(ProviderPush { fcm, apns })
+    Arc::new(ProviderPush { fcm, apns, web })
 }
 
 #[cfg(test)]
@@ -812,5 +990,80 @@ mod tests {
         let printed = format!("{account:?}");
         assert!(!printed.contains("SECRET"), "{printed}");
         assert!(printed.contains("push@nomi.iam"));
+    }
+
+    fn browser() -> (web_push_native::p256::SecretKey, WebSubscription, [u8; WEB_PUSH_AUTH_BYTES]) {
+        use base64::Engine;
+        use web_push_native::p256::elliptic_curve::sec1::ToEncodedPoint;
+        let secret = web_push_native::p256::SecretKey::random(&mut rand::rngs::OsRng);
+        let auth = [7u8; WEB_PUSH_AUTH_BYTES];
+        let b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD;
+        let subscription = WebSubscription {
+            endpoint: "https://push.example.test/send/abc123".into(),
+            p256dh: b64.encode(secret.public_key().to_encoded_point(false).as_bytes()),
+            auth: b64.encode(auth),
+        };
+        (secret, subscription, auth)
+    }
+
+    fn vapid() -> web_push_native::jwt_simple::algorithms::ES256KeyPair {
+        use base64::Engine;
+        let scalar = web_push_native::p256::SecretKey::random(&mut rand::rngs::OsRng).to_bytes();
+        vapid_key_from_private(&base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(scalar)).unwrap()
+    }
+
+    #[test]
+    fn a_push_service_saying_404_or_410_means_the_subscription_is_gone() {
+        assert!(web_push_rejects_subscription(404));
+        assert!(web_push_rejects_subscription(410));
+        assert!(!web_push_rejects_subscription(429));
+        assert!(!web_push_rejects_subscription(500));
+        assert!(!web_push_rejects_subscription(201));
+    }
+
+    #[test]
+    fn the_web_push_body_is_the_title_body_and_data_the_worker_shows() {
+        let notice = Notice { kind: Kind::Quota, title: "Tara needs your OK".into(), body: "Approve the edit".into(), link: Some("/chat/1".into()) };
+        let body: Value = serde_json::from_slice(&web_push_body(&PushMessage::alert(&notice))).unwrap();
+        assert_eq!(body["title"], "Tara needs your OK");
+        assert_eq!(body["body"], "Approve the edit");
+        assert_eq!(body["data"]["link"], "/chat/1");
+    }
+
+    #[test]
+    fn a_web_push_request_is_vapid_signed_and_only_the_browser_can_read_it() {
+        let (secret, subscription, auth) = browser();
+        let message = PushMessage::chat_reply(Some("Trip".into()), Uuid::nil(), Uuid::nil(), "Here it is");
+        let request = web_push_request(&vapid(), "mailto:ops@nomi.test", &subscription, &message).unwrap();
+        assert_eq!(request.uri().to_string(), subscription.endpoint);
+        assert_eq!(request.method(), "POST");
+        assert_eq!(request.headers()["content-encoding"], "aes128gcm");
+        assert!(request.headers()["authorization"].to_str().unwrap().starts_with("vapid t="));
+        assert!(request.headers().contains_key("ttl"));
+        let plain = web_push_native::decrypt(request.into_body(), &secret, &auth.into()).unwrap();
+        assert_eq!(plain, web_push_body(&message));
+    }
+
+    #[test]
+    fn only_an_https_endpoint_with_real_keys_is_a_valid_subscription() {
+        let (_, good, _) = browser();
+        assert!(is_valid_web_subscription(&good));
+        assert!(!is_valid_web_subscription(&WebSubscription { endpoint: "http://push.example.test/x".into(), ..good.clone() }));
+        assert!(!is_valid_web_subscription(&WebSubscription { p256dh: "nope".into(), ..good.clone() }));
+        assert!(!is_valid_web_subscription(&WebSubscription { auth: "AAAA".into(), ..good }));
+    }
+
+    #[test]
+    fn a_subscription_with_unusable_keys_is_treated_as_gone() {
+        let (_, mut subscription, _) = browser();
+        subscription.p256dh = "not-a-key".into();
+        let message = PushMessage::chat_reply(None, Uuid::nil(), Uuid::nil(), "hi");
+        assert!(matches!(web_push_request(&vapid(), "mailto:ops@nomi.test", &subscription, &message), Err(PushError::Invalid)));
+    }
+
+    #[test]
+    fn the_vapid_private_key_must_be_one_p256_scalar() {
+        assert!(vapid_key_from_private("too-short").is_err());
+        assert!(vapid_key_from_private("").is_err());
     }
 }
