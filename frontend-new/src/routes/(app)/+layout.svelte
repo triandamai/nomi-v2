@@ -43,6 +43,7 @@
 	import ShortcutsDialog from '$lib/ds/chrome/ShortcutsDialog.svelte';
 	import SessionExpired from '$lib/ds/chat/SessionExpired.svelte';
 	import PhoneSignedOutSheet from '$lib/ds/thread/PhoneSignedOutSheet.svelte';
+	import NeedsYouToast from '$lib/chat/NeedsYouToast.svelte';
 	import Dialog from '$lib/ds/overlays/Dialog.svelte';
 	import Modal from '$lib/ds/overlays/Modal.svelte';
 	import ToastRegion from '$lib/ds/overlays/ToastRegion.svelte';
@@ -107,6 +108,8 @@
 	const guess = () => data.phone;
 	const phone = phoneView(guess());
 	// A screen inside a tab (a project opened from Projects) hides the tab bar as a chat does.
+	/** Counts the person's chats moving on, for the phone's needs-you toast to look again. */
+	let chatChanges = $state(0);
 	const phoneScreenState = new PhoneScreen();
 	setPhoneScreen(phoneScreenState);
 	setPhoneChrome({
@@ -377,7 +380,10 @@
 			deviceId: data.deviceId,
 			tab: tabId(),
 			handlers: {
-				chatsChanged: refresh,
+				chatsChanged: () => {
+					refresh();
+					chatChanges += 1;
+				},
 				resumed: refresh,
 				notification(notification) {
 					unread += 1;
@@ -565,6 +571,12 @@
 </Dialog>
 
 {#if phone.current}
+	<NeedsYouToast
+		changes={chatChanges}
+		openChat={path.startsWith('/chat/') ? path.split('/')[2] : null}
+		titleOf={(sessionId) => data.recents.find((recent) => recent.href === `/chat/${sessionId}`)?.title ?? m.recents_untitled()}
+		onopen={(sessionId) => void goto(`/chat/${sessionId}`)}
+	/>
 	<!-- On a phone (Mobile Chat — Errors & recovery, scenario 7): a sheet that can't be dismissed. -->
 	<PhoneSignedOutSheet open={sessionOver || header.signedOutDraft !== null} draft={header.signedOutDraft || undefined} signInHref={signInAgain} />
 {:else}

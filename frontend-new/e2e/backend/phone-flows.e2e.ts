@@ -298,3 +298,24 @@ test('Errors & recovery: signed out mid-chat, a sheet that can’t be dismissed 
 	await expect(sheet).toBeVisible();
 	await expect(sheet.getByRole('link', { name: 'Sign in again' })).toBeVisible();
 });
+
+test('Approvals & background: elsewhere in the app, a new approval in a chat is said with a toast that opens it', async ({ page, context }) => {
+	const { account, sessionId } = await chatAfter('Email Bu Sri about the rent');
+	expect((await api(account, `/api/sessions/${sessionId}`, { method: 'PATCH', body: JSON.stringify({ title: 'Kos rent tracker' }) })).ok).toBe(true);
+	await signInAs(context, account);
+	await page.goto('/chats', { waitUntil: 'networkidle' });
+
+	const approvalId = await seedReply(sessionId, {
+		content: '',
+		agent: 'Tara',
+		blocks: [{ kind: 'approval_request', id: crypto.randomUUID(), tool_name: 'gmail.send', description: 'Send an email', input: { to: 'bu.sri@example.com' }, status: 'pending', decided_at: null }],
+	});
+	await seedPendingApproval(sessionId, account.email, approvalId);
+	// The chat moves on (as the crew's turn would announce it): the person's feed hears of it.
+	await api(account, `/api/sessions/${sessionId}/messages`, { method: 'POST', body: JSON.stringify({ text: 'Any news?' }) });
+
+	const toast = page.getByRole('status').filter({ hasText: 'Kos rent tracker: Tara needs your OK' });
+	await expect(toast).toBeVisible({ timeout: 30_000 });
+	await toast.getByRole('button', { name: 'Open' }).click();
+	await expect(page).toHaveURL(new RegExp(`/chat/${sessionId}$`));
+});
