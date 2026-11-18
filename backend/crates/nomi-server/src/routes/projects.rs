@@ -40,13 +40,18 @@ pub struct ProjectSummary {
     /// Questions and approvals the crew is waiting on in the project's chats.
     #[serde(default)]
     pub waiting_on_you: i64,
-    /// `{ status: "ok" | "failed", at }` for its latest finished publish, if any.
+    /// `{ status: "ok" | "failed", error, at, number }` for its latest finished publish, if any
+    /// (`number` is the version it published; `error` is null unless it failed).
     #[serde(default)]
     pub last_deploy: Option<serde_json::Value>,
     /// `up` or `down` while it is live in production (down when it crashed since its last
     /// publish, lately); null when it isn't published.
     #[serde(default)]
     pub live_status: Option<String>,
+    /// `{ step, steps, doing }` while the crew is at work on it (see `project_build`); else null.
+    #[serde(default)]
+    #[sqlx(default)]
+    pub build: Option<serde_json::Value>,
 }
 
 /// A crash this recent, with no publish since, has the app shown as down.
@@ -74,7 +79,8 @@ const SUMMARY_COLUMNS: &str = "p.id, p.session_id, p.name, p.description, p.stat
          AND COALESCE((a.state->>'paused_for_approval')::boolean, false) \
          AND a.session_id IN (SELECT s.id FROM sessions s WHERE s.id = p.session_id OR s.in_project_id = p.id \
                               UNION SELECT i.session_id FROM project_issues i WHERE i.project_id = p.id)) AS waiting_on_you, \
-    (SELECT jsonb_build_object('status', CASE pp.status WHEN 'succeeded' THEN 'ok' ELSE 'failed' END, 'at', COALESCE(pp.finished_at, pp.created_at)) \
+    (SELECT jsonb_build_object('status', CASE pp.status WHEN 'succeeded' THEN 'ok' ELSE 'failed' END, 'at', COALESCE(pp.finished_at, pp.created_at), \
+            'error', pp.error, 'number', COALESCE(pp.version, pp.files_version)) \
        FROM project_publishes pp WHERE pp.project_id = p.id AND pp.status IN ('succeeded', 'failed') \
        ORDER BY COALESCE(pp.finished_at, pp.created_at) DESC LIMIT 1) AS last_deploy, \
     (SELECT CASE WHEN EXISTS (SELECT 1 FROM shipyard_events e WHERE e.project_id = p.id AND e.type = 'service.crashed' \
@@ -153,13 +159,16 @@ pub async fn list_projects(
         return Ok(Json(ListProjectsResponse { org_id: None, projects: Vec::new(), base_domain: crate::configuration::apps_base_domain().await }));
     };
 
-    let projects: Vec<ProjectSummary> =
+    let mut projects: Vec<ProjectSummary> =
         sqlx::query_as(&format!("SELECT {SUMMARY_COLUMNS} {SUMMARY_JOINS} WHERE p.org_id = $1 ORDER BY p.updated_at DESC"))
             .bind(org_id)
             .bind(CRASH_WINDOW_MINUTES)
             .fetch_all(&state.pool)
             .await
             .map_err(internal("failed to list projects"))?;
+    if let Err(e) = super::project_build::attach(&state.pool, &mut projects).await {
+        tracing::warn!(error = %e, "failed to load the projects' build progress");
+    }
 
     Ok(Json(ListProjectsResponse { org_id: Some(org_id), projects, base_domain: crate::configuration::apps_base_domain().await }))
 }
@@ -739,7 +748,7 @@ pub async fn transfer_project(
     AuthClaims(claims): AuthClaims,
     Path(project_id): Path<Uuid>,
     Json(req): Json<TransferProjectRequest>,
-) -> Result<StatusCode, (StatusCode, String)> {
+) -> Result<Response, (StatusCode, String)> {
     let project_row: Option<(Uuid, Uuid, Uuid, String)> = sqlx::query_as(
         "SELECT p.user_id, p.org_id, p.session_id, p.name FROM projects p WHERE p.id = $1 AND can_open_project(p.id, $2)"
     )
@@ -794,15 +803,45 @@ pub async fn transfer_project(
 
     let target_owner_id = target_owner.ok_or((StatusCode::BAD_REQUEST, "target organization has no active members or owner".to_string()))?;
 
+    // A workspace the person doesn't own isn't theirs to put a project in: the owner decides.
+    let role: Option<String> = sqlx::query_scalar("SELECT role FROM memberships WHERE org_id = $1 AND user_id = $2 AND status = 'active'")
+        .bind(req.target_org_id)
+        .bind(claims.sub)
+        .fetch_optional(&state.pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    if super::project_transfers::transfer_needs_approval(role.as_deref()) {
+        let request = super::project_transfers::create_request(&state.pool, project_id, current_org_id, req.target_org_id, claims.sub).await?;
+        return Ok((StatusCode::ACCEPTED, Json(request)).into_response());
+    }
+
+    move_project(&state, project_id, session_id, &project_name, current_org_id, req.target_org_id, target_owner_id, claims.sub).await?;
+    Ok(StatusCode::OK.into_response())
+}
+
+/// Moves the project (and its chat, and its Shipyard app) into `target_org_id`, under
+/// `target_owner_id`; `mover` is who asked, and isn't told. The move itself, whether it was
+/// allowed outright or approved by the receiving workspace's owner.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn move_project(
+    state: &AppState,
+    project_id: Uuid,
+    session_id: Uuid,
+    project_name: &str,
+    current_org_id: Uuid,
+    target_org_id: Uuid,
+    target_owner_id: Uuid,
+    mover: Uuid,
+) -> Result<(), (StatusCode, String)> {
     // A published project's Shipyard app moves first, so the two stay in step: when Shipyard
     // refuses (a publish is running, the destination's plan can't hold it), nothing moves here.
-    move_shipyard_app(&state, project_id, current_org_id, req.target_org_id).await?;
+    move_shipyard_app(state, project_id, current_org_id, target_org_id).await?;
 
     let mut tx = state.pool.begin().await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     sqlx::query("UPDATE projects SET org_id = $2, user_id = $3, updated_at = now() WHERE id = $1")
         .bind(project_id)
-        .bind(req.target_org_id)
+        .bind(target_org_id)
         .bind(target_owner_id)
         .execute(&mut *tx)
         .await
@@ -810,7 +849,7 @@ pub async fn transfer_project(
 
     sqlx::query("UPDATE sessions SET org_id = $2, user_id = $3 WHERE id = $1")
         .bind(session_id)
-        .bind(req.target_org_id)
+        .bind(target_org_id)
         .bind(target_owner_id)
         .execute(&mut *tx)
         .await
@@ -820,7 +859,7 @@ pub async fn transfer_project(
         "DELETE FROM project_members WHERE project_id = $1 AND user_id NOT IN (SELECT user_id FROM memberships WHERE org_id = $2 AND status = 'active')"
     )
     .bind(project_id)
-    .bind(req.target_org_id)
+    .bind(target_org_id)
     .execute(&mut *tx)
     .await
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
@@ -828,8 +867,8 @@ pub async fn transfer_project(
     tx.commit().await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     crate::project_events::changed(project_id, "app.transferred");
-    notify_transfer(&state.pool, project_id, &project_name, current_org_id, req.target_org_id, claims.sub).await;
-    Ok(StatusCode::OK)
+    notify_transfer(&state.pool, project_id, project_name, current_org_id, target_org_id, mover).await;
+    Ok(())
 }
 
 /// Moves the project's app on Shipyard to the destination organization (created there first if

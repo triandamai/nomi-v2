@@ -234,6 +234,10 @@ deploy:
 project:
   transferred_title: "%{name} was moved to %{org}"
   transferred_body: "%{who} moved the project %{name} from %{from} to %{org}. It's in your organization now, and you're its owner."
+  transfer_requested_title: "%{who} wants to move %{name} to %{org}"
+  transfer_requested_body: "%{who} asked to move the project %{name} from %{from} into %{org}. It moves only if you approve it."
+  transfer_declined_title: "%{name} wasn't moved to %{org}"
+  transfer_declined_body: "The owner of %{org} declined moving the project %{name} from %{from}. It stays where it is."
 money:
   card_expense: "Expense · %{category}"
   card_income: "Income · %{category}"

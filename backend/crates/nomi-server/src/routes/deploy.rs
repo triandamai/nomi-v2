@@ -581,6 +581,51 @@ pub struct PublishDetail {
     pub deployments: Vec<Value>,
 }
 
+/// `DELETE /api/projects/:id/deploy/publishes/:publish_id`: stops a running publish. Shipyard has
+/// no way to abort one, so it's marked cancelled here: the webhook and the overview only update
+/// publishes that are still running, so whatever Shipyard finishes later doesn't revive it, and the
+/// project can be published again at once. 409 when it already finished; cancelling twice is fine.
+pub async fn cancel_publish(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Path((project_id, publish_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<PublishRow>, ApiError> {
+    require_admin(&state.pool, project_id, claims.sub).await?;
+    let status: String = sqlx::query_scalar("SELECT status FROM project_publishes WHERE project_id = $1 AND id = $2")
+        .bind(project_id)
+        .bind(publish_id)
+        .fetch_optional(&state.pool)
+        .await
+        .map_err(internal("failed to load publish"))?
+        .ok_or((StatusCode::NOT_FOUND, "publish not found".to_string()))?;
+    match cancel_verdict(&status) {
+        CancelVerdict::TooLate => return Err((StatusCode::CONFLICT, "the publish already finished".to_string())),
+        CancelVerdict::AlreadyStopped => {}
+        CancelVerdict::Stop => {
+            // The status in the WHERE keeps a publish that finished in the meantime finished.
+            let stopped = sqlx::query("UPDATE project_publishes SET status = 'cancelled', finished_at = now() WHERE id = $1 AND project_id = $2 AND status = 'running'")
+                .bind(publish_id)
+                .bind(project_id)
+                .execute(&state.pool)
+                .await
+                .map_err(internal("failed to cancel the publish"))?;
+            if stopped.rows_affected() == 0 {
+                let now: String = sqlx::query_scalar("SELECT status FROM project_publishes WHERE id = $1")
+                    .bind(publish_id)
+                    .fetch_one(&state.pool)
+                    .await
+                    .map_err(internal("failed to load publish"))?;
+                if cancel_verdict(&now) == CancelVerdict::TooLate {
+                    return Err((StatusCode::CONFLICT, "the publish already finished".to_string()));
+                }
+            } else {
+                crate::project_events::changed(project_id, "publish.cancelled");
+            }
+        }
+    }
+    Ok(Json(publish_row(&state.pool, project_id, publish_id).await?))
+}
+
 /// `GET /api/projects/:id/deploy/publishes/:publish_id`: the publish, asking Shipyard for its
 /// state while it's still running (in case a webhook went missing).
 pub async fn get_publish(
@@ -686,6 +731,25 @@ pub async fn get_publish(
     }
     let publish = publish_row(&state.pool, project_id, publish_id).await?;
     Ok(Json(PublishDetail { publish, deployments }))
+}
+
+/// What asking to cancel a publish comes to, from where it stands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CancelVerdict {
+    /// Still running: stop it.
+    Stop,
+    /// Already cancelled: asking again changes nothing.
+    AlreadyStopped,
+    /// It finished (succeeded or failed) before the cancel: too late.
+    TooLate,
+}
+
+pub(crate) fn cancel_verdict(status: &str) -> CancelVerdict {
+    match status {
+        "running" => CancelVerdict::Stop,
+        "cancelled" => CancelVerdict::AlreadyStopped,
+        _ => CancelVerdict::TooLate,
+    }
 }
 
 #[derive(Deserialize)]
@@ -1023,4 +1087,18 @@ pub async fn admin_register_webhook(State(state): State<AppState>, AuthClaims(cl
         }
     }
     Ok(Json(admin_status(&state).await?))
+}
+
+#[cfg(test)]
+mod cancel_tests {
+    use super::*;
+
+    #[test]
+    fn only_a_running_publish_can_be_stopped() {
+        assert_eq!(cancel_verdict("running"), CancelVerdict::Stop);
+        assert_eq!(cancel_verdict("succeeded"), CancelVerdict::TooLate);
+        assert_eq!(cancel_verdict("failed"), CancelVerdict::TooLate);
+        // Asking again after it was stopped is a no-op, not a conflict.
+        assert_eq!(cancel_verdict("cancelled"), CancelVerdict::AlreadyStopped);
+    }
 }

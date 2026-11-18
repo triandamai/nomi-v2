@@ -234,6 +234,10 @@ deploy:
 project:
   transferred_title: "%{name} dipindahkan ke %{org}"
   transferred_body: "%{who} memindahkan proyek %{name} dari %{from} ke %{org}. Proyek ini sekarang ada di organisasimu, dan kamu adalah pemiliknya."
+  transfer_requested_title: "%{who} ingin memindahkan %{name} ke %{org}"
+  transfer_requested_body: "%{who} meminta proyek %{name} dari %{from} dipindahkan ke %{org}. Proyek baru pindah kalau kamu menyetujuinya."
+  transfer_declined_title: "%{name} tidak jadi dipindahkan ke %{org}"
+  transfer_declined_body: "Pemilik %{org} menolak pemindahan proyek %{name} dari %{from}. Proyek tetap di tempatnya."
 money:
   card_expense: "Pengeluaran · %{category}"
   card_income: "Pemasukan · %{category}"

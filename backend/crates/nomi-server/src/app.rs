@@ -414,6 +414,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/attachments/:id", get(attachments_routes::get_attachment).delete(attachments_routes::delete_attachment))
         .route("/api/attachments/:id/content", get(attachments_routes::get_content))
         .route("/api/attachments/:id/preview", get(attachments_routes::get_preview))
+        .route("/api/me/plan", get(crate::routes::me_plan::get))
         .route("/api/plans", get(plans_routes::list_for_user))
         .route("/api/entitlements", get(plans_routes::entitlements_for_user))
         .route("/api/plans/:id/checkout", post(crate::routes::plan_checkout::checkout))
@@ -478,6 +479,11 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/search", get(crate::routes::search::search))
         .route("/api/projects/:id/transfer/orgs", get(projects_routes::search_transfer_orgs))
         .route("/api/projects/:id/transfer", post(projects_routes::transfer_project))
+        .route("/api/projects/:id/transfer/requests", get(crate::routes::project_transfers::for_project))
+        .route("/api/projects/:id/transfer/requests/:request_id", delete(crate::routes::project_transfers::cancel))
+        .route("/api/transfer-requests", get(crate::routes::project_transfers::mine))
+        .route("/api/transfer-requests/:request_id/approve", post(crate::routes::project_transfers::approve))
+        .route("/api/transfer-requests/:request_id/decline", post(crate::routes::project_transfers::decline))
         .route(
             "/api/projects/:id/agent-permissions",
             get(crate::routes::agent_permissions::list).put(crate::routes::agent_permissions::set),
@@ -495,7 +501,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/projects/:id/domains/:hostname", delete(crate::routes::custom_domains::remove))
         .route("/api/projects/:id/domains/:hostname/check", post(crate::routes::custom_domains::check))
         .route("/api/projects/:id/domains/:hostname/primary", put(crate::routes::custom_domains::make_primary))
-        .route("/api/projects/:id/deploy/publishes/:publish_id", get(crate::routes::deploy::get_publish))
+        .route("/api/projects/:id/deploy/publishes/:publish_id", get(crate::routes::deploy::get_publish).delete(crate::routes::deploy::cancel_publish))
         .route("/api/projects/:id/deploy/publishes/:publish_id/rollback", post(crate::routes::deploy::rollback))
         .route("/api/projects/:id/deploy/deployments/:deployment_id", get(crate::routes::deploy::get_deployment))
         .route("/api/projects/:id/deploy/logs", get(crate::routes::deploy::runtime_logs))
