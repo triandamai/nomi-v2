@@ -154,7 +154,7 @@ async fn asks_wait_in_line_and_one_can_be_moved_up(pool: PgPool) {
         .await
         .unwrap();
         let id: Uuid = sqlx::query_scalar(
-            "INSERT INTO turn_jobs (session_id, sender_channel_identity_id, text, status, created_at) VALUES ($1, $2, $3, $4, now() - make_interval(mins => $5)) RETURNING id",
+            "INSERT INTO turn_jobs (session_id, sender_channel_identity_id, text, status, created_at, claimed_at) VALUES ($1, $2, $3, $4, now() - make_interval(mins => $5), CASE WHEN $4 = 'processing' THEN now() - interval '21 seconds' END) RETURNING id",
         )
         .bind(session)
         .bind(identity)
@@ -172,6 +172,9 @@ async fn asks_wait_in_line_and_one_can_be_moved_up(pool: PgPool) {
         order(&queue),
         vec![("Add a menu page".into(), "running".into()), ("Make it blue".into(), "next".into()), ("Add opening hours".into(), "queued".into())]
     );
+    // Only the running ask says when it started.
+    assert!(queue["asks"][0]["started_at"].is_string());
+    assert!(queue["asks"][1]["started_at"].is_null());
     assert_eq!(queue["asks"][2]["who"], "ben");
     assert_eq!(queue["asks"][2]["mine"], true);
 

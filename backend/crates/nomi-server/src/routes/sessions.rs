@@ -46,6 +46,8 @@ pub async fn create_session(
 pub struct LastMessagePreview {
     pub content: String,
     pub created_at: DateTime<Utc>,
+    /// The agent whose reply this is; null for a message a person wrote.
+    pub agent_type: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -66,6 +68,8 @@ pub struct SessionListItem {
     pub pinned_at: Option<DateTime<Utc>>,
     /// The project this chat was moved into (not its own project: that's `project_id`).
     pub in_project_id: Option<Uuid>,
+    /// The crew who have answered in this chat, in the order they first did.
+    pub agents: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -80,16 +84,20 @@ pub async fn list_sessions(
     AuthClaims(claims): AuthClaims,
 ) -> Result<Json<ListSessionsResponse>, (StatusCode, &'static str)> {
     #[allow(clippy::type_complexity)]
-    let rows: Vec<(Uuid, String, String, String, Option<String>, Option<String>, Option<DateTime<Utc>>, bool, DateTime<Utc>, Option<Uuid>, Option<DateTime<Utc>>, Option<Uuid>)> = sqlx::query_as(
+    let rows: Vec<(Uuid, String, String, String, Option<String>, Option<String>, Option<DateTime<Utc>>, bool, DateTime<Utc>, Option<Uuid>, Option<DateTime<Utc>>, Option<Uuid>, bool, Option<String>, Vec<String>)> = sqlx::query_as(
         "SELECT \
             s.id, s.channel, s.chat_type, s.chat_id, s.title, \
             lm.content, lm.created_at, \
             EXISTS (SELECT 1 FROM agent_sessions ag WHERE ag.session_id = s.id AND ag.status = 'active'), \
             COALESCE(lm.created_at, s.created_at), \
-            p.id, s.pinned_at, s.in_project_id \
+            p.id, s.pinned_at, s.in_project_id, (lm.sender_channel_identity_id IS NULL), lm.agent_display_name, \
+            COALESCE((SELECT array_agg(a.name ORDER BY a.first_at) FROM ( \
+                SELECT m.agent_display_name AS name, MIN(m.created_at) AS first_at FROM messages m \
+                WHERE m.session_id = s.id AND m.sender_channel_identity_id IS NULL AND m.agent_display_name IS NOT NULL AND m.content NOT LIKE '🧠%' \
+                GROUP BY m.agent_display_name) a), '{}') \
          FROM sessions s \
          LEFT JOIN LATERAL ( \
-             SELECT content, created_at FROM messages m WHERE m.session_id = s.id AND m.content NOT LIKE '🧠%' \
+             SELECT content, created_at, sender_channel_identity_id, agent_display_name FROM messages m WHERE m.session_id = s.id AND m.content NOT LIKE '🧠%' \
              ORDER BY m.created_at DESC LIMIT 1 \
          ) lm ON true \
          LEFT JOIN LATERAL ( \
@@ -105,13 +113,31 @@ pub async fn list_sessions(
     .await
     .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to list sessions"))?;
 
+    // A custom agent goes by its own name in a chat and by its id as an agent type.
+    let dynamic: std::collections::HashMap<String, String> = sqlx::query_as::<_, (String, String)>("SELECT name, id::text FROM dynamic_agents")
+        .fetch_all(&state.pool)
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to list sessions"))?
+        .into_iter()
+        .collect();
+    let agent_type_of = |name: &str| dynamic.get(name).cloned().unwrap_or_else(|| nomi_agent_core::crew::agent_type_for_name(name));
+
     let sessions = rows
         .into_iter()
-        .map(|(id, channel, chat_type, chat_id, title, last_content, last_created_at, agent_active, updated_at, project_id, pinned_at, in_project_id)| {
+        .map(|(id, channel, chat_type, chat_id, title, last_content, last_created_at, agent_active, updated_at, project_id, pinned_at, in_project_id, from_agent_side, last_agent_name, agent_names)| {
             let last_message = match (last_content, last_created_at) {
-                (Some(content), Some(created_at)) => Some(LastMessagePreview { content, created_at }),
+                (Some(content), Some(created_at)) => {
+                    let agent_type = if from_agent_side { last_agent_name.as_deref().map(agent_type_of) } else { None };
+                    Some(LastMessagePreview { content, created_at, agent_type })
+                }
                 _ => None,
             };
+            let agents = agent_names.iter().map(|n| agent_type_of(n)).fold(Vec::new(), |mut all, t| {
+                if !all.contains(&t) {
+                    all.push(t);
+                }
+                all
+            });
             SessionListItem {
                 id,
                 channel,
@@ -125,6 +151,7 @@ pub async fn list_sessions(
                 pinned: pinned_at.is_some(),
                 pinned_at,
                 in_project_id,
+                agents,
             }
         })
         .collect();
