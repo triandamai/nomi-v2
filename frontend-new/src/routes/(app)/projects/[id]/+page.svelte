@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
-	import { Activity, ArrowDownUp, ChevronLeft, ChevronRight, Coins, Cpu, Database, Download, Globe, History, Hourglass, KeyRound, Link, Lock, MemoryStick, MonitorX, Power, RefreshCw, Rocket, Settings, Trash2, UserMinus, Users } from '@lucide/svelte';
+	import { Activity, ArrowDownUp, ChevronLeft, ChevronRight, Coins, Cpu, Database, Download, Globe, History, Hourglass, KeyRound, Link, Lock, MemoryStick, MonitorX, RefreshCw, Rocket, Settings, Trash2, UserMinus, Users } from '@lucide/svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { pageAction } from '$lib/pageAction';
 	import { clock as appClock } from '$lib/clock';
@@ -49,7 +49,7 @@
 	import { goto, invalidate } from '$app/navigation';
 	import { page } from '$app/state';
 	import CodeView from '$lib/ds/build/CodeView.svelte';
-	import { plainLines } from '$lib/ds/chat/code';
+	import { plainLines, type CodeLine } from '$lib/ds/chat/code';
 	import { fileTree, firstFile, quoteLines } from '$lib/projects/code';
 	import PhoneFrame from '$lib/ds/build/PhoneFrame.svelte';
 	import PublishButton from '$lib/ds/build/PublishButton.svelte';
@@ -61,6 +61,7 @@
 	import EmptyState from '$lib/ds/lists/EmptyState.svelte';
 	import Terminal from '$lib/ds/build/Terminal.svelte';
 	import { SandboxRuntime } from '$lib/projects/sandbox.svelte';
+	import SandboxWait from '$lib/projects/SandboxWait.svelte';
 	import { terminalLines } from '$lib/projects/terminal';
 	import Presence from '$lib/ds/build/Presence.svelte';
 	import PresenceMenu from '$lib/ds/build/PresenceMenu.svelte';
@@ -185,6 +186,7 @@
 			view = 'code';
 			if (file && project.files.some((one) => one.path === file)) {
 				codeText = null;
+				codeLines = null;
 				codePath = file;
 			}
 		}
@@ -510,15 +512,18 @@
 	let workspaceView = $state<'chat' | 'pane'>('chat');
 	let codePath = $state<string | null>(untrack(() => firstFile(data.project.files)));
 	let codeText = $state<string | null>(null);
+	/** The file's lines as the server highlighted them; null until it's read (or when it couldn't be). */
+	let codeLines = $state<CodeLine[] | null>(null);
 	let codeBinary = $state(false);
 	let quote = $state<ReturnType<typeof quoteLines> | null>(null);
 	const tree = $derived(fileTree(project.files, codePath));
 	async function readFile(path: string) {
 		const response = await fetch(`/projects/${project.id}/file?path=${encodeURIComponent(path)}`).catch(() => null);
-		const file = response?.ok ? ((await response.json()) as { content?: string; binary: boolean }) : null;
+		const file = response?.ok ? ((await response.json()) as { content?: string; binary: boolean; lines?: CodeLine[] }) : null;
 		if (path !== codePath) return;
 		codeBinary = file?.binary ?? false;
 		codeText = file && !file.binary ? (file.content ?? '') : null;
+		codeLines = file?.lines ?? null;
 	}
 	$effect(() => {
 		if (view === 'code' && codePath) void readFile(codePath);
@@ -584,6 +589,7 @@
 			if (view !== where) view = where;
 			if (where === 'code' && path && path !== codePath) {
 				codeText = null;
+				codeLines = null;
 				codePath = path;
 			}
 		});
@@ -864,11 +870,12 @@
 						{tree}
 						path={codePath}
 						meta={codeBinary ? m.code_binary() : codeText === null ? m.code_reading() : codeText.split('\n').length === 1 ? m.code_meta_one() : m.code_meta({ count: codeText.split('\n').length })}
-						lines={codeText === null ? [] : plainLines(codeText)}
+						lines={codeText === null ? [] : (codeLines ?? plainLines(codeText))}
 						onopen={(index) => {
 							const entry = tree[index];
 							if (entry && entry.kind !== 'folder') {
 								codeText = null;
+								codeLines = null;
 								codePath = entry.path;
 							}
 						}}
@@ -898,18 +905,7 @@
 					{/if}
 				{/key}
 			{:else if sandboxOn}
-				<div class="flex flex-col items-start gap-3">
-					{#if sandboxPhase === 'failed'}
-						<EmptyState icon={MonitorX} title={m.sandbox_failed_title()} body={runtime?.error || m.sandbox_failed_body()} />
-					{:else if sandboxPhase === 'stopped'}
-						<EmptyState icon={Power} title={m.sandbox_stopped_title()} body={m.sandbox_stopped_body()} />
-					{:else if sandboxPhase === 'starting'}
-						<EmptyState icon={Hourglass} title={m.sandbox_starting_title()} body={m.sandbox_starting_body()} />
-					{:else}
-						<EmptyState icon={Hourglass} title={sandboxPhase === 'loading' ? m.sandbox_loading_title() : m.sandbox_waking_title()} body={m.sandbox_waking_body()} />
-					{/if}
-					{#if sandboxPhase === 'failed' || sandboxPhase === 'stopped'}<Button variant="secondary" label={m.sandbox_start_again()} onclick={() => void runtime?.retry()} />{/if}
-				</div>
+				<SandboxWait phase={sandboxPhase} log={runtime?.log ?? ''} error={runtime?.error ?? null} onretry={() => void runtime?.retry()} />
 			{:else}
 				<EmptyState icon={MonitorX} title={m.workspace_nothing_title()} body={project.status === 'building' ? m.workspace_nothing_building() : m.workspace_nothing_body()} />
 			{/if}

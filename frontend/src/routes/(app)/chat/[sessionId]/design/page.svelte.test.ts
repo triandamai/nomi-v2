@@ -117,6 +117,40 @@ describe('design studio page', () => {
 		expect(link.getAttribute('rel')).toContain('noopener');
 	});
 
+	it('says when a version is not published outside Nomi, and why', () => {
+		const root = studio([preview(1, { publish_error: 'publishing previews isn’t set up' })]);
+		expect(text(root)).toContain('Not published outside Nomi: publishing previews isn’t set up');
+		expect(button(root, 'Publish again')).toBeDefined();
+	});
+
+	it('says nothing about publishing when the version is published', () => {
+		const root = studio([preview(1, { published_url: 'https://ship.example.com/dpl/d1', publish_error: null })]);
+		expect(text(root)).not.toContain('Not published outside Nomi');
+		expect(button(root, 'Publish again')).toBeUndefined();
+	});
+
+	it('publishes a version again and links it once it is out', async () => {
+		const fetched = vi.fn(async (_url: string, _init?: RequestInit) => new Response(JSON.stringify({ version: 1, published_url: 'https://ship.example.com/dpl/d2', publish_error: null }), { status: 200 }));
+		vi.stubGlobal('fetch', fetched);
+		const root = studio([preview(1, { publish_error: 'Shipyard refused it' })]);
+		button(root, 'Publish again').click();
+		await settle();
+		await settle();
+		expect(fetched.mock.calls[0][0]).toBe('/chat/s1/design/publish');
+		expect(JSON.parse(fetched.mock.calls[0][1]?.body as string)).toEqual({ version: 1 });
+		expect(root.querySelector('a[href="https://ship.example.com/dpl/d2"]')).not.toBeNull();
+		expect(text(root)).not.toContain('Not published outside Nomi');
+	});
+
+	it('keeps saying why when publishing again fails', async () => {
+		vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ version: 1, published_url: null, publish_error: 'Shipyard is down' }), { status: 200 })));
+		const root = studio([preview(1, { publish_error: 'Shipyard refused it' })]);
+		button(root, 'Publish again').click();
+		await settle();
+		await settle();
+		expect(text(root)).toContain('Not published outside Nomi: Shipyard is down');
+	});
+
 	it('keeps what was said about the previews, with what became of it', async () => {
 		const root = studio([preview(1), preview(2)], null, [said(1, { status: 'resolved', resolved_in_version: 2, resolution: 'Hero is half the height' }), said(2, { level: 'global', page: null, element_id: null, body: 'Warmer overall' })]);
 		expect(root.querySelector('textarea')).toBeNull();

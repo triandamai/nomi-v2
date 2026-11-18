@@ -1,10 +1,22 @@
 import { describe, expect, it } from 'vitest';
-import { safePreviewUrl, sandboxView, usesSandbox } from './sandbox';
+import { latestLine, safePreviewUrl, sandboxView, usesSandbox } from './sandbox';
 
 const SECRET = 'https://boat.example/p/s3cr3t-token';
 const status = (over: Partial<Parameters<typeof sandboxView>[0]> = {}) => ({ runtime: 'sandbox', available: true, state: 'running', phase: 'running' as const, preview_url: SECRET, error: null, ...over });
 
 describe('a project’s sandbox', () => {
+	it('is building, not waking, while there is nothing to preview yet', () => {
+		expect(sandboxView(status({ phase: 'idle', state: 'none', preview_url: null, preview_ready: false })).phase).toBe('building');
+		expect(sandboxView(status({ phase: 'idle', state: 'none', preview_url: null, preview_ready: true })).phase).toBe('waking');
+		expect(sandboxView(status({ phase: 'idle', state: 'none', preview_url: null })).phase, 'an older backend says nothing: as before').toBe('waking');
+	});
+
+	it('shows the latest thing the sandbox printed as its progress', () => {
+		expect(latestLine('npm install\nadded 212 packages\n\n')).toBe('added 212 packages');
+		expect(latestLine('\x1b[32m  VITE v6 ready\x1b[0m\n')).toBe('VITE v6 ready');
+		expect(latestLine('')).toBeNull();
+	});
+
 	it('frames only an https address', () => {
 		expect(safePreviewUrl(SECRET)).toBe(SECRET);
 		expect(safePreviewUrl('http://boat.example/p')).toBeNull();

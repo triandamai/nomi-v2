@@ -40,6 +40,7 @@ const AREA_LABELS: Record<Area, [() => string, () => string]> = {
 	maintenance: [m.admin_area_maintenance, m.admin_area_maintenance_desc],
 	integrations: [m.admin_area_integrations, m.admin_area_integrations_desc],
 	configuration: [m.admin_area_configuration, m.admin_area_configuration_desc],
+	projects: [m.admin_area_projects, m.admin_area_projects_desc],
 };
 
 /** Every area, as the access editor lists them. */
