@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, tick, untrack, type Snippet } from 'svelte';
-	import { ArrowUpRight, Check, Copy, Cpu, Download, FilePlus2, FolderInput, Hourglass, KeyRound, List, LogIn, Maximize2, Minimize2, Pencil, Pin, PinOff, RefreshCw, RotateCcw, Share, Sparkles, ThumbsDown, ThumbsUp, Trash2, Unplug, Undo2 } from '@lucide/svelte';
+	import { ArrowUpRight, Check, Copy, Cpu, Download, FilePlus2, FolderInput, Hourglass, KeyRound, List, LogIn, Maximize2, Minimize2, Pencil, Pin, PinOff, RefreshCw, RotateCcw, Share, Sparkles, TextSelect, ThumbsDown, ThumbsUp, Trash2, Unplug, Undo2 } from '@lucide/svelte';
 	import { goto, invalidate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { m } from '$lib/paraglide/messages';
@@ -50,9 +50,9 @@
 	import SheetTiles from '$lib/ds/overlays/SheetTiles.svelte';
 	import ActionSheet from '$lib/ds/overlays/ActionSheet.svelte';
 	import { longPress } from '$lib/longPress';
-	import NavBar from '$lib/ds/mobile/NavBar.svelte';
+	import NavBar from '$lib/ds/thread/PhoneChatNavBar.svelte';
 	import Mascot from '$lib/ds/agents/Mascot.svelte';
-	import PhoneUserMessage from '$lib/ds/mobile/UserMessage.svelte';
+	import PhoneUserMessage from '$lib/ds/thread/PhoneMessageBubble.svelte';
 	import ActionBar from '$lib/ds/mobile/ActionBar.svelte';
 	import SheetRow from '$lib/ds/mobile/SheetRow.svelte';
 	import BottomSheet from '$lib/ds/overlays/BottomSheet.svelte';
@@ -518,6 +518,32 @@
 		return { agent: crewIdOf(name), name: working ? m.chat_nav_working({ name }) : name };
 	});
 	const pinned = $derived(header.shown(chatId, 'pinned', data.chat.pinned));
+	// The chat's sheet says how many messages it holds and who answers (W3a8j G8cFz: "14 messages ·
+	// Dana"); the count only once every message is loaded, so it's never short.
+	const chatSubtitle = $derived.by(() => {
+		const name = working ? (turn.agent ?? 'Nomi') : (messages.findLast((message) => message.sender === 'assistant' && message.agent_display_name)?.agent_display_name ?? 'Nomi');
+		return hasOlder ? name : m.chat_sheet_subtitle({ count: messages.length, name });
+	});
+	// A reply asked for again on another model (Message controls lVDqs, "With another model"): the
+	// chat moves to that model (the composer's chip says so), then the turn runs again on it.
+	const otherModels = $derived(models.flatMap((group) => group.models).filter((option) => !option.chosen));
+	async function regenerateWith(replyId: string, key: string) {
+		if (await useModel(key)) await regenerate(replyId, 'again');
+	}
+	/**
+	 * Select text (Message controls sKD62): your message's text, selected in place for the phone's own
+	 * handles, once its sheet is gone (and the focus it gives back, which would take the selection).
+	 */
+	function selectText(id: string) {
+		void tick().then(() =>
+			requestAnimationFrame(() => {
+				const text = document.querySelector(`[data-message-id="${id}"] p`);
+				if (!text) return;
+				if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+				getSelection()?.selectAllChildren(text);
+			}),
+		);
+	}
 
 	async function patch(body: Record<string, unknown>): Promise<boolean> {
 		const result = await callJson(`${api}/session`, { method: 'PATCH', body });
@@ -799,7 +825,8 @@
 
 			{#each entries as entry, index (entry.type === 'day' ? `day-${entry.key}` : entry.type === 'new' ? 'new' : entry.message.id)}
 				{#if entry.type === 'day'}
-					<DateDivider label={entry.label} />
+					<!-- On a phone a thread of one day has no divider (Answer yr0gh). -->
+					{#if !phone || entries.filter((one) => one.type === 'day').length > 1}<DateDivider label={entry.label} />{/if}
 				{:else if entry.type === 'new'}
 					<NewDivider count={entry.count} />
 				{:else if entry.type === 'user' && entry.message.author_name}
@@ -989,11 +1016,11 @@
 	{@const close = () => (sheet = null)}
 	<!-- A sheet closing clears the state only while it's still the one showing (Rename follows the chat's). -->
 	{@const closed = (kind: Sheet['kind']) => () => sheet?.kind === kind && (sheet = null)}
-	<BottomSheet open={sheet?.kind === 'chat'} title={shownTitle ?? m.nav_new_chat()} subtitle={answering.name} onclose={closed('chat')}>
+	<BottomSheet open={sheet?.kind === 'chat'} title={shownTitle ?? m.nav_new_chat()} subtitle={chatSubtitle} onclose={closed('chat')}>
 		<SheetRow icon={Pencil} label={m.chat_rename()} onclick={() => ((newName = shownTitle ?? ''), (sheet = { kind: 'rename' }))} />
 		<SheetRow icon={pinned ? PinOff : Pin} label={pinned ? m.chat_unpin_top() : m.chat_pin_top()} onclick={() => (close(), onMenu('pin'))} />
 		{#if data.projects.length}<SheetRow icon={FolderInput} label={m.chat_move()} more onclick={() => (close(), onMenu('move'))} />{/if}
-		<SheetRow icon={Download} label={m.chat_export()} meta="md" onclick={() => (close(), onMenu('export'))} />
+		<SheetRow icon={Download} label={m.chat_export()} meta="md" more onclick={() => (close(), onMenu('export'))} />
 		<SheetRow icon={Share} label={m.chat_share_whole()} onclick={() => (close(), onMenu('share'))} />
 		<span class="h-px bg-border"></span>
 		<SheetRow icon={Trash2} label={m.chat_delete()} danger onclick={() => (close(), onMenu('delete'))} />
@@ -1025,7 +1052,11 @@
 				]}
 			/>
 			{#if reply.latest && !working}
-				<SheetRow icon={RefreshCw} label={m.reply_regenerate()} more onclick={() => (sheet = { kind: 'regen', message: reply.message })} />
+				<SheetRow icon={RefreshCw} label={m.reply_regenerate()} onclick={() => (sheet = { kind: 'regen', message: reply.message })} />
+				{#if otherModels.length}
+					<!-- Try another model (Wl0VM): opens Regenerate's sheet, whose last group is the other models. -->
+					<SheetRow icon={Cpu} label={m.reply_try_model()} meta={otherModels[0].label} more onclick={() => (sheet = { kind: 'regen', message: reply.message })} />
+				{/if}
 				{#if reply.asked}
 					{@const asked = reply.asked}
 					<SheetRow icon={Pencil} label={m.reply_edit_question()} onclick={() => ((editing = asked.id), close())} />
@@ -1035,10 +1066,20 @@
 	{/if}
 	{#if sheet?.kind === 'regen'}
 		{@const regen = sheet}
-		<BottomSheet open title={m.reply_regenerate()} subtitle={nameOf(regen.message)} onclose={closed('regen')}>
+		<BottomSheet open title={m.reply_regenerate()} subtitle={m.regen_sheet_subtitle()} onclose={closed('regen')}>
 			{#each [{ style: 'again', label: m.regen_again(), icon: RefreshCw }, { style: 'shorter', label: m.regen_shorter(), icon: Minimize2 }, { style: 'longer', label: m.regen_longer(), icon: Maximize2 }, { style: 'list', label: m.regen_list(), icon: List }] as const as option (option.style)}
 				<SheetRow icon={option.icon} label={option.label} onclick={() => (void regenerate(regen.message.id, option.style), close())} />
 			{/each}
+			{#if otherModels.length}
+				<p class="px-5 pt-3 pb-1 font-mono text-label tracking-label text-text-3 uppercase">{m.regen_models()}</p>
+				{#each otherModels as option (option.key)}
+					<SheetRow
+						icon={Cpu}
+						label={m.regen_model_option({ model: option.label, source: option.source === m.models_nomi_credits() ? option.source : m.regen_source_key() })}
+						onclick={() => (void regenerateWith(regen.message.id, option.key), close())}
+					/>
+				{/each}
+			{/if}
 		</BottomSheet>
 	{/if}
 	{#if sheet?.kind === 'dislike'}
@@ -1060,6 +1101,7 @@
 		<BottomSheet open title={m.mine_sheet_title()} subtitle={clock(mine.message.created_at, time.timeZone)} onclose={closed('mine')}>
 			{#if mine.latest}<SheetRow icon={Pencil} label={m.mine_edit()} onclick={() => ((editing = mine.message.id), close())} />{/if}
 			<SheetRow icon={Copy} label={m.mine_copy()} onclick={() => (void copyText(mine.message.content), close())} />
+			<SheetRow icon={TextSelect} label={m.mine_select()} onclick={() => (selectText(mine.message.id), close())} />
 		</BottomSheet>
 	{/if}
 	<BottomSheet open={sheet?.kind === 'model'} title={m.composer_model_title()} onclose={closed('model')}>
@@ -1124,7 +1166,7 @@
 	<ActionSheet
 		bind:open={deleteOpen}
 		title={m.chat_delete_title()}
-		body={m.chat_delete_body({ count: messages.length })}
+		body={m.chat_delete_body_phone({ count: messages.length })}
 		actions={[
 			{ label: m.chat_delete_export(), onclick: exportChat },
 			{ label: m.chat_delete(), danger: true, onclick: () => void deleteChat() },
