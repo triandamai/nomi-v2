@@ -23,7 +23,7 @@
 		label,
 		live = size >= 20,
 		mood = 'idle',
-	}: { agent: CrewId; size?: 96 | 32 | 20 | 16; label?: string; live?: boolean; mood?: AvatarMotion } = $props();
+	}: { agent: CrewId; /** 96 / 32 / 20 / 16 in the pen; Home's hero also draws 112, 52 and 28. */ size?: number; label?: string; live?: boolean; mood?: AvatarMotion } = $props();
 
 	const uid = $props.id();
 	const look = $derived(CREW_LOOKS[agent]);

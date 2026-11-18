@@ -40,6 +40,9 @@
 		placeholder: string;
 		busy?: boolean;
 		roomy?: boolean;
+		/** Home's hero composer (Landing Page 14:601): 20 corners, a quiet stroke, padded 16 · 18 · 12, 20
+		 * between the field and its chips, floating over the brand glow (shadow-float). */
+		hero?: boolean;
 		/** Home: who the message goes to (the To chip), from `crew`. */
 		to?: Recipient;
 		/** The crew to "@", and to pick in the To chip. */
@@ -66,6 +69,7 @@
 		placeholder,
 		busy = false,
 		roomy = false,
+		hero = false,
 		to,
 		crew = [],
 		model,
@@ -181,7 +185,7 @@
 </script>
 
 <div class="relative w-full">
-	<div data-composer class={['flex w-full flex-col rounded-md border border-border-strong bg-surface px-2.75 pt-3.25 pb-2.25', roomy ? 'gap-7' : 'gap-3.5']}>
+	<div data-composer class={['flex w-full flex-col border bg-surface', hero ? 'gap-5 rounded-composer border-border px-3.75 pt-4.25 pb-2.75 shadow-float' : 'rounded-md border-border-strong px-2.75 pt-3.25 pb-2.25', !hero && (roomy ? 'gap-7' : 'gap-3.5')]}>
 		<textarea
 			bind:this={field}
 			bind:value

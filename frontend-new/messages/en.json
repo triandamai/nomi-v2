@@ -2880,5 +2880,10 @@
 	"usage_sheet_prev": "Previous month",
 	"usage_sheet_next": "Next month",
 	"admin_area_projects": "Projects",
-	"admin_area_projects_desc": "Every project with its sandboxes and issues."
+	"admin_area_projects_desc": "Every project with its sandboxes and issues.",
+	"home_bubble": "Hi! The crew is ready when you are.",
+	"crew_capsule_label": "Show your crew",
+	"crew_drawer_busy": "At work now",
+	"crew_drawer_idle": "Idle",
+	"crew_drawer_none_busy": "Nobody’s working right now. Hand something over from the composer, or @mention a member."
 }

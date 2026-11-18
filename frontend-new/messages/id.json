@@ -2880,5 +2880,10 @@
 	"usage_sheet_prev": "Bulan sebelumnya",
 	"usage_sheet_next": "Bulan berikutnya",
 	"admin_area_projects": "Proyek",
-	"admin_area_projects_desc": "Semua proyek beserta sandbox dan isunya."
+	"admin_area_projects_desc": "Semua proyek beserta sandbox dan isunya.",
+	"home_bubble": "Hai! Crew siap kapan pun kamu siap.",
+	"crew_capsule_label": "Lihat crew kamu",
+	"crew_drawer_busy": "Sedang bekerja",
+	"crew_drawer_idle": "Siaga",
+	"crew_drawer_none_busy": "Belum ada yang bekerja. Serahkan tugas lewat kolom pesan, atau @mention salah satu anggota."
 }

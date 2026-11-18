@@ -17,6 +17,7 @@ export const CATEGORIES = [
 	{ key: 'agents', title: 'Agents', blurb: "The crew's mascots." },
 	{ key: 'foundations', title: 'Foundations', blurb: 'Icons and the helpers everything else uses.' },
 	{ key: 'chat', title: 'Chat responses', blurb: 'Everything a reply can hold, and the controls around it.' },
+	{ key: 'home', title: 'Home', blurb: 'Home’s hero: Nomi and the greeting over the brand glow, the composer with the crew peeking, starters as pills, the Today cards, and the crew capsule with its drawer.' },
 	{ key: 'thread', title: 'Chat thread', blurb: 'The chat itself, put together: the composer, a reply and its bar, failures, Home’s starters and the chats list.' },
 	{ key: 'inbox', title: 'Inbox', blurb: 'Notifications and reminders together: what needs the person, today around now, and what’s coming up.' },
 	{ key: 'profile', title: 'Profile', blurb: 'What a person has done with Nomi, and what they show of it: their numbers, a year of activity, their crew and their showcase.' },

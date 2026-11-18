@@ -81,10 +81,11 @@
 	const isSettings = $derived(!!page.route.id?.startsWith('/(app)/settings') && !page.error);
 	const path = $derived(page.url.pathname);
 
-	// Home and a chat have the crew column: Home runs its top bar across it, a chat stops beside it.
+	// A chat has the crew column, full height beside it. Home folds the crew into a capsule that
+	// opens a drawer (Landing Page 14:383, with the crew moved out of its sidebar).
 	setPanelPlacement({
 		get underTopbar() {
-			return isHome;
+			return false;
 		},
 	});
 	setMainLayout({
@@ -479,9 +480,12 @@
 
 {#snippet topbar()}
 	{#if isHome}
-		<TopBar title={m.home_title()} meta={stamp(now, language, timeZone)}>
-			{#snippet actions()}{@render search()}{/snippet}
-		</TopBar>
+		<!-- Landing Page → Topbar (14:584): the date and time in mono, the search at the end. The page
+		     keeps its name for screen readers; the crew is the capsule under the search. -->
+		<div class="flex min-w-0 items-center justify-between gap-3">
+			<p class="truncate font-mono text-caption text-text-3"><span class="sr-only">{m.home_title()} · </span>{stamp(now, language, timeZone)}</p>
+			{@render search()}
+		</div>
 	{:else if isChat && chatData.chat}
 		{@const id = chatData.chat.id}
 		<ChatTopBar
@@ -539,7 +543,7 @@
 {#if isWorkspace}
 	{@render children()}
 {:else}
-	<AppShell {sidebar} {topbar} panel={isHome || inThread ? crew : undefined}>
+	<AppShell {sidebar} {topbar} panel={inThread ? crew : undefined} seamless={isHome}>
 		{@render children()}
 	</AppShell>
 {/if}

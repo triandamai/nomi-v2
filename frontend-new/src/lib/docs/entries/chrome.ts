@@ -24,9 +24,9 @@ export default [
 	},
 	{
 		file: 'chrome/CrewPanel.svelte',
-		summary: 'The crew column beside Home: "Your crew" and how many are idle or working in a 52px head, then each member with what they look after.',
-		use: ['AppShell\'s panel on Home (with panelUnderTopbar).'],
-		avoid: ['The crew working in one chat: use the chat\'s crew panel.'],
+		summary: 'The crew column beside a chat: "Your crew" and how many are idle or working in a 52px head, then each member with what they look after.',
+		use: ['AppShell\'s panel beside a chat. Home folds the crew into CrewCapsule and CrewDrawer instead.'],
+		avoid: ['Home: use CrewCapsule.'],
 		dos: ['Say how many are idle, or how many are working while some are.', 'Show a member\'s state only when it is not idle.'],
 		content: ['The head\'s count in mono: "10 idle", "2 working · 8 idle".'],
 		accessibility: ['A complementary landmark named by its heading, "Your crew"; the members are a list.'],

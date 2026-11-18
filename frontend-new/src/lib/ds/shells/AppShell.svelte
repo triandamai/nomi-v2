@@ -15,8 +15,9 @@
 	// sidebar moves into a drawer; the panel shows only where there's room for it (1280px and up).
 	// On a phone (below 768) a top-level screen has the tab bar along the bottom in place of the
 	// drawer, and one that draws its own top (a large title, a chat's nav bar) leaves the bar out.
-	type Props = { sidebar: Snippet; topbar?: Snippet; panel?: Snippet; children: Snippet };
-	let { sidebar, topbar, panel, children }: Props = $props();
+	// `seamless` drops the bar's bottom stroke, so a page's backdrop runs under it (Home's brand glow).
+	type Props = { sidebar: Snippet; topbar?: Snippet; panel?: Snippet; seamless?: boolean; children: Snippet };
+	let { sidebar, topbar, panel, seamless = false, children }: Props = $props();
 
 	const placement = panelPlacement();
 	// A screen that scrolls its own parts (a chat) takes the content area edge to edge (mainLayout).
@@ -40,7 +41,7 @@
 <div class="flex h-dvh w-full overflow-hidden bg-bg text-text">
 	<div class="h-full max-lg:hidden">{@render sidebar()}</div>
 	<div class="flex min-w-0 flex-1 flex-col">
-		<header class={['flex h-13 shrink-0 items-center gap-3 border-b border-border px-4 lg:px-6', phone.phone && phone.ownTitle && 'hidden']}>
+		<header class={['flex h-13 shrink-0 items-center gap-3 px-4 lg:px-6', !seamless && 'border-b border-border', phone.phone && phone.ownTitle && 'hidden']}>
 			<span class={['lg:hidden', phone.phone && phone.tabs && 'hidden']}><IconButton icon={Menu} label={m.shell_open_nav()} variant="ghost" onclick={() => (drawerOpen = true)} /></span>
 			<div class="min-w-0 flex-1">{@render topbar?.()}</div>
 		</header>
