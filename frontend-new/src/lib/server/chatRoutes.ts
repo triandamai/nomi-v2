@@ -65,6 +65,8 @@ export function chatRequest(event: ApiEvent, sessionId: string, path: string[], 
 				const body = await read(request);
 				return text(body.text) ? answer(await chat.sendMessage(event, sessionId, body.text)) : bad();
 			}
+			case 'GET agent-status':
+				return answer(await chat.agentStatus(event, sessionId));
 			case 'GET messages/:id':
 				return answer(await chat.message(event, sessionId, messageId));
 			case 'PATCH messages/:id': {

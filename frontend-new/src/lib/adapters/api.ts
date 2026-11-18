@@ -140,7 +140,7 @@ export type MessageVersion = {
 export type ThinkingLevel = 'low' | 'medium' | 'high' | 'max';
 
 /** One model a chat can use. `key` is `admin:<id>` or `conn:<connection>:<model>`. */
-export type ModelOption = { key: string; label: string; model_id: string; free: boolean; enabled: boolean };
+export type ModelOption = { key: string; label: string; model_id: string; free: boolean; enabled: boolean; /** How much it reads, in tokens, where known. */ context?: number | null };
 
 /** `GET /api/llm/model-options`: models grouped by who pays, Nomi's credits (`nomi`) or the
  * person's own key (`connection`). */

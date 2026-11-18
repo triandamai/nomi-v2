@@ -42,6 +42,7 @@
 	import CrewPanel from '$lib/ds/chrome/CrewPanel.svelte';
 	import ShortcutsDialog from '$lib/ds/chrome/ShortcutsDialog.svelte';
 	import SessionExpired from '$lib/ds/chat/SessionExpired.svelte';
+	import PhoneSignedOutSheet from '$lib/ds/thread/PhoneSignedOutSheet.svelte';
 	import Dialog from '$lib/ds/overlays/Dialog.svelte';
 	import Modal from '$lib/ds/overlays/Modal.svelte';
 	import ToastRegion from '$lib/ds/overlays/ToastRegion.svelte';
@@ -563,11 +564,16 @@
 	{/snippet}
 </Dialog>
 
+{#if phone.current}
+	<!-- On a phone (Mobile Chat — Errors & recovery, scenario 7): a sheet that can't be dismissed. -->
+	<PhoneSignedOutSheet open={sessionOver || header.signedOutDraft !== null} draft={header.signedOutDraft || undefined} signInHref={signInAgain} />
+{:else}
 <Modal open={sessionOver || header.signedOutDraft !== null} labelledby="session-over-title">
 	<!-- SessionExpired's heading has no id to point at (its props are the old app twin's). A message
 	     sent as the sign-in ran out shows here; it waits on this device and goes after signing in. -->
 	<span id="session-over-title" hidden>{m.session_title()}</span>
 	<SessionExpired draft={header.signedOutDraft || undefined} signInHref={signInAgain} />
 </Modal>
+{/if}
 
 <ToastRegion />
