@@ -1,6 +1,7 @@
 import { bytesAsText } from '$lib/code/fileBytes';
 import { error, fail, redirect } from '@sveltejs/kit';
 import { apiFetch } from '$lib/server/api';
+import { loadStudio } from '$lib/server/designStudio';
 import { retryRun } from '$lib/server/retryRun';
 import { fetchMessagePage } from '$lib/server/fetchMessagePage';
 import { loadModelOptions, loadSessionModel, sessionModelActions } from '$lib/server/modelOptions';
@@ -34,12 +35,14 @@ export const load: PageServerLoad = async ({ params, cookies, fetch }) => {
 
 	// The composer's model picker, as on a chat: what's on offer, and what this chat uses (which
 	// Koda builds with too). Neither can break the page.
-	const [thinkingLevel, modelOptions, sessionModel] = await Promise.all([
+	// The chat's Design Studio, shown in the workspace's Design tab once Sora has a preview. Best-effort.
+	const [thinkingLevel, modelOptions, sessionModel, { studio: design }] = await Promise.all([
 		loadThinkingLevel(fetch, cookies, params.sessionId),
 		loadModelOptions(fetch, cookies),
 		loadSessionModel(fetch, cookies, params.sessionId),
+		loadStudio(fetch, cookies, params.sessionId).catch(() => ({ studio: null })),
 	]);
-	return { messages, hasOlder, agentActivity, agentStatus, project, thinkingLevel, modelOptions, sessionModel };
+	return { messages, hasOlder, agentActivity, agentStatus, project, thinkingLevel, modelOptions, sessionModel, design };
 };
 
 export const actions: Actions = {

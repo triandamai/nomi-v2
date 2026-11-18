@@ -34,6 +34,18 @@ beforeEach(() => {
 });
 
 describe('project chat: load', () => {
+	it("loads the chat's Design Studio so its Design tab shows without leaving the project", async () => {
+		answer((path) => (path === '/api/sessions/s1/design' ? json({ previews: [{ version: 1 }], feedback: [], approval: null }) : undefined));
+		const data = await loadPage();
+		expect(data.design).toEqual({ previews: [{ version: 1 }], feedback: [], approval: null });
+	});
+
+	it('has no Design Studio when it could not be loaded, and still loads the page', async () => {
+		answer((path) => (path === '/api/sessions/s1/design' ? json({}, 500) : undefined));
+		const data = await loadPage();
+		expect(data.design).toBeNull();
+	});
+
 	it("loads the model picker: the person's options and this chat's model", async () => {
 		const data = await loadPage();
 		expect(data.modelOptions).toEqual({ groups, current: choice });
