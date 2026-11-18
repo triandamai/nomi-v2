@@ -1,6 +1,6 @@
 ---
 work: phone-chat-flows
-status: building
+status: built
 contract: 40-ux-contract.md (verified 17 Nov 2026)
 branch: feat/frontend-new-v2-phone-chat-flows
 ---
@@ -125,3 +125,16 @@ text, so the blocks come from the database, as `e2e/backend/phone-flows.e2e.ts` 
 ## Commits
 
 See `git log origin/main..feat/frontend-new-v2-phone-chat-flows`.
+
+## Gates (run 18 Nov 2026, in `frontend-new`)
+
+- `npm ci` ok · `npm run i18n` ok · `npm run check`: 9497 files, 0 errors, 0 warnings.
+- `npm run test:unit`: 167 files, 958 tests passed · `npm run test:components`: 108 files, 694 tests passed.
+- `npm run build` ok · `npm run test:e2e` (stub backend, pen parity): 24 passed.
+- `npm run test:twins`: 326 passed.
+- `npm run test:e2e:backend` (E2E_APP_PORT=4184, the backend shared on 8080): 121 passed, 4 failed,
+  1 did not run. `phone-flows.e2e.ts` 9/9 passed. The 4 failures are the shared backend's, not
+  this branch's: it's the chat-files worktree's binary started with `APP_URL=http://localhost:4183`
+  (the emailed reset and invite links go to that app: auth forgot-password, invites), whose crew
+  has no Sora yet (#285 on main: app-shell's crew list), and whose sign-in code limit is shared with
+  that run (auth "too many codes"). The backend binds 8080 fixed, so a second one couldn't be run.
