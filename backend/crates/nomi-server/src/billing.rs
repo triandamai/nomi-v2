@@ -1,5 +1,5 @@
 //! Paid plans on the server: the payment gateway the checkout, the webhook and the renewal worker
-//! share, starting a payment (and its Xendit invoice), settling one from what the gateway says,
+//! share, starting a payment (and its Xendit or DOKU invoice), settling one from what the gateway says,
 //! and telling the person about it. The pricing and the database work are in `nomi_usage::billing`.
 
 use std::sync::{Arc, RwLock};
@@ -9,44 +9,81 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use nomi_i18n::Locale;
+use nomi_payment::doku::DokuClient;
 use nomi_payment::xendit::XenditClient;
-use nomi_payment::{CreateInvoiceRequest, PaymentGateway, PaymentStatus};
+use nomi_payment::{CreateInvoiceRequest, PaymentGateway, PaymentProviderKind, PaymentStatus};
 use nomi_usage::billing::{self, Activation, BillingConfig, Payment, Quote, QuoteError, STATUS_EXPIRED, STATUS_FAILED, STATUS_PAID};
 use nomi_usage::plans;
 
 use crate::notifications::{self, Kind, Notice};
 use crate::quota::format_tokens;
 
-/// Seconds in an hour: Xendit takes an invoice's lifetime in seconds.
+/// Seconds in an hour: an invoice's lifetime goes to the gateway in seconds.
 const SECONDS_PER_HOUR: u32 = 3600;
 /// Where the person lands after paying, or failing to.
 const BILLING_PAGE: &str = "/billing";
 /// A paid amount may differ from the invoice by less than this (it travels as a float).
 const AMOUNT_TOLERANCE: f64 = 0.5;
 
-/// A payment gateway and the token it calls the webhook with.
+/// A payment gateway, which provider it is, and (Xendit) the token it calls the webhook with.
 #[derive(Clone)]
 pub struct Gateway {
+    pub provider: PaymentProviderKind,
     pub client: Arc<dyn PaymentGateway>,
     pub webhook_token: Option<String>,
 }
 
 static OVERRIDE: RwLock<Option<Gateway>> = RwLock::new(None);
 
-/// Replaces the gateway built from Admin → Configuration, for tests (`None` goes back to it).
+/// Replaces the gateways built from Admin → Configuration, for tests (`None` goes back to them).
 pub fn set_gateway_override(gateway: Option<Gateway>) {
     *OVERRIDE.write().unwrap_or_else(|e| e.into_inner()) = gateway;
 }
 
-/// The gateway as configured now, or `None` when Xendit isn't set up.
-pub async fn gateway() -> Option<Gateway> {
-    if let Some(gateway) = OVERRIDE.read().unwrap_or_else(|e| e.into_inner()).clone() {
+fn overridden() -> Option<Gateway> {
+    OVERRIDE.read().unwrap_or_else(|e| e.into_inner()).clone()
+}
+
+/// `provider`'s gateway as configured now, or `None` when it isn't set up.
+pub async fn gateway_for(provider: PaymentProviderKind) -> Option<Gateway> {
+    if let Some(gateway) = overridden() {
         return Some(gateway);
     }
-    let config = crate::configuration::xendit_config().await?;
-    let webhook_token = config.webhook_token.clone();
-    let client = XenditClient::new(config).ok()?;
-    Some(Gateway { client: Arc::new(client), webhook_token })
+    match provider {
+        PaymentProviderKind::Xendit => {
+            let config = crate::configuration::xendit_config().await?;
+            let webhook_token = config.webhook_token.clone();
+            let client = XenditClient::new(config).ok()?;
+            Some(Gateway { provider, client: Arc::new(client), webhook_token })
+        }
+        PaymentProviderKind::Doku => {
+            let client = DokuClient::new(crate::configuration::doku_config().await?).ok()?;
+            Some(Gateway { provider, client: Arc::new(client), webhook_token: None })
+        }
+    }
+}
+
+/// The gateway new payments go through: the one chosen in Admin → Configuration → Payment, or,
+/// with none chosen, the first that is set up. `None` when that one isn't set up.
+pub async fn gateway() -> Option<Gateway> {
+    if let Some(gateway) = overridden() {
+        return Some(gateway);
+    }
+    if let Some(chosen) = crate::configuration::chosen_payment_provider().await {
+        return gateway_for(chosen).await;
+    }
+    for provider in PaymentProviderKind::ALL {
+        if let Some(gateway) = gateway_for(provider).await {
+            return Some(gateway);
+        }
+    }
+    None
+}
+
+/// The gateway of the provider `payment` was made with, so it can be checked or cancelled after
+/// the admin moved new payments to another provider.
+pub async fn gateway_of(payment: &Payment) -> Option<Gateway> {
+    gateway_for(PaymentProviderKind::from_name(&payment.provider).unwrap_or(PaymentProviderKind::Xendit)).await
 }
 
 /// How a payment was made, as Billing shows it: "BANK_TRANSFER · BCA".
@@ -135,7 +172,7 @@ pub async fn start_payment(pool: &PgPool, user_id: Uuid, quote: &Quote, kind: &s
     };
     match gateway.client.create_invoice(request).await {
         Ok(invoice) => {
-            billing::attach_invoice(pool, payment.id, &invoice.id, &invoice.invoice_url, invoice.expiry_date).await?;
+            billing::attach_invoice(pool, payment.id, gateway.provider.as_str(), &invoice.id, &invoice.invoice_url, invoice.expiry_date).await?;
             Ok(billing::get_payment(pool, payment.id).await?.unwrap_or(payment))
         }
         Err(e) => {
@@ -338,5 +375,13 @@ mod tests {
         assert!(reminder_notice(Locale::En, "Pro", until).body.contains("2026-12-01"));
         assert_eq!(money(Locale::En, 49_000, "IDR"), "IDR 49,000");
         assert_eq!(money(Locale::Id, 49_000, "IDR"), "IDR 49.000");
+    }
+
+    #[test]
+    fn every_provider_admin_can_choose_has_a_gateway() {
+        let choices: Vec<&str> = nomi_settings::config::PAYMENT_PROVIDERS.to_vec();
+        let gateways: Vec<&str> = PaymentProviderKind::ALL.iter().map(PaymentProviderKind::as_str).collect();
+        assert_eq!(choices, gateways);
+        assert!(choices.iter().all(|name| PaymentProviderKind::from_name(name).is_some()));
     }
 }

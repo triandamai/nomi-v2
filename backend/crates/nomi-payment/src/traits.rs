@@ -13,10 +13,7 @@ pub trait PaymentGateway: Send + Sync {
     /// Manually expire an open invoice.
     async fn expire_invoice(&self, invoice_id: &str) -> Result<Invoice, PaymentError>;
 
-    /// Verify incoming webhook callback token/signature and parse payload.
-    fn verify_webhook(
-        &self,
-        callback_token: Option<&str>,
-        payload: &[u8],
-    ) -> Result<WebhookEvent, PaymentError>;
+    /// Verify an incoming webhook from its request headers (a callback token, or a signature)
+    /// and parse its payload.
+    fn verify_webhook(&self, headers: &http::HeaderMap, payload: &[u8]) -> Result<WebhookEvent, PaymentError>;
 }

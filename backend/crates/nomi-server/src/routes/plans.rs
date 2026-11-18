@@ -72,7 +72,7 @@ pub async fn list_for_user(State(state): State<AppState>, AuthClaims(claims): Au
         custom_quota: subscription.quota_override.is_some(),
         override_until: subscription.override_until,
         waitlist,
-        checkout_available: crate::configuration::xendit_config().await.is_some(),
+        checkout_available: crate::billing::gateway().await.is_some(),
     }))
 }
 

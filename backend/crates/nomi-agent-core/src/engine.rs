@@ -457,9 +457,10 @@ async fn run_agent_turn_in_reply(
     };
     // Thinking is shown in chat, so keep it to the point rather than a running monologue.
     let system_prompt = format!(
-        "{system_prompt}\n\n{}\n\n{REASONING_STYLE}\n\n{}",
+        "{system_prompt}\n\n{}\n\n{REASONING_STYLE}\n\n{}\n\n{}",
         crate::prompts::BACKGROUND_EXECUTION_GUIDE,
-        crate::prompts::FOLLOW_UP_SUGGESTIONS
+        crate::prompts::FOLLOW_UP_SUGGESTIONS,
+        crate::prompts::ABOUT_NOMI
     );
     let agent_type = agent.agent_type();
 
