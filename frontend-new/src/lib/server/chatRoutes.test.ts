@@ -90,6 +90,16 @@ describe('the chat page’s own endpoints', () => {
 		]);
 	});
 
+	it('says what deleting a reply takes with it, then deletes it (Share & delete, step 4)', async () => {
+		const related = { message_ids: ['m1'], transactions: [], reminders: [{ id: 'r1', label: 'Bayar listrik', amount_cents: null, kind: null }], plans: [], tasks: [], files: [] };
+		const { backend, event } = eventWith(() => json(related));
+		const preview = await chatRequest(event, 's1', ['messages', 'm1', 'delete'], request('GET'));
+		expect(await preview.json()).toEqual(related);
+		const gone = await chatRequest(event, 's1', ['messages', 'm1'], request('DELETE'));
+		expect(gone.status).toBe(200);
+		expect(backend.calls.map((call) => `${call.method} ${call.url.replace('http://api.test/api/sessions/s1', '')}`)).toEqual(['GET /messages/m1/delete', 'DELETE /messages/m1']);
+	});
+
 	it('refuses what it doesn’t know, or a body that isn’t right', async () => {
 		const { backend, event } = eventWith(() => json({}));
 		expect((await chatRequest(event, 's1', ['nope'], request('GET'))).status).toBe(404);

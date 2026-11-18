@@ -76,7 +76,7 @@ export default [
 	},
 	{
 		file: 'thread/PhoneMessageBubble.svelte',
-		summary: 'Your message in a chat on a phone: 16pt in an 18-round bubble on the right, its text at most 250 wide; if it wasn’t sent, says so with Retry.',
+		summary: 'Your message in a chat on a phone: 16pt in an 18-round bubble on the right, its text at most 250 wide; if it wasn’t sent, says so with Retry. `lifted`: stroked and shadowed, held over its sheet’s scrim.',
 		use: ['What the person said, in a chat on a phone.'],
 		avoid: ['Wider screens: MessageUser.', 'The old app’s screens: its twin, mobile/UserMessage (280 wide).'],
 		dos: ['Keep the person’s own line breaks.'],

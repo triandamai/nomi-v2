@@ -62,6 +62,8 @@
 	import ReplyBlocks from '$lib/chat/ReplyBlocks.svelte';
 	import CodeQuote from '$lib/ds/build/CodeQuote.svelte';
 	import type { ChatPageData } from '$lib/server/chatPage';
+	import type { DeletePreview } from '$lib/server/chat';
+	import DeletedReply from '$lib/ds/chat/DeletedReply.svelte';
 	import type { Shell } from '$lib/server/shell';
 
 	// A chat, as its page and a project's workspace show it.
@@ -268,8 +270,9 @@
 				void fetchMessage(event.message_id);
 				break;
 			case 'MessagesDeleted': {
-				const gone = new Set(event.message_ids);
-				messages = messages.filter((message) => !gone.has(message.id));
+			const gone = new Set(event.message_ids);
+			// A reply deleted here keeps its placeholder in the thread (Share & delete, step 5).
+			messages = messages.filter((message) => !gone.has(message.id) || message.id in deletedReplies);
 				break;
 			}
 			case 'SessionRenamed':
@@ -626,6 +629,47 @@
 		toasts.show({ kind: 'success', title: m.link_copied(), detail: shareUrl.replace(/^https?:\/\//, '') });
 	}
 
+	// Delete reply (Share & delete yoVD6, steps 4–5): asked first in an action sheet that says what
+	// goes with it (the backend's preview: what the reply's cards made); then a placeholder stands
+	// in the thread and the toast offers Undo for ten seconds before the reply goes for good, as a
+	// deleted chat does (the backend can't bring a reply back). Leaving the page deletes it at once.
+	let replyDelete = $state<{ message: RenderedMessage; body: string } | null>(null);
+	let deletedReplies = $state<Record<string, 'waiting' | 'gone'>>({});
+	async function askDeleteReply(message: RenderedMessage) {
+		const result = await callJson<DeletePreview>(`${api}/messages/${message.id}/delete`);
+		if (!result.ok) return void toasts.show({ kind: 'error', title: m.reply_delete_failed(), detail: result.message || undefined });
+		const made = [...result.data.reminders, ...result.data.plans, ...result.data.tasks, ...result.data.transactions, ...result.data.files].map((item) => item.label);
+		replyDelete = { message, body: made.length ? m.delete_reply_body_phone_items({ items: made.join(', ') }) : m.delete_reply_body_phone() };
+	}
+	function deleteReplyLater(message: RenderedMessage) {
+		const id = message.id;
+		const path = `${api}/messages/${id}`;
+		replyDelete = null;
+		deletedReplies = { ...deletedReplies, [id]: 'waiting' };
+		later.schedule(
+			`reply:${id}`,
+			() => {
+				void fetch(path, { method: 'DELETE', keepalive: true })
+					.then((response) => {
+						if (!response.ok) throw new Error(String(response.status));
+						deletedReplies = { ...deletedReplies, [id]: 'gone' };
+					})
+					.catch(() => {
+						const { [id]: _back, ...rest } = deletedReplies;
+						deletedReplies = rest;
+						toasts.show({ kind: 'error', title: m.reply_delete_failed() });
+					});
+			},
+			10_000,
+		);
+		toasts.show({ kind: 'info', icon: Trash2, title: m.reply_deleted(), detail: m.reply_deleted_detail(), duration: 10_000, action: { label: m.action_undo(), onclick: () => undoDeleteReply(id) } });
+	}
+	function undoDeleteReply(id: string) {
+		if (!later.undo(`reply:${id}`)) return;
+		const { [id]: _back, ...rest } = deletedReplies;
+		deletedReplies = rest;
+	}
+
 	/** Deleted after ten seconds to undo, from Home; leaving the page deletes it at once. */
 	async function deleteChat() {
 		deleteOpen = false;
@@ -783,8 +827,9 @@
 	{:else if editing === message.id}
 		<MessageEditor value={message.content} version="{total} / {total + 1}" onsave={(text) => saveEdit(message, text)} oncancel={() => (editing = null)} />
 	{:else if phone}
-		<!-- Long-pressing your message opens its sheet (Message controls, step 3). -->
-		<div use:longPress={() => (sheet = { kind: 'mine', message, latest: latest && !working && !shown })}>
+		<!-- Long-pressing your message opens its sheet (Message controls, step 3), lifting the bubble
+		     over the scrim: its place in the thread stays, empty, until the sheet closes (nzT7f). -->
+		<div class={[sheet?.kind === 'mine' && sheet.message.id === message.id && 'invisible']} use:longPress={() => (sheet = { kind: 'mine', message, latest: latest && !working && !shown })}>
 			<PhoneUserMessage text={shown?.text ?? message.content} />
 		</div>
 		{#if lateNotes[message.id]}<TurnNote icon={LogIn} align="end" text={lateNotes[message.id]} />{/if}
@@ -858,8 +903,12 @@
 								</AgentReply>
 							{/each}
 						{/if}
+					{:else if message.id in deletedReplies}
+					<div data-message-id={message.id} class="flex flex-col">
+						<DeletedReply name={nameOf(message)} onundo={deletedReplies[message.id] === 'waiting' ? () => undoDeleteReply(message.id) : undefined} />
+					</div>
 					{:else}
-						<div data-message-id={message.id} class="flex flex-col" use:longPress={() => phone && (sheet = { kind: 'reply', message, latest: entry.latest, asked })}>
+					<div data-message-id={message.id} class="flex flex-col" use:longPress={() => phone && (sheet = { kind: 'reply', message, latest: entry.latest, asked })}>
 							<AgentReply
 								{phone}
 								agent={crewIdOf(message.agent_display_name)}
@@ -1061,8 +1110,13 @@
 					{@const asked = reply.asked}
 					<SheetRow icon={Pencil} label={m.reply_edit_question()} onclick={() => ((editing = asked.id), close())} />
 				{/if}
-			{/if}
-		</BottomSheet>
+				{/if}
+				{#if !(reply.latest && working)}
+					<!-- Delete reply (SwByh XPHtc): under its own line, in danger; asked first. -->
+					<span class="h-px bg-border"></span>
+					<SheetRow icon={Trash2} label={m.reply_delete()} danger onclick={() => (close(), void askDeleteReply(reply.message))} />
+				{/if}
+				</BottomSheet>
 	{/if}
 	{#if sheet?.kind === 'regen'}
 		{@const regen = sheet}
@@ -1073,9 +1127,11 @@
 			{#if otherModels.length}
 				<p class="px-5 pt-3 pb-1 font-mono text-label tracking-label text-text-3 uppercase">{m.regen_models()}</p>
 				{#each otherModels as option (option.key)}
+					<!-- The model, and what pays for it in mono (lVDqs: claude-sonnet · your key, deepseek-flash ✦ Nomi credits). -->
 					<SheetRow
-						icon={Cpu}
-						label={m.regen_model_option({ model: option.label, source: option.source === m.models_nomi_credits() ? option.source : m.regen_source_key() })}
+						icon={option.source === m.models_nomi_credits() ? Sparkles : Cpu}
+						label={option.label}
+						meta={option.source === m.models_nomi_credits() ? option.source : m.regen_source_key()}
 						onclick={() => (void regenerateWith(regen.message.id, option.key), close())}
 					/>
 				{/each}
@@ -1099,6 +1155,7 @@
 		{@const mine = sheet}
 		<!-- Your message's sheet (Message controls, step 3). -->
 		<BottomSheet open title={m.mine_sheet_title()} subtitle={clock(mine.message.created_at, time.timeZone)} onclose={closed('mine')}>
+			{#snippet lifted()}<PhoneUserMessage text={mine.message.content} lifted />{/snippet}
 			{#if mine.latest}<SheetRow icon={Pencil} label={m.mine_edit()} onclick={() => ((editing = mine.message.id), close())} />{/if}
 			<SheetRow icon={Copy} label={m.mine_copy()} onclick={() => (void copyText(mine.message.content), close())} />
 			<SheetRow icon={TextSelect} label={m.mine_select()} onclick={() => (selectText(mine.message.id), close())} />
@@ -1163,8 +1220,17 @@
 <MoveDialog bind:open={moveOpen} projects={data.projects} initialChosen={data.chat.inProjectId ?? undefined} onmove={move} />
 
 {#if phone}
-	<ActionSheet
-		bind:open={deleteOpen}
+<!-- Delete reply's question (Share & delete, step 4 EQUZo). -->
+<ActionSheet
+	open={replyDelete !== null}
+	title={m.delete_reply_title()}
+	body={replyDelete?.body}
+	actions={[{ label: m.reply_delete(), danger: true, onclick: () => replyDelete && deleteReplyLater(replyDelete.message) }]}
+	cancel={m.action_cancel()}
+	onclose={() => (replyDelete = null)}
+/>
+<ActionSheet
+	bind:open={deleteOpen}
 		title={m.chat_delete_title()}
 		body={m.chat_delete_body_phone({ count: messages.length })}
 		actions={[

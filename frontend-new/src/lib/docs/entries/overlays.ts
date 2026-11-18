@@ -27,7 +27,7 @@ export default [
 	},
 	{
 		file: 'overlays/BottomSheet.svelte',
-		summary: 'What a phone uses in place of a menu or popover: a sheet from the bottom, with its title, what it’s about, a close and its rows.',
+		summary: 'What a phone uses in place of a menu or popover: a sheet from the bottom, with its title, what it’s about, a close and its rows. `lifted` holds what the sheet is about over the scrim, just above it (your message, while its sheet is open).',
 		use: ['A chat’s or a project’s actions on a phone (long-press, More).'],
 		avoid: ['Wider screens: use a Menu or a Dialog there.'],
 		dos: ['Put the destructive row last, after a divider, in the danger colour.'],

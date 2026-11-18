@@ -2887,7 +2887,6 @@
 	"chat_sheet_subtitle": "{count} messages · {name}",
 	"reply_try_model": "Try another model",
 	"regen_sheet_subtitle": "Each result is kept as a version",
-	"regen_model_option": "{model} · {source}",
 	"regen_source_key": "your key",
 	"share_anyone_help_phone": "Read-only, no sign-in",
 	"chat_delete_body_phone": "{count} messages and their cards are removed. Reminders, money records and sent emails stay.",

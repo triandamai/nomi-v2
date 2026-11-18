@@ -250,6 +250,8 @@ test('a chat’s controls on a phone: your message’s sheet and editing, a repl
 	await expect(yours.getByRole('button')).toHaveText(['', 'Edit and resend', 'Copy text', 'Select text']);
 	// Opened by a long press, the sheet has the focus, not its close (no ring on Close: rQ4w3).
 	await expect(yours.getByRole('button', { name: 'Close' })).not.toBeFocused();
+	// Your message is lifted over the scrim, above the sheet (nzT7f).
+	await expect(yours.getByText('How much did I spend on food in October?')).toBeVisible();
 	await yours.getByRole('button', { name: 'Edit and resend' }).click();
 	const editor = page.getByRole('textbox', { name: 'Your message' });
 	await expect(editor).toBeFocused();
@@ -286,6 +288,25 @@ test('a chat’s controls on a phone: your message’s sheet and editing, a repl
 	await expect(page.getByRole('dialog', { name: 'Share' }).getByRole('button', { name: 'Copy link' })).toBeVisible();
 	await expect(page.getByRole('dialog', { name: 'Share' }).getByText('Read-only, no sign-in', { exact: true })).toBeVisible();
 	await page.keyboard.press('Escape');
+
+	// Delete reply (Share & delete, steps 4–5): asked in an action sheet, then a placeholder with
+	// Undo; undone it's back, and left alone it's deleted for good after ten seconds.
+	type Messages = { messages: { id: string }[] };
+	const count = async () => ((await (await api(account, `/api/sessions/${id}/messages`)).json()) as Messages).messages.length;
+	const before = await count();
+	const deleteLast = async () => {
+		await page.getByRole('article', { name: 'Nomi' }).last().getByRole('button', { name: 'More' }).click();
+		await page.getByRole('dialog', { name: 'Reply' }).getByRole('button', { name: 'Delete reply' }).click();
+		const confirm = page.getByRole('dialog', { name: 'Delete this reply?' });
+		await expect(confirm.getByText('Your message stays so you can ask again. Things the crew already did aren’t undone.')).toBeVisible();
+		await confirm.getByRole('button', { name: 'Delete reply' }).click();
+		await expect(page.getByText('You deleted Nomi's reply')).toBeVisible();
+	};
+	await deleteLast();
+	await page.getByText('You deleted Nomi's reply').locator('..').getByRole('button', { name: 'Undo' }).click();
+	await expect(page.getByText('You deleted Nomi's reply')).toHaveCount(0);
+	await deleteLast();
+	await expect.poll(count, { timeout: 20_000 }).toBe(before - 1);
 
 	// Delete asks in an action sheet; Cancel keeps the chat.
 	await page.getByRole('button', { name: 'Chat options' }).click();

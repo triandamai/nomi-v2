@@ -213,6 +213,9 @@
 	--shadow-float-lg: 0 12px 32px var(--nm-shadow);
 	/* The phone's floating New chat button (Mobile Chat → Chats), 0 6 16. */
 	--shadow-fab: 0 6px 16px var(--nm-shadow);
+	/* Your message lifted over the scrim while its sheet is open (Mobile Chat — Message controls
+	   nzT7f), 0 6 18. */
+	--shadow-lift: 0 6px 18px var(--nm-shadow);
 	/* Not elevation: the soft glow around a focused field, as the pen draws it. */
 	--shadow-focus: 0 0 8px var(--nm-focus);
 	--inset-shadow-*: initial;

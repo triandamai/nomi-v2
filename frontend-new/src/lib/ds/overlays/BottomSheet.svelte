@@ -9,8 +9,10 @@
 	// A native modal dialog, so focus stays inside and Escape closes it; so does a tap on the scrim.
 	// It opens with the sheet itself focused, not its close (Message controls rQ4w3: no ring on Close
 	// after a long press): Tab goes on to the close and the rows.
-	type Props = { open?: boolean; title: string; subtitle?: string; children?: Snippet; onclose?: () => void };
-	let { open = $bindable(false), title, subtitle, children, onclose }: Props = $props();
+	// `lifted` is what the sheet is about, held over the scrim just above it (Message controls nzT7f:
+	// your message, right-aligned, [0,16,12,16]); a tap beside it closes the sheet like the scrim.
+	type Props = { open?: boolean; title: string; subtitle?: string; children?: Snippet; lifted?: Snippet; onclose?: () => void };
+	let { open = $bindable(false), title, subtitle, children, lifted, onclose }: Props = $props();
 
 	let wasOpen = false;
 	$effect(() => {
@@ -36,6 +38,10 @@
 		}}
 		class="fixed inset-x-0 top-auto bottom-0 m-0 h-auto max-h-dvh w-full max-w-none bg-transparent p-0 text-text outline-none backdrop:bg-overlay"
 	>
+		{#if lifted}
+			<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+			<div data-lifted class="flex justify-end px-4 pb-3" onclick={(event) => event.target === event.currentTarget && (open = false)}>{@render lifted()}</div>
+		{/if}
 		<div data-sheet class="flex max-h-dvh flex-col overflow-y-auto rounded-t-sheet border-t border-border-strong bg-surface pb-safe">
 			<SheetHeader {title} {subtitle} onclose={() => (open = false)} />
 			<div class="flex flex-col pb-2">{@render children?.()}</div>

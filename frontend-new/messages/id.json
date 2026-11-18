@@ -2887,7 +2887,6 @@
 	"chat_sheet_subtitle": "{count} pesan · {name}",
 	"reply_try_model": "Coba model lain",
 	"regen_sheet_subtitle": "Setiap hasil disimpan sebagai versi",
-	"regen_model_option": "{model} · {source}",
 	"regen_source_key": "kunci kamu",
 	"share_anyone_help_phone": "Hanya baca, tanpa masuk",
 	"chat_delete_body_phone": "{count} pesan beserta kartunya dihapus. Pengingat, catatan keuangan, dan email terkirim tetap ada.",
