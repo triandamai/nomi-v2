@@ -211,6 +211,75 @@ async fn github_connects_and_a_project_is_pushed_to_it(pool: PgPool) {
     // Disconnecting forgets it.
     let (code, _) = request(router.clone(), "DELETE", "/api/connections/github", Some(&token), None).await;
     assert_eq!(code, StatusCode::NO_CONTENT);
-    let (_, status) = request(router, "GET", "/api/connections/github", Some(&token), None).await;
+    let (_, status) = request(router.clone(), "GET", "/api/connections/github", Some(&token), None).await;
     assert_eq!(status["connection"], Value::Null);
+
+    // Without GitHub connected: no repository list, a public repository still comes in.
+    let (code, _) = request(router.clone(), "GET", "/api/connections/github/repos", Some(&token), None).await;
+    assert_eq!(code, StatusCode::CONFLICT);
+    let site_zip = zip_of(&[
+        ("site-main/package.json", br#"{"scripts":{"build":"vite build","test":"vitest run"},"devDependencies":{"@sveltejs/kit":"^2"},"dependencies":{"postgres":"^3"}}"#),
+        ("site-main/.env.example", b"DATABASE_URL=\nSTRIPE_KEY=\nRESEND_API_KEY=\n"),
+        ("site-main/src/routes/+page.svelte", b"<h1>hi</h1>"),
+    ]);
+    Mock::given(method("GET")).and(path("/repos/pub/site/zipball")).respond_with(ResponseTemplate::new(200).set_body_bytes(site_zip.clone())).mount(&github).await;
+    let import = format!("/api/projects/{project_id}/import/github");
+    let (code, imported) = request(router.clone(), "POST", &import, Some(&token), Some(json!({ "repo": "pub/site" }))).await;
+    assert_eq!(code, StatusCode::OK, "{imported}");
+    assert_eq!(imported["stack"], "sveltekit");
+    // A private one says it needs GitHub.
+    Mock::given(method("GET"))
+        .and(path("/repos/acme/secret-app/zipball"))
+        .and(header("authorization", "Bearer pasted-token"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(site_zip))
+        .mount(&github)
+        .await;
+    let (code, _) = request(router.clone(), "POST", &import, Some(&token), Some(json!({ "repo": "acme/secret-app" }))).await;
+    assert_eq!(code, StatusCode::NOT_FOUND);
+
+    // Connected: the person's repositories, newest first, filtered by what they typed, no token in the answer.
+    request(router.clone(), "PUT", "/api/connections/github", Some(&token), Some(json!({ "token": "pasted-token" }))).await;
+    Mock::given(method("GET"))
+        .and(path("/user/repos"))
+        .and(header("authorization", "Bearer pasted-token"))
+        .respond_with(ok(json!([
+            { "full_name": "ana-gh/old", "private": false, "language": "HTML", "updated_at": "2026-01-01T00:00:00Z", "permissions": { "pull": true } },
+            { "full_name": "acme/warung-app", "private": true, "language": "TypeScript", "updated_at": "2026-11-01T00:00:00Z", "permissions": { "pull": true } },
+            { "full_name": "acme/secret-app", "private": true, "language": null, "updated_at": "2026-06-01T00:00:00Z", "permissions": { "pull": false } }
+        ])))
+        .mount(&github)
+        .await;
+    let (code, listed) = request(router.clone(), "GET", "/api/connections/github/repos", Some(&token), None).await;
+    assert_eq!(code, StatusCode::OK, "{listed}");
+    let names: Vec<&str> = listed["repos"].as_array().unwrap().iter().map(|r| r["full_name"].as_str().unwrap()).collect();
+    assert_eq!(names, ["acme/warung-app", "acme/secret-app", "ana-gh/old"]);
+    assert_eq!(listed["repos"][0], json!({ "full_name": "acme/warung-app", "private": true, "language": "TypeScript", "updated_at": "2026-11-01T00:00:00Z", "accessible": true }));
+    assert_eq!(listed["repos"][1]["accessible"], false);
+    assert!(!listed.to_string().contains("pasted-token"));
+    let (_, narrowed) = request(router.clone(), "GET", "/api/connections/github/repos?q=WARUNG", Some(&token), None).await;
+    assert_eq!(narrowed["repos"].as_array().unwrap().len(), 1);
+
+    // The private repository now comes in with the person's token.
+    let (code, imported) = request(router.clone(), "POST", &import, Some(&token), Some(json!({ "repo": "acme/secret-app" }))).await;
+    assert_eq!(code, StatusCode::OK, "{imported}");
+
+    // What Koda found: from the imported files, with the secrets the project doesn't have yet.
+    sqlx::query("INSERT INTO project_secrets (project_id, name) VALUES ($1, 'STRIPE_KEY')").bind(project_id).execute(&pool).await.unwrap();
+    let (code, review) = request(router.clone(), "GET", &format!("/api/projects/{project_id}/import/review"), Some(&token), None).await;
+    assert_eq!(code, StatusCode::OK, "{review}");
+    assert_eq!((review["stack"].as_str(), review["build"].as_str(), review["tests"].as_str(), review["database"].as_str()), (Some("sveltekit"), Some("npm run build"), Some("npm test"), Some("postgres")));
+    assert!(review["secrets_missing"].as_array().unwrap().iter().any(|n| n == "RESEND_API_KEY"));
+    assert!(review["plan"].as_array().unwrap().len() >= 3);
+    let (code, _) = request(router.clone(), "GET", &format!("/api/projects/{project_id}/import/review"), Some(&outsider), None).await;
+    assert_eq!(code, StatusCode::NOT_FOUND);
+}
+
+fn zip_of(files: &[(&str, &[u8])]) -> Vec<u8> {
+    use std::io::Write;
+    let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    for (path, content) in files {
+        writer.start_file(*path, zip::write::SimpleFileOptions::default()).unwrap();
+        writer.write_all(content).unwrap();
+    }
+    writer.finish().unwrap().into_inner()
 }

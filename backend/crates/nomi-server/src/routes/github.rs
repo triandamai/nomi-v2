@@ -2,7 +2,7 @@
 //! through Nomi's OAuth app when Admin → Configuration has one, or with a token the person made
 //! (either way it's theirs alone, encrypted with the settings key).
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::Json;
 use chrono::{DateTime, Utc};
@@ -13,7 +13,7 @@ use uuid::Uuid;
 use nomi_auth::extractor::AuthClaims;
 
 use crate::app::AppState;
-use crate::github::{parse_repo, Github, GithubError, OAuthApp, Pushed};
+use crate::github::{find_repos, parse_repo, Github, GithubError, OAuthApp, Pushed, RepoSummary};
 use crate::routes::deploy::{internal, project_files, project_role, ApiError};
 
 /// Characters in an OAuth state: unguessable for the ten minutes it lives.
@@ -89,6 +89,54 @@ async fn save(state: &AppState, user_id: Uuid, token: &str, kind: &str) -> Resul
     .await
     .map_err(internal("failed to save the GitHub connection"))?;
     status(state, user_id).await
+}
+
+/// The person's GitHub token when they have a connection GitHub hasn't refused: the import of a
+/// private repository uses it. The token never leaves the server.
+pub(crate) async fn usable_token(state: &AppState, user_id: Uuid) -> Result<Option<String>, ApiError> {
+    let encrypted: Option<Vec<u8>> = sqlx::query_scalar("SELECT token_encrypted FROM github_connections WHERE user_id = $1 AND expired_at IS NULL")
+        .bind(user_id)
+        .fetch_optional(&state.pool)
+        .await
+        .map_err(internal("failed to load the GitHub connection"))?;
+    encrypted.map(|e| nomi_settings::crypto::decrypt(&state.settings_key, &e).map_err(internal("failed to read the GitHub connection"))).transpose()
+}
+
+/// Keeps the connection, marked expired, so Connections shows Reconnect.
+pub(crate) async fn mark_expired(pool: &sqlx::PgPool, user_id: Uuid) -> Result<(), ApiError> {
+    sqlx::query("UPDATE github_connections SET expired_at = COALESCE(expired_at, now()) WHERE user_id = $1")
+        .bind(user_id)
+        .execute(pool)
+        .await
+        .map_err(internal("failed to record the GitHub connection's state"))?;
+    Ok(())
+}
+
+#[derive(Deserialize)]
+pub struct ReposQuery {
+    /// Part of a repository's name.
+    pub q: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct Repos {
+    pub repos: Vec<RepoSummary>,
+}
+
+/// `GET /api/connections/github/repos?q=`: the person's repositories, newest first, as their
+/// connected GitHub lists them (409 before GitHub is connected; an expired token says to connect
+/// again). Public and private alike; `accessible` is false for one the token can't read.
+pub async fn repos(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Query(query): Query<ReposQuery>) -> Result<Json<Repos>, ApiError> {
+    let token = usable_token(&state, claims.sub).await?.ok_or((StatusCode::CONFLICT, "connect GitHub first".to_string()))?;
+    let listed = match Github::new(&state.http_client, &token).repos().await {
+        Ok(listed) => listed,
+        Err(GithubError::TokenRejected) => {
+            mark_expired(&state.pool, claims.sub).await?;
+            return Err(github_error(GithubError::TokenRejected));
+        }
+        Err(e) => return Err(github_error(e)),
+    };
+    Ok(Json(Repos { repos: find_repos(listed, query.q.as_deref().unwrap_or_default()) }))
 }
 
 /// `GET /api/connections/github`

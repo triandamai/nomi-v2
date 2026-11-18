@@ -11,6 +11,7 @@ pub mod delegation_worker;
 pub mod design_project_source;
 pub mod dns;
 pub mod github;
+pub mod import_review;
 pub mod routes;
 pub mod issue_worker;
 pub mod memory_worker;

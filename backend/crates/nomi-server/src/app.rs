@@ -246,6 +246,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/connections/google", get(connections_routes::get_google).delete(connections_routes::disconnect_google))
         .route("/api/connections/google/start", post(connections_routes::start_google))
         .route("/api/connections/github", get(crate::routes::github::get).put(crate::routes::github::connect_token).delete(crate::routes::github::disconnect))
+        .route("/api/connections/github/repos", get(crate::routes::github::repos))
         .route("/api/connections/github/start", post(crate::routes::github::start))
         .route("/api/connections/github/callback", post(crate::routes::github::callback))
         .route("/api/connections/google/callback", post(connections_routes::complete_google))
@@ -516,6 +517,7 @@ pub fn build_router(state: AppState) -> Router {
                 .layer(axum::extract::DefaultBodyLimit::max(crate::routes::project_import::MAX_ARCHIVE_BYTES)),
         )
         .route("/api/projects/:id/import/github", post(crate::routes::project_import::import_github))
+        .route("/api/projects/:id/import/review", get(crate::routes::project_import::review))
         .route("/api/projects/:id/export/github", post(crate::routes::github::export))
         .route("/api/projects/:id/export", get(crate::routes::project_export::summary))
         .route("/api/projects/:id/export/zip", get(crate::routes::project_export::download))
