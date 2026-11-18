@@ -119,6 +119,39 @@ describe('the chat page’s own endpoints', () => {
 		expect(response.status).toBe(401);
 		expect(await response.json()).toEqual({ error: 'signed_out' });
 	});
+
+	it('loads the Design Studio and routes feedback, approval, publish, and refine calls', async () => {
+		const { backend, event } = eventWith((call) => {
+			if (call.url.endsWith('/design')) return json({ directions: { version: 1, brief_version: 1, directions: [] }, previews: [], feedback: [], approval: null });
+			if (call.url.endsWith('/design/feedback')) return json({ id: 'f1', number: 1 }, 201);
+			if (call.url.endsWith('/design/approval')) return json({ version: 2, note: null, created_at: '2026-11-18T10:00:00Z' }, 201);
+			if (call.url.endsWith('/design/publish')) return json({ version: 2, published_url: 'https://preview.example/v2', publish_error: null });
+			return json({ user_message: { id: 'u1' } }, 202);
+		});
+		const loaded = await chatRequest(event, 's1', ['design'], request('GET'));
+		expect(loaded.status).toBe(200);
+		expect(await loaded.json()).toEqual({ directions: { version: 1, brief_version: 1, directions: [] }, previews: [], feedback: [], approval: null });
+
+		const fb = await chatRequest(event, 's1', ['design', 'feedback'], request('POST', { version: 2, level: 'section', page: 'index.html', element_id: 'hero', body: 'Shorter' }));
+		expect(fb.status).toBe(201);
+
+		const approved = await chatRequest(event, 's1', ['design', 'approval'], request('POST', { version: 2 }));
+		expect(approved.status).toBe(201);
+
+		const published = await chatRequest(event, 's1', ['design', 'publish'], request('POST', { version: 2 }));
+		expect(published.status).toBe(200);
+
+		const refined = await chatRequest(event, 's1', ['design', 'refine'], request('POST', { text: '@Sora Please act on #1' }));
+		expect(refined.status).toBe(202);
+
+		expect(backend.calls.map((c) => `${c.method} ${c.url.replace('http://api.test/api/sessions/s1', '')}`)).toEqual([
+			'GET /design',
+			'POST /design/feedback',
+			'POST /design/approval',
+			'POST /design/publish',
+			'POST /messages',
+		]);
+	});
 });
 
 describe('starting a chat', () => {

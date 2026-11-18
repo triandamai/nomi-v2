@@ -1,15 +1,15 @@
 <script lang="ts">
-	import { Code, ExternalLink, Eye, Monitor, RotateCw, Smartphone, SquareTerminal, X } from '@lucide/svelte';
+	import { Code, ExternalLink, Eye, Monitor, Palette, RotateCw, Smartphone, SquareTerminal, X } from '@lucide/svelte';
 	import Icon from '../foundations/Icon.svelte';
 
 	// Flow / Build → Screen / Building (H4DIH) → Pane Tabs: the preview pane's strip, 44 high,
-	// [0,12,0,16] and 12 apart over its line. The view switch (Preview, Code, Terminal: 26 high
+	// [0,12,0,16] and 12 apart over its line. The view switch (Preview, Design, Code, Terminal: 26 high
 	// segments on surface-2, the chosen one on the page with a border-strong edge), the URL bar (30,
 	// outlined: "live" with its dot when it's the live app, the address, the deploy, Reload, Open),
 	// the device switch (desktop or phone, the chosen on surface-2) and Close.
-	export type PaneView = 'preview' | 'code' | 'terminal';
+	export type PaneView = 'preview' | 'design' | 'code' | 'terminal';
 	type Props = {
-		labels: { views: string; preview: string; code: string; terminal: string; device: string; desktop: string; phone: string; reload: string; open: string; close: string };
+		labels: { views: string; preview: string; design?: string; code: string; terminal: string; device: string; desktop: string; phone: string; reload: string; open: string; close: string };
 		view?: PaneView;
 		/** The views on offer, in order (all three by default). */
 		views?: PaneView[];
@@ -27,6 +27,7 @@
 	const views = $derived(
 		[
 			{ value: 'preview' as const, label: labels.preview, icon: Eye },
+			{ value: 'design' as const, label: labels.design ?? 'Design', icon: Palette },
 			{ value: 'code' as const, label: labels.code, icon: Code },
 			{ value: 'terminal' as const, label: labels.terminal, icon: SquareTerminal },
 		].filter((option) => offered.includes(option.value)),

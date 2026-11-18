@@ -76,6 +76,7 @@ async fn the_studio_lists_a_chats_previews_for_the_people_who_can_open_it(pool: 
     design_on(&pool, admin.id, true).await;
     let (status, body) = app.get(&uri, &ada).await;
     assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["directions"], json!(null), "directions is null until Sora proposes a set");
     let previews = body["previews"].as_array().unwrap();
     assert_eq!(previews.iter().map(|p| (p["version"].as_i64().unwrap(), p["direction_id"].as_str().unwrap())).collect::<Vec<_>>(), [(1, "editorial"), (2, "swiss")]);
     let newest = &previews[1];
@@ -85,6 +86,43 @@ async fn the_studio_lists_a_chats_previews_for_the_people_who_can_open_it(pool: 
     assert_eq!(newest["published_url"], json!(null));
     assert!(newest["created_at"].is_string());
     assert_eq!(newest["preview_token"].as_str().unwrap().len(), design_artifact::PREVIEW_TOKEN_CHARS);
+
+    let set = nomi_agent_core::design_directions::DesignDirections::parse(&json!({
+        "directions": [
+            {
+                "id": "editorial",
+                "name": "Editorial",
+                "summary": "Warm paper tones and serif headings.",
+                "rationale": "Fits the craft bakery story.",
+                "trade_offs": ["Needs strong photography"],
+                "palette": [{"name": "Paper", "hex": "#F6EFE4"}, {"name": "Accent", "hex": "#B5532A"}],
+                "typography": {"heading": "Fraunces", "body": "Inter"},
+                "layout": "Hero, daily bakes, pre-order",
+                "recommended": true
+            },
+            {
+                "id": "swiss",
+                "name": "Swiss utility",
+                "summary": "Crisp grid and monospace prices.",
+                "rationale": "Fast menu scanning.",
+                "trade_offs": ["Less warmth"],
+                "palette": [{"name": "Surface", "hex": "#FFFFFF"}, {"name": "Ink", "hex": "#111111"}],
+                "typography": {"heading": "Space Grotesk", "body": "IBM Plex Sans"},
+                "layout": "Two-column menu table"
+            }
+        ]
+    }))
+    .unwrap();
+    let mut conn = pool.acquire().await.unwrap();
+    nomi_agent_core::design_directions::save(&mut conn, session_id, Uuid::new_v4(), ada.id, Some(1), &set).await.unwrap();
+    drop(conn);
+
+    let (status, with_directions) = app.get(&uri, &ada).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(with_directions["directions"]["version"], 1);
+    assert_eq!(with_directions["directions"]["brief_version"], 1);
+    assert_eq!(with_directions["directions"]["directions"].as_array().unwrap().len(), 2);
+    assert_eq!(with_directions["directions"]["directions"][0]["id"], "editorial");
 
     assert_eq!(app.get(&uri, &bob).await.0, StatusCode::NOT_FOUND, "another person's chat isn't theirs to look at");
     assert_eq!(app.call("GET", &uri, None, None).await.0, StatusCode::UNAUTHORIZED);

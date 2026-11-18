@@ -767,7 +767,7 @@
 	// again whenever a turn ends (Sora may have made a version), so it shows without a reload.
 	let studioNow = $state<StudioResponse | null>(null);
 	const studio = $derived(studioNow ?? data.design ?? null);
-	const hasDesign = $derived((studio?.previews.length ?? 0) > 0);
+	const hasDesign = $derived((studio?.previews.length ?? 0) > 0 || (studio?.directions?.directions.length ?? 0) > 0);
 	// The version a link in the chat asked for (Sora's "Open in Design Studio").
 	let designVersion = $state<string | null>(null);
 	$effect(() => {
@@ -779,9 +779,9 @@
 		const response = await fetch(`/chat/${page.params.sessionId}/design/studio`).catch(() => null);
 		if (!response?.ok) return;
 		studioNow = (await response.json()) as StudioResponse;
-		// Sora's first preview: show it in the open pane when it's only showing the app's preview
+		// Sora's first directions or preview: show it in the open pane when it's only showing the app's preview
 		// (never over code being edited, and never opening the pane over the chat on a phone).
-		if (!hadDesign && studioNow.previews.length > 0 && paneOpen && view === 'preview') view = 'design';
+		if (!hadDesign && (studioNow.previews.length > 0 || (studioNow.directions?.directions.length ?? 0) > 0) && paneOpen && view === 'preview') view = 'design';
 	}
 	function showDesign(version: string | null) {
 		designVersion = version;
@@ -1226,6 +1226,7 @@
 							<DesignStudio
 								embedded
 								sessionId={page.params.sessionId as string}
+								directions={studio.directions ?? null}
 								previews={studio.previews}
 								feedback={studio.feedback}
 								approval={studio.approval}
