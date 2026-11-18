@@ -128,13 +128,20 @@ describe('a project’s workspace', () => {
 	it('invites, changes roles, removes and limits access, refusing what’s malformed', async () => {
 		const ok = () => new Response(null, { status: 204 });
 		const invited = posted({ email: ' Sari@Kopi.id ', role: 'view' }, ok);
-		expect(await actions.invite(invited.event as never)).toEqual({ invited: 'sari@kopi.id' });
+		expect(await actions.invite(invited.event as never)).toMatchObject({ invited: 'sari@kopi.id' });
 		expect(invited.api.calls[0].body).toEqual({ email: 'sari@kopi.id', role: 'view' });
 		expect(await actions.invite(posted({ email: 'nope', role: 'view' }, ok).event as never)).toMatchObject({ status: 400, data: { field: 'email' } });
 		expect(await actions.role(posted({ user: 'u2', role: 'viewer' }, ok).event as never)).toEqual({ changed: 'u2' });
 		expect(await actions.role(posted({ user: 'u2', role: 'boss' }, ok).event as never)).toMatchObject({ status: 400 });
 		expect(await actions.remove(posted({ user: 'u2' }, () => new Response("the project's starter can't be removed", { status: 409 })).event as never)).toMatchObject({ status: 409, data: { message: "the project's starter can't be removed" } });
 		expect(await actions.access(posted({ access: 'members' }, ok).event as never)).toEqual({ access: 'members' });
+	});
+
+	it('gives back an invite’s link and when it runs out, or that the person was added at once (G10)', async () => {
+		const sent = posted({ email: 'sari@kopi.id', role: 'prompt' }, () => json({ added: false, email: 'sari@kopi.id', role: 'prompt', path: '/invite/abc123', expires_at: '2026-11-25T08:00:00Z' }, 201));
+		expect(await actions.invite(sent.event as never)).toEqual({ invited: 'sari@kopi.id', added: false, path: '/invite/abc123', expires_at: '2026-11-25T08:00:00Z' });
+		const added = posted({ email: 'bima@kopi.id', role: 'view' }, () => json({ added: true, email: 'bima@kopi.id', role: 'view', path: null, expires_at: null }));
+		expect(await actions.invite(added.event as never)).toEqual({ invited: 'bima@kopi.id', added: true, path: null, expires_at: null });
 	});
 
 	it('sets a variable with a proper name, and says the backend’s reason under the value', async () => {

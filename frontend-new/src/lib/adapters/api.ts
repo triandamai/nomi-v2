@@ -466,6 +466,18 @@ export type PublishRow = {
 	created_at: string;
 	finished_at: string | null;
 	is_live: boolean;
+	/** Where a failed publish stopped and what it printed (`publishes[].failure`), where the backend kept it. */
+	failure?: PublishFailure | null;
+};
+/** A failed publish's detail: the step it stopped at, its message and the log's last lines. */
+export type PublishFailure = {
+	service?: string;
+	deployment_id?: string;
+	step?: string | null;
+	phase?: string | null;
+	message?: string | null;
+	tail?: string[] | null;
+	runtime_logs?: string[] | null;
 };
 /** `GET /api/projects/:id/deploy`: whether this Nomi can publish, the publishes, what's waiting to go live. */
 export type DeployOverview = {
