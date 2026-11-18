@@ -760,3 +760,8 @@ pub const FILES_MAKE_FILE_GUIDANCE: &str = "\nWhen the user wants a file made (a
 /// `{name}`, `{summary}` and `{id}` are filled in.
 pub const REMAKE_FILE_REQUEST: &str = "Make the file \"{name}\" again ({summary}). The earlier one is attachment {id}: make it again from the same \
      sources, with make_file, passing replaces={id}.";
+
+/// How the Files agent cites a file's pages, added to its prompt.
+pub const FILES_CITE_GUIDANCE: &str = "\nWhen you cite a file with `show` (view: sources, kind: file), add its file_id (the attachment id), the pages you \
+     read it on (pages: [3, 8], counting from 1) and, for a figure or row you took from a page, a span with that page and a \
+     short label. Only name a page you actually read; leave out rects unless you know where on the page it is.";

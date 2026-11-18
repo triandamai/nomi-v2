@@ -474,6 +474,24 @@ pub async fn get_preview(State(state): State<AppState>, AuthClaims(claims): Auth
         .into_response())
 }
 
+/// `GET /api/attachments/:id/pages/:n`: page `n` (from 1) of a PDF or image as an image, to its
+/// owner only, so the viewer can draw citation highlights over it. 404 past the last page.
+/// Nothing in the workspace draws a PDF page without a system library (pdfium, poppler), so a
+/// page is served from the preview image ingestion stored (an image's own page 1); any other
+/// page is 501 `{"error":"page_render_unavailable"}`.
+pub async fn get_page(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path((id, n)): Path<(Uuid, i64)>) -> Response {
+    use nomi_attachments::made::{page_plan, PagePlan};
+    let file = match find_own(&state, claims.sub, id).await {
+        Ok(file) => file,
+        Err(refusal) => return refusal.into_response(),
+    };
+    match page_plan(&file.kind, &file.details, n, file.preview_key.is_some()) {
+        PagePlan::NotFound => (StatusCode::NOT_FOUND, "page not found").into_response(),
+        PagePlan::Unavailable => (StatusCode::NOT_IMPLEMENTED, Json(json!({ "error": "page_render_unavailable" }))).into_response(),
+        PagePlan::StoredPreview => get_preview(State(state), AuthClaims(claims), Path(id)).await.into_response(),
+    }
+}
+
 /// `DELETE /api/attachments/:id`: removes a file taken out of the composer before sending.
 /// Files already in a message stay, as part of the chat.
 pub async fn delete_attachment(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(id): Path<Uuid>) -> Result<StatusCode, ApiError> {

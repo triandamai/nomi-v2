@@ -578,3 +578,52 @@ async fn expired_uploads_are_swept_and_fresh_ones_stay(pool: PgPool) {
     assert_eq!(left, vec!["fresh.csv".to_string()]);
     assert_eq!(upload_offset(router, &token, fresh["upload_id"].as_str().unwrap()).await.0, StatusCode::OK);
 }
+
+async fn get_status(router: axum::Router, uri: &str, token: &str) -> (StatusCode, Value) {
+    let request = Request::builder().method("GET").uri(uri).header("authorization", format!("Bearer {token}")).body(Body::empty()).unwrap();
+    let response = router.oneshot(request).await.unwrap();
+    let status = response.status();
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_page_is_404_past_the_last_and_501_when_it_cannot_be_drawn(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let token = register_and_login(router.clone(), "pages@example.com").await;
+    let other = register_and_login(router.clone(), "pages-other@example.com").await;
+    let user_id: Uuid = sqlx::query_scalar("SELECT user_id FROM web_credentials WHERE email = 'pages@example.com'").fetch_one(&pool).await.unwrap();
+    let pdf: Uuid = sqlx::query_scalar(
+        "INSERT INTO attachments (user_id, name, mime, kind, size_bytes, storage_key, status, details) VALUES ($1, 'statement.pdf', 'application/pdf', 'pdf', 10, 'k', 'ready', '{\"pages\": 3}') RETURNING id",
+    )
+    .bind(user_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    let (status, _) = get_status(router.clone(), &format!("/api/attachments/{pdf}/pages/4"), &token).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _) = get_status(router.clone(), &format!("/api/attachments/{pdf}/pages/0"), &token).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, body) = get_status(router.clone(), &format!("/api/attachments/{pdf}/pages/2"), &token).await;
+    assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
+    assert_eq!(body["error"], "page_render_unavailable");
+    let (status, _) = get_status(router, &format!("/api/attachments/{pdf}/pages/2"), &other).await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "someone else's file");
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn an_images_only_page_is_its_preview(pool: PgPool) {
+    use_temp_attachment_dir();
+    let router = build_router(test_state(pool.clone()));
+    let token = register_and_login(router.clone(), "imagepage@example.com").await;
+    let (status, photo) = upload(router.clone(), &token, "receipt.png", "image/png", png(2400, 1200)).await;
+    assert_eq!(status, StatusCode::CREATED);
+    let id = photo["id"].as_str().unwrap();
+    let request = Request::builder().method("GET").uri(format!("/api/attachments/{id}/pages/1")).header("authorization", format!("Bearer {token}")).body(Body::empty()).unwrap();
+    let response = router.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()["content-type"], "image/jpeg");
+    let (status, _) = get_status(router, &format!("/api/attachments/{id}/pages/2"), &token).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}

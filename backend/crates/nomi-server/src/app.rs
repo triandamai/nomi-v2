@@ -415,6 +415,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/attachments/:id", get(attachments_routes::get_attachment).delete(attachments_routes::delete_attachment))
         .route("/api/attachments/:id/content", get(attachments_routes::get_content))
         .route("/api/attachments/:id/preview", get(attachments_routes::get_preview))
+        .route("/api/attachments/:id/pages/:n", get(attachments_routes::get_page))
         .route("/api/sessions/:id/files/:file_id", delete(crate::routes::session_files::delete))
         .route("/api/sessions/:id/files/:file_id/content", get(crate::routes::session_files::content))
         .route("/api/sessions/:id/files/:file_id/preview", get(crate::routes::session_files::preview))

@@ -173,9 +173,57 @@ pub fn page_in_range(n: i64, pages: i64) -> bool {
     n >= 1 && n <= pages
 }
 
+/// What `GET /api/attachments/:id/pages/:n` does for a page.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PagePlan {
+    /// The file has no such page.
+    NotFound,
+    /// Serve the preview image ingestion stored.
+    StoredPreview,
+    /// The file has the page, and nothing here can draw it.
+    Unavailable,
+}
+
+/// How many pages a file has: a PDF's page count, an image's one.
+pub fn page_count(kind: &str, details: &serde_json::Value) -> i64 {
+    match kind {
+        "pdf" => details.get("pages").and_then(|p| p.as_i64()).unwrap_or(0),
+        "image" => 1,
+        _ => 0,
+    }
+}
+
+/// Decides how to answer for page `n` of a file. No PDF renderer is available without system
+/// libraries, so a page is only served from the preview image ingestion stored (page 1).
+pub fn page_plan(kind: &str, details: &serde_json::Value, n: i64, has_preview: bool) -> PagePlan {
+    if !page_in_range(n, page_count(kind, details)) {
+        return PagePlan::NotFound;
+    }
+    if n == 1 && has_preview {
+        PagePlan::StoredPreview
+    } else {
+        PagePlan::Unavailable
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn a_page_past_the_last_is_not_found_and_one_that_cannot_be_drawn_says_so() {
+        let pdf = json!({ "pages": 3 });
+        assert_eq!(page_plan("pdf", &pdf, 4, false), PagePlan::NotFound);
+        assert_eq!(page_plan("pdf", &pdf, 0, false), PagePlan::NotFound);
+        assert_eq!(page_plan("pdf", &pdf, 2, false), PagePlan::Unavailable);
+        assert_eq!(page_plan("pdf", &pdf, 1, true), PagePlan::StoredPreview);
+        assert_eq!(page_plan("pdf", &pdf, 2, true), PagePlan::Unavailable);
+        assert_eq!(page_plan("image", &json!({}), 1, true), PagePlan::StoredPreview);
+        assert_eq!(page_plan("image", &json!({}), 2, true), PagePlan::NotFound);
+        assert_eq!(page_plan("text", &json!({}), 1, false), PagePlan::NotFound);
+        assert_eq!(page_plan("pdf", &json!({}), 1, false), PagePlan::NotFound);
+    }
 
     fn rows(data: &[&[&str]]) -> Vec<Vec<String>> {
         data.iter().map(|r| r.iter().map(|c| c.to_string()).collect()).collect()
