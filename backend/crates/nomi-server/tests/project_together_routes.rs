@@ -154,7 +154,7 @@ async fn asks_wait_in_line_and_one_can_be_moved_up(pool: PgPool) {
         .await
         .unwrap();
         let id: Uuid = sqlx::query_scalar(
-            "INSERT INTO turn_jobs (session_id, sender_channel_identity_id, text, status, created_at) VALUES ($1, $2, $3, $4, now() - make_interval(mins => $5)) RETURNING id",
+            "INSERT INTO turn_jobs (session_id, sender_channel_identity_id, text, status, created_at, claimed_at) VALUES ($1, $2, $3, $4, now() - make_interval(mins => $5), CASE WHEN $4 = 'processing' THEN now() - interval '21 seconds' END) RETURNING id",
         )
         .bind(session)
         .bind(identity)
@@ -172,6 +172,9 @@ async fn asks_wait_in_line_and_one_can_be_moved_up(pool: PgPool) {
         order(&queue),
         vec![("Add a menu page".into(), "running".into()), ("Make it blue".into(), "next".into()), ("Add opening hours".into(), "queued".into())]
     );
+    // Only the running ask says when it started.
+    assert!(queue["asks"][0]["started_at"].is_string());
+    assert!(queue["asks"][1]["started_at"].is_null());
     assert_eq!(queue["asks"][2]["who"], "ben");
     assert_eq!(queue["asks"][2]["mine"], true);
 
@@ -230,4 +233,58 @@ async fn inviting_someone_to_build_puts_them_on_the_project_when_they_accept(poo
         .await
         .unwrap();
     assert_eq!(joined, vec!["ben".to_string(), "dee".to_string()]);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_request_to_publish_holds_the_ask_it_follows_and_the_files_changed_since_the_live_deploy(pool: PgPool) {
+    let t = team(&pool).await;
+    let session = project_session(&pool, t.project_id).await;
+    let ben_id = user_id(&pool, "ben@acme.test").await;
+    let ana_id = user_id(&pool, "ana@acme.test").await;
+    for (who, text) in [(ben_id, "Add the Makanan section"), (ana_id, "Something Ana asked")] {
+        let identity: Uuid = sqlx::query_scalar(
+            "INSERT INTO channel_identities (user_id, channel, channel_user_id) VALUES ($1, 'web', $2) \
+             ON CONFLICT (channel, channel_user_id) DO UPDATE SET user_id = EXCLUDED.user_id RETURNING id",
+        )
+        .bind(who)
+        .bind(format!("a-{who}"))
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        sqlx::query("INSERT INTO turn_jobs (session_id, sender_channel_identity_id, text, status) VALUES ($1, $2, $3, 'completed')")
+            .bind(session)
+            .bind(identity)
+            .bind(text)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    // A file from before the live deploy, then the deploy, then two changes after it.
+    request(t.router.clone(), "PUT", &format!("/api/projects/{}/files/old.html", t.project_id), Some(&t.ana), Some(json!({ "content": "<p>old</p>" }))).await;
+    sqlx::query("UPDATE project_files SET updated_at = now() - interval '2 hours' WHERE project_id = $1").bind(t.project_id).execute(&pool).await.unwrap();
+    sqlx::query(
+        "INSERT INTO project_publishes (project_id, environment, status, manifest, created_at) VALUES ($1, 'production', 'succeeded', '{}'::jsonb, now() - interval '1 hour')",
+    )
+    .bind(t.project_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    for file in ["menu.html", "css/site.css"] {
+        let (status, _) = request(t.router.clone(), "PUT", &format!("/api/projects/{}/files/{file}", t.project_id), Some(&t.ana), Some(json!({ "content": "x" }))).await;
+        assert_eq!(status, StatusCode::OK, "{file}");
+    }
+
+    let (status, asked) = request(t.router.clone(), "POST", &format!("/api/projects/{}/deploy/requests", t.project_id), Some(&t.ben), Some(json!({ "note": "Makanan section" }))).await;
+    assert_eq!(status, StatusCode::CREATED, "{asked}");
+    assert_eq!(asked["files"], json!(["css/site.css", "menu.html"]));
+    assert_eq!(asked["ask"]["text"], "Add the Makanan section", "his own latest ask, not Ana's");
+    assert!(asked["ask"]["job_id"].is_string());
+
+    // The list says the same; a job from another chat is refused.
+    let (_, listed) = request(t.router.clone(), "GET", &format!("/api/projects/{}/deploy/requests", t.project_id), Some(&t.ana), None).await;
+    assert_eq!(listed["requests"][0]["ask"]["text"], "Add the Makanan section");
+    assert_eq!(listed["requests"][0]["files"], json!(["css/site.css", "menu.html"]));
+    request(t.router.clone(), "POST", &format!("/api/projects/{}/deploy/requests/{}", t.project_id, asked["id"].as_str().unwrap()), Some(&t.ben), Some(json!({ "action": "cancel" }))).await;
+    let (status, _) = request(t.router.clone(), "POST", &format!("/api/projects/{}/deploy/requests", t.project_id), Some(&t.ben), Some(json!({ "job_id": Uuid::new_v4() }))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
 }

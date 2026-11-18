@@ -221,6 +221,10 @@ pub(super) async fn resolve_tool_batch_in_reply(
                 input: input.clone(),
                 status: crate::content_block::ApprovalStatus::Pending,
                 decided_at: None,
+                tool_use_id: Some(id.clone()),
+                edited: false,
+                result_url: None,
+                remembered: None,
             };
             let content_blocks = serde_json::json!([approval_block]);
             let message_id: Option<Uuid> = sqlx::query_scalar(
@@ -367,6 +371,11 @@ pub(super) async fn resolve_tool_batch_in_reply(
                         posted_text = Some(shown.display_text);
                         (VIEW_SHOWN.to_string(), false, shown.block)
                     }
+                    Err(err) => (err, true, None),
+                }
+            } else if name.as_str() == crate::made_files::MAKE_FILE_TOOL_NAME && agent.agent_type().as_ref() == crate::attachments::FILES_AGENT_TYPE {
+                match crate::made_files::make_file(conn, mqtt.map(|(p, _)| p), session_id, user_id, agent.agent_type().as_ref(), input).await {
+                    Ok(text) => (text, false, None),
                     Err(err) => (err, true, None),
                 }
             } else if name.as_str() == crate::attachments::READ_ATTACHMENT_TOOL_NAME {

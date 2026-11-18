@@ -710,3 +710,62 @@ pub const KODA_BRIEF_RELAY_PACKAGES: &str = "Packages on this Nomi: the client i
 /// After a guide in Koda's brief that had sections left out. `{topic}` is the guide, `{sections}`
 /// their headings.
 pub const KODA_BRIEF_GUIDE_LEFT_OUT: &str = "Sections left out here (read_guide {topic} returns them): {sections}.";
+
+/// Told to the crew, after the person's message, for each file they sent it without because the
+/// model they picked can't read it ({name}, {model}).
+pub const LEFT_OUT_NOTE: &str = "(Not sent with this message: {name}. {model} can't read that kind of file, so you did not get it. Say so if it matters.)";
+
+/// The person's message when they pick "Run it" on a proposed plan ({title}).
+pub const PLAN_RUN_REQUEST: &str = "Run the plan \"{title}\" now: carry it out step by step and tell me how it went.";
+
+/// The person's message when they pick "Research only" on a proposed plan ({title}).
+pub const PLAN_RESEARCH_REQUEST: &str = "Only research the plan \"{title}\": look into what each step needs and tell me what you found. \
+Do not run the plan, and do not change, send or build anything yet.";
+
+/// In the ask_user tool's description: when to recommend an answer and add a helper line.
+pub const ASK_USER_RECOMMEND_GUIDE: &str = " Mark the one option you would pick yourself with recommended: true, at most one per question \
+     and only where you have a real reason; if the person skips, that answer is used. Add a short helper \
+     line under a question where it needs context (who it is for, what you already know).";
+
+/// The ask_user schema's `recommended` property.
+pub const ASK_USER_RECOMMENDED_DESCRIPTION: &str = "true on the one option you suggest; at most one per question";
+
+/// The ask_user schema's `helper` property.
+pub const ASK_USER_HELPER_DESCRIPTION: &str = "One short line under the question giving it context, optional";
+
+/// System prompt for "Summarise and continue": folds a chat's older messages (and any earlier
+/// summary) into one summary the chat carries on from (`chat_summary::summarize_chat`).
+pub const SUMMARIZE_CHAT_SYSTEM_PROMPT: &str = "You condense the older part of a chat between a person and their \
+assistant crew into one summary, so the chat can carry on without those messages. Keep what the \
+person wants, decisions made, facts, names, numbers and files that matter, work already done, and \
+open questions or unfinished tasks. Drop greetings, small talk and anything settled that no longer \
+matters. Write short plain lines in the language of the chat, at most 300 words. Reply with the \
+summary only.";
+
+/// Put in the summariser's input when the chat was too long to give it all: the oldest messages
+/// were left out.
+pub const SUMMARY_INPUT_TRIMMED_NOTE: &str = "(Some of the oldest messages are left out here because the chat is very long.)";
+
+/// How a chat's summary reads to the model in the history, in place of the messages it replaced
+/// ({summary}).
+pub const SUMMARY_IN_HISTORY: &str = "(Summary of the earlier part of this chat, whose messages are no longer sent:)\n{summary}";
+
+/// The make_file tool: what the Files agent (Maya) makes a file with.
+pub const MAKE_FILE_TOOL_DESCRIPTION: &str = "Make a file for the person and put it in the chat: a CSV or spreadsheet from rows, or a text, \
+     Markdown or JSON file from text. Use it when they ask for a file, an export or a download (\"put this in a spreadsheet\", \
+     \"make me a CSV of May's spending\"). Give it a short name with the right extension, a one-line summary of what's in it, \
+     and the ids of the attachments it was made from. It tells the person the file is being made and shows it when it's ready.";
+
+/// What the Files agent is told about making files, added to its prompt.
+pub const FILES_MAKE_FILE_GUIDANCE: &str = "\nWhen the user wants a file made (a spreadsheet, a CSV, a text or Markdown file), call make_file with the \
+     rows or the text, and tell them in a sentence what's in it. Don't paste the whole file into your reply.";
+
+/// What the person's message says when they ask for a file the crew made to be made again.
+/// `{name}`, `{summary}` and `{id}` are filled in.
+pub const REMAKE_FILE_REQUEST: &str = "Make the file \"{name}\" again ({summary}). The earlier one is attachment {id}: make it again from the same \
+     sources, with make_file, passing replaces={id}.";
+
+/// How the Files agent cites a file's pages, added to its prompt.
+pub const FILES_CITE_GUIDANCE: &str = "\nWhen you cite a file with `show` (view: sources, kind: file), add its file_id (the attachment id), the pages you \
+     read it on (pages: [3, 8], counting from 1) and, for a figure or row you took from a page, a span with that page and a \
+     short label. Only name a page you actually read; leave out rects unless you know where on the page it is.";

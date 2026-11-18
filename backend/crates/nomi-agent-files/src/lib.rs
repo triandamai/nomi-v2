@@ -60,11 +60,11 @@ impl SubAgent for FilesAgent {
     }
 
     fn system_prompt(&self) -> Cow<'static, str> {
-        Cow::Borrowed(SYSTEM_PROMPT)
+        Cow::Owned(format!("{SYSTEM_PROMPT}{}{}", nomi_agent_core::prompts::FILES_MAKE_FILE_GUIDANCE, nomi_agent_core::prompts::FILES_CITE_GUIDANCE))
     }
 
     fn tools(&self) -> Vec<ToolDefinition> {
-        Vec::new()
+        vec![nomi_agent_core::made_files::make_file_tool_definition()]
     }
 
     async fn execute_tool(

@@ -131,7 +131,7 @@ struct RecordingPush {
 impl PushSender for RecordingPush {
     async fn send(&self, device: &DeviceTarget, _message: &PushMessage) -> Result<(), PushError> {
         self.sent.lock().unwrap().push((device.platform.clone(), device.token.clone()));
-        if device.token == self.invalid_token {
+        if device.token.contains(&self.invalid_token) {
             Err(PushError::Invalid)
         } else {
             Ok(())
@@ -191,4 +191,63 @@ async fn live_activity_pushes_go_to_iphones_by_their_activity_token(pool: PgPool
             .await
             .unwrap();
     assert_eq!(rows, vec![(Some("apns-1".into()), None), (Some("apns-2".into()), None)]);
+}
+
+// A browser's subscription (the keys are the RFC 8291 example's).
+const BROWSER_P256DH: &str = "BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4";
+const BROWSER_AUTH: &str = "BTBZMqHH6r4Tts7J_aSIgg";
+
+fn subscription(endpoint: &str) -> Value {
+    json!({ "endpoint": endpoint, "keys": { "p256dh": BROWSER_P256DH, "auth": BROWSER_AUTH } })
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_browser_subscribes_once_per_endpoint_and_the_latest_person_owns_it(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let ana = register(router.clone(), "ana@acme.test").await;
+    let ben = register(router.clone(), "ben@acme.test").await;
+
+    let endpoint = "https://push.example.test/send/ana-phone";
+    let (status, first) = request(router.clone(), "POST", "/api/devices/web-push", Some(&ana), Some(subscription(endpoint))).await;
+    assert_eq!(status, StatusCode::OK, "{first}");
+    let (_, again) = request(router.clone(), "POST", "/api/devices/web-push", Some(&ana), Some(subscription(endpoint))).await;
+    assert_eq!(first["id"], again["id"], "the same endpoint is the same row");
+
+    let (status, _) = request(router.clone(), "POST", "/api/devices/web-push", Some(&ben), Some(subscription(endpoint))).await;
+    assert_eq!(status, StatusCode::OK);
+    let owners: Vec<Uuid> = sqlx::query_scalar("SELECT user_id FROM web_push_subscriptions").fetch_all(&pool).await.unwrap();
+    assert_eq!(owners, vec![user_id(&pool, "ben@acme.test").await]);
+
+    for bad in [
+        json!({ "endpoint": "http://push.example.test/x", "keys": { "p256dh": BROWSER_P256DH, "auth": BROWSER_AUTH } }),
+        json!({ "endpoint": endpoint, "keys": { "p256dh": "nope", "auth": BROWSER_AUTH } }),
+    ] {
+        let (status, _) = request(router.clone(), "POST", "/api/devices/web-push", Some(&ana), Some(bad)).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+    let (status, _) = request(router.clone(), "POST", "/api/devices/web-push", None, Some(subscription(endpoint))).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    // Web push is off in the tests: no key to subscribe with.
+    let (status, _) = request(router, "GET", "/api/devices/web-push/key", Some(&ana), None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn pushes_reach_a_persons_browsers_and_a_gone_one_is_forgotten(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let ana = register(router.clone(), "ana@acme.test").await;
+    for endpoint in ["https://push.example.test/send/ok", "https://push.example.test/send/gone"] {
+        request(router.clone(), "POST", "/api/devices/web-push", Some(&ana), Some(subscription(endpoint))).await;
+    }
+    let ana_id = user_id(&pool, "ana@acme.test").await;
+
+    let sender = Arc::new(RecordingPush { invalid_token: "/send/gone".into(), sent: Mutex::new(Vec::new()) });
+    let alert = PushMessage { title: "Tara needs your OK".into(), body: "Approve".into(), data: Default::default(), kind: PushKind::Alert };
+    dispatch(pool.clone(), sender.clone(), ana_id, alert).await;
+    let sent = sender.sent.lock().unwrap().clone();
+    assert_eq!(sent.len(), 2, "{sent:?}");
+    assert!(sent.iter().all(|(platform, _)| platform == "web"));
+
+    let left: Vec<String> = sqlx::query_scalar("SELECT endpoint FROM web_push_subscriptions").fetch_all(&pool).await.unwrap();
+    assert_eq!(left, vec!["https://push.example.test/send/ok".to_string()]);
 }

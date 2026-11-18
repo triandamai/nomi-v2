@@ -22,6 +22,8 @@ pub struct QueuedAsk {
     /// running, next or queued.
     pub state: &'static str,
     pub created_at: DateTime<Utc>,
+    /// When the worker picked the ask up; only a running ask has one.
+    pub started_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Serialize)]
@@ -29,14 +31,14 @@ pub struct Queue {
     pub asks: Vec<QueuedAsk>,
 }
 
-type Row = (Uuid, String, String, Uuid, String, DateTime<Utc>);
+type Row = (Uuid, String, String, Uuid, String, DateTime<Utc>, Option<DateTime<Utc>>);
 
 /// The asks still waiting or running in the chat, in the order they'll be answered.
 pub async fn queue_of(pool: &sqlx::PgPool, me: Uuid, session_id: Uuid) -> Result<Vec<QueuedAsk>, sqlx::Error> {
     let rows: Vec<Row> = sqlx::query_as(
         "SELECT j.id, j.text, \
                 COALESCE(NULLIF(up.display_name, ''), split_part(COALESCE(w.email, g.email, ''), '@', 1)), \
-                ci.user_id, j.status, j.created_at \
+                ci.user_id, j.status, j.created_at, j.claimed_at \
          FROM turn_jobs j \
          JOIN channel_identities ci ON ci.id = j.sender_channel_identity_id \
          LEFT JOIN user_profiles up ON up.user_id = ci.user_id \
@@ -51,7 +53,7 @@ pub async fn queue_of(pool: &sqlx::PgPool, me: Uuid, session_id: Uuid) -> Result
     let mut next_given = false;
     Ok(rows
         .into_iter()
-        .map(|(id, text, who, user_id, status, created_at)| {
+        .map(|(id, text, who, user_id, status, created_at, claimed_at)| {
             let state = if status == "processing" {
                 "running"
             } else if !next_given {
@@ -60,7 +62,8 @@ pub async fn queue_of(pool: &sqlx::PgPool, me: Uuid, session_id: Uuid) -> Result
             } else {
                 "queued"
             };
-            QueuedAsk { id, text, who, mine: user_id == me, state, created_at }
+            let started_at = if state == "running" { claimed_at } else { None };
+            QueuedAsk { id, text, who, mine: user_id == me, state, created_at, started_at }
         })
         .collect())
 }

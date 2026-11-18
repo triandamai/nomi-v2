@@ -27,6 +27,12 @@ const MAX_SHELL_OUTPUT: usize = 8_000;
 const MAX_CODE: usize = 20_000;
 /// Most lines on each side of a diff (the line-by-line comparison is quadratic).
 const MAX_DIFF_LINES: usize = 800;
+/// The most pages, spans and boxes one citation may name.
+const MAX_CITED_PAGES: usize = 50;
+const MAX_CITED_SPANS: usize = 20;
+const MAX_RECTS_PER_SPAN: usize = 50;
+/// The highest page number a citation may name.
+const MAX_CITED_PAGE: u32 = 100_000;
 /// Unchanged lines kept around each change in a diff.
 const DIFF_CONTEXT: usize = 3;
 
@@ -582,6 +588,30 @@ pub struct SourceItem {
     pub detail: Option<String>,
     #[serde(default)]
     pub kind: SourceKind,
+    /// For a file citation: the attachment it points into.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_id: Option<uuid::Uuid>,
+    /// The pages cited, counting from 1.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pages: Vec<u32>,
+    /// What to highlight on those pages.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub spans: Vec<SourceSpan>,
+}
+
+/// One cited place in a file: a page and what is on it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SourceSpan {
+    /// Counting from 1.
+    pub page: u32,
+    /// `[x, y, width, height]` boxes on the page, as fractions of its size. Empty when where on
+    /// the page isn't known.
+    #[serde(default)]
+    pub rects: Vec<[f64; 4]>,
+    pub label: String,
+    /// An amount the span adds up to, in rupiah.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total_idr: Option<f64>,
 }
 
 /// What an answer leaned on, numbered like the `[1]` citations in the reply's text.
@@ -706,7 +736,7 @@ pub const CATALOG: &[ViewSpec] = &[
     ViewSpec { name: "shell", use_for: "a command and what it printed", fields: "command, output?, exit_code?, cwd?" },
     ViewSpec { name: "code", use_for: "code to read or copy (a snippet, a query, a config)", fields: "code, language?, file?" },
     ViewSpec { name: "diff", use_for: "a change to one file, line by line", fields: "path, before, after (the whole text before and after the change)" },
-    ViewSpec { name: "sources", use_for: "what an answer leaned on, numbered like the [1] [2] citations in your text", fields: "items: [{title, url?, detail?, kind?: web|file}]" },
+    ViewSpec { name: "sources", use_for: "what an answer leaned on, numbered like the [1] [2] citations in your text", fields: "items: [{title, url?, detail?, kind?: web|file}]; a file source may add file_id (the attachment id), pages?: [3, 8] (from 1) and spans?: [{page, label, rects?, total_idr?}] where you know the page you read it on; leave rects out unless you know the box" },
     ViewSpec { name: "selection", use_for: "several of many for the person to tick (subscriptions to track, items to keep)", fields: "question, items: [{name, detail?, amount?, selected?}], confirm_label?, per? (what the total is per, e.g. month)" },
     ViewSpec { name: "boundary", use_for: "something you won't or can't do: say why plainly and offer what you can do instead", fields: "title, reason, alternatives?: [{title, detail?, agent?, message? (sent when picked), url?}] (0-4)" },
     ViewSpec { name: "quick_replies", use_for: "short answers to the question you just asked, one tap each", fields: "replies: [answer in their voice] (2-6, a few words each)" },
@@ -774,6 +804,39 @@ pub fn parse_show_input(input: &Value) -> Result<View, String> {
 fn count(what: &str, n: usize, min: usize, max: usize) -> Result<(), String> {
     if n < min || n > max {
         return Err(format!("{what}: give {min} to {max}, not {n}"));
+    }
+    Ok(())
+}
+
+/// A citation's file, pages and spans: only a file citation has them, and pages count from 1.
+fn check_file_citation(item: &SourceItem) -> Result<(), String> {
+    let names_a_place = item.file_id.is_some() || !item.pages.is_empty() || !item.spans.is_empty();
+    if !names_a_place {
+        return Ok(());
+    }
+    if item.kind != SourceKind::File {
+        return Err("only a file source (kind: file) can have file_id, pages or spans".to_string());
+    }
+    let page_ok = |page: u32| (1..=MAX_CITED_PAGE).contains(&page);
+    if item.pages.len() > MAX_CITED_PAGES || item.spans.len() > MAX_CITED_SPANS {
+        return Err(format!("a source names at most {MAX_CITED_PAGES} pages and {MAX_CITED_SPANS} spans"));
+    }
+    if !item.pages.iter().all(|p| page_ok(*p)) {
+        return Err("pages count from 1".to_string());
+    }
+    for span in &item.spans {
+        if !page_ok(span.page) {
+            return Err("a span's page counts from 1".to_string());
+        }
+        if span.rects.len() > MAX_RECTS_PER_SPAN {
+            return Err(format!("a span has at most {MAX_RECTS_PER_SPAN} rects"));
+        }
+        if span.rects.iter().flatten().any(|v| !v.is_finite() || *v < 0.0) {
+            return Err("a rect is [x, y, width, height], each a number from 0 up".to_string());
+        }
+        if span.total_idr.is_some_and(|t| !t.is_finite()) {
+            return Err("a span's total_idr must be a number".to_string());
+        }
     }
     Ok(())
 }
@@ -972,6 +1035,7 @@ impl View {
                     if let Some(url) = &item.url {
                         web_url("a source's url", url)?;
                     }
+                    check_file_citation(item)?;
                 }
             }
             View::Selection(v) => {
@@ -1279,6 +1343,59 @@ impl View {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
+
+    fn sources(items: Value) -> Result<View, String> {
+        parse_show_input(&json!({ "view": "sources", "items": items }))
+    }
+
+    #[test]
+    fn a_file_citation_carries_its_file_pages_and_spans() {
+        let id = uuid::Uuid::nil();
+        let View::Sources(view) = sources(json!([
+            { "title": "Statement", "kind": "file", "file_id": id.to_string(), "pages": [3, 8],
+              "spans": [{ "page": 3, "rects": [[0.1, 0.2, 0.5, 0.05]], "label": "Groceries", "total_idr": 125000.0 }] }
+        ]))
+        .unwrap() else {
+            panic!()
+        };
+        let item = &view.items[0];
+        assert_eq!(item.file_id, Some(id));
+        assert_eq!(item.pages, vec![3, 8]);
+        let out = serde_json::to_value(item).unwrap();
+        assert_eq!(out["spans"][0]["rects"][0], json!([0.1, 0.2, 0.5, 0.05]));
+        assert_eq!(out["spans"][0]["label"], "Groceries");
+        assert_eq!(out["spans"][0]["total_idr"], 125000.0);
+    }
+
+    #[test]
+    fn a_span_without_rects_is_fine_and_says_so() {
+        let View::Sources(view) = sources(json!([{ "title": "Doc", "kind": "file", "file_id": uuid::Uuid::nil().to_string(), "spans": [{ "page": 2, "label": "Total" }] }])).unwrap() else {
+            panic!()
+        };
+        let out = serde_json::to_value(&view.items[0]).unwrap();
+        assert_eq!(out["spans"][0]["rects"], json!([]));
+        assert!(out["spans"][0].get("total_idr").is_none());
+    }
+
+    #[test]
+    fn old_citations_still_parse_and_serialise_as_before() {
+        let old = json!({ "title": "Site", "url": "https://example.com", "kind": "web" });
+        let item: SourceItem = serde_json::from_value(old.clone()).unwrap();
+        assert_eq!(item.file_id, None);
+        assert!(item.pages.is_empty() && item.spans.is_empty());
+        assert_eq!(serde_json::to_value(&item).unwrap(), old);
+    }
+
+    #[test]
+    fn cited_pages_and_rects_are_checked() {
+        let id = uuid::Uuid::nil().to_string();
+        assert!(sources(json!([{ "title": "D", "kind": "file", "file_id": id, "pages": [0] }])).is_err());
+        assert!(sources(json!([{ "title": "D", "kind": "file", "file_id": id, "spans": [{ "page": 0, "label": "x" }] }])).is_err());
+        assert!(sources(json!([{ "title": "D", "kind": "file", "file_id": id, "spans": [{ "page": 1, "label": "x", "rects": [[0.1, 0.2, 0.3]] }] }])).is_err());
+        assert!(sources(json!([{ "title": "D", "kind": "file", "file_id": id, "spans": [{ "page": 1, "label": "x", "rects": [[0.1, 0.2, -1.0, 0.3]] }] }])).is_err());
+        assert!(sources(json!([{ "title": "D", "kind": "web", "url": "https://a.com", "file_id": id }])).is_err(), "only a file citation names a file");
+    }
 
     /// One example per view, shared with the frontend's tests (frontend/src/lib/views).
     const EXAMPLES: &str = include_str!("../../../../frontend/src/lib/views/examples.json");

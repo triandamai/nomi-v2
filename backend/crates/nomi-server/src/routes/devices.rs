@@ -232,3 +232,54 @@ pub async fn remove(State(state): State<AppState>, AuthClaims(claims): AuthClaim
     crate::presence::announce(claims.sub, &nomi_realtime::UserEnvelope::DeviceSignedOut { device_id: id });
     Ok(StatusCode::NO_CONTENT)
 }
+
+/// The longest push-service endpoint a browser may subscribe with.
+const MAX_ENDPOINT_CHARS: usize = 2048;
+/// The longest base64url `p256dh` / `auth` a subscription may carry.
+const MAX_WEB_KEY_CHARS: usize = 256;
+
+#[derive(Deserialize)]
+pub struct WebPushKeys {
+    pub p256dh: String,
+    pub auth: String,
+}
+
+#[derive(Deserialize)]
+pub struct WebPushSubscribe {
+    pub endpoint: String,
+    pub keys: WebPushKeys,
+}
+
+#[derive(Serialize)]
+pub struct WebPushKey {
+    pub public_key: String,
+}
+
+/// `GET /api/devices/web-push/key`: the VAPID public key a browser subscribes with
+/// (`applicationServerKey`); 404 while web push is off.
+pub async fn web_push_key(State(state): State<AppState>, AuthClaims(_): AuthClaims) -> Result<Json<WebPushKey>, ApiError> {
+    state.push.web_public_key().map(|public_key| Json(WebPushKey { public_key })).ok_or((StatusCode::NOT_FOUND, "web push is not set up"))
+}
+
+/// `POST /api/devices/web-push`: stores this browser's push subscription for the needs-you,
+/// approval and plan-finished pushes. One row per endpoint: subscribing again refreshes it, and
+/// an endpoint someone else subscribed with is the caller's now (one browser, one owner).
+pub async fn subscribe_web_push(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Json(body): Json<WebPushSubscribe>) -> Result<Json<Registered>, ApiError> {
+    let subscription = crate::push::WebSubscription { endpoint: body.endpoint.trim().to_string(), p256dh: body.keys.p256dh.trim().to_string(), auth: body.keys.auth.trim().to_string() };
+    if !crate::push::is_valid_web_subscription(&subscription) || subscription.endpoint.chars().count() > MAX_ENDPOINT_CHARS || subscription.p256dh.chars().count() > MAX_WEB_KEY_CHARS || subscription.auth.chars().count() > MAX_WEB_KEY_CHARS {
+        return Err((StatusCode::BAD_REQUEST, "the subscription needs an https endpoint and its p256dh and auth keys"));
+    }
+    let id: Uuid = sqlx::query_scalar(
+        "INSERT INTO web_push_subscriptions (user_id, endpoint, p256dh, auth) VALUES ($1, $2, $3, $4) \
+         ON CONFLICT (endpoint) DO UPDATE SET user_id = EXCLUDED.user_id, p256dh = EXCLUDED.p256dh, auth = EXCLUDED.auth, updated_at = now() \
+         RETURNING id",
+    )
+    .bind(claims.sub)
+    .bind(&subscription.endpoint)
+    .bind(&subscription.p256dh)
+    .bind(&subscription.auth)
+    .fetch_one(&state.pool)
+    .await
+    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to store the subscription"))?;
+    Ok(Json(Registered { id }))
+}

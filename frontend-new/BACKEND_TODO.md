@@ -291,21 +291,18 @@ Found while building Settings › Workspace (2026-11-13).
 
 Found while building Projects (2026-11-14).
 
-### Projects: a card's progress, a build's allowance, moving with approval
+### Projects: a card's progress, a build's allowance, moving with approval — done
 - **Needed by:** *Flow / Projects — Act from the card* (syolc) and *Card menu* (M9O0iU): "3 of 6" and "writing routes/menu/+page.svelte" on a building card, the Deploy dialog's "Uses · 1 build · 26 of 30 left in Oct", Stop on a deploying card, the failed card's "build error in src/lib/pdf.ts · #5 still live", and "Waiting on the owner" after Move.
 - **Why:** the list says a project is building, not how far along it is; publishes can't be cancelled; and a move happens at once, with the target workspace's owner taking the project.
-- **What exists today:** `GET /api/projects` (status, counts, `deploy_url`), `GET /api/sessions` (`agent_active`), `GET /api/projects/:id/deploy` (publishes, per project), `POST /api/projects/:id/transfer` (immediate).
-- **Proposed contract:** on each summary `build: { step, steps, doing } | null` and `last_deploy: { status, error, at, number }`; `DELETE /api/projects/:id/deploy/publishes/:id` (cancel a running one); the plan's build allowance in `GET /api/me/plan`; optionally `POST /api/projects/:id/transfer` creating a request the target's owner approves.
-- **Until then:** building cards say Koda is at it without a step, Deploy's dialog leaves Uses out, a deploying card has no Stop, failed deploys show in the toast and the workspace only, and Move moves at once (its note says whose it becomes).
+- **Built:** project summaries carry `build: { step, steps, doing } | null` (only while a turn is running in the project's chat) and `last_deploy: { status, error, at, number }`; `DELETE /api/projects/:id/deploy/publishes/:id` marks a running publish `cancelled` (409 once finished; Shipyard can't abort, so a cancelled publish may still finish, and the row stays cancelled); `GET /api/me/plan` gives the build allowance (`plans.max_builds_month`, null = unlimited); `POST /api/projects/:id/transfer` to a workspace the caller doesn't own answers 202 with a pending request its owner approves or declines (migrations 0163–0164).
+- **Still open:** the old `frontend/` still treats a pending move as done.
 
 Found while building the Projects page's card actions (2026-11-15).
 
-### Import from GitHub: a person's repos, private ones, and what Koda found
+### Import from GitHub: a person's repos, private ones, and what Koda found — done
 - **Needed by:** *Flow / Projects — Import from GitHub* (qJxWu): Connect GitHub (once), Pick a repo (the person's repos newest first, ones Nomi can't see with Grant access), Koda reads it, What Koda found (app, tests, data, secrets it couldn't find, what it will set up), Set up & deploy.
 - **Why:** people with an app already on GitHub can only bring it in as a public repo by name, and nothing says what Koda made of it before it's built.
-- **What exists today:** `POST /api/projects/:id/import/github` `{ repo, ref? }` downloads a *public* repo's zipball into an existing project (no token used); `GET /api/connections/github` says whether GitHub is connected; nothing lists repos.
-- **Proposed contract:** `GET /api/connections/github/repos?q=` → `{ repos: [{ full_name, private, language, updated_at, accessible }] }` with the connected token; `import/github` using the person's token for private repos; an import review `GET /api/projects/:id/import/review` → `{ stack, build, tests, database, secrets_missing: [name], plan: [step] }`.
-- **Until then:** Projects has no import; a project's code comes from Koda (or a zip through the old app).
+- **Built:** `GET /api/connections/github/repos?q=` (newest first, `accessible`; `q` filters the first 500 repos); `import/github` uses the connected token for private repos (public ones still work without); `GET /api/projects/:id/import/review` → `{ stack, build, tests, database, secrets_missing, plan }`, read from the imported files (the plan's steps are English only).
 
 Found while building the Projects page's card actions (2026-11-15).
 
@@ -341,121 +338,114 @@ Found while building the Landing page flow (2026-11-14).
 
 Found while building Invite & build together (2026-11-14).
 
-### When an ask started running, and what a change to publish holds
+### When an ask started running, and what a change to publish holds — done
 - **Needed by:** *Flow / Build — Invite & build together* (TnwQT) step 9 ("Mario · running · 00:21") and step 10 (the event "Sari's ask built in the preview · 2 files · tests pass" and the request's "Makanan section · 2 files · built and tested in the preview").
 - **Why:** the line can't say how long the running ask has run, and a request to publish can't say which change it is, which files it touches or whether its tests passed.
-- **What exists today:** `GET /api/sessions/:id/queue` gives each ask's `created_at` (when it was asked), not when it started; `GET /api/projects/:id/deploy/requests` gives the note, who asked and when; the deploy overview counts the files waiting to go live (`unpublished_changes`) for the whole project, not per request; nothing records a turn's tests.
-- **Proposed contract:** `started_at` on a running ask in the queue; on a request, the ask (turn job or message) it follows and the files changed since the live deploy; and a chat event when Koda finishes an ask in the preview (`{ kind: "AskBuilt", job_id, files, tests: "passed" | "failed" | null }`).
-- **Until then:** a running ask says "running" without its time; a request's meta is its note, the project's waiting files (where publishing is set up) and when it was asked; the "built in the preview" event isn't drawn.
+- **Built:** a running ask in `GET /api/sessions/:id/queue` has `started_at`; the chat event `AskBuilt { job_id, files, tests }` when a coding ask finishes with files changed (`tests` from the turn's test run, else null); a publish request carries `ask: { job_id, text, asked_at }` and `files` changed since the live deploy, snapshotted when asked (migration 0165).
+- **Still open:** no `AskBuilt` for a turn resumed after an approval; deleted files aren't counted.
 
 Found while building Invite & build together, steps 9–10 (2026-11-15).
 
-### Who last answered in each chat
+### Who last answered in each chat — done
 - **Needed by:** *Flow / Mobile Chat — Start & answer* (FvlVs) step 1, Chats on a phone: each row's avatar is the crew member who last answered, in their tint, its line starts with their name ("Dana: Rp 2,1 jt on food…"), and the filters above the list (All, Dana, Kala, Tara) narrow the list to the chats each one answered in.
-- **What exists today:** `GET /api/sessions` gives each chat's `last_message` as `{ content, created_at }`, without who wrote it.
-- **Proposed contract:** `last_message.agent_type` (the agent whose reply it is; null for the person's own message), and `agents: string[]` on each chat (the crew who have answered in it, for the filters).
-- **Until then:** a phone row wears the chat glyph, its line has no name, and there are no crew filters.
+- **Built:** `GET /api/sessions` rows carry `last_message.agent_type` (null for the person's own) and `agents: string[]` in order of first reply.
 
 Found while building the phone's Chats (2026-11-16).
 
 
-### Chat files: what the composer and the reply still need (UXP-001, audit-chat-files)
+### Chat files: what the composer and the reply still need (UXP-001, audit-chat-files) — done
 Checked against `backend/crates/nomi-server/src/app.rs`, `routes/attachments.rs`, `routes/shares.rs` and
 `nomi-agent-core/src/views.rs` on 16 Nov 2026. The UX contract is
 `docs/ux/work/audit-chat-files/40-ux-contract.md`; each part below is left out of the UI until it lands.
 
-- **Upload failure codes (G3).**
+- **Upload failure codes (G3) — done.**
   - **Needed by:** *Flow / Chat — Attachments, voice & limits*, step 8 (D8 · M9).
   - **What exists today:** `POST /api/attachments` answers plain strings (`413 file is too big`, `507 storage is full`, `400 upload was interrupted`, `415 programs can't be attached`). The chip says why from the status.
   - **Proposed contract:** errors as `{ "error": "too_large" | "storage_full" | "unsupported_type" | "interrupted" | "server_error", "message": "…" }`, with `max_bytes` on `too_large`.
-- **Resumable uploads (G3, M1).**
+  - **Built:** errors are `{ error, message }` with `too_large` (+ `max_bytes`), `storage_full`, `unsupported_type` (+ `extension`), `interrupted`, `server_error`; an empty file is `empty_file`.
+- **Resumable uploads (G3, M1) — done.**
   - **Needed by:** step 9 (D9 · M11), "Resuming · 41%" and "picks up at 41%".
   - **What exists today:** one streamed request per file; a retry starts again.
   - **Proposed contract:** `POST /api/attachments/uploads` → `{ upload_id, offset: 0 }`; `PATCH /api/attachments/uploads/:upload_id` with `Content-Range: bytes <from>-<to>/<total>` → `{ offset }`; `HEAD` the same to read the offset after a drop; the last chunk answers the usual `AttachmentResponse`.
   - **Until then:** the restart copy ("Uploading again · 0% · 0 of 5 MB", "starts the upload again").
-- **The accepted types (G4).**
+  - **Built:** as proposed (`POST /api/attachments/uploads`, `PATCH` with `Content-Range`, `HEAD`; a wrong offset is 409 `offset_mismatch` with the current one; unfinished uploads expire after 24 h) (migration 0163). Chunks wait on the server's disk, so several backend servers need a shared temp folder or sticky routing.
+- **The accepted types (G4) — done.**
   - **Needed by:** step 10 (D10 · M12) and Errors D6 · M5: the type check before any upload, and the helper "Maya reads PDF, images, sheets and zip."
   - **What exists today:** `GET /api/attachments/limits` gives sizes and counts; the server takes any file but programs (415).
   - **Proposed contract:** `GET /api/attachments/limits` adds `accepted: { kinds: ["pdf","image","spreadsheet","archive",…], extensions: [".pdf",".jpg",…], mimes: [...] }`, and a refused upload answers `415 { "error": "unsupported_type", "extension": ".dmg" }`.
   - **Until then:** a file is refused only when the server refuses it (the Rejected chip, after its upload); no helper line.
-- **A pre-send estimate (G7, and `Read as images`).**
+  - **Built:** `GET /api/attachments/limits` adds `accepted: { kinds, extensions, mimes }` (the composer's check; the server still refuses only programs), and a refused upload answers `415 { error: "unsupported_type", extension }`.
+- **A pre-send estimate (G7, and `Read as images`) — done.**
   - **Needed by:** steps 15–16 (D15–D16 · M17–M18), Errors D18 · M20.
   - **Proposed contract:** `POST /api/attachments/estimate` `{ attachment_ids: [...], model_key }` → `{ files: [{ id, pages, tokens }], tokens, payer: "credits" | "byok", provider_label, cost_idr?, plan: { used_pct, after_pct }? , threshold_tokens }`.
   - **Until then:** no estimate row; nothing shown.
-- **A read result per file (G9).**
+  - **Built:** `POST /api/attachments/estimate` as proposed (a picture or scanned page counts 1,600 tokens; `threshold_tokens` is half the model's context, else 50,000).
+  - **Still open:** it doesn't check that the model is allowed on the person's plan.
+- **A read result per file (G9) — done.**
   - **Needed by:** steps 17–20 (D17–D20 · M19–M22), Errors D7 · M6.
   - **What exists today:** `status` (`pending | ready | failed`) and `details.scanned`; a scanned PDF is read by the files model, so "couldn't read" would be false.
   - **Proposed contract:** on `GET /api/attachments/:id` and in the reply's content blocks: `read: { result: "ok" | "locked" | "no_text" | "damaged" | "partial", read?: number, total?: number, skipped?: [{ name, reason }] }`, and `replaces: <attachment id>` on an upload sent as a replacement.
-- **Files Maya makes (G11).**
+  - **Built:** `read` on `GET /api/attachments/:id` (null while it's being read) and `replaces`, set by sending `X-Replaces: <attachment id>` with the upload (migration 0162). Not in the reply's content blocks.
+- **Files Maya makes (G11) — done.**
   - **Needed by:** steps 21–26 (D21–D26 · M23–M28).
   - **Proposed contract:** reply events `file_generating { file_id, name, step, started_at }`, `file_ready { file_id, name, mime, size, rows?, summary }`, `file_failed { file_id, code: "write_failed" | "stopped" }`; `GET /api/sessions/:id/files/:file_id/content` (signed or auth'd download), `…/preview?rows=20`, `DELETE …/:file_id` (keeps `deleted_at`, and whether its sources still exist), `POST …/:file_id/remake`; saving goes through `PUT /api/projects/:id/files/*path`, whose 402 should carry `{ "error": "storage_full" }`.
-- **Citations to a file's page and rows (G12).**
+  - **Built:** Maya's `make_file` tool (CSV, XLSX); the events `file_generating`, `file_ready`, `file_failed`; `GET …/files/:file_id/content` (signed in, not signed), `…/preview?rows=`, `DELETE` (keeps the row with `deleted_at`, then 410), `POST …/remake` (202, a new file with `replaces`); the project files' 402 is `{ error: "storage_full", message }` (migration 0166).
+  - **Still open:** `file_failed` with `stopped` is never sent; only the file's owner can open it.
+- **Citations to a file's page and rows (G12) — done.**
   - **Needed by:** step 27 (D27 · M29): `[3]` opens the file at the cited page with the rows highlighted.
   - **What exists today:** the `sources` view numbers citations `{ title, url?, detail?, kind: web | file }`; `GET /api/attachments/:id/content` serves the whole file.
   - **Proposed contract:** a file citation adds `{ file_id, pages: [3, 8], spans: [{ page, rects: [[x,y,w,h]…], label, total_idr? }] }`; `GET /api/attachments/:id/pages/:n` → a rendered page image (so the viewer can draw highlights over it).
   - **Until then:** a sent PDF opens at page 1 in the browser's own reader, with no cite bar or highlights.
-- **Files in a shared link (G16).**
+  - **Built:** file citations carry `file_id`, `pages` and `spans` (Maya fills them when she knows the page; `rects` stay empty); `GET /api/attachments/:id/pages/:n` (404 past the last page).
+  - **Still open:** no PDF renderer: page 1 is the stored preview and other pages answer `501 { error: "page_render_unavailable" }`.
+- **Files in a shared link (G16) — done.**
   - **Needed by:** *Flow / Chat — Share & delete*, steps 6–8 (Share D6–D8 · M6–M8); *Shared link*, steps 6–7 (Link D6–D7).
   - **What exists today:** shares keep `mask`, `anyone` and `expires_in_days`; `GET /api/shared/:token` returns the messages, whose reference tags name the files. No file can be opened from a link.
   - **Proposed contract:** `POST`/`PUT /api/sessions/:id/shares` take `files_open: bool` (default false), refused with `400 { "error": "mask_and_files_open" }` when `mask` is also true; `GET /api/shared/:token` adds `files_open` and `files: [{ message_index, name, kind, size, pages?, made_by_crew: bool, url? }]`, with signed `url`s only when `files_open`.
   - **Until then:** the dialog has no files row (its switch would do nothing); the shared page names each file with a lock, "private".
-- **"Sent without" kept on the message (G6).**
+  - **Built:** as proposed (migration 0160), files Maya made included; a file's `url` is the link's own `/api/shared/:token/files/:id` (nothing signs file URLs), served only while `files_open`. A `PUT` without `files_open` sets it off.
+- **"Sent without" kept on the message (G6) — done.**
   - **Needed by:** step 14 (D14 · M16): the bubble's note `Sent without struk-belanja-nov.jpg · deepseek-v3 can't see images`.
   - **Proposed contract:** `POST /api/sessions/:id/messages` takes `left_out: [{ name, reason: "model_cannot_see", model_label }]`, kept on the message and passed to the crew (so Maya can say she didn't get the photo).
   - **Until then:** the note shows on this visit only.
+  - **Built:** `left_out` is kept on the message (migration 0157), returned with it, and each file is named to the crew in the message's history.
 
-### Questions: a recommended answer, and a helper line
+### Questions: a recommended answer, and a helper line — done
 - **Needed by:** *Flow / Mobile Chat — Clarify → plan* (GCvfD) steps 1 and 3: an option tagged RECOMMENDED and picked to start; Skip takes it as a DEFAULT ("You skipped the weekend, so I picked 1–2 Nov."); a line under the question ("You and Sari, from Jakarta.").
-- **What exists today:** the `questions` block (`nomi_agent_core::content_block::Questions`) has `intro` and `questions[{ question, options[{ label, detail }], multiple }]`.
-- **Proposed contract:** `options[].recommended: bool` and `questions[].helper: string | null`.
-- **Until then:** nothing is picked to start and Next waits for a pick; Skip leaves a question "Skipped"; no helper line. The phone's sheet already draws both when they come.
+- **Built:** `options[].recommended` and `questions[].helper` on the `questions` block, which the crew can now set.
 
-### A plan's steps: who does each, how it's going, how long it'll take
+### A plan's steps: who does each, how it's going, how long it'll take — done
 - **Needed by:** *Flow / Mobile Chat — Plan → approve → act* (G1tK6L) steps 1, 2 and 6: each step's owner, a per-step line ("running · 00:12", "will ask you first"), the foot "~4 min · Maya, Dana, Kala", and "Finished in 3m 40s".
-- **What exists today:** `GET /api/sessions/:id/agent-plans/:agent_session_id` gives each version's markdown checklist (`- [ ]` / `- [x]`) and `state`; a step has no owner, status, times or estimate.
-- **Proposed contract:** `steps[{ text, owner_agent_type, status: "waiting"|"running"|"done"|"failed", status_detail, started_at, finished_at }]` on each version, and `estimate_seconds` on the plan.
-- **Until then:** every step wears the plan's own agent; no per-step line, estimate or finished time.
+- **Built:** each version has `steps[{ text, owner_agent_type, status, status_detail, started_at, finished_at }]` and the plan `estimate_seconds`.
+- **Still open:** steps are read from the checklist, so the owner is the plan's own agent, times are null, and the estimate is a minute per open step.
 
-### Run a proposed plan, or only research it
+### Run a proposed plan, or only research it — done
 - **Needed by:** *Flow / Mobile Chat — Clarify → plan* step 7 ("Run this plan?": Run it, ask before anything leaves Nomi / Research only / Keep planning).
-- **What exists today:** a plan runs from what the person says next.
-- **Proposed contract:** `POST /api/sessions/:id/agent-plans/:agent_session_id/run { mode: "run" | "research" }` → 202.
-- **Until then:** the chosen way goes as the person's message (decision D1).
+- **Built:** `POST /api/sessions/:id/agent-plans/:agent_session_id/run { mode: "run" | "research" }` → 202 (400 for another mode).
 
-### An approval sent with the person's edits, and a link to what was sent
+### An approval sent with the person's edits, and a link to what was sent — done
 - **Needed by:** *Flow / Mobile Chat — Approvals & background* (xvntx) steps 1–2 (Edit the draft, Sent with your edits) and *Plan → approve → act* step 6 (View in Gmail).
-- **What exists today:** `PUT /api/sessions/:id/messages/:mid/approval { decision, remember }` → 202 / 409; the tool runs on the input as it was proposed, and nothing links to the sent message.
-- **Proposed contract:** `{ decision: "approve", input: { …edited fields } }`, and `result_url` on the approval block once the tool ran.
-- **Until then:** Edit and View in Gmail are left out.
+- **Built:** `{ decision: "approve", input }` runs the tool on the edited input (checked against the tool's schema, 400 otherwise); `result_url` on the approval block once the tool returns a link.
 
-### Undo a deny, and discard after a stop
+### Undo a deny, and discard after a stop — done
 - **Needed by:** *Flow / Mobile Chat — Approvals & background* step 3 (Undo on "Not sent") and step 6 (Discard on the Supervisor's report).
-- **What exists today:** a deny is final; a `stopped` block can only be resumed (by a message).
-- **Proposed contract:** `POST …/messages/:mid/approval/undo` within ~10 s of a deny (back to pending); `POST /api/sessions/:id/stopped/:message_id/discard` dropping the stopped tasks' partial work.
-- **Until then:** neither is offered.
+- **Built:** `POST …/messages/:mid/approval/undo` within 10 s of a deny (409 after; the crew carries on only once the window ends); `POST /api/sessions/:id/stopped/:message_id/discard` drops the stopped tasks' partial output and marks the block `discarded` (a second call does nothing; files already written aren't reverted) (migration 0158).
 
-### "Don't ask again" scoped to a recipient
+### "Don't ask again" scoped to a recipient — done
 - **Needed by:** *Flow / Mobile Chat — Plan → approve → act* step 5 ("Don't ask again for Bu Sri").
-- **What exists today:** `remember: true` allows the whole tool (and path) from then on, so any `gmail.send` to anyone.
-- **Proposed contract:** `remember: { scope: "recipient", value: "bu.sri@example.com" }` (or the tool's own rule, said back so the copy can name it).
-- **Until then:** the switch is left out and `remember` is always false (decision D3).
+- **Built:** `remember: { scope: "recipient", value }` allows that tool for that recipient only; `remember: true` still allows the whole tool.
 
-### A failed turn's status, provider and the provider's words; a content-filter kind
+### A failed turn's status, provider and the provider's words; a content-filter kind — done
 - **Needed by:** *Flow / Mobile Chat — Errors & recovery* (AyrHG): the card's code badge (402, 429…), "DEEPSEEK SAID · Insufficient Balance", and scenario 8.5 (Blocked by provider, with Rephrase).
-- **What exists today:** a `run_failed` block (`retry`) under one plain sentence; the kind is read from the sentence's wording.
-- **Proposed contract:** `run_failed { retry, kind, status, provider, provider_message, model }`, with `kind: "content_filter"` among them.
-- **Until then:** the phone's error card has no code and no quote; a filtered reply reads "Couldn't reply" with Retry.
+- **Built:** `run_failed { retry, failure_kind, status, provider, provider_message, model }` (`kind` is the block's own tag, so the failure's is `failure_kind`; values include `content_filter`).
+- **Still open:** `model` is always null: the turn doesn't pass it to the failure yet.
 
-### Summarise older messages and carry on
+### Summarise older messages and carry on — done
 - **Needed by:** *Flow / Mobile Chat — Errors & recovery* scenario 3 (Chat too long → Summarise & continue, Summarised).
-- **What exists today:** nothing summarises a chat; a turn past the model's context fails with the too-long sentence.
-- **Proposed contract:** `POST /api/sessions/:id/summarize` → 202, then a message carrying the summary and the turn retried.
-- **Until then:** "Start a new chat" and "Use a {n}K model" only.
+- **Built:** `POST /api/sessions/:id/summarize` → 202 (409 `already_summarizing` or `nothing_to_summarise`): a `summary` message replaces all but the newest 6 messages for the crew (they stay in the chat), then the failed turn is retried; a failure shows as `run_failed` (migration 0159).
 
-### Web Push for a phone's browser
+### Web Push for a phone's browser — done
 - **Needed by:** *Flow / Mobile Chat — Approvals & background* step 5 (the lock screen: "Tara needs your OK"), and plans finishing while the person is away.
-- **What exists today:** push goes to the native apps only (FCM / APNs device tokens).
-- **Proposed contract:** `POST /api/devices/web-push { endpoint, keys: { p256dh, auth } }` (VAPID), and the same needs-you, approval and plan-finished pushes sent to it.
-- **Until then:** the note says "You can leave. {Agent}'s request will wait here and on Home." and nothing claims a notification (decision D2).
+- **Built:** `GET /api/devices/web-push/key` (the VAPID public key; 404 when push is off) and `POST /api/devices/web-push { endpoint, keys }`; needs-you, approval and plan-finished pushes go to it too (migration 0161; keys in `.env.example`).
 
 Found while building the phone's chat flows (2026-11-18).

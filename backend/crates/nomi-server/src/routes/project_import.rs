@@ -1,6 +1,7 @@
-//! Bringing existing code into a project: a zip archive the person uploads, or a public GitHub
-//! repository. The files land in the project as if Koda had written them, its stack is read
-//! from package.json, and the open project page picks them up.
+//! Bringing existing code into a project: a zip archive the person uploads, or a GitHub
+//! repository (private ones with the person's connected GitHub). The files land in the project
+//! as if Koda had written them, its stack is read from package.json, and the open project page
+//! picks them up.
 
 use std::io::Read;
 
@@ -286,7 +287,45 @@ pub fn parse_repo(input: &str) -> Option<(String, String)> {
     (valid(owner) && valid(repo) && !owner.starts_with('.') && !repo.starts_with('.')).then(|| (owner.to_string(), repo.to_string()))
 }
 
-/// `POST /api/projects/:id/import/github` `{ repo, ref? }`: downloads a public repository.
+/// How long GitHub gets to start sending a repository.
+const DOWNLOAD_TIMEOUT_SECS: u64 = 120;
+
+async fn download(http: &reqwest::Client, url: &str, token: Option<&str>) -> Result<reqwest::Response, ApiError> {
+    let mut request = http
+        .get(url)
+        .header("user-agent", "nomi")
+        .header("accept", "application/vnd.github+json")
+        .timeout(std::time::Duration::from_secs(DOWNLOAD_TIMEOUT_SECS));
+    if let Some(token) = token {
+        request = request.bearer_auth(token);
+    }
+    request.send().await.map_err(|_| (StatusCode::BAD_GATEWAY, "GitHub couldn't be reached".to_string()))
+}
+
+/// `GET /api/projects/:id/import/review`: what Koda found in the project's files after an import
+/// (stack, build, tests, data, the secrets its `.env.example` names that the project lacks, and
+/// the steps Nomi will take). Worked out from the files; anyone who can open the project reads it.
+pub async fn review(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(project_id): Path<Uuid>) -> Result<Json<crate::import_review::ImportReview>, ApiError> {
+    crate::routes::deploy::project_role(&state.pool, project_id, claims.sub).await?;
+    let paths: Vec<String> = sqlx::query_scalar("SELECT path FROM project_files WHERE project_id = $1 ORDER BY path")
+        .bind(project_id)
+        .fetch_all(&state.pool)
+        .await
+        .map_err(internal("failed to read the project's files"))?;
+    let mut contents = Vec::new();
+    for name in crate::import_review::KEY_FILES {
+        if paths.iter().any(|p| p == name) {
+            if let Some(bytes) = state.project_storage.get_bytes(&nomi_agent_coding::project_file_key(project_id, name)).await.map_err(internal("failed to read the project's files"))? {
+                contents.push((name.to_string(), bytes));
+            }
+        }
+    }
+    let secrets = crate::routes::project_secrets::names(&state.pool, project_id).await?;
+    Ok(Json(crate::import_review::review(&paths, &contents, &secrets)))
+}
+
+/// `POST /api/projects/:id/import/github` `{ repo, ref? }`: downloads a repository: with the
+/// person's connected GitHub when they have one (private repositories too), else a public one.
 pub async fn import_github(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
@@ -299,23 +338,22 @@ pub async fn import_github(
     if git_ref.is_some_and(|r| !r.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | '/'))) {
         return Err((StatusCode::BAD_REQUEST, "that branch name isn't valid".to_string()));
     }
-    let base = std::env::var("GITHUB_API_URL").unwrap_or_else(|_| "https://api.github.com".to_string());
     let url = match git_ref {
-        Some(r) => format!("{base}/repos/{owner}/{repo}/zipball/{r}"),
-        None => format!("{base}/repos/{owner}/{repo}/zipball"),
+        Some(r) => format!("{}/repos/{owner}/{repo}/zipball/{r}", crate::github::api_base()),
+        None => format!("{}/repos/{owner}/{repo}/zipball", crate::github::api_base()),
     };
-    let response = state
-        .http_client
-        .get(url)
-        .header("user-agent", "nomi")
-        .header("accept", "application/vnd.github+json")
-        .timeout(std::time::Duration::from_secs(120))
-        .send()
-        .await
-        .map_err(|_| (StatusCode::BAD_GATEWAY, "GitHub couldn't be reached".to_string()))?;
+    // The person's GitHub opens private repositories; a public one comes in without it, so a
+    // token GitHub has stopped accepting is set aside rather than failing the import.
+    let token = crate::routes::github::usable_token(&state, claims.sub).await?;
+    let mut response = download(&state.http_client, &url, token.as_deref()).await?;
+    if token.is_some() && response.status().as_u16() == 401 {
+        crate::routes::github::mark_expired(&state.pool, claims.sub).await?;
+        response = download(&state.http_client, &url, None).await?;
+    }
     match response.status().as_u16() {
         200 => {}
-        404 => return Err((StatusCode::NOT_FOUND, "that repository wasn't found, or it's private".to_string())),
+        404 if token.is_some() => return Err((StatusCode::NOT_FOUND, "that repository wasn't found, or the connected GitHub can't see it".to_string())),
+        404 => return Err((StatusCode::NOT_FOUND, "that repository wasn't found, or it's private; connect GitHub to import a private one".to_string())),
         403 | 429 => return Err((StatusCode::TOO_MANY_REQUESTS, "GitHub is limiting requests; try again in a few minutes".to_string())),
         _ => return Err((StatusCode::BAD_GATEWAY, "GitHub couldn't send the repository".to_string())),
     }
