@@ -166,9 +166,10 @@ mod tests {
             .await
             .unwrap();
         let session_id: Uuid = sqlx::query_scalar(
-            "INSERT INTO sessions (org_id, channel, chat_id) VALUES ($1, 'telegram', 'chat-1') RETURNING id",
+            "INSERT INTO sessions (org_id, channel, chat_id) VALUES ($1, 'telegram', $2) RETURNING id",
         )
         .bind(org_id)
+        .bind(format!("chat-{}", Uuid::new_v4()))
         .fetch_one(pool)
         .await
         .unwrap();
@@ -206,10 +207,10 @@ mod tests {
         let message_id = seed_message(&pool).await;
 
         let mut tx = pool.begin().await.unwrap();
-        enqueue(&mut tx, message_id, "deny", true).await.unwrap();
+        enqueue(&mut tx, message_id, "approve", true).await.unwrap();
         tx.commit().await.unwrap();
 
-        // First claim takes the only pending row.
+        // First claim takes the only pending row (an approve: a deny waits out its undo window).
         assert!(claim_next(&pool).await.unwrap().is_some());
         // Second claim finds nothing left pending.
         assert!(claim_next(&pool).await.unwrap().is_none());
