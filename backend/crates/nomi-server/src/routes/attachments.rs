@@ -368,22 +368,27 @@ fn content_disposition(name: &str, inline: bool) -> HeaderValue {
 /// `GET /api/attachments/:id/content`: the file itself, to its owner only.
 pub async fn get_content(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(id): Path<Uuid>, headers: HeaderMap) -> Result<Response, ApiError> {
     let file = find_own(&state, claims.sub, id).await?;
+    stored_file_response(&file.name, &file.mime, &file.storage_key, &headers).await
+}
+
+/// A stored file as a response, honouring a byte range. The caller has decided who may have it.
+pub(crate) async fn stored_file_response(name: &str, mime: &str, storage_key: &str, headers: &HeaderMap) -> Result<Response, ApiError> {
     let bytes = nomi_storage::blob::attachment_store()
-        .get_bytes(&file.storage_key)
+        .get_bytes(storage_key)
         .await
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to load file"))?
         .ok_or((StatusCode::NOT_FOUND, "file not found"))?;
 
-    let inline = shown_inline(&file.mime);
-    let content_type = if inline { file.mime.as_str() } else { "application/octet-stream" };
+    let inline = shown_inline(mime);
+    let content_type = if inline { mime } else { "application/octet-stream" };
     let mut response_headers = HeaderMap::new();
     response_headers.insert(header::CONTENT_TYPE, HeaderValue::from_str(content_type).unwrap_or(HeaderValue::from_static("application/octet-stream")));
-    response_headers.insert(header::CONTENT_DISPOSITION, content_disposition(&file.name, inline));
+    response_headers.insert(header::CONTENT_DISPOSITION, content_disposition(name, inline));
     response_headers.insert(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
     response_headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("private, max-age=3600"));
     response_headers.insert(header::ACCEPT_RANGES, HeaderValue::from_static("bytes"));
 
-    if let Some((start, end)) = byte_range(&headers, bytes.len()) {
+    if let Some((start, end)) = byte_range(headers, bytes.len()) {
         let range = HeaderValue::from_str(&format!("bytes {start}-{end}/{}", bytes.len())).expect("ascii");
         response_headers.insert(header::CONTENT_RANGE, range);
         let slice = bytes[start..=end].to_vec();
