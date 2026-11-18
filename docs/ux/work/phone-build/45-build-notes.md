@@ -1,91 +1,131 @@
 ---
 work: phone-build
-status: blocked (pen unreadable)
+status: built
 contract: 40-ux-contract.md (verified 17 Nov 2026)
+branch: feat/frontend-new-v2-phone-build
 ---
 
 # Build notes: phone-build
 
-## Status
-Blocked before step 2. On 18 Nov 2026 every Pencil MCP call (`read_skill`, `get_app_state`) answers
-that the pen.dev plan's usage limit for this billing period has been reached. The contract's frames
-can't be read (`Get`, `ctx.bounds`, `TakeScreenshot`), and AGENTS.md §0/§6 says nothing is built
-from the pen without reading it first. No UI code has been written on this branch yet. The plan
-below is ready to run as soon as the pen can be read again.
+## What was built
+Below 768, `/projects/:id` renders the phone's workspace. At 768 and up it renders the desktop as
+before. `phoneView` picks one layout, and only that one is in the DOM.
 
-## Build plan
+- **One state, two layouts.** `projects/[id]/workspace.svelte.ts` holds the `Workspace` class. It has
+  everything the desktop page script had: the deploy overview and its 3 s poll, `settled()` toasts,
+  `SandboxRuntime`, `ProjectLive` (presence, follow, `onDeployChange`), the queue and requests, and
+  every tool's state and action. The desktop page (`+page.svelte`) reads `ws.*`. Its markup didn't
+  change.
+- **The phone layout:** `projects/[id]/PhoneWorkspace.svelte`, plus its own logic in `projects/[id]/phone.ts`
+  (the publish pill per role, the failed publish's card, the publish that went live while the
+  workspace was open, and Code's tree as rows).
+- **Adapter:** `PublishRow.failure` (step, phase, message, tail) and the invite's `added`, `path` and
+  `expires_at`, passed through the `invite` action (G10).
+- **F1 on the desktop:** a viewer sees the publish state only (Up to date or Publishing), never
+  Publish or Retry.
+- **ChatView (minimal change):** in the workspace's pane at phone width it renders in phone mode
+  without its own NavBar. The code quote sits above `PhoneComposer` and is sent ahead of the message.
+- **Toasts:** on the phone workspace they show at the top through `PhoneToastRegion`. The layout's
+  `ToastRegion` is skipped there, so a toast never shows twice.
+- **New ds components** (outside the frozen twin folders). Each has a `ComponentDoc` and an example:
+  - `projects/`: `PhoneWorkspaceNav`, `PhoneAskBar`, `PhoneList`, `PhoneListRow`, `PhoneTile`,
+    `PhoneNote`, `PresenceStrip`, `PhoneFollowBar`, `PhoneCodeLines`, `PhoneTerminal`,
+    `PhoneBuildShareSheet`
+  - `overlays/`: `PhoneToastRegion`
+- **Twins used as they are:** `mobile/WorkspaceSwitch`, `NavBar`, `SheetRow`, `PhoneButton`,
+  `PhoneToast`, `ErrorCard`, `LiveCard`, `DnsRecord`, `AskQueue`, `ChangeReady`.
+- **Overlays and project sheets reused:** `BottomSheet`, `ActionSheet`, `SheetOption` and
+  `DeleteProjectSheet`.
 
-### 0. Shared state (no visual change on the desktop)
-- `src/lib/projects/workspace.svelte.ts`: a `Workspace` class built during the page's init with
-  `() => data`. It holds everything the desktop page script holds today: the deploy overview and
-  its 3 s poll + `settled()` toasts, `SandboxRuntime`, `ProjectLive` (presence, follow,
-  `onDeployChange`), the queue and the requests, publish / roll back, domain (rename, own domains),
-  monitor (30 s poll while open), database (read), settings (transfer, take down, delete), people,
-  environment, showcase, export + GitHub, code (tree, file, quote), the `?open=` handling.
-- `projects/[id]/+page.svelte` keeps the desktop markup and reads `ws.*`. It picks the layout with
-  `phoneView(page.data.phone)`: `<PhoneWorkspace {ws} />` or the desktop, never both.
-- Desktop regression guard: `page.svelte.test.ts`, `workspace.svelte.test.ts` and the existing
-  stub/real e2e (`workspace`, `together`, `asks`, `projects-cards`) stay green, unchanged.
-- F1: the desktop's publish snippet gives a `viewer` a status-only pill (test first).
+## How to reach each scenario (running app, a window under 768 or a phone)
+| Flow · step | How |
+|---|---|
+| S1·1 first run | Sign up on a phone: `(auth)/first-run`, unchanged |
+| S1·2 start (D2) | Projects › New: the built New project sheet |
+| S1·3–5 questions, plan, building | The project's chat on the Chat tab: the phone chat's own cards (the phone-chat-flows branch) |
+| S1·7 live card | A publish that goes live while the workspace is open shows `LiveCard` at the end of the thread |
+| S1·8 preview | The Preview tab: the sandbox preview, the live app or the static preview, with the Ask bar |
+| S1·9 share | ··· › Share (only once live). Live card › Share |
+| S1·10 export | ··· › Export, or Delete › Export a copy first. Push to GitHub opens its sheet |
+| S2·1–2 switch, changes waiting | Chat / Preview. The Preview tab counts waiting changes. Pill `Publish · n` |
+| S2·3 publish | Pill › the Publish sheet (`Publish n changes?`, `as deploy #n · replaces deploy #m`) |
+| G1 publishing | Pill `Publishing… m:ss` while a publish runs (3 s poll) |
+| S2·4 failed (G3, G8) | The newest production publish failed: pill `Failed · Retry`, the card at the end of the chat, Fix it, View log |
+| S2·6 published toast | The toast at the top: `Deploy #n is live` with Roll back |
+| S2·7 ··· | Project options. Rows follow the desktop's rules |
+| S2·8 deployments | ··· › Deployments. Roll back (admins) › action sheet |
+| S2·9–10 domain (G9) | ··· › Domain: records, Check records / Make … primary, Remove (action sheet), Change address, Add |
+| S2·11 monitor (D5) | ··· › Monitor: today, read again every 30 s while open |
+| S2·12 database (D4) | ··· › Database: read only. The live database once published |
+| S2·13–18 settings | ··· › Settings › People / Environment / Visibility / Transfer / Take down / Delete. Closing a sub-sheet returns to Settings |
+| S3 site | A static project: ··· has no Database row and says why. Share leads with the card and visibility. Monitor shows visits, form sends and sources |
+| S4·1–2 roll back | Deployments › Roll back › `Roll back to deploy #n?` › the toast `Rolled back · deploy #n is live` with Restore |
+| S5·1–2 code | ··· › Code: the tree, folders open in place, a file. Long-press a line or press Enter, then Shift+arrows (or tap a second line) › Ask Koda about lines a–b |
+| S5·3–4 terminal | ··· › Terminal (sandbox projects only). A failed start shows Ask Koda to fix |
+| S5·5 desktop preview | Preview › Desktop: 1440 wide, scaled to fit |
+| S6·2–3 invite (G10) | Settings › People › email › Invite › role › Send invite › `Invite sent · to … · n days` · Copy link |
+| S6·5–8 together | With a teammate here: the strip, then tap it for In this project, Follow, the follow bar and Stop |
+| S6·9 asks | Two asks waiting: `AskQueue` at the end of the thread |
+| S6·10 change ready | An admin sees `ChangeReady` with Decline under it. A member's pill is the Ask / Asked icon, and Asked opens the sheet with Take it back |
+| G15 deep links | `?open=settings`, `export`, `share`, `takedown`, `code&file=`. The notification's `/projects/:id/app` opens on Chat |
 
-### 1. Adapter
-- `PublishRow.failure?: { service?, deployment_id?, step?, phase?, message?, tail?: string[], runtime_logs?: string[] } | null`
-  (backend `routes/deploy.rs` already sends `pp.failure`).
-- `tools.invitePerson` returns `{ added, email, role, path, expires_at }` from the JSON body. The
-  `invite` action passes them through (G10). Unit tests in `page.server.test.ts`.
+## Tests
+- **Unit:** `projects/[id]/phone.test.ts`, 8 tests: the pill for admin, member and viewer; the failed
+  publish with and without a live deploy; went live; Code's tree. In `page.server.test.ts`: the
+  invite returns its link.
+- **Component:** `ds/projects/phoneBuild.svelte.test.ts`, 14 tests: nav geometry and every pill state,
+  Ask bar, list rows, tiles never showing 0 for "not measured", strip and follow bar, keyboard line
+  selection and wrapping at 390, terminal failure, share targets and visibility, and the phone toast
+  region.
+- **Real backend:** `e2e/backend/phone-build.e2e.ts`, 8 tests:
+  - only the phone layout at 390, the preview at full width, Desktop at 1440, the Ask bar focuses
+    the composer, no sideways scroll, Back
+  - the rows on ···, Deployments not set up, Export, GitHub
+  - Code's tree, a file, and asking about lines picked by keyboard
+  - People's invite with Copy link checked on the clipboard, Environment's reason, Transfer's empty
+    state, Delete
+  - a seeded failed first publish: the card, View log, Fix it
+  - live with a later failure: the nav says the live deploy, the card says what's still live, and
+    the Share targets
+  - `?open=` deep links
+  - two phones: the strip, In this project, Follow into Code, Stop
+- **Publishing:** Shipyard isn't in e2e, so publishing itself (the pill states and the publish and
+  roll back toasts) is covered by the unit and component tests.
 
-### 2. Phone layout (new, outside the frozen twin folders)
-Frozen and used as they are: `ds/mobile/*` (WorkspaceSwitch, AskBar, BuildProgress, LiveCard,
-DnsRecord, TeammateBubble, AskQueue, ChangeReady, SheetHeader, SheetRow, PhoneToast, PhoneButton,
-ErrorCard). `mobile/ProjectNav` only knows `idle | ready`, and its props can't grow (twin). So G1
-gets a new presentational component that draws the same AJXze nav with the full pill machine:
-- `ds/projects/PhoneWorkspaceNav.svelte`: back, name (mono) + `live · deploy #N`, pill
-  `idle | ready(n) | publishing(elapsed) | failed | ask | asked | status-only`, ···.
-- `ds/projects/PublishFailedCard.svelte` (ALFZb): Koda's line, `Build failed · exit {code}`,
-  message (mono), `deploy #{n} · {step} step · {elapsed}`, Fix it, View log. G3 body when nothing is live.
-- `ds/projects/PresenceStrip.svelte` (Qw22t) and `ds/projects/PhoneFollowBar.svelte` (evgdu).
-- `ds/projects/PhoneCodeLines.svelte` (G87UAZ): numbered, wrapped lines; long-press / Enter +
-  Shift+arrows to select; the floating `Ask Koda about lines {a}–{b}`.
-- `ds/projects/PushedScreen.svelte`: back + title + subtitle for Code, file, Terminal, log.
-- `ds/projects/InviteSentBanner.svelte` (E8mu9): `Invite sent · to {email} · {days} days · Copy link`.
-- Each gets a `ComponentDoc` in `src/lib/docs/entries/projects.ts` and an example in
-  `src/lib/docs/examples/<slug>/01-*.svelte`.
-- Route-level composition: `src/lib/projects/PhoneWorkspace.svelte` (not ds; reads `ws`):
-  nav, switch, presence strip, Chat tab (`ChatView` in phone mode, `after` = ChangeReady /
-  AskQueue / Live and Failed cards), Preview tab (frame, sandbox phases, Phone/Desktop segmented,
-  Ask bar), one `BottomSheet` at a time (`sheet` kind; sheet-from-sheet replaces, back returns),
-  `ActionSheet`s for publish / roll back / take down / remove domain / remove person / remove
-  variable, pushed screens for Code, file, Terminal, log.
-- ChatView: one minimal change so the workspace's pane renders in phone mode below 768 without
-  the chat's own NavBar (`phone = phoneWidth.current && (!pane || …)`), and the quote sits above
-  `PhoneComposer`. Kept as small as possible for the phone-chat-flows and chat-files branches.
-
-### 3. Scenarios → parts → tests
-| Flow | Steps built | Parts | Tests |
-|---|---|---|---|
-| S1 zM0xh/cyXXE | 1 (first run at 390), 3–5 via the phone chat, 7 LiveCard from `project_event`, 8 Preview, 9 Share sheet (wa.me / t.me / mailto / `navigator.share`), 10 Export sheet + GitHub sheet | LiveCard, BuildProgress (eta empty, G4), Share/Export sheets | component: share targets, More hidden without `navigator.share`; e2e: Export from ···, Share hidden before live |
-| S2 tJh5G/zdXZh | 1–18 + Publishing (G1) | nav pill, publish ActionSheet/sheet, failed card (G3/G8), toast with Roll back, ··· sheet rows by the desktop's rules (AC6), Deployments, Domain + G9, Monitor fixed today (D5), Database read-only (D4), Settings (no Name, D3), People, Environment, Transfer (ProjectMoveSheet), Take down, Delete (DeleteProjectSheet) | unit: pill state per role; component: every sheet's empty / loading / error copy (AC7); real e2e: ··· rows, Deployments "not set up", People invite + Copy link, Environment add/remove, Transfer, Delete, seeded failed publish → card + View log |
-| S3 yY8qf/oLJ3q | 3 (no Database row + note), 4 Share with link card + visibility, 5 site Monitor | same sheets, `siteStats` / `sourceRows` | real e2e: static site → no Database row |
-| S4 Wv14s/yYAZV | 1 roll back ActionSheet (k-known and unknown bodies), 2 toast with Restore; 3–4 left out | ActionSheet, PhoneToast | component + stub e2e (Shipyard is stubbed) |
-| S5 r3IvZk/f48QD7 | 1 Code tree, 2 file + select lines → quote, 3–4 Terminal + failed start, 5 Phone/Desktop | PushedScreen, PhoneCodeLines, Terminal | component: keyboard selection; real e2e: import a file, ask about lines, quote above the phone composer |
-| S6 L8dgcS/ZTTgV | 1–3 invite + banner (G10), 5 strip, 6 TeammateBubble, 7 who's-here sheet, 8 following, 9 AskQueue, 10 ChangeReady + Decline; member/viewer (G13) | PresenceStrip, PhoneFollowBar, InviteSentBanner | real e2e: two contexts at 390 (strip, follow, stop), asks in line, member's Ask / Asked sheet |
-
-Deep links (G15, AC15): `?open=settings|export|share|takedown|code&file=` open the phone sheet or
-screen, then the URL is tidied; `/projects/:id/app` lands on Chat.
-
-### 4. Left out (to write into BACKEND_TODO.md and AGENTS.md §9 when built)
-The contract's "left out" list: no ETA (G4), no plan cost line (G5), no commit, no RECENTLY
-CHANGED, no line tag, no running time on asks, no PRE-ORDERS, no QR/embed, no build allowance,
-no schema-change step, no hand-over, typing/joined note (G16), web push (G11). BACKEND_TODO
-entries to add or extend: the line a teammate is on, cancelling a publish, web push.
-
-## How to reach each scenario
-Not yet: nothing is built.
+## Left out, and why
+- **The project's `project_event` chat block:** the live and failed cards come from the deploy
+  overview instead. The failed card shows for the newest production publish that failed. The live
+  card shows for a publish that went live while the workspace was open. Rendering the block means
+  editing the chat's block renderer (ReplyBlocks), which two other branches are changing. See the
+  question below.
+- **The pen's slips, and anything with nothing behind it** (AGENTS.md §9 and BACKEND_TODO.md):
+  - no ETA or plan estimate (G4, G5)
+  - no commit hashes or RECENTLY CHANGED
+  - no line tag when following
+  - no running time on asks
+  - no PRE-ORDERS tile
+  - no QR or embed
+  - no build allowance (`AqQ3n`) and no schema-change review (`CY7CO`)
+  - no web lock-screen push (D1 keeps "We'll notify you")
+  - no Stop on a running publish
+- **Undrawn steps:** typing and the joined note (G16), and the Database dump on the phone (G17).
+- **`AskQueue`'s button:** the twin puts it on the ask that's next. The phone offers Let … go first
+  only when that ask is a teammate's behind yours. When the movable ask is further back, the phone
+  doesn't offer the button and the desktop does.
+- **Usage (tokens & cost):** it landed on the desktop's tools from main while this was being built.
+  The phone's ··· has no row for it, because the pen draws none.
+- **Line selection:** the pen's drag handles are a second tap here, because a native selection
+  inside a button list isn't reliable on iOS.
+- **Focus:** focus moving to a sheet's title on open, and back to the opener on close, relies on the
+  native modal dialog (`showModal`). Each sheet is removed from the page when it closes, so focus
+  doesn't always go back to the control that opened it.
+- **People:** the pen's inline role per row is a role sheet opened from the role text. Remove is in
+  that sheet and asks first.
 
 ## Question for ux-lead
-The pen can't be read until the pen.dev plan is upgraded or its billing period renews
-(Pencil MCP: "usage limit reached", upgrade at pen.dev → farianto231 → settings → billing).
-Should the build wait for pen access, or may the engineer build the parts that need no new frame
-(the shared state module, the adapter fields, F1 on the desktop, and the phone screens composed
-only from the existing `ds/mobile` components) and leave the new sheets' geometry for a follow-up
-once the frames can be read?
+1. **The chat's deploy event (G8):** should the live and failed cards render in the thread, where
+   the backend's `project_event` message sits, on both desktop and phone? Today they're the thread's
+   last item, read from the deploy overview. That needs a small change to the chat's block renderer,
+   to coordinate with the phone-chat-flows and chat-files branches.
+2. **Usage:** should the phone's ··· get a Usage (tokens & cost) row? Main added the sheet on the
+   desktop after the contract, and the pen draws no row for it.
