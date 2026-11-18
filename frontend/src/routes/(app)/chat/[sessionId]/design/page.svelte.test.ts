@@ -370,5 +370,19 @@ describe('design studio page', () => {
 		await settle();
 		expect(fetched.mock.calls[1][0]).toBe('/chat/s1/design/refine');
 	});
+
+	it('switches between OpenPencil vector canvas and iframe artboards', async () => {
+		const root = studio([preview(1)]);
+		button(root, 'Canvas').click();
+		await settle();
+		expect(button(root, 'OpenPencil Vector')).toBeDefined();
+		button(root, 'OpenPencil Vector').click();
+		await settle();
+		expect(root.querySelector('canvas')).not.toBeNull();
+		button(root, 'Artboards').click();
+		await settle();
+		expect(root.querySelector('[data-artboard="design-system"]')).not.toBeNull();
+	});
 });
+
 

@@ -5,6 +5,8 @@
 	import { getLocale } from '$lib/paraglide/runtime';
 	import { formatDate } from '$lib/dates';
 	import Icon from '$lib/components/ds/foundations/Icon.svelte';
+	import OpenPencilViewer from '$lib/components/design/OpenPencilViewer.svelte';
+	import { buildStudioSceneModel, type StudioHitResult } from '$lib/openPencilCanvas';
 	import {
 		CANVAS_ARTBOARD_WIDTHS,
 		DEVICE_WIDTHS,
@@ -130,6 +132,50 @@
 	let pinPopoverOpen = $state(false);
 	let pinWords = $state('');
 	let pinInteraction = $state(false);
+
+	type CanvasEngine = 'openpencil' | 'frames';
+	let userEngine = $state<CanvasEngine | null>(null);
+	const canvasEngine = $derived(userEngine ?? (current?.pages.some((p) => p.path.endsWith('.pen')) ? 'openpencil' : 'frames'));
+
+	const openPencilModel = $derived(
+		buildStudioSceneModel({
+			directions: directionList,
+			preview: current,
+			activeDirection,
+			device
+		})
+	);
+
+	function handleOpenPencilHit(hit: StudioHitResult) {
+		if (hit.target.kind === 'direction-cta' && hit.target.directionId) {
+			const dir = directionList.find((d) => d.id === hit.target.directionId);
+			if (dir) useDirection(dir);
+			return;
+		}
+		if (hit.target.elementId) {
+			const kind: StudioElementKind =
+				hit.target.kind === 'page' || hit.target.kind === 'direction-cta'
+					? 'section'
+					: hit.target.kind;
+			selection = {
+				id: hit.target.elementId,
+				kind,
+				label: hit.target.label,
+				page: hit.target.pagePath ?? shownPage,
+				tag: 'section',
+				text: hit.target.label,
+				point: hit.pin
+			};
+			if (hit.target.pagePath) {
+				shownPage = hit.target.pagePath;
+			}
+			if (mode === 'feedback') {
+				scope = 'element';
+			} else {
+				pinPopoverOpen = true;
+			}
+		}
+	}
 
 	// Direction exploration state (Stage 1)
 	let adjustingDirectionId = $state<string | null>(null);
@@ -622,6 +668,14 @@
 			</div>
 		{:else if directionList.length > 0}
 			<div class="studio__tools">
+				<div class="studio__devices" role="group" aria-label={m.studio_canvas_openpencil()}>
+					<button type="button" class="studio__tool studio__tool--wide" aria-pressed={canvasEngine === 'openpencil'} onclick={() => (userEngine = 'openpencil')}>
+						{m.studio_canvas_openpencil()}
+					</button>
+					<button type="button" class="studio__tool studio__tool--wide" aria-pressed={canvasEngine === 'frames'} onclick={() => (userEngine = 'frames')}>
+						{m.studio_canvas_frames()}
+					</button>
+				</div>
 				<div class="studio__devices" role="group" aria-label="Zoom">
 					<button type="button" class="studio__tool" aria-label={m.studio_zoom_out()} title={m.studio_zoom_out()} onclick={zoomOut}><Icon icon={ZoomOut} size={18} /></button>
 					<span class="studio__mono studio__zoom-readout">{zoomLabel(zoom)}</span>
@@ -669,20 +723,35 @@
 	{#if !current || !frameSrc}
 		{#if directionList.length > 0}
 			<!-- Stage 1: Direction Exploration Canvas before any HTML preview exists -->
-			<!-- svelte-ignore a11y_no_static_element_interactions -->
-			<div
-				bind:this={viewportEl}
-				class="studio__canvas-viewport"
-				onpointerdown={startCanvasPan}
-				onpointermove={moveCanvasPan}
-				onpointerup={endCanvasPan}
-				onpointercancel={endCanvasPan}
-				onwheel={handleCanvasWheel}
-			>
-				<div class="studio__canvas-plane" style:transform={`translate(${panX}px, ${panY}px) scale(${zoom})`}>
-					{@render directionBoards()}
+			{#if canvasEngine === 'openpencil'}
+				<OpenPencilViewer
+					model={openPencilModel}
+					bind:zoom
+					bind:panX
+					bind:panY
+					selectedNodeId={selection?.id ?? null}
+					onhit={handleOpenPencilHit}
+					onpickDirection={(dirId) => {
+						const dir = directionList.find((d) => d.id === dirId);
+						if (dir) useDirection(dir);
+					}}
+				/>
+			{:else}
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<div
+					bind:this={viewportEl}
+					class="studio__canvas-viewport"
+					onpointerdown={startCanvasPan}
+					onpointermove={moveCanvasPan}
+					onpointerup={endCanvasPan}
+					onpointercancel={endCanvasPan}
+					onwheel={handleCanvasWheel}
+				>
+					<div class="studio__canvas-plane" style:transform={`translate(${panX}px, ${panY}px) scale(${zoom})`}>
+						{@render directionBoards()}
+					</div>
 				</div>
-			</div>
+			{/if}
 		{:else}
 			<div class="studio__empty">
 				<h2 class="md-title-large">{m.studio_empty_title()}</h2>
@@ -728,17 +797,38 @@
 						{/if}
 						<button type="button" class="studio__tool studio__tool--wide" aria-pressed={stageFilter === 'system'} onclick={() => (stageFilter = 'system')}>{m.studio_stage_system()}</button>
 						<button type="button" class="studio__tool studio__tool--wide" aria-pressed={stageFilter === 'flow'} onclick={() => (stageFilter = 'flow')}>{m.studio_stage_flow()}</button>
+
+						<button type="button" class="studio__tool studio__tool--wide" aria-pressed={canvasEngine === 'openpencil'} onclick={() => (userEngine = 'openpencil')}>
+							{m.studio_canvas_openpencil()}
+						</button>
+						<button type="button" class="studio__tool studio__tool--wide" aria-pressed={canvasEngine === 'frames'} onclick={() => (userEngine = 'frames')}>
+							{m.studio_canvas_frames()}
+						</button>
 					</div>
-					<!-- svelte-ignore a11y_no_static_element_interactions -->
-					<div
-						bind:this={viewportEl}
-						class="studio__canvas-viewport"
-						onpointerdown={startCanvasPan}
-						onpointermove={moveCanvasPan}
-						onpointerup={endCanvasPan}
-						onpointercancel={endCanvasPan}
-						onwheel={handleCanvasWheel}
-					>
+					{#if canvasEngine === 'openpencil'}
+						<OpenPencilViewer
+							model={openPencilModel}
+							bind:zoom
+							bind:panX
+							bind:panY
+							selectedNodeId={selection?.id ?? null}
+							onhit={handleOpenPencilHit}
+							onpickDirection={(dirId) => {
+								const dir = directionList.find((d) => d.id === dirId);
+								if (dir) useDirection(dir);
+							}}
+						/>
+					{:else}
+						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						<div
+							bind:this={viewportEl}
+							class="studio__canvas-viewport"
+							onpointerdown={startCanvasPan}
+							onpointermove={moveCanvasPan}
+							onpointerup={endCanvasPan}
+							onpointercancel={endCanvasPan}
+							onwheel={handleCanvasWheel}
+						>
 						<div class="studio__canvas-plane" style:transform={`translate(${panX}px, ${panY}px) scale(${zoom})`}>
 							{#if (stageFilter === 'all' || stageFilter === 'directions') && directionList.length > 0}
 								{@render directionBoards()}
@@ -826,6 +916,7 @@
 							{/if}
 						</div>
 					</div>
+					{/if}
 				{:else}
 					{#if mode === 'compare'}
 						{#if compared}

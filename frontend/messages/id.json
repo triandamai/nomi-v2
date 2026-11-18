@@ -3796,5 +3796,9 @@
 	"studio_system_components": "Komponen terlacak ({count})",
 	"studio_pin_save": "Simpan catatan",
 	"studio_revise_bar_count": "{count} catatan terbuka",
-	"studio_revise_cta": "Revisi bersama Sora"
+	"studio_revise_cta": "Revisi bersama Sora",
+	"studio_canvas_openpencil": "Vektor OpenPencil",
+	"studio_canvas_frames": "Artboard",
+	"studio_openpencil_tokens": "Token & Variabel",
+	"studio_openpencil_export_svg": "Ekspor SVG"
 }

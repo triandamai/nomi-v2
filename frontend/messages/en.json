@@ -3796,5 +3796,9 @@
 	"studio_system_components": "Tracked components ({count})",
 	"studio_pin_save": "Save note",
 	"studio_revise_bar_count": "{count} open notes",
-	"studio_revise_cta": "Revise with Sora"
+	"studio_revise_cta": "Revise with Sora",
+	"studio_canvas_openpencil": "OpenPencil Vector",
+	"studio_canvas_frames": "Artboards",
+	"studio_openpencil_tokens": "Tokens & Variables",
+	"studio_openpencil_export_svg": "Export SVG"
 }
