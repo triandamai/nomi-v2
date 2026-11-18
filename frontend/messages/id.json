@@ -3709,7 +3709,7 @@
 	"admin_project_issues_closed": "Ditutup",
 	"perm_projects_desc": "Lihat semua proyek beserta sandbox dan isunya.",
 	"admin_projects_sandbox_link": "Sandbox {project}: {summary}",
-	"admin_projects_issues_link": "Isu {project}: {summary}"
+	"admin_projects_issues_link": "Isu {project}: {summary}",
 	"studio_not_published": "Belum dipublikasikan di luar Nomi: {reason}",
 	"studio_publish_again": "Publikasikan lagi",
 	"studio_publishing": "Memublikasikan…",
