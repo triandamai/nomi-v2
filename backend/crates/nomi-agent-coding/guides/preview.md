@@ -1,7 +1,9 @@
 # How Nomi runs your project (the preview)
 
 The project runs in the user's browser in a WebContainer: a Node.js environment compiled to
-WebAssembly.
+WebAssembly. When your brief also has the sandbox guide, its commands and dev server run in a
+sandbox on Nomi's servers instead; that guide says what changes, and everything here about what
+the project may use still holds.
 
 ## How development works in Nomi (dev vs build)
 

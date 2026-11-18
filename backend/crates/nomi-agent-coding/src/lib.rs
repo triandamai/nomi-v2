@@ -228,7 +228,7 @@ impl SubAgent for CodingAgent {
         user_id: Uuid,
         messages: &[nomi_llm::LlmMessage],
     ) -> Option<String> {
-        let brief = brief::task_brief(conn, s3, session_id, user_id, messages, self.relay_ops.as_ref()).await?;
+        let brief = brief::task_brief(conn, s3, session_id, user_id, messages, self.relay_ops.as_ref(), self.sandbox_ops.as_ref()).await?;
         // Where the build stands, so he knows what he was handed and when he is done.
         Some(match nomi_agent_core::build_flow::context_for(&mut **conn, session_id).await {
             Some(flow) => format!("{brief}\n\n{flow}"),
@@ -311,6 +311,21 @@ impl SubAgent for CodingAgent {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_approved_design_is_matched_not_replaced_by_a_new_look() {
+        let step = CODING_SYSTEM_PROMPT.split("\n5. ").nth(1).and_then(|rest| rest.split("\n").next()).unwrap();
+        let approved = step.find("approved design").expect("step 5 says what to do with an approved design");
+        let pick = step.find("pick one direction").expect("and still picks a direction without one");
+        assert!(approved < pick, "the approved design comes first: {step}");
+        assert!(step.contains("Otherwise"), "picking a direction is only for when there is no approved design: {step}");
+    }
+
+    #[test]
+    fn the_preview_step_names_both_places_a_project_runs() {
+        let step = CODING_SYSTEM_PROMPT.split("\n     4. ").nth(1).or_else(|| CODING_SYSTEM_PROMPT.split("\n4. ").nth(1)).and_then(|rest| rest.split("\n").next()).unwrap();
+        assert!(step.contains("sandbox"), "{step}");
+    }
 
     #[test]
     fn a_command_that_exits_non_zero_or_never_finishes_is_a_failure() {
