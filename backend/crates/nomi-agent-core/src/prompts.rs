@@ -576,3 +576,7 @@ pub const FLOW_DIRECTION_NOT_PICKED: &str = "Not yet: the person hasn't picked a
 pub const DESIGN_APPROVED_TASK: &str = "The person approved version {version} of the design in the Design Studio. That \
      is the go-ahead to build it: write its handoff with create_handoff and hand it to Koda, then tell the person \
      Koda is building it.";
+
+/// After a guide in Koda's brief that had sections left out. `{topic}` is the guide, `{sections}`
+/// their headings.
+pub const KODA_BRIEF_GUIDE_LEFT_OUT: &str = "Sections left out here (read_guide {topic} returns them): {sections}.";

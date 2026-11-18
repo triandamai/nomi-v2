@@ -9,6 +9,7 @@ use nomi_agent_core::plans::{latest_plan_by, open_checklist_items};
 use nomi_llm::{ContentBlock, LlmMessage, LlmRole};
 
 use crate::guides;
+use nomi_agent_core::prompts::KODA_BRIEF_GUIDE_LEFT_OUT;
 use nomi_agent_core::relay_ops::{RelayEnv, RelayOps, RelayPackages, DEFAULT_SDK_PACKAGE, DEFAULT_SDK_VERSION};
 
 /// More files than this are summarised as a count: list_files shows them all.
@@ -113,6 +114,52 @@ fn with_packages(guide: &str, packages: &RelayPackages) -> String {
          (`\"{}\": \"{}\"` in devDependencies, installs the `nomi-relay` command for `migrate lint`, `migrate new` and `functions new`).",
         packages.sdk, packages.sdk, packages.sdk_version, packages.cli, packages.cli, packages.cli_version
     )
+}
+
+const SVELTEKIT_GUIDE: &str = "sveltekit";
+const SECTION_MARK: &str = "## ";
+const FENCE: &str = "```";
+/// The starter files, which only a project with no files yet needs.
+const STARTER_SECTION: &str = "Files to start with";
+/// The Drizzle notes, which a Relay project must not follow.
+const DRIZZLE_SECTION: &str = "Database";
+/// What the preview guide, always beside it in the brief, already says.
+const PREVIEW_REPEATS: &[&str] = &["How we work in Nomi", "Before you finish"];
+
+/// A guide as the brief carries it: the SvelteKit guide without the sections this project
+/// doesn't need, named at its end so Koda can read them with read_guide. Other guides go in whole.
+fn brief_guide(topic: &str, content: &str, has_files: bool, on_relay: bool) -> String {
+    if topic != SVELTEKIT_GUIDE {
+        return content.to_string();
+    }
+    let left_out = |heading: &str| {
+        PREVIEW_REPEATS.contains(&heading) || (has_files && heading == STARTER_SECTION) || (on_relay && heading == DRIZZLE_SECTION)
+    };
+    let mut kept = String::new();
+    let mut dropped: Vec<&str> = Vec::new();
+    let mut skipping = false;
+    let mut in_fence = false;
+    for line in content.split_inclusive('\n') {
+        if line.trim_start().starts_with(FENCE) {
+            in_fence = !in_fence;
+        } else if !in_fence {
+            if let Some(heading) = line.strip_prefix(SECTION_MARK) {
+                let heading = heading.trim_end();
+                skipping = left_out(heading);
+                if skipping {
+                    dropped.push(heading);
+                }
+            }
+        }
+        if !skipping {
+            kept.push_str(line);
+        }
+    }
+    if dropped.is_empty() {
+        return kept;
+    }
+    let note = KODA_BRIEF_GUIDE_LEFT_OUT.replace("{topic}", topic).replace("{sections}", &dropped.join(", "));
+    format!("{}\n\n{note}", kept.trim_end())
 }
 
 fn clip(text: &str, max: usize) -> &str {
@@ -282,7 +329,7 @@ The person stored these for the published app, read on the server from the envir
     }
     for topic in topics {
         if let Some((_, _, content)) = guides::GUIDES.iter().find(|(name, _, _)| *name == topic) {
-            let content = if topic == "relay" { with_packages(content, &packages) } else { content.to_string() };
+            let content = if topic == "relay" { with_packages(content, &packages) } else { brief_guide(topic, content, !files.is_empty(), on_relay) };
             brief.push_str(&format!("## Guide: {topic} (already read for you)\n{content}\n\n"));
         }
     }
@@ -383,5 +430,50 @@ mod design_tests {
         assert!(section.contains("#### index.html\n<h1>Hi</h1>"));
         assert!(!section.contains(&big));
         assert!(section.contains("Left out for length: styles.css"), "{section}");
+    }
+}
+
+#[cfg(test)]
+mod guide_cut_tests {
+    use super::*;
+
+    fn guide(topic: &str) -> &'static str {
+        guides::GUIDES.iter().find(|(name, _, _)| *name == topic).map(|(_, _, content)| *content).unwrap()
+    }
+
+    #[test]
+    fn a_new_project_keeps_the_starter_files_and_its_database_notes() {
+        let cut = brief_guide("sveltekit", guide("sveltekit"), false, false);
+        assert!(cut.contains("## Files to start with") && cut.contains("## Database"), "{cut}");
+        assert!(cut.contains("## Pages, loading and forms") && cut.contains("## Svelte 5 (runes only)"));
+    }
+
+    #[test]
+    fn rules_the_preview_guide_already_gives_are_left_out_and_named() {
+        let cut = brief_guide("sveltekit", guide("sveltekit"), false, false);
+        assert!(!cut.contains("## How we work in Nomi") && !cut.contains("## Before you finish"), "{cut}");
+        assert!(cut.ends_with("read_guide sveltekit returns them): How we work in Nomi, Before you finish."), "{cut}");
+        let preview = guide("preview");
+        for rule in ["Do NOT run `npm run dev` yourself", "NEVER run `npm run build` during development", "\"check\": \"echo ok\"", "**only** after adding or changing dependencies"] {
+            assert!(preview.contains(rule), "the preview guide still says {rule:?}, so the brief loses nothing");
+        }
+    }
+
+    #[test]
+    fn a_relay_project_with_files_drops_the_starter_files_and_drizzle() {
+        let whole = guide("sveltekit");
+        let cut = brief_guide("sveltekit", whole, true, true);
+        assert!(!cut.contains("## Files to start with") && !cut.contains("## Database"), "{cut}");
+        assert!(cut.contains("Files to start with, Database, How we work in Nomi, Before you finish."), "{cut}");
+        assert!(whole.len() - cut.len() > 3_500, "saves {} bytes", whole.len() - cut.len());
+        let kept = brief_guide("sveltekit", whole, true, false);
+        assert!(kept.contains("## Database") && !kept.contains("## Files to start with"), "Drizzle stays off Relay");
+    }
+
+    #[test]
+    fn other_guides_go_in_whole() {
+        for topic in ["preview", "relay", "react", "vue", "astro"] {
+            assert_eq!(brief_guide(topic, guide(topic), true, true), guide(topic), "{topic}");
+        }
     }
 }
