@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { ArrowRight, ArrowUpRight, CornerDownLeft, Cpu, EyeOff, Send, Settings2 } from '@lucide/svelte';
+	import { ArrowUpRight, CornerDownLeft, Cpu, EyeOff, Send, Settings2 } from '@lucide/svelte';
 	import { m } from '$lib/paraglide/messages';
 	import Icon from '../foundations/Icon.svelte';
 	import BottomSheet from '../overlays/BottomSheet.svelte';
@@ -29,8 +29,15 @@
 
 	const items = () => [...(menu?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])];
 
+	// The sheet's dialog puts focus on its Close as it opens; the first model (or "Add one…") takes
+	// it after, as on a desktop.
+	let sheetBody: HTMLElement | undefined = $state();
 	$effect(() => {
 		if (!phone) items()[0]?.focus();
+		else if (sheetBody) {
+			const body = sheetBody;
+			requestAnimationFrame(() => body.querySelector<HTMLElement>('a, button')?.focus());
+		}
 	});
 
 	function onkeydown(event: KeyboardEvent) {
@@ -50,6 +57,7 @@
 
 {#if phone}
 	<BottomSheet open title={empty ? m.files_none_title() : m.files_switch_model()} subtitle={empty ? m.files_switch_model() : m.files_models_sheet_sub()} {onclose}>
+		<div bind:this={sheetBody} class="flex flex-col">
 		{#if empty}
 			{#if hidden}
 				<p class="flex gap-2 border-b border-border px-5 pb-1.75 text-text-3"><span class="inline-flex shrink-0"><Icon icon={EyeOff} size={14} /></span><span class="font-mono text-label">{hidden}</span></p>
@@ -61,7 +69,7 @@
 			</a>
 			<span class="px-4 pt-2">
 				<button type="button" class="flex h-11.5 w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-border-strong text-phone font-medium text-text outline-offset-2" onclick={ontextonly}>
-					{m.files_send_text_only()}<Icon icon={ArrowRight} />
+					{m.files_send_text_only()}
 				</button>
 			</span>
 		{:else}
@@ -78,6 +86,7 @@
 				<p class="flex items-center gap-2 border-t border-border px-5 pt-2.75 pb-1 text-text-3"><span class="inline-flex shrink-0"><Icon icon={EyeOff} size={14} /></span><span class="font-mono text-label">{hidden}</span></p>
 			{/if}
 		{/if}
+		</div>
 	</BottomSheet>
 {:else if empty}
 	<div bind:this={menu} role="menu" tabindex="-1" aria-label={m.files_none_title()} class="flex w-98 max-w-full flex-col overflow-hidden rounded-md bg-surface shadow-float outline -outline-offset-1 outline-border-strong" {onkeydown}>

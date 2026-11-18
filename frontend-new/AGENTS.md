@@ -424,10 +424,12 @@ leaves out what v2 or the backend can't do yet, rather than draw it dead:
   without…" note shows on this visit only, and the draft is kept in the tab for a trip to Settings.
   A sent file opens beside the chat (`FileViewer`: a PDF at page 1 in the browser's own reader) or
   large (`PhotoViewer`); other kinds download. A shared link names each file, locked and private.
-  Its tab order follows the layout: chips, the field, the fix line, then attach and the toolbar
-  (the contract puts attach first; it's drawn last). A message with files isn't edited in place
-  (editing with files is P1). The sent note sits under the bubble (MessageUser is a twin), and the
-  warning chip's icon is 12 (the pen's 11 isn't a size Icon takes).
+  Its tab order follows the layout, as the amended contract says: chips, the field, the fix line,
+  then attach and the toolbar. A message with files isn't edited in place (editing with files is
+  P1). The sent note sits 6 under the bubble rather than in it (MessageUser is a twin), so that
+  message leaves out its hover copy and time; the warning chip's icon is 12 (the pen's 11 isn't a
+  size Icon takes). On a phone every 44pt target is a hit area around the control, so chips stay 43
+  high and the fix line's pills 32.
   Left out until the backend has them (BACKEND_TODO.md, "Chat files"): the type check before
   upload and its helper line, resuming, the estimate before a big read (G7), the read results
   (locked, scanned, damaged, partly read: G9), files Maya makes (G11), citations to a page with

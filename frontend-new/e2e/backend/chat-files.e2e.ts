@@ -264,6 +264,22 @@ test.describe('on a phone', () => {
 		await expect(page.getByRole('group', { name: 'bca-oct-2026.pdf' }).getByText(/^PDF · \d/)).toBeVisible();
 	});
 
+	test('a picture the model can’t see: the pills, and the sheet focuses Add one (G6, M13 · M15)', async ({ page, context }) => {
+		const account = await createAccount();
+		await hideVisionModels(account);
+		const chat = await newChat(account);
+		await signInAs(context, account);
+		await open(page, `/chat/${chat}`);
+		await picker(page).setInputFiles([{ name: 'struk.png', mimeType: 'image/png', buffer: PNG }]);
+		await expect(page.getByText('Switch to a model that can see images, or send without the photo.')).toBeVisible();
+		const pill = page.getByRole('button', { name: 'Switch model' });
+		expect((await pill.boundingBox())?.height).toBe(32);
+		expect((await page.getByRole('group', { name: 'struk.png' }).locator('> span').boundingBox())?.height).toBe(43);
+		await pill.click();
+		const sheet = page.getByRole('dialog', { name: 'No model here can see images' });
+		await expect(sheet.getByRole('link', { name: 'Add one in Models & providers' })).toBeFocused();
+	});
+
 	test('a sent PDF opens full screen (G12)', async ({ page, context }) => {
 		const account = await createAccount();
 		const chat = await newChat(account);
