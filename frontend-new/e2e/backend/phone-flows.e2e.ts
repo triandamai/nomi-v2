@@ -74,8 +74,10 @@ test('Clarify → plan: the questions open in their sheet, park as “waiting”
 	// Many of many counts its ticks (AC5).
 	const again = page.getByRole('dialog');
 	await expect(again.getByRole('button', { name: 'Review 0' })).toBeDisabled();
-	await again.getByRole('checkbox', { name: /Train times/ }).check();
-	await again.getByRole('checkbox', { name: /Where to stay/ }).check();
+	// The row is what's tapped: the native box sits hidden behind the pen's drawn one.
+	await again.getByText('Train times').click();
+	await again.getByText('Where to stay').click();
+	await expect(again.getByRole('checkbox', { name: /Train times/ })).toBeChecked();
 	await again.getByRole('button', { name: 'Review 2' }).click();
 	const review = page.getByRole('dialog', { name: 'Your answers' });
 	await expect(review.getByText('Nothing runs yet')).toBeVisible();
