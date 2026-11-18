@@ -430,3 +430,151 @@ async fn the_estimate_prices_files_for_nomis_models_and_is_free_of_cost_on_the_p
     let (status, _) = json_request(router, "POST", "/api/attachments/estimate", json!({ "attachment_ids": ids, "model_key": "nope" }), Some(&ana)).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
+
+async fn open_upload(router: axum::Router, token: &str, name: &str, length: Option<u64>) -> (StatusCode, Value) {
+    let mut builder = Request::builder()
+        .method("POST")
+        .uri("/api/attachments/uploads")
+        .header("authorization", format!("Bearer {token}"))
+        .header("content-type", "text/csv")
+        .header("x-file-name", name);
+    if let Some(length) = length {
+        builder = builder.header("x-upload-length", length.to_string());
+    }
+    let response = router.oneshot(builder.body(Body::empty()).unwrap()).await.unwrap();
+    let status = response.status();
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+}
+
+async fn send_piece(router: axum::Router, token: &str, upload_id: &str, from: usize, bytes: &[u8], total: usize) -> (StatusCode, Value) {
+    let request = Request::builder()
+        .method("PATCH")
+        .uri(format!("/api/attachments/uploads/{upload_id}"))
+        .header("authorization", format!("Bearer {token}"))
+        .header("content-range", format!("bytes {from}-{}/{total}", from + bytes.len() - 1))
+        .body(Body::from(bytes.to_vec()))
+        .unwrap();
+    let response = router.oneshot(request).await.unwrap();
+    let status = response.status();
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    (status, serde_json::from_slice(&body).unwrap_or(Value::Null))
+}
+
+async fn upload_offset(router: axum::Router, token: &str, upload_id: &str) -> (StatusCode, Option<u64>) {
+    let request = Request::builder()
+        .method("HEAD")
+        .uri(format!("/api/attachments/uploads/{upload_id}"))
+        .header("authorization", format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap();
+    let response = router.oneshot(request).await.unwrap();
+    let offset = response.headers().get("upload-offset").and_then(|v| v.to_str().ok()).and_then(|v| v.parse().ok());
+    (response.status(), offset)
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_file_sent_in_pieces_resumes_where_it_stopped_and_ends_as_a_normal_attachment(pool: PgPool) {
+    use_temp_attachment_dir();
+    let router = build_router(test_state(pool.clone()));
+    let token = register_and_login(router.clone(), "chunks@example.com").await;
+    let csv = b"date,amount\n2026-05-01,12.50\n2026-05-02,8.00\n".to_vec();
+
+    let (status, opened) = open_upload(router.clone(), &token, "spend.csv", Some(csv.len() as u64)).await;
+    assert_eq!(status, StatusCode::CREATED, "{opened}");
+    assert_eq!(opened["offset"], 0);
+    let id = opened["upload_id"].as_str().unwrap().to_string();
+
+    let (status, first) = send_piece(router.clone(), &token, &id, 0, &csv[..20], csv.len()).await;
+    assert_eq!(status, StatusCode::OK, "{first}");
+    assert_eq!(first["offset"], 20);
+
+    // After a drop the client asks where the upload stands.
+    let (status, offset) = upload_offset(router.clone(), &token, &id).await;
+    assert_eq!((status, offset), (StatusCode::OK, Some(20)));
+
+    // A piece from the wrong place is a 409 with the offset to pick up at.
+    let (status, wrong) = send_piece(router.clone(), &token, &id, 30, &csv[30..], csv.len()).await;
+    assert_eq!(status, StatusCode::CONFLICT, "{wrong}");
+    assert_eq!(wrong["offset"], 20);
+    assert_eq!(wrong["error"], "offset_mismatch");
+
+    // The last piece answers what a single upload does.
+    let (status, done) = send_piece(router.clone(), &token, &id, 20, &csv[20..], csv.len()).await;
+    assert_eq!(status, StatusCode::CREATED, "{done}");
+    assert_eq!(done["name"], "spend.csv");
+    assert_eq!(done["kind"], "text");
+    assert_eq!(done["status"], "ready");
+    assert_eq!(done["size"], csv.len());
+    assert!(done["reference"].as_str().unwrap().starts_with("<attachment id=\""));
+    let text: String = sqlx::query_scalar("SELECT extracted_text FROM attachments WHERE id = $1")
+        .bind(done["id"].as_str().unwrap().parse::<Uuid>().unwrap())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert!(text.contains("12.50"));
+
+    // The upload is over.
+    let (status, _) = upload_offset(router, &token, &id).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn pieces_are_held_to_the_same_size_limit_and_to_their_owner(pool: PgPool) {
+    use_temp_attachment_dir();
+    let router = build_router(test_state(pool.clone()));
+    let owner = register_and_login(router.clone(), "own-chunks@example.com").await;
+    let stranger = register_and_login(router.clone(), "other-chunks@example.com").await;
+
+    // Too big is refused at once when the length is known, and at the first piece when it isn't.
+    let over = 10 * 1024 * 1024 + 1;
+    let (status, body) = open_upload(router.clone(), &owner, "huge.csv", Some(over as u64 * 10)).await;
+    assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE, "{body}");
+    assert_eq!(body["error"], "too_large");
+    let (_, opened) = open_upload(router.clone(), &owner, "huge.csv", None).await;
+    let id = opened["upload_id"].as_str().unwrap().to_string();
+    let (status, body) = send_piece(router.clone(), &owner, &id, 0, b"a,b\n", over * 10).await;
+    assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE, "{body}");
+    assert_eq!(body["max_bytes"], 10 * 1024 * 1024);
+    assert_eq!(upload_offset(router.clone(), &owner, &id).await.0, StatusCode::NOT_FOUND);
+
+    // Someone else's upload is not theirs to see or add to.
+    let (_, opened) = open_upload(router.clone(), &owner, "mine.csv", None).await;
+    let id = opened["upload_id"].as_str().unwrap().to_string();
+    assert_eq!(upload_offset(router.clone(), &stranger, &id).await.0, StatusCode::NOT_FOUND);
+    let (status, _) = send_piece(router, &stranger, &id, 0, b"a,b\n", 8).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_last_piece_that_is_a_program_is_refused_like_a_single_upload(pool: PgPool) {
+    use_temp_attachment_dir();
+    let router = build_router(test_state(pool.clone()));
+    let token = register_and_login(router.clone(), "exe-chunks@example.com").await;
+    let (_, opened) = open_upload(router.clone(), &token, "Setup.DMG", None).await;
+    let id = opened["upload_id"].as_str().unwrap().to_string();
+    let program = b"MZ\x90\x00 program";
+    let (status, body) = send_piece(router.clone(), &token, &id, 0, program, program.len()).await;
+    assert_eq!(status, StatusCode::UNSUPPORTED_MEDIA_TYPE, "{body}");
+    assert_eq!(body["error"], "unsupported_type");
+    assert_eq!(upload_offset(router, &token, &id).await.0, StatusCode::NOT_FOUND);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn expired_uploads_are_swept_and_fresh_ones_stay(pool: PgPool) {
+    use_temp_attachment_dir();
+    let router = build_router(test_state(pool.clone()));
+    let token = register_and_login(router.clone(), "expire-chunks@example.com").await;
+    let (_, old) = open_upload(router.clone(), &token, "old.csv", None).await;
+    let (_, fresh) = open_upload(router.clone(), &token, "fresh.csv", None).await;
+    let old_id: Uuid = old["upload_id"].as_str().unwrap().parse().unwrap();
+    sqlx::query("UPDATE attachment_uploads SET expires_at = now() - interval '1 minute' WHERE id = $1").bind(old_id).execute(&pool).await.unwrap();
+
+    // An expired upload can't be picked up even before the sweep.
+    assert_eq!(upload_offset(router.clone(), &token, &old_id.to_string()).await.0, StatusCode::NOT_FOUND);
+    nomi_server::attachment_worker::pass(&pool, &[7u8; 32], &reqwest::Client::new()).await.unwrap();
+
+    let left: Vec<String> = sqlx::query_scalar("SELECT name FROM attachment_uploads").fetch_all(&pool).await.unwrap();
+    assert_eq!(left, vec!["fresh.csv".to_string()]);
+    assert_eq!(upload_offset(router, &token, fresh["upload_id"].as_str().unwrap()).await.0, StatusCode::OK);
+}

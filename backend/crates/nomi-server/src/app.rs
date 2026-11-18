@@ -402,6 +402,14 @@ pub fn build_router(state: AppState) -> Router {
             post(attachments_routes::upload).layer(axum::extract::DefaultBodyLimit::disable()),
         )
         .route("/api/attachments/limits", get(attachments_routes::limits))
+        .route("/api/attachments/uploads", post(crate::routes::attachment_uploads::create))
+        .route(
+            "/api/attachments/uploads/:upload_id",
+            // Pieces are streamed to disk and checked against their Content-Range by the handler.
+            patch(crate::routes::attachment_uploads::append)
+                .head(crate::routes::attachment_uploads::offset)
+                .layer(axum::extract::DefaultBodyLimit::disable()),
+        )
         .route("/api/attachments/estimate", post(crate::routes::attachment_estimate::estimate))
         .route("/api/attachments/:id", get(attachments_routes::get_attachment).delete(attachments_routes::delete_attachment))
         .route("/api/attachments/:id/content", get(attachments_routes::get_content))

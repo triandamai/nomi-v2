@@ -23,20 +23,20 @@ use crate::app::AppState;
 type ApiError = (StatusCode, &'static str);
 
 /// An upload that failed: the status, and a body the composer reads by its `error` code.
-type UploadError = (StatusCode, Json<serde_json::Value>);
+pub(crate) type UploadError = (StatusCode, Json<serde_json::Value>);
 
-fn coded(status: StatusCode, error: &str, message: &str) -> UploadError {
+pub(crate) fn coded(status: StatusCode, error: &str, message: &str) -> UploadError {
     (status, Json(json!({ "error": error, "message": message })))
 }
 
-fn too_large(max_bytes: u64) -> UploadError {
+pub(crate) fn too_large(max_bytes: u64) -> UploadError {
     (
         StatusCode::PAYLOAD_TOO_LARGE,
         Json(json!({ "error": "too_large", "message": "file is too big", "max_bytes": max_bytes })),
     )
 }
 
-fn server_error(message: &str) -> UploadError {
+pub(crate) fn server_error(message: &str) -> UploadError {
     coded(StatusCode::INTERNAL_SERVER_ERROR, "server_error", message)
 }
 
@@ -44,7 +44,7 @@ fn server_error(message: &str) -> UploadError {
 const REPLACES_HEADER: &str = "x-replaces";
 
 /// The file an upload says it replaces; Err when the header isn't a file id.
-fn replaces_header(headers: &HeaderMap) -> Result<Option<Uuid>, ()> {
+pub(crate) fn replaces_header(headers: &HeaderMap) -> Result<Option<Uuid>, ()> {
     let Some(value) = headers.get(REPLACES_HEADER).and_then(|v| v.to_str().ok()).map(str::trim).filter(|v| !v.is_empty()) else {
         return Ok(None);
     };
@@ -52,9 +52,9 @@ fn replaces_header(headers: &HeaderMap) -> Result<Option<Uuid>, ()> {
 }
 
 /// Bytes read before deciding what a file is.
-const SNIFF_BYTES: usize = 8 * 1024;
+pub(crate) const SNIFF_BYTES: usize = 8 * 1024;
 /// The browser's live transcript of a voice note, kept as a fallback.
-const MAX_TRANSCRIPT_CHARS: usize = 20_000;
+pub(crate) const MAX_TRANSCRIPT_CHARS: usize = 20_000;
 
 #[derive(Serialize)]
 pub struct AttachmentResponse {
@@ -142,11 +142,11 @@ fn percent_decode(value: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-fn header_text(headers: &HeaderMap, name: &str) -> Option<String> {
+pub(crate) fn header_text(headers: &HeaderMap, name: &str) -> Option<String> {
     headers.get(name).and_then(|v| v.to_str().ok()).map(percent_decode)
 }
 
-fn clean_name(name: &str) -> String {
+pub(crate) fn clean_name(name: &str) -> String {
     let name: String = name.chars().filter(|c| !c.is_control()).collect();
     let name = name.rsplit(['/', '\\']).next().unwrap_or("").trim().to_string();
     let name: String = name.chars().take(200).collect();
@@ -166,12 +166,40 @@ fn preview_key(user_id: Uuid, id: Uuid) -> String {
 }
 
 /// Removes the temp file however the upload ends.
-struct TempFile(std::path::PathBuf);
+pub(crate) struct TempFile(pub(crate) std::path::PathBuf);
 
 impl Drop for TempFile {
     fn drop(&mut self) {
         let _ = std::fs::remove_file(&self.0);
     }
+}
+
+/// Refuses an upload that would take the person past their stored-bytes quota.
+pub(crate) async fn check_quota(state: &AppState, user_id: Uuid, incoming: u64) -> Result<(), UploadError> {
+    let used: i64 = sqlx::query_scalar("SELECT COALESCE(SUM(size_bytes), 0)::bigint FROM attachments WHERE user_id = $1")
+        .bind(user_id)
+        .fetch_one(&state.pool)
+        .await
+        .map_err(|_| server_error("failed to check storage"))?;
+    if used + incoming as i64 > per_person_quota_bytes().await {
+        return Err(coded(StatusCode::INSUFFICIENT_STORAGE, "storage_full", "storage is full"));
+    }
+    Ok(())
+}
+
+/// The file an upload replaces has to be the sender's own.
+pub(crate) async fn check_replaces(state: &AppState, user_id: Uuid, replaces: Option<Uuid>) -> Result<(), UploadError> {
+    let Some(old) = replaces else { return Ok(()) };
+    let own: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM attachments WHERE id = $1 AND user_id = $2)")
+        .bind(old)
+        .bind(user_id)
+        .fetch_one(&state.pool)
+        .await
+        .map_err(|_| server_error("failed to check the file being replaced"))?;
+    if !own {
+        return Err(coded(StatusCode::NOT_FOUND, "unknown_replaces", "the file being replaced wasn't found"));
+    }
+    Ok(())
 }
 
 /// `POST /api/attachments`: the raw file as the body, its name in `X-File-Name` (%-encoded),
@@ -184,27 +212,10 @@ pub async fn upload(State(state): State<AppState>, AuthClaims(claims): AuthClaim
     if declared.is_some_and(|len| len > max) {
         return Err(too_large(max));
     }
-    let used: i64 = sqlx::query_scalar("SELECT COALESCE(SUM(size_bytes), 0)::bigint FROM attachments WHERE user_id = $1")
-        .bind(claims.sub)
-        .fetch_one(&state.pool)
-        .await
-        .map_err(|_| server_error("failed to check storage"))?;
-    if used + declared.unwrap_or(0) as i64 > per_person_quota_bytes().await {
-        return Err(coded(StatusCode::INSUFFICIENT_STORAGE, "storage_full", "storage is full"));
-    }
+    check_quota(&state, claims.sub, declared.unwrap_or(0)).await?;
 
     let replaces = replaces_header(&headers).map_err(|_| coded(StatusCode::BAD_REQUEST, "invalid_replaces", "X-Replaces must be the id of a file"))?;
-    if let Some(old) = replaces {
-        let own: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM attachments WHERE id = $1 AND user_id = $2)")
-            .bind(old)
-            .bind(claims.sub)
-            .fetch_one(&state.pool)
-            .await
-            .map_err(|_| server_error("failed to check the file being replaced"))?;
-        if !own {
-            return Err(coded(StatusCode::NOT_FOUND, "unknown_replaces", "the file being replaced wasn't found"));
-        }
-    }
+    check_replaces(&state, claims.sub, replaces).await?;
 
     let name = clean_name(&header_text(&headers, "x-file-name").unwrap_or_default());
     let claimed = headers.get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
@@ -236,7 +247,29 @@ pub async fn upload(State(state): State<AppState>, AuthClaims(claims): AuthClaim
     file.flush().await.map_err(|_| server_error("failed to store file"))?;
     drop(file);
 
-    let sniffed = nomi_attachments::sniff(&head, &name, &claimed, voice).map_err(|refused| match refused {
+    let input = IngestInput { user_id: claims.sub, temp: &temp.0, size, head: &head, name, claimed, voice, transcript, replaces };
+    ingest_file(&state, input, &limits).await
+}
+
+/// A file that has arrived whole (in one request, or as the last piece of a resumable upload).
+pub(crate) struct IngestInput<'a> {
+    pub user_id: Uuid,
+    pub temp: &'a std::path::Path,
+    pub size: u64,
+    /// The file's first bytes, for telling what it is.
+    pub head: &'a [u8],
+    pub name: String,
+    pub claimed: String,
+    pub voice: bool,
+    pub transcript: Option<String>,
+    pub replaces: Option<Uuid>,
+}
+
+/// Checks what the file is against the limits, reads it, stores it and records it: the one path
+/// every upload takes, whole or in pieces.
+pub(crate) async fn ingest_file(state: &AppState, input: IngestInput<'_>, limits: &Limits) -> Result<(StatusCode, Json<AttachmentResponse>), UploadError> {
+    let IngestInput { user_id, temp, size, head, name, claimed, voice, transcript, replaces } = input;
+    let sniffed = nomi_attachments::sniff(head, &name, &claimed, voice).map_err(|refused| match refused {
         nomi_attachments::kind::Refused::Executable => {
             let mut refusal = coded(StatusCode::UNSUPPORTED_MEDIA_TYPE, "unsupported_type", "programs can't be attached");
             refusal.1 .0["extension"] = json!(nomi_attachments::accepted::extension_of(&name));
@@ -252,7 +285,7 @@ pub async fn upload(State(state): State<AppState>, AuthClaims(claims): AuthClaim
     let extracted = if matches!(sniffed.kind, Kind::Audio | Kind::Voice | Kind::Video) {
         nomi_attachments::Extracted { needs_model: true, details: json!({}), ..Default::default() }
     } else {
-        let bytes = tokio::fs::read(&temp.0).await.map_err(|_| server_error("failed to store file"))?;
+        let bytes = tokio::fs::read(temp).await.map_err(|_| server_error("failed to store file"))?;
         let sniffed = sniffed.clone();
         tokio::task::spawn_blocking(move || nomi_attachments::extract(&bytes, &sniffed))
             .await
@@ -261,14 +294,14 @@ pub async fn upload(State(state): State<AppState>, AuthClaims(claims): AuthClaim
 
     let id = Uuid::new_v4();
     let store = nomi_storage::blob::attachment_store();
-    let key = storage_key(claims.sub, id);
-    store.put_file(&key, &temp.0, &sniffed.mime).await.map_err(|e| {
+    let key = storage_key(user_id, id);
+    store.put_file(&key, temp, &sniffed.mime).await.map_err(|e| {
         tracing::error!(error = %e, "failed to store attachment");
         server_error("failed to store file")
     })?;
     let preview = match extracted.preview_jpeg {
         Some(jpeg) => {
-            let key = preview_key(claims.sub, id);
+            let key = preview_key(user_id, id);
             match store.put_bytes(&key, jpeg, "image/jpeg").await {
                 Ok(()) => Some(key),
                 Err(e) => {
@@ -292,7 +325,7 @@ pub async fn upload(State(state): State<AppState>, AuthClaims(claims): AuthClaim
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
     )
     .bind(id)
-    .bind(claims.sub)
+    .bind(user_id)
     .bind(&name)
     .bind(&sniffed.mime)
     .bind(sniffed.kind.as_str())

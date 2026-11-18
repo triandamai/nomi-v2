@@ -14,6 +14,7 @@ pub mod admin_shipyard;
 pub mod admin_usage;
 pub mod admin_users;
 pub mod attachment_estimate;
+pub mod attachment_uploads;
 pub mod attachments;
 pub mod billing;
 pub mod auth;
