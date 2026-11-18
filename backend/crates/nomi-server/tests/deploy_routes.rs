@@ -844,11 +844,18 @@ async fn project_summaries_carry_the_last_deploy_and_the_build_in_progress(pool:
         .execute(&pool)
         .await
         .unwrap();
+    // The crew is at work while a turn runs for the project's chat.
+    let turn: Uuid = sqlx::query_scalar("INSERT INTO turn_jobs (session_id, sender_channel_identity_id, text, status, claimed_at) VALUES ($1, $2, 'build the menu', 'processing', now()) RETURNING id")
+        .bind(session_id)
+        .bind(identity)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     let card = list(router.clone(), token.clone()).await;
     assert_eq!(card["build"], json!({ "step": 3, "steps": 6, "doing": "routes/menu/+page.svelte" }), "{card}");
 
     // Done working: the card stops saying it is building.
-    sqlx::query("UPDATE agent_sessions SET status = 'completed' WHERE id = $1").bind(agent).execute(&pool).await.ok();
+    sqlx::query("UPDATE turn_jobs SET status = 'completed', completed_at = now() WHERE id = $1").bind(turn).execute(&pool).await.unwrap();
     let card = list(router, token).await;
     assert!(card["build"].is_null(), "{card}");
 }

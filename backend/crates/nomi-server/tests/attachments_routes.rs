@@ -274,7 +274,7 @@ async fn upload_failures_carry_a_code_the_composer_can_act_on(pool: PgPool) {
         "INSERT INTO attachments (user_id, name, mime, kind, size_bytes, storage_key, status) VALUES ($1, 'old.bin', 'text/plain', 'text', $2, 'old', 'ready')",
     )
     .bind(user_id)
-    .bind(2048_i64 * 1024 * 1024)
+    .bind(2048_i64 * 1024 * 1024 + 1)
     .execute(&pool)
     .await
     .unwrap();
@@ -535,7 +535,8 @@ async fn pieces_are_held_to_the_same_size_limit_and_to_their_owner(pool: PgPool)
     let id = opened["upload_id"].as_str().unwrap().to_string();
     let (status, body) = send_piece(router.clone(), &owner, &id, 0, b"a,b\n", over * 10).await;
     assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE, "{body}");
-    assert_eq!(body["max_bytes"], 10 * 1024 * 1024);
+    // The kind isn't known before the last piece, so the most any upload may be (the video limit) holds.
+    assert_eq!(body["max_bytes"], 50 * 1024 * 1024);
     assert_eq!(upload_offset(router.clone(), &owner, &id).await.0, StatusCode::NOT_FOUND);
 
     // Someone else's upload is not theirs to see or add to.
@@ -635,7 +636,7 @@ async fn a_file_the_crew_made_is_not_swept_or_removed_as_an_unsent_draft(pool: P
     let user_id: Uuid = sqlx::query_scalar("SELECT user_id FROM web_credentials WHERE email = 'keeper@example.com'").fetch_one(&pool).await.unwrap();
     let made: Uuid = sqlx::query_scalar(
         "INSERT INTO attachments (user_id, name, mime, kind, size_bytes, storage_key, status, made_by, created_at) \
-         VALUES ($1, 'made.csv', 'text/csv', 'csv', 1, 'made.csv', 'ready', 'files', now() - interval '30 hours') RETURNING id",
+         VALUES ($1, 'made.csv', 'text/csv', 'text', 1, 'made.csv', 'ready', 'files', now() - interval '30 hours') RETURNING id",
     )
     .bind(user_id)
     .fetch_one(&pool)

@@ -500,7 +500,7 @@ async fn a_file_the_crew_made_in_the_chat_is_listed_and_opens_from_a_link(pool: 
     // A made file belongs to the chat: it has no message.
     let made: Uuid = sqlx::query_scalar(
         "INSERT INTO attachments (user_id, session_id, name, mime, kind, size_bytes, storage_key, status, made_by, created_at) \
-         SELECT s.user_id, s.id, 'rows.csv', 'text/csv', 'csv', 10, 'attachments/test/rows.csv', 'ready', 'files', now() + interval '2 seconds' FROM sessions s WHERE s.id = $1::uuid RETURNING id",
+         SELECT s.user_id, s.id, 'rows.csv', 'text/csv', 'text', 10, 'attachments/test/rows.csv', 'ready', 'files', now() + interval '2 seconds' FROM sessions s WHERE s.id = $1::uuid RETURNING id",
     )
     .bind(&session_id)
     .fetch_one(&pool)

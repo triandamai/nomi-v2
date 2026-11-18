@@ -495,7 +495,7 @@ fn place_made_files(made: Vec<MadeRow>, rows: &[SharedRow], shown: &[Uuid]) -> V
 /// in the chat (by session, as they carry no message), oldest first.
 async fn chat_files(pool: &sqlx::PgPool, session_id: Uuid, rows: &[SharedRow], shown: &[Uuid]) -> Result<Vec<FileRow>, (StatusCode, &'static str)> {
     let attached: Vec<(Uuid, Uuid, String, String, i64, serde_json::Value, bool)> = sqlx::query_as(
-        "SELECT a.id, a.message_id, a.name, a.kind, a.size_bytes, a.details, a.made_by IS NOT NULL \
+        "SELECT a.id, a.message_id, a.name, a.kind, a.size_bytes, a.details, m.sender_channel_identity_id IS NULL \
          FROM attachments a JOIN messages m ON m.id = a.message_id \
          WHERE a.message_id = ANY($1) ORDER BY m.created_at, a.created_at, a.id",
     )

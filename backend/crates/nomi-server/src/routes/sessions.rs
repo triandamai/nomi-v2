@@ -1521,6 +1521,9 @@ pub async fn resolve_approval(
     if req.input.is_some() && req.decision != "approve" {
         return Err((StatusCode::BAD_REQUEST, "only an approval can carry edited input"));
     }
+    if req.input.as_ref().is_some_and(|edited| !edited.is_object()) {
+        return Err((StatusCode::BAD_REQUEST, "input must be an object"));
+    }
 
     let pending: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM agent_sessions WHERE state->>'pending_approval_message_id' = $1 AND (state->>'paused_for_approval')::boolean = true)",
@@ -1535,9 +1538,6 @@ pub async fn resolve_approval(
     }
 
     if let Some(edited) = &req.input {
-        if !edited.is_object() {
-            return Err((StatusCode::BAD_REQUEST, "input must be an object"));
-        }
         if let Some(problem) = edited_input_problem(&state, session_id, message_id, edited).await? {
             tracing::debug!(%problem, %message_id, "edited approval input refused");
             return Err((StatusCode::BAD_REQUEST, "the edited input doesn't fit what this tool takes"));

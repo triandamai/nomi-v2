@@ -64,7 +64,7 @@ pub async fn attach(pool: &PgPool, projects: &mut [ProjectSummary]) -> Result<()
         "SELECT p.id AS project_id, \
                 EXISTS (SELECT 1 FROM turn_jobs j WHERE j.status = 'processing' \
                         AND j.session_id IN (SELECT s.id FROM sessions s WHERE s.id = p.session_id OR s.in_project_id = p.id)) AS turn_running, \
-                a.last_tool IS NOT NULL OR a.active AS agent_active, a.last_tool AS tool, pl.content AS plan_content \
+                COALESCE(a.last_tool IS NOT NULL OR a.active, false) AS agent_active, a.last_tool AS tool, pl.content AS plan_content \
          FROM projects p \
          LEFT JOIN LATERAL ( \
              SELECT true AS active, (SELECT e.payload FROM agent_events e WHERE e.agent_session_id = ag.id AND e.event_type = 'ToolCalled' \
