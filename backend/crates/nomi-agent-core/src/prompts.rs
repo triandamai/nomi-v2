@@ -673,3 +673,7 @@ pub const KODA_BRIEF_RELAY_UNREADABLE: &str = "Call describe_backend.";
 /// `{cli_version}` are them.
 pub const KODA_BRIEF_RELAY_PACKAGES: &str = "Packages on this Nomi: the client is `{sdk}` (`\"{sdk}\": \"{sdk_version}\"` in dependencies); the command line is `{cli}` \
      (`\"{cli}\": \"{cli_version}\"` in devDependencies, installs the `nomi-relay` command for `migrate lint`, `migrate new` and `functions new`).";
+
+/// After a guide in Koda's brief that had sections left out. `{topic}` is the guide, `{sections}`
+/// their headings.
+pub const KODA_BRIEF_GUIDE_LEFT_OUT: &str = "Sections left out here (read_guide {topic} returns them): {sections}.";
