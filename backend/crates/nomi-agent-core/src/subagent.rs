@@ -73,6 +73,17 @@ pub trait SubAgent: Send + Sync {
         false
     }
 
+    /// The only members this agent may hand work to, when it may not reach the whole crew: Iris
+    /// hands a fix to Koda and no one else. `None` (the default) limits nothing.
+    fn delegates_only_to(&self) -> Option<&'static [&'static str]> {
+        None
+    }
+
+    /// Whether `delegates_only_to` lets this agent hand work to `target`.
+    fn may_delegate_to(&self, target: &str) -> bool {
+        self.delegates_only_to().is_none_or(|only| only.contains(&target))
+    }
+
     /// When true, a delegation to this agent runs in the background (the delegation worker)
     /// and it reports back when done: for long jobs like building a project. Otherwise the
     /// agent takes the conversation over in the same turn and answers the user itself.

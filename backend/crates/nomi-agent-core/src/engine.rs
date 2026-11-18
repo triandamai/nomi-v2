@@ -252,7 +252,7 @@ async fn run_agent_turn_in_reply(
     // The members the person switched off take no work and answer no questions.
     let off = crate::personal_crew::disabled_agent_types(conn, user_id).await;
     if agent.can_delegate() {
-        let mut targets = registry.delegatable_agent_types(agent.agent_type().as_ref());
+        let mut targets = registry.delegation_targets_of(agent);
         targets.retain(|t| !off.contains(t));
         if !targets.is_empty() {
             tools.push(delegate_tool_definition(&targets));
