@@ -160,6 +160,7 @@ pub fn build_router(state: AppState) -> Router {
             "/api/sessions/:id/messages/:message_id/approval",
             put(sessions_routes::resolve_approval),
         )
+        .route("/api/sessions/:id/agent-plans/:agent_session_id/run", post(crate::routes::plan_run::run_plan))
         .route("/api/sessions/:id/messages/:message_id/approval/undo", post(crate::routes::approval_actions::undo_deny))
         .route("/api/sessions/:id/stopped/:message_id/discard", post(crate::routes::approval_actions::discard_stopped))
         .route(

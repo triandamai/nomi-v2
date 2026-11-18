@@ -642,6 +642,10 @@ pub struct AgentPlanItem {
     /// Where this version stands, from what's been done with it: "updated" once a newer version
     /// follows it, else "proposed", "active", "completed" or "blocked" (see `plan_state`).
     pub state: &'static str,
+    /// The checklist as steps: who does each, where it stands (see `nomi_agent_core::plans::steps_from_checklist`).
+    pub steps: Vec<nomi_agent_core::plans::PlanStep>,
+    /// Seconds the steps still open are expected to take; null when the plan has no steps.
+    pub estimate_seconds: Option<u32>,
 }
 
 /// The build that followed the newest version (a coding delegation handed over after it, before
@@ -664,6 +668,8 @@ pub struct PlanBuild {
 pub struct ListAgentPlansResponse {
     pub plans: Vec<AgentPlanItem>,
     pub build: Option<PlanBuild>,
+    /// The newest version's estimate: how long the plan is expected to take from here.
+    pub estimate_seconds: Option<u32>,
 }
 
 /// Where the newest version of a plan stands. With a build: running is active, failed, stopped or
@@ -725,6 +731,14 @@ pub async fn list_agent_plans(
         None => None,
     };
 
+    // Whose steps they are: the crew member that wrote the plan, when it has a session of its own.
+    let owner: Option<String> = sqlx::query_scalar("SELECT agent_type FROM agent_sessions WHERE id = $1")
+        .bind(agent_session_id)
+        .fetch_optional(&state.pool)
+        .await
+        .ok()
+        .flatten();
+
     let newest = rows.len().saturating_sub(1);
     let mut plans = Vec::with_capacity(rows.len());
     for (index, (id, title, version, content, content_s3_key, created_at)) in rows.into_iter().enumerate() {
@@ -742,10 +756,19 @@ pub async fn list_agent_plans(
             let report_status = build.as_ref().and_then(|b| b.report.as_ref()).and_then(|r| r.get("status")).and_then(|s| s.as_str());
             plan_state(build.as_ref().map(|b| (b.status.as_str(), report_status)), resolved_content.as_deref())
         };
-        plans.push(AgentPlanItem { id, title, version, content: resolved_content, created_at, state: plan_state });
+        // Only the newest version has a build to speak of.
+        let stand = build.as_ref().filter(|_| index == newest).map(|b| nomi_agent_core::plans::BuildStand {
+            status: b.status.as_str(),
+            failing: b.report.as_ref().and_then(|r| r.get("status")).and_then(|s| s.as_str()) == Some("failing"),
+            error: b.error.as_deref(),
+        });
+        let steps = resolved_content.as_deref().map(|c| nomi_agent_core::plans::steps_from_checklist(c, owner.as_deref(), stand)).unwrap_or_default();
+        let estimate_seconds = nomi_agent_core::plans::estimate_seconds(&steps);
+        plans.push(AgentPlanItem { id, title, version, content: resolved_content, created_at, state: plan_state, steps, estimate_seconds });
     }
+    let estimate_seconds = plans.last().and_then(|p| p.estimate_seconds);
 
-    Ok(Json(ListAgentPlansResponse { plans, build }))
+    Ok(Json(ListAgentPlansResponse { plans, build, estimate_seconds }))
 }
 
 
@@ -1079,7 +1102,7 @@ pub async fn send_message(
 /// chat's own topic, so a device with the chat open shows them (the device that sent them
 /// already has them, and ignores the copy), and every device hears the chat moved on, so its
 /// chat list does too. Best effort: a missed event is caught up the next time the chat loads.
-async fn announce_sent(pool: &sqlx::PgPool, user_id: Uuid, session_id: Uuid, title: Option<String>, message_ids: impl IntoIterator<Item = Uuid>) {
+pub(crate) async fn announce_sent(pool: &sqlx::PgPool, user_id: Uuid, session_id: Uuid, title: Option<String>, message_ids: impl IntoIterator<Item = Uuid>) {
     let Some(publisher) = crate::project_events::publisher() else { return };
     let chat_topic = format!("chat/{session_id}/stream");
     for message_id in message_ids {

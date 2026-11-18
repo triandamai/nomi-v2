@@ -715,6 +715,13 @@ pub const KODA_BRIEF_GUIDE_LEFT_OUT: &str = "Sections left out here (read_guide 
 /// model they picked can't read it ({name}, {model}).
 pub const LEFT_OUT_NOTE: &str = "(Not sent with this message: {name}. {model} can't read that kind of file, so you did not get it. Say so if it matters.)";
 
+/// The person's message when they pick "Run it" on a proposed plan ({title}).
+pub const PLAN_RUN_REQUEST: &str = "Run the plan \"{title}\" now: carry it out step by step and tell me how it went.";
+
+/// The person's message when they pick "Research only" on a proposed plan ({title}).
+pub const PLAN_RESEARCH_REQUEST: &str = "Only research the plan \"{title}\": look into what each step needs and tell me what you found. \
+Do not run the plan, and do not change, send or build anything yet.";
+
 /// In the ask_user tool's description: when to recommend an answer and add a helper line.
 pub const ASK_USER_RECOMMEND_GUIDE: &str = " Mark the one option you would pick yourself with recommended: true, at most one per question \
      and only where you have a real reason; if the person skips, that answer is used. Add a short helper \

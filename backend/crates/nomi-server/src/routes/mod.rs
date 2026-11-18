@@ -43,6 +43,7 @@ pub mod plan_checkout;
 pub mod message_delete;
 pub mod message_rerun;
 pub mod message_retry;
+pub mod plan_run;
 pub mod message_steps;
 pub mod project_database;
 pub mod project_import;
