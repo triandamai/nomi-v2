@@ -3660,5 +3660,10 @@
 	"studio_approve_waiting": "Feedback still waiting: {count}",
 	"studio_approve_confirm": "Approve version {version}",
 	"studio_approve_cancel": "Cancel",
-	"studio_approve_failed": "That approval could not be saved. Try again."
+	"studio_approve_failed": "That approval could not be saved. Try again.",
+	"studio_not_published": "Not published outside Nomi: {reason}",
+	"studio_publish_again": "Publish again",
+	"studio_publishing": "Publishing…",
+	"studio_publish_failed": "That version could not be published again. Try again.",
+	"chat_open_design_studio": "Open the Design Studio"
 }

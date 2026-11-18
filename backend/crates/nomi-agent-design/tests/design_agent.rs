@@ -401,6 +401,12 @@ async fn a_build_is_checked_against_the_handoff_it_was_built_from(pool: PgPool) 
     assert_eq!(design_review::latest(&mut conn, session_id).await.unwrap().unwrap().0, 1, "a check that couldn't read the build isn't kept");
 }
 
+#[test]
+fn sora_says_when_a_preview_is_not_published() {
+    let prompt = nomi_agent_core::prompts::DESIGN_SYSTEM_PROMPT;
+    assert!(prompt.contains("isn't published outside Nomi"), "Sora passes on that a preview isn't published, and why");
+}
+
 fn page(body: &str) -> String {
     format!("<html><head><meta name=\"viewport\" content=\"width=device-width\"><title>Home</title></head><body>{body}</body></html>")
 }
