@@ -1613,8 +1613,8 @@
 <!-- Files: the picker, what's said to a screen reader as uploads finish or fail, a phone's sheets
      (a failed file's Retry or Remove, the models that can see a picture), and the viewers. -->
 <input bind:this={picker} type="file" multiple hidden onchange={pickFiles} />
-<p role="status" class="sr-only">{liveText}</p>
-<p role="alert" class="sr-only">{alertText}</p>
+<p class="sr-only" aria-live="polite">{liveText}</p>
+{#if alertText}<p role="alert" class="sr-only">{alertText}</p>{/if}
 
 {#if phone && fileSheet}
 	{@const failed = fileSheet}
