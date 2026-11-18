@@ -570,4 +570,5 @@
 	<SessionExpired draft={header.signedOutDraft || undefined} signInHref={signInAgain} />
 </Modal>
 
-<ToastRegion />
+<!-- A project's workspace on a phone shows the toasts at the top of its screen itself (PhoneToastRegion). -->
+{#if !(isWorkspace && phone.current)}<ToastRegion />{/if}

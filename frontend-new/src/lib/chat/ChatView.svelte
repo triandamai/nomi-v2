@@ -93,11 +93,11 @@
 	// the nav bar (back to Chats, the title, who answers, the chat's sheet), the thread padded
 	// [16,16,20,16] with messages 24 apart, your messages in the 18-round bubble, each reply under the
 	// Mobile byline with its prose at 16 and the round action bar (More: regenerate), and the phone's
-	// composer, whose model chip and "@ Crew" open sheets. The workspace's chat pane comes with the
-	// phone's Build screens (Mobile Build).
+	// composer, whose model chip and "@ Crew" open sheets. In a project's workspace on a phone (Mobile
+	// Build) the chat is the Chat tab: the same, under the workspace's own nav, so without this one's.
 	const phoneGuess = () => Boolean(page.data.phone);
 	const phoneWidth = phoneView(phoneGuess());
-	const phone = $derived(phoneWidth.current && !pane);
+	const phone = $derived(phoneWidth.current);
 	type Sheet =
 		| { kind: 'chat' }
 		| { kind: 'rename' }
@@ -775,7 +775,7 @@
 {/snippet}
 
 <div class="flex h-full flex-col">
-	{#if phone}<NavBar title={shownTitle ?? m.nav_new_chat()} who={answering} onback={() => void goto('/chats')} onmenu={() => (sheet = { kind: 'chat' })} />{/if}
+	{#if phone && !pane}<NavBar title={shownTitle ?? m.nav_new_chat()} who={answering} onback={() => void goto('/chats')} onmenu={() => (sheet = { kind: 'chat' })} />{/if}
 	<div bind:this={scroller} {onscroll} class={['min-h-0 flex-1 overflow-y-auto', phone ? 'px-4 pt-4' : pane ? 'px-5 pt-5' : 'px-4 pt-6 lg:px-12 lg:pt-10']}>
 		<!-- On a phone a short thread sits at the bottom, over the composer, as the pen draws it. -->
 		<div class={['mx-auto flex w-full max-w-180 flex-col', phone ? 'min-h-full justify-end gap-6 pb-5' : 'gap-8 pb-8']}>
@@ -943,14 +943,19 @@
 			<div class="absolute -top-12 left-1/2 -translate-x-1/2"><JumpToLatest count={unseen} onclick={() => jumpToLatest(true)} /></div>
 		{/if}
 		{#if phone}
+			{#if quote}<div class="px-4 pb-2"><CodeQuote file={quote.file} range={quote.range} snippet={quote.snippet} onremove={() => onunquote?.()} /></div>{/if}
 			<PhoneComposer
 				bind:value={draft}
 				bind:field
-				placeholder={m.mobile_message()}
+				placeholder={pane ? m.workspace_chat_placeholder() : m.mobile_message()}
 				streaming={working}
 				{crew}
 				model={modelLabel}
-				onsend={(text) => void send(text)}
+				onsend={(text) => {
+					const quoted = quote;
+					if (quoted) onunquote?.();
+					void send(quoted ? `${quoted.text}\n\n${text}` : text);
+				}}
 				onstop={stop}
 				onmodel={models.length ? () => (sheet = { kind: 'model' }) : undefined}
 				oncrew={crew.length ? () => (sheet = { kind: 'crew' }) : undefined}

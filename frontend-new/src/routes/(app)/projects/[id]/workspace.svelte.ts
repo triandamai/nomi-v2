@@ -145,6 +145,9 @@ export class Workspace {
 		});
 	}
 
+	/** The phone's layout is showing (a few toasts say things its own way). */
+	phone = false;
+
 	get data() {
 		return this.#data();
 	}
@@ -197,6 +200,16 @@ export class Workspace {
 		const done = after.publishes.find((one) => one.id === was.id);
 		if (done?.status === 'succeeded') {
 			const previous = after.publishes.find((one) => one.status === 'succeeded' && one.id !== done.id && one.can_roll_back && one.environment === done.environment);
+			// A phone says a roll back as the pen draws it (J1r3Q): which build it is, and Restore.
+			if (this.phone && done.rollback_of_version !== null) {
+				toasts.show({
+					kind: 'success',
+					title: m.pb_rolled_back_live({ number: done.version }),
+					detail: m.pb_same_build({ number: done.rollback_of_version }),
+					...(previous && { action: { label: m.pb_restore({ number: previous.version }), onclick: () => void this.rollBack(previous.id) } }),
+				});
+				return;
+			}
 			toasts.show({
 				kind: 'success',
 				title: m.deploy_live({ number: done.version }),

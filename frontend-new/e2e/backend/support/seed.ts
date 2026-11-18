@@ -135,3 +135,23 @@ export async function siteHits(projectId: string): Promise<{ kind: string; refer
 		await sql.end();
 	}
 }
+
+/**
+ * A publish of a project as Shipyard's webhook leaves it (Mobile Build — Workspace tools, step 4):
+ * live or failed, with the failure's step, message and log where it failed. No Shipyard runs in
+ * e2e, so a publish can't be started from the app; the deploy overview reads these rows as it is.
+ */
+export async function seedPublish(projectId: string, publish: { version: number; status: 'succeeded' | 'failed' | 'running'; url?: string; error?: string; failure?: Record<string, unknown>; minutesAgo?: number }): Promise<string> {
+	const sql = postgres(DATABASE_URL, { max: 1, onnotice: () => {} });
+	try {
+		const at = new Date(Date.now() - (publish.minutesAgo ?? 0) * 60_000);
+		const finished = publish.status === 'running' ? null : new Date(at.getTime() + 41_000);
+		const [row] = await sql`
+			INSERT INTO project_publishes (project_id, environment, status, url, error, manifest, files_version, version, created_at, finished_at, failure)
+			VALUES (${projectId}, 'production', ${publish.status}, ${publish.url ?? null}, ${publish.error ?? null}, ${sql.json({})}, ${publish.version}, ${publish.version}, ${at}, ${finished}, ${publish.failure ? sql.json(publish.failure as never) : null})
+			RETURNING id`;
+		return row.id as string;
+	} finally {
+		await sql.end();
+	}
+}

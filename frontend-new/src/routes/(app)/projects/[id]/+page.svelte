@@ -74,6 +74,9 @@
 
 	const ws = new Workspace(() => data);
 	const phone = phoneView(untrack(() => Boolean(data.phone)));
+	$effect(() => {
+		ws.phone = phone.current;
+	});
 
 	// `?open=` from a card's menu, the detail panel or search on a file: the desktop's dialog or view.
 	$effect(() => {
