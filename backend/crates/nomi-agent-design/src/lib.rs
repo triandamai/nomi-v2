@@ -24,9 +24,7 @@ use nomi_agent_core::{find_tool, tool_definitions, SubAgent};
 use nomi_llm::ToolDefinition;
 
 /// What Sora is told before the brief.
-pub const BRIEF_INTRO: &str = "This is the design brief Rena saved for this chat: start from it rather than asking for what it \
-     already says. Treat what is marked confirmed as fact, what is from research as evidence, and what is recommended or \
-     assumed as open to change; say so when a direction rests on an assumption.";
+pub use nomi_agent_core::prompts::DESIGN_BRIEF_INTRO as BRIEF_INTRO;
 
 /// The chat's brief as Sora starts from it.
 pub fn brief_context(version: i32, brief: &DesignBrief) -> String {
@@ -34,8 +32,7 @@ pub fn brief_context(version: i32, brief: &DesignBrief) -> String {
 }
 
 /// What Sora is told before the directions she already proposed.
-pub const DIRECTIONS_INTRO: &str = "These are the directions you proposed last in this chat. When the person picks one or asks \
-     for changes, refine it and keep the same id; don't start over unless they ask.";
+pub use nomi_agent_core::prompts::DESIGN_DIRECTIONS_INTRO as DIRECTIONS_INTRO;
 
 /// The chat's newest directions as Sora carries on from them.
 pub fn directions_context(version: i32, set: &DesignDirections) -> String {
@@ -43,8 +40,7 @@ pub fn directions_context(version: i32, set: &DesignDirections) -> String {
 }
 
 /// What Sora is told before the preview she built last.
-pub const PREVIEW_INTRO: &str = "This is the preview you built last in this chat. When you change it, send every file again with \
-     save_preview and keep the same data-design-id on each element that is still there, so feedback keeps pointing at it.";
+pub use nomi_agent_core::prompts::DESIGN_PREVIEW_INTRO as PREVIEW_INTRO;
 
 /// The chat's newest preview as Sora carries on from it: its pages, its ids and its address.
 pub fn preview_context(session_id: Uuid, version: i32, manifest: &Manifest, published: Option<&Published>) -> String {
@@ -56,9 +52,7 @@ pub fn preview_context(session_id: Uuid, version: i32, manifest: &Manifest, publ
 }
 
 /// What Sora is told before the feedback that is still waiting.
-pub const FEEDBACK_INTRO: &str = "This is what the person said about your previews in the Design Studio and no version has dealt with \
-     yet. Each piece has a number, the version it was given on and what it points at. When they ask you to act on it, change \
-     only what it asks and leave the rest of the design as it is.";
+pub use nomi_agent_core::prompts::DESIGN_FEEDBACK_INTRO as FEEDBACK_INTRO;
 
 /// The feedback still waiting on a new version; `None` when there is none.
 pub fn feedback_context(feedback: &[Feedback]) -> Option<String> {
@@ -66,7 +60,7 @@ pub fn feedback_context(feedback: &[Feedback]) -> Option<String> {
 }
 
 /// What Sora is told while the person hasn't approved a version.
-pub const NOT_APPROVED: &str = "No version of the design is approved yet: the person approves one in the Design Studio.";
+pub use nomi_agent_core::prompts::DESIGN_NOT_APPROVED as NOT_APPROVED;
 
 /// The approval that stands, as Sora reads it; `newest` is the chat's newest preview version.
 pub fn approval_context(approval: &Approval, newest: i32) -> String {
