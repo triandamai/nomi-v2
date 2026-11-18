@@ -45,7 +45,7 @@
 	import { goto, invalidate } from '$app/navigation';
 	import { page } from '$app/state';
 	import CodeView from '$lib/ds/build/CodeView.svelte';
-	import { plainLines } from '$lib/ds/chat/code';
+	import { plainLines, type CodeLine } from '$lib/ds/chat/code';
 	import { fileTree, firstFile, quoteLines } from '$lib/projects/code';
 	import PhoneFrame from '$lib/ds/build/PhoneFrame.svelte';
 	import PublishButton from '$lib/ds/build/PublishButton.svelte';
@@ -182,6 +182,7 @@
 			view = 'code';
 			if (file && project.files.some((one) => one.path === file)) {
 				codeText = null;
+				codeLines = null;
 				codePath = file;
 			}
 		}
@@ -483,15 +484,18 @@
 	let workspaceView = $state<'chat' | 'pane'>('chat');
 	let codePath = $state<string | null>(untrack(() => firstFile(data.project.files)));
 	let codeText = $state<string | null>(null);
+	/** The file's lines as the server highlighted them; null until it's read (or when it couldn't be). */
+	let codeLines = $state<CodeLine[] | null>(null);
 	let codeBinary = $state(false);
 	let quote = $state<ReturnType<typeof quoteLines> | null>(null);
 	const tree = $derived(fileTree(project.files, codePath));
 	async function readFile(path: string) {
 		const response = await fetch(`/projects/${project.id}/file?path=${encodeURIComponent(path)}`).catch(() => null);
-		const file = response?.ok ? ((await response.json()) as { content?: string; binary: boolean }) : null;
+		const file = response?.ok ? ((await response.json()) as { content?: string; binary: boolean; lines?: CodeLine[] }) : null;
 		if (path !== codePath) return;
 		codeBinary = file?.binary ?? false;
 		codeText = file && !file.binary ? (file.content ?? '') : null;
+		codeLines = file?.lines ?? null;
 	}
 	$effect(() => {
 		if (view === 'code' && codePath) void readFile(codePath);
@@ -557,6 +561,7 @@
 			if (view !== where) view = where;
 			if (where === 'code' && path && path !== codePath) {
 				codeText = null;
+				codeLines = null;
 				codePath = path;
 			}
 		});
@@ -837,11 +842,12 @@
 						{tree}
 						path={codePath}
 						meta={codeBinary ? m.code_binary() : codeText === null ? m.code_reading() : codeText.split('\n').length === 1 ? m.code_meta_one() : m.code_meta({ count: codeText.split('\n').length })}
-						lines={codeText === null ? [] : plainLines(codeText)}
+						lines={codeText === null ? [] : (codeLines ?? plainLines(codeText))}
 						onopen={(index) => {
 							const entry = tree[index];
 							if (entry && entry.kind !== 'folder') {
 								codeText = null;
+								codeLines = null;
 								codePath = entry.path;
 							}
 						}}
