@@ -19,7 +19,8 @@ const signedIn = (cookie = '') => (/(^|;\s*)access_token=/.test(cookie) ? cookie
 
 await startDemoApi(API);
 
-const vite = spawn('npx', ['vite', 'dev', '--port', String(APP), '--strictPort'], {
+// --host: on a Mac `localhost` is ::1 (IPv6), where the gate, on 127.0.0.1, wouldn't find it.
+const vite = spawn('npx', ['vite', 'dev', '--host', '127.0.0.1', '--port', String(APP), '--strictPort'], {
 	stdio: ['ignore', 'pipe', 'inherit'],
 	env: { ...process.env, API_URL: `http://127.0.0.1:${API}` },
 });
