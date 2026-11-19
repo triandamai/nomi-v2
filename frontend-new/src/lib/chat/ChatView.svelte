@@ -303,6 +303,10 @@
 				break;
 			case 'TurnFailed':
 				retryWait = null;
+				toasts.show({
+					kind: 'error',
+					title: event.error || m.action_failed(),
+				});
 				break;
 			case 'TurnCompleted':
 				if (retryWait !== null) retried = { after: new Date(before.startedAt ?? Date.now()).toISOString(), seconds: retryWait };
