@@ -50,6 +50,7 @@ Status: `gaps` · `designing` · `design-verified` · `building` · `shipped` ·
 |---|---|---|---|---|---|
 | Renewal → Reminder | SFJZj | bl2TW | — | — | **gaps · no mobile** |
 | Add crew member | lk7Ws | SV1y1 | — | — | **gaps · no mobile** |
+| Home, Inbox & You (phone tabs) | — | — | M4PZDC | C6xDTg | build-verified (gate 3, 19 Nov 2026 · `work/phone-tabs`) |
 
 ## Key components for chat files
 `Chat / Attach Menu` Wh2Sd · `Chat / Attachment / Uploading` o8o2x · `Chat / Attachment / Ready` iAYlM ·
