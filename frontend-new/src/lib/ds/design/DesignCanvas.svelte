@@ -1,16 +1,14 @@
 <script lang="ts">
-	import { ArrowLeft, BadgeCheck, ExternalLink, Maximize2, Monitor, MousePointerClick, Smartphone, Tablet, ZoomIn, ZoomOut } from '@lucide/svelte';
+	import { ArrowLeft, BadgeCheck, Hand, Maximize2, MessageSquarePlus, Monitor, MousePointer2, PanelRight, Smartphone, Tablet, ZoomIn, ZoomOut } from '@lucide/svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { m } from '$lib/paraglide/messages';
-	import { getLocale } from '$lib/paraglide/runtime';
 	import Icon from '$lib/ds/foundations/Icon.svelte';
-	import OpenPencilViewer from '$lib/ds/design/OpenPencilViewer.svelte';
+	import OpenPencilViewer, { type CanvasPin } from '$lib/ds/design/OpenPencilViewer.svelte';
 	import { buildStudioSceneModel, type StudioHitResult } from '$lib/design/openPencilCanvas';
 	import {
 		CANVAS_ARTBOARD_WIDTHS,
 		DEVICE_WIDTHS,
 		activeDirectionForPreview,
-		adjustDirectionMessage,
 		annotateMessage,
 		annotationsOn,
 		clampZoom,
@@ -20,17 +18,21 @@
 		feedbackDraft,
 		fitZoom,
 		highlightMessage,
+		isPenPreview,
+		mergePenDocuments,
 		modeMessage,
+		penUrl,
 		pickDirectionMessage,
 		pickVersion,
 		previewUrl,
 		readPreviewMessage,
 		refineMessage,
 		splitCanvasPages,
+		toolForKey,
 		versionsNewestFirst,
 		zoomLabel,
 		zoomStep,
-		type CanvasStageFilter,
+		type CanvasTool,
 		type Device,
 		type FeedbackScope,
 		type Selection,
@@ -41,13 +43,11 @@
 		type StudioElementKind,
 		type StudioFeedback,
 		type StudioPreview,
-		type StudioPublishOutcome,
 	} from '$lib/design/designStudio';
 
-	// The Design Studio Spatial Canvas (Flow / Build & Chat → Design Studio): Sora's proposed
-	// style-tile directions, the active design system board, and multi-page app flow artboards on a
-	// 2D pan-and-zoom canvas, plus single-page preview, direct click-to-pin element feedback,
-	// version comparison, and approval handoff to Koda.
+	// The Design Studio: a chat's design directions, design system, and multi-page previews on an
+	// interactive spatial canvas or single-page frame. Previews run in sandboxed frames with an
+	// opaque origin; they only tell the Studio which [data-design-id] element was pointed at.
 	let {
 		sessionId,
 		directions = null,
@@ -63,14 +63,28 @@
 		previews: StudioPreview[];
 		feedback: StudioFeedback[];
 		approval: StudioApproval | null;
+		/** The version a link asked for (`?version=`). */
 		wanted?: string | null;
+		/** Inside a project page: no way back (the chat is beside it) and it fills its pane. */
 		embedded?: boolean;
+		/** Loads what there is now; the page reloads itself when not given. */
 		onrefresh?: () => Promise<void>;
 	} = $props();
 	const data = $derived({ sessionId, directions, previews, wanted });
+	// frontend-new proxies the Studio's API under the chat (chatRoutes.ts).
+	const apiBase = $derived(`/chat/${sessionId}/api/design`);
 
 	const ENTRY_PAGE = 'index.html';
+	// The most characters in one piece of feedback (design_feedback::MAX_BODY_CHARS).
 	const FEEDBACK_CHARS = 2000;
+	// How much one wheel notch with Ctrl/⌘ zooms the frames canvas.
+	const WHEEL_ZOOM_STEP = 0.1;
+	// The least room above the design when the canvas fits it, for the frame names.
+	const FIT_TOP = 32;
+	// How far the comment popover stays from the stage's edges, and how big it is.
+	const POPOVER_MARGIN = 16;
+	const POPOVER_WIDTH = 300;
+	const POPOVER_HEIGHT = 240;
 	const DEVICES: { device: Device; icon: typeof Monitor; label: string }[] = [
 		{ device: 'desktop', icon: Monitor, label: m.device_desktop() },
 		{ device: 'tablet', icon: Tablet, label: m.studio_device_tablet() },
@@ -82,6 +96,7 @@
 		element: m.studio_kind_element(),
 	};
 
+	// The version on screen: the one picked here, else the one the link asked for, else the newest.
 	let pickedVersion = $state<number | null>(null);
 	const current = $derived(pickVersion(data.previews, pickedVersion !== null ? String(pickedVersion) : data.wanted));
 	const versions = $derived(versionsNewestFirst(data.previews));
@@ -90,6 +105,7 @@
 	const activeDirection = $derived(activeDirectionForPreview(data.directions, current));
 	const splitPages = $derived(current ? splitCanvasPages(current.pages) : { systemPages: [], flowPages: [] });
 
+	// The page the frame was sent to, and the page it says it is on (links inside it move it).
 	let openedPage = $state(ENTRY_PAGE);
 	let shownPage = $state(ENTRY_PAGE);
 	const frameSrc = $derived(current ? previewUrl(current, openedPage) : null);
@@ -99,41 +115,93 @@
 	const frameWidth = $derived(DEVICE_WIDTHS[device] === null ? '100%' : `${DEVICE_WIDTHS[device]}px`);
 	const canvasBoardWidth = $derived(CANVAS_ARTBOARD_WIDTHS[device]);
 
-	let selecting = $state(false);
+	// What a click on the canvas does: move pans, select picks, comment pins feedback (V, H, C).
+	let tool = $state<CanvasTool>('select');
+	const TOOLS: { tool: CanvasTool; icon: typeof Monitor; label: string; key: string }[] = [
+		{ tool: 'move', icon: Hand, label: m.studio_tool_move(), key: 'H' },
+		{ tool: 'select', icon: MousePointer2, label: m.studio_tool_select(), key: 'V' },
+		{ tool: 'comment', icon: MessageSquarePlus, label: m.studio_tool_comment(), key: 'C' },
+	];
 	let selection = $state<Selection | null>(null);
 	let frame = $state<HTMLIFrameElement | null>(null);
 	let canvasFrames = $state<Record<string, HTMLIFrameElement | null>>({});
 
 	type Mode = 'preview' | 'canvas' | 'feedback' | 'compare';
 	let mode = $state<Mode>('canvas');
-	const picking = $derived(selecting || mode === 'feedback' || mode === 'canvas');
+	const picking = $derived(tool !== 'move');
 
-	// Spatial canvas pan, zoom, stage filter, and direct click-to-pin popover.
+	// Spatial canvas state: zoom, pan, stage filter, and direct click-to-pin popover.
 	let zoom = $state(1);
 	let panX = $state(0);
 	let panY = $state(0);
 	let isPanning = $state(false);
 	let panOrigin = $state<{ x: number; y: number; panX: number; panY: number } | null>(null);
-	let stageFilter = $state<CanvasStageFilter>('all');
 	let viewportEl = $state<HTMLElement | null>(null);
+	let stageEl = $state<HTMLElement | null>(null);
+	let inspectorOpen = $state(false);
 	let pinPopoverOpen = $state(false);
+	// Where the comment was dropped, inside the stage; null puts the popover in its corner.
+	let pinAt = $state<{ x: number; y: number } | null>(null);
 	let pinWords = $state('');
 	let pinInteraction = $state(false);
 
+	// A version Sora drew as a .pen canvas is shown on the vector canvas; an older HTML one in frames.
 	type CanvasEngine = 'openpencil' | 'frames';
-	let userEngine = $state<CanvasEngine | null>(null);
-	const canvasEngine = $derived(userEngine ?? (current?.pages.some((p) => p.path.endsWith('.pen')) ? 'openpencil' : 'frames'));
+	const canvasEngine = $derived<CanvasEngine>(current && !isPenPreview(current) ? 'frames' : 'openpencil');
+
+	// The version's own .pen files, loaded from where its files are served.
+	let pen = $state<{ token: string; json: string | null } | null>(null);
+	$effect(() => {
+		const preview = current;
+		if (!preview || canvasEngine !== 'openpencil') return;
+		const files = preview.pen_files ?? [];
+		if (files.length === 0 || pen?.token === preview.preview_token) return;
+		const token = preview.preview_token;
+		void Promise.all(files.map((path) => fetch(penUrl(preview, path)).then((r) => (r.ok ? r.text() : '')).catch(() => '')))
+			.then((contents) => {
+				if (current?.preview_token === token) pen = { token, json: mergePenDocuments(contents) };
+			});
+	});
+	const penJson = $derived(current && pen?.token === current.preview_token ? pen.json : null);
 
 	const openPencilModel = $derived(
 		buildStudioSceneModel({
 			directions: directionList,
 			preview: current,
 			activeDirection,
-			device
+			device,
+			rawPenJson: penJson
 		})
 	);
 
-	function handleOpenPencilHit(hit: StudioHitResult) {
+	// The canvas fits what is on it whenever something new is drawn.
+	let fittedFor = $state<string | null>(null);
+	$effect(() => {
+		const key = `${current?.preview_token ?? 'directions'}:${penJson ? 'pen' : 'scene'}:${openPencilModel.frames.length}`;
+		if (canvasEngine !== 'openpencil' || !stageEl || fittedFor === key || openPencilModel.frames.length === 0) return;
+		fittedFor = key;
+		fitPen();
+	});
+
+	function fitPen() {
+		const frames = openPencilModel.frames;
+		if (!stageEl || frames.length === 0) return;
+		const left = Math.min(...frames.map((f) => f.x));
+		const top = Math.min(...frames.map((f) => f.y));
+		const right = Math.max(...frames.map((f) => f.x + f.width));
+		const bottom = Math.max(...frames.map((f) => f.y + f.height));
+		const room = { w: stageEl.clientWidth || 1200, h: stageEl.clientHeight || 800 };
+		zoom = Math.min(fitZoom(room.w, right - left), fitZoom(room.h, bottom - top));
+		panX = (room.w - (right - left) * zoom) / 2 - left * zoom;
+		panY = Math.max(FIT_TOP, (room.h - (bottom - top) * zoom) / 2) - top * zoom;
+	}
+
+	function openComment(at: { x: number; y: number } | null) {
+		pinAt = at;
+		pinPopoverOpen = true;
+	}
+
+	function handleOpenPencilHit(hit: StudioHitResult, at: { x: number; y: number }) {
 		if (hit.target.kind === 'direction-cta' && hit.target.directionId) {
 			const dir = directionList.find((d) => d.id === hit.target.directionId);
 			if (dir) useDirection(dir);
@@ -156,25 +224,45 @@
 			if (hit.target.pagePath) {
 				shownPage = hit.target.pagePath;
 			}
-			if (mode === 'feedback') {
-				scope = 'element';
-			} else {
-				pinPopoverOpen = true;
-			}
+			if (tool === 'comment') openComment(at);
+			else pinPopoverOpen = false;
 		}
 	}
 
-	// Stage 1: direction exploration
-	let adjustingDirectionId = $state<string | null>(null);
-	let directionNote = $state('');
+	function pickTool(next: CanvasTool) {
+		tool = next;
+		if (next !== 'comment') pinPopoverOpen = false;
+	}
+
+	function keydown(event: KeyboardEvent) {
+		if (event.key === 'Escape') {
+			clearSelection();
+			return;
+		}
+		const next = toolForKey(event);
+		if (next) pickTool(next);
+	}
+
+	// Direction exploration state (Stage 1)
 	let sendingDirection = $state(false);
 	let directionSent = $state(false);
 	let directionError = $state('');
 
+	// Everything said about the chat's previews: what the page loaded with, and what was added here.
 	let added = $state<StudioFeedback[]>([]);
+	// Feedback added here that a reload has since brought in is shown once.
 	const feedback = $derived([...given, ...added.filter((a) => !given.some((g) => g.id === a.id))]);
 	const history = $derived([...feedback].sort((a, b) => b.number - a.number));
-	const marks = $derived(current && (mode === 'feedback' || mode === 'canvas' || selecting) ? annotationsOn(feedback, current, shownPage) : []);
+	// Open feedback marked on the canvas, at the point it was dropped.
+	const canvasPins = $derived<CanvasPin[]>(
+		current
+			? feedback
+					.filter((f) => f.status === 'open' && f.element_id)
+					.map((f) => ({ number: f.number, pagePath: f.page, elementId: f.element_id, x: f.pin?.x ?? 0.5, y: f.pin?.y ?? 0 }))
+			: []
+	);
+
+	const marks = $derived(current ? annotationsOn(feedback, current, shownPage) : []);
 
 	const SCOPES: { scope: FeedbackScope; label: string }[] = [
 		{ scope: 'global', label: m.studio_scope_global() },
@@ -204,6 +292,7 @@
 		}
 	});
 
+	// The frame's origin is its own and unnameable, so messages are addressed to its window.
 	function tell(message: object) {
 		frame?.contentWindow?.postMessage(message, '*');
 	}
@@ -233,11 +322,7 @@
 		} else {
 			selection = said.selection;
 			shownPage = said.selection.page;
-			if (mode === 'feedback') {
-				scope = 'element';
-			} else {
-				pinPopoverOpen = true;
-			}
+			if (tool === 'comment') openComment(null);
 		}
 	}
 
@@ -255,18 +340,10 @@
 		shownPage = path;
 	}
 
-	function toggleSelecting() {
-		selecting = !selecting;
-	}
-
 	function pick(element: StudioElement) {
 		const targetPage = element.pages.includes(shownPage) ? shownPage : (element.pages[0] ?? shownPage);
 		selection = { id: element.id, page: targetPage, kind: element.kind, label: element.label, tag: '', text: '', point: null };
-		if (mode === 'feedback') {
-			scope = 'element';
-		} else {
-			pinPopoverOpen = true;
-		}
+		if (tool === 'comment') openComment(null);
 		tellAll(highlightMessage(element.id));
 	}
 
@@ -287,7 +364,11 @@
 	}
 
 	function fitCanvas() {
-		const boardCount = Math.max(1, (current ? splitPages.flowPages.length + 1 : 0) + (stageFilter === 'all' || stageFilter === 'directions' ? directionList.length : 0));
+		if (canvasEngine === 'openpencil') {
+			fitPen();
+			return;
+		}
+		const boardCount = Math.max(1, (current ? splitPages.flowPages.length + 1 : 0) + directionList.length);
 		const totalWidth = boardCount * (canvasBoardWidth + 32);
 		const vw = viewportEl?.clientWidth ?? 1200;
 		zoom = fitZoom(vw, totalWidth);
@@ -296,7 +377,7 @@
 	}
 
 	function startCanvasPan(event: PointerEvent) {
-		if (event.button !== 0) return;
+		if (event.button !== 0 && event.button !== 1) return;
 		const target = event.target as HTMLElement | null;
 		if (target?.closest('button, a, input, textarea, select, iframe, [data-part="pin-popover"]')) return;
 		isPanning = true;
@@ -315,13 +396,14 @@
 	}
 
 	function handleCanvasWheel(event: WheelEvent) {
+		event.preventDefault();
 		if (event.ctrlKey || event.metaKey) {
-			event.preventDefault();
-			zoom = clampZoom(zoom + (event.deltaY < 0 ? 0.1 : -0.1));
+			zoom = clampZoom(zoom + (event.deltaY < 0 ? WHEEL_ZOOM_STEP : -WHEEL_ZOOM_STEP));
+		} else {
+			panX -= event.deltaX;
+			panY -= event.deltaY;
 		}
 	}
-
-	const apiBase = $derived(`/chat/${data.sessionId}/api/design`);
 
 	async function addFeedback(event: SubmitEvent) {
 		event.preventDefault();
@@ -379,8 +461,6 @@
 				return;
 			}
 			directionSent = true;
-			adjustingDirectionId = null;
-			directionNote = '';
 		} catch {
 			directionError = m.studio_refine_failed();
 		} finally {
@@ -392,16 +472,12 @@
 		void sendDirectionMessage(pickDirectionMessage(direction));
 	}
 
-	function submitDirectionAdjustment(event: SubmitEvent, direction: StudioDirection) {
-		event.preventDefault();
-		const text = adjustDirectionMessage(direction, directionNote);
-		if (text) void sendDirectionMessage(text);
-	}
-
+	// Comparing: another version next to the one on screen, on the same page when it has it.
 	let comparedVersion = $state<number | null>(null);
 	const compared = $derived(current && mode === 'compare' ? compareWith(data.previews, current, comparedVersion) : null);
 	const otherVersions = $derived(current ? versions.filter((v) => v.version !== current.version) : []);
 
+	// The version the person said is the design to build. Approving is its own, confirmed step.
 	let approvedHere = $state<StudioApproval | null>(null);
 	const approval = $derived(approvedHere ?? approvedBefore);
 	const waiting = $derived(feedback.filter((f) => f.status === 'open').length);
@@ -428,210 +504,122 @@
 		}
 	}
 
-	let publishedHere = $state<Record<number, StudioPublishOutcome>>({});
-	let publishing = $state(false);
-	let publishAgainError = $state('');
-	const publishedUrl = $derived(current ? (publishedHere[current.version]?.published_url ?? current.published_url) : null);
-	const publishError = $derived(current ? (publishedHere[current.version] ? publishedHere[current.version].publish_error : (current.publish_error ?? null)) : null);
-
-	async function publishAgain() {
-		if (!current || publishing) return;
-		const version = current.version;
-		publishing = true;
-		publishAgainError = '';
-		try {
-			const response = await fetch(`${apiBase}/publish`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ version }) });
-			if (!response.ok) {
-				publishAgainError = m.studio_publish_failed();
-				return;
-			}
-			publishedHere = { ...publishedHere, [version]: (await response.json()) as StudioPublishOutcome };
-		} catch {
-			publishAgainError = m.studio_publish_failed();
-		} finally {
-			publishing = false;
-		}
-	}
-
-	let refineWords = $state('');
-	let refining = $state(false);
-	let refineSent = $state(false);
-	let refineError = $state('');
-	const refineText = $derived(refineMessage(refineWords, feedback, (numbers) => m.studio_refine_default({ numbers })));
+	// Asking Sora for a new version: a message in the chat, so the request and her answer are there.
+	let ask = $state('');
+	let asking = $state(false);
+	let asked = $state(false);
+	let askError = $state('');
+	const request = $derived(refineMessage(ask, feedback, (numbers) => m.studio_refine_default({ numbers })));
 
 	async function askSora(event?: SubmitEvent) {
 		event?.preventDefault();
-		if (!refineText || refining) return;
-		refining = true;
-		refineError = '';
-		refineSent = false;
+		if (!request || asking) return;
+		asking = true;
+		askError = '';
 		try {
-			const response = await fetch(`${apiBase}/refine`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: refineText }) });
+			const response = await fetch(`${apiBase}/refine`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: request }) });
 			if (!response.ok) {
-				refineError = m.studio_refine_failed();
+				askError = m.studio_refine_failed();
 				return;
 			}
-			refineWords = '';
-			refineSent = true;
+			asked = true;
+			ask = '';
 		} catch {
-			refineError = m.studio_refine_failed();
+			askError = m.studio_refine_failed();
 		} finally {
-			refining = false;
+			asking = false;
 		}
 	}
 
-	async function checkForNewVersion() {
+	// A new version is saved by Sora in the chat; this loads what there is now.
+	async function refresh() {
 		await (onrefresh ? onrefresh() : invalidateAll());
+		added = [];
+		approvedHere = null;
 		pickedVersion = null;
 	}
 
-	function showFeedback(item: StudioFeedback) {
-		pickedVersion = item.version;
-		if (item.page) {
-			openedPage = item.page;
-			shownPage = item.page;
-		}
-		if (item.element_id && current) {
-			const element = current.elements.find((e) => e.id === item.element_id);
-			if (element) selection = { id: element.id, page: item.page ?? shownPage, kind: element.kind, label: element.label, tag: '', text: '', point: item.pin };
-			tellAll(highlightMessage(item.element_id));
-		}
-	}
-
-	function whereLabel(item: StudioFeedback): string {
+	// What a piece of feedback points at, in words.
+	function where(item: StudioFeedback): string {
+		const page = item.page ?? '';
 		const element = item.element_id ? (current?.elements.find((e) => e.id === item.element_id)?.label ?? item.element_id) : null;
-		const page = item.page ? (current?.pages.find((p) => p.path === item.page)?.title ?? item.page) : null;
 		if (item.level === 'global') return m.studio_feedback_where_global();
-		if (item.level === 'page') return m.studio_feedback_where_page({ page: page ?? '' });
-		if (item.level === 'interaction') return m.studio_feedback_where_interaction({ target: element ?? page ?? m.studio_feedback_where_global() });
-		return m.studio_feedback_where_element({ element: element ?? '', page: page ?? '' });
+		const target = element ? m.studio_feedback_where_element({ element, page }) : m.studio_feedback_where_page({ page });
+		return item.level === 'interaction' ? m.studio_feedback_where_interaction({ target }) : target;
 	}
 
-	function formatShortDate(iso: string): string {
-		const parsed = new Date(iso);
-		if (Number.isNaN(parsed.getTime())) return iso;
-		return new Intl.DateTimeFormat(getLocale(), { month: 'short', day: 'numeric' }).format(parsed);
+	// Shows what a piece of feedback is about, when this version still has it.
+	function showFeedback(item: StudioFeedback) {
+		if (!current || !item.page || !current.pages.some((p) => p.path === item.page)) return;
+		if (item.page !== shownPage) openPage(item.page);
+		const element = current.elements.find((e) => e.id === item.element_id && e.pages.includes(item.page as string));
+		if (!element) return;
+		selection = { id: element.id, page: item.page, kind: element.kind, label: element.label, tag: '', text: '', point: null };
+		tellAll(highlightMessage(element.id));
+	}
+
+	function clearSelection() {
+		selection = null;
+		pinPopoverOpen = false;
+		pinAt = null;
+		tellAll(highlightMessage(null));
 	}
 </script>
+<svelte:window onmessage={heard} onkeydown={keydown} />
 
-<svelte:window onmessage={heard} />
-
-<div class="flex h-full min-h-0 flex-col bg-bg text-text">
+<div class="flex h-full min-h-0 flex-col bg-bg text-text" data-testid="design-canvas">
 	<header class="flex flex-wrap items-center gap-2.5 border-b border-border bg-surface px-4 py-2.5">
 		{#if !embedded}
-			<a href={`/chat/${data.sessionId}`} class="inline-flex items-center gap-1.5 text-ui text-text-2 hover:text-text">
+			<a href={`/chat/${data.sessionId}`} class="inline-flex size-8 items-center justify-center rounded-sm text-text-2 hover:bg-surface-2 hover:text-text" aria-label={m.studio_back()} title={m.studio_back()}>
 				<Icon icon={ArrowLeft} size={16} />
-				<span>{m.studio_back()}</span>
 			</a>
 		{/if}
-		<div class="flex min-w-0 flex-1 flex-wrap items-baseline gap-2">
-			<h1 class="m-0 text-ui font-semibold">{m.studio_title()}</h1>
+		<div class="flex min-w-0 flex-1 flex-col">
+			<h1 class="m-0 truncate text-ui font-semibold">{current ? current.title : m.studio_title()}</h1>
 			{#if current}
-				<span class="truncate text-ui text-text-2">{current.title}</span>
-				<span class="rounded-xs bg-surface-2 px-2 py-0.5 font-mono text-label text-text-2 outline -outline-offset-1 outline-border">
-					{m.studio_direction({ direction: current.direction_id })}
-				</span>
+				<span class="truncate text-caption text-text-2">{activeDirection?.name ?? current.direction_id} · {m.studio_version({ version: current.version })}</span>
 			{/if}
 		</div>
-
-		{#if current || directionList.length > 0}
+		{#if current}
 			<div class="flex flex-wrap items-center gap-2">
-				<div class="inline-flex items-center gap-0.5 rounded-sm bg-surface-2 p-0.5 outline -outline-offset-1 outline-border" role="group" aria-label={m.studio_mode_canvas()}>
-					<button type="button" class="inline-flex size-6.5 cursor-pointer items-center justify-center rounded-xs text-text-2 hover:text-text" aria-label={m.studio_zoom_out()} onclick={zoomOut}>
-						<Icon icon={ZoomOut} size={14} />
-					</button>
-					<span class="min-w-11 text-center font-mono text-label text-text" data-testid="canvas-zoom-label">{zoomLabel(zoom)}</span>
-					<button type="button" class="inline-flex size-6.5 cursor-pointer items-center justify-center rounded-xs text-text-2 hover:text-text" aria-label={m.studio_zoom_in()} onclick={zoomIn}>
-						<Icon icon={ZoomIn} size={14} />
-					</button>
-					<button type="button" class="inline-flex cursor-pointer items-center gap-1 rounded-xs px-2 py-1 font-mono text-label text-text-2 hover:text-text" onclick={fitCanvas}>
-						<Icon icon={Maximize2} size={12} />
-						<span>{m.studio_zoom_fit()}</span>
-					</button>
-				</div>
-
-				<div class="inline-flex rounded-sm bg-surface-2 p-0.5 outline -outline-offset-1 outline-border" role="group" aria-label={m.studio_title()}>
-					{#each DEVICES as option (option.device)}
-						<button
-							type="button"
-							class={[
-								'inline-flex cursor-pointer items-center gap-1 rounded-xs px-2 py-1 text-caption',
-								device === option.device ? 'bg-surface font-medium text-text outline -outline-offset-1 outline-border-strong' : 'text-text-2 hover:text-text',
-							]}
-							aria-pressed={device === option.device}
-							onclick={() => (device = option.device)}
-						>
-							<Icon icon={option.icon} size={14} />
-							<span>{option.label}</span>
-						</button>
-					{/each}
-				</div>
-
-				{#if current}
-					<button
-						type="button"
-						class={[
-							'inline-flex cursor-pointer items-center gap-1.5 rounded-sm px-2.5 py-1 text-caption outline -outline-offset-1',
-							picking ? 'bg-accent font-medium text-accent-ink outline-accent' : 'bg-surface-2 text-text outline-border hover:outline-border-strong',
-						]}
-						aria-pressed={picking}
-						onclick={toggleSelecting}
-					>
-						<Icon icon={MousePointerClick} size={14} />
-						<span>{m.studio_select()}</span>
-					</button>
+				{#if canvasEngine === 'frames'}
+					<div class="inline-flex rounded-sm bg-surface-2 p-0.5 outline -outline-offset-1 outline-border" role="group" aria-label={m.studio_title()}>
+						{#each DEVICES as option (option.device)}
+							<button
+								type="button"
+								class={['inline-flex size-7 cursor-pointer items-center justify-center rounded-xs', device === option.device ? 'bg-surface text-text outline -outline-offset-1 outline-border-strong' : 'text-text-2 hover:text-text']}
+								aria-pressed={device === option.device}
+								aria-label={option.label}
+								title={option.label}
+								onclick={() => (device = option.device)}
+							>
+								<Icon icon={option.icon} size={14} />
+							</button>
+						{/each}
+					</div>
 				{/if}
-
-				{#if current}
-					{#if approval?.version === current.version}
-						<span class="inline-flex items-center gap-1.5 rounded-sm bg-surface-2 px-2.5 py-1 font-mono text-label text-accent outline -outline-offset-1 outline-border">
-							<Icon icon={BadgeCheck} size={14} />
-							<span>{m.studio_approved()}</span>
-						</span>
-					{:else}
-						<button
-							type="button"
-							class="inline-flex cursor-pointer items-center gap-1.5 rounded-sm bg-accent px-2.5 py-1 text-caption font-medium text-accent-ink"
-							aria-expanded={confirming}
-							onclick={() => (confirming = !confirming)}
-						>
-							<Icon icon={BadgeCheck} size={14} />
-							<span>{m.studio_approve()}</span>
-						</button>
-					{/if}
-				{/if}
-
-				{#if publishedUrl}
-					<a
-						href={publishedUrl}
-						target="_blank"
-						rel="noopener noreferrer"
-						class="inline-flex items-center gap-1.5 rounded-sm bg-surface-2 px-2.5 py-1 text-caption text-text outline -outline-offset-1 outline-border hover:outline-border-strong"
-					>
-						<span>{m.studio_open_published()}</span>
-						<Icon icon={ExternalLink} size={14} />
-					</a>
+				{#if approval?.version === current.version}
+					<span class="inline-flex items-center gap-1.5 rounded-sm bg-accent-bg px-2.5 py-1 text-caption font-medium text-accent">
+						<Icon icon={BadgeCheck} size={14} />
+						<span>{m.studio_approved()}</span>
+					</span>
+				{:else}
+					<button type="button" class="inline-flex cursor-pointer items-center gap-1.5 rounded-sm bg-accent px-3 py-1.5 text-caption font-medium text-accent-ink" aria-expanded={confirming} onclick={() => (confirming = !confirming)}>
+						{m.studio_approve()}
+					</button>
 				{/if}
 			</div>
 		{/if}
 	</header>
 
-	{#if current && !publishedUrl && publishError}
-		<div class="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-surface-2 px-4 py-2 text-caption" role="status">
-			<span class="text-text-2">{m.studio_not_published({ reason: publishError })}</span>
-			<div class="flex items-center gap-2.5">
-				{#if publishAgainError}
-					<span class="text-danger" role="alert">{publishAgainError}</span>
-				{/if}
-				<button
-					type="button"
-					class="cursor-pointer rounded-sm bg-surface px-2.5 py-1 text-caption text-text outline -outline-offset-1 outline-border hover:outline-border-strong disabled:opacity-50"
-					disabled={publishing}
-					onclick={publishAgain}
-				>
-					{publishing ? m.studio_publishing() : m.studio_publish_again()}
-				</button>
-			</div>
+	{#if directionSent || directionError}
+		<div class="flex flex-wrap items-center gap-3 border-b border-border bg-surface-2 px-4 py-2 text-caption" role={directionError ? 'alert' : 'status'}>
+			{#if directionError}
+				<span class="text-danger">{directionError}</span>
+			{:else}
+				<span class="text-text-2">{m.studio_refine_sent()}</span>
+				<button type="button" class="cursor-pointer rounded-xs bg-surface px-2 py-1 text-caption text-text outline -outline-offset-1 outline-border hover:outline-border-strong" onclick={refresh}>{m.studio_refine_refresh()}</button>
+			{/if}
 		</div>
 	{/if}
 
@@ -639,28 +627,14 @@
 		<section class="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-surface-2 px-4 py-3 text-ui" aria-label={m.studio_approve()}>
 			<div class="flex flex-col gap-0.5">
 				<strong class="font-medium text-text">{m.studio_approve_question({ version: current.version })}</strong>
-				<p class="m-0 text-caption text-text-2">{m.studio_approve_explain()}</p>
-				{#if waiting > 0}
-					<p class="m-0 font-mono text-label text-text-2">{m.studio_approve_waiting({ count: waiting })}</p>
-				{/if}
-				{#if approveError}
-					<p class="m-0 text-caption text-danger" role="alert">{approveError}</p>
-				{/if}
+				<p class="m-0 text-caption text-text-2">{m.studio_approve_explain()}{#if waiting > 0} {m.studio_approve_waiting({ count: waiting })}{/if}</p>
+				{#if approveError}<p class="m-0 text-caption text-danger" role="alert">{approveError}</p>{/if}
 			</div>
 			<div class="flex items-center gap-2">
-				<button
-					type="button"
-					class="cursor-pointer rounded-sm bg-accent px-3 py-1.5 text-caption font-medium text-accent-ink disabled:opacity-50"
-					disabled={approving}
-					onclick={approve}
-				>
+				<button type="button" class="cursor-pointer rounded-sm bg-accent px-3 py-1.5 text-caption font-medium text-accent-ink disabled:opacity-50" disabled={approving} onclick={approve}>
 					{m.studio_approve_confirm({ version: current.version })}
 				</button>
-				<button
-					type="button"
-					class="cursor-pointer rounded-sm bg-surface px-3 py-1.5 text-caption text-text outline -outline-offset-1 outline-border hover:outline-border-strong"
-					onclick={() => (confirming = false)}
-				>
+				<button type="button" class="cursor-pointer rounded-sm bg-surface px-3 py-1.5 text-caption text-text outline -outline-offset-1 outline-border hover:outline-border-strong" onclick={() => (confirming = false)}>
 					{m.studio_approve_cancel()}
 				</button>
 			</div>
@@ -672,487 +646,149 @@
 			<h2 class="m-0 text-body font-semibold text-text">{m.studio_empty_title()}</h2>
 			<p class="m-0 text-ui text-text-2">{m.studio_empty_body()}</p>
 		</section>
-	{:else if !current && directionList.length > 0}
-		<!-- Stage 1 only: Sora proposed style directions before the first HTML preview is built -->
-		<div class="flex min-h-0 flex-1 flex-col overflow-auto p-5">
-			<div class="mb-4 flex flex-wrap items-center justify-between gap-2">
-				<span class="font-mono text-label tracking-label text-text-3 uppercase">{m.studio_stage_directions()}</span>
-				{#if directionSent}
-					<div class="flex items-center gap-2 text-caption text-text-2" role="status">
-						<span>{m.studio_refine_sent()}</span>
-						<button type="button" class="cursor-pointer rounded-xs bg-surface px-2 py-1 text-caption text-text outline -outline-offset-1 outline-border" onclick={checkForNewVersion}>
-							{m.studio_refine_refresh()}
-						</button>
+	{:else}
+		<div class="relative flex min-h-0 flex-1 overflow-hidden bg-bg" bind:this={stageEl}>
+			{#if canvasEngine === 'openpencil'}
+				<OpenPencilViewer
+					model={openPencilModel}
+					{tool}
+					bind:zoom
+					bind:panX
+					bind:panY
+					bind:inspectorOpen
+					pins={canvasPins}
+					selectedNodeId={selection?.id ?? null}
+					onhit={handleOpenPencilHit}
+					onemptyclick={clearSelection}
+					onpinclick={(pin) => {
+						const item = feedback.find((f) => f.number === pin.number);
+						if (item) showFeedback(item);
+					}}
+					onpickDirection={(dirId) => {
+						const dir = directionList.find((d) => d.id === dirId);
+						if (dir) useDirection(dir);
+					}}
+				/>
+			{:else if current}
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<div
+					bind:this={viewportEl}
+					class={['relative flex-1 overflow-hidden p-12', tool === 'move' && 'cursor-grab active:cursor-grabbing']}
+					data-testid="spatial-canvas-viewport"
+					onpointerdown={startCanvasPan}
+					onpointermove={moveCanvasPan}
+					onpointerup={endCanvasPan}
+					onpointercancel={endCanvasPan}
+					onwheel={handleCanvasWheel}
+				>
+					<div class="inline-flex origin-top-left items-start gap-12" style:transform={`translate(${panX}px, ${panY}px) scale(${zoom})`} data-testid="spatial-canvas-plane">
+						{#each [...splitPages.systemPages, ...splitPages.flowPages] as page (page.path)}
+							<article class="flex shrink-0 flex-col gap-1.5" data-artboard-page={page.path} style:width={`${canvasBoardWidth}px`}>
+								<span class="truncate text-caption text-text-2">{page.title}</span>
+								{#key `${current.preview_token}/${page.path}`}
+									<iframe
+										bind:this={canvasFrames[page.path]}
+										class={['h-170 rounded-xs border-0 bg-surface shadow-float', tool === 'move' && 'pointer-events-none']}
+										style:width={`${canvasBoardWidth}px`}
+										src={previewUrl(current, page.path)}
+										sandbox="allow-scripts"
+										referrerpolicy="no-referrer"
+										title={m.studio_frame_title({ title: page.title })}
+									></iframe>
+								{/key}
+							</article>
+						{/each}
 					</div>
-				{/if}
-				{#if directionError}
-					<span class="text-caption text-danger" role="alert">{directionError}</span>
-				{/if}
-			</div>
-			<div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-				{#each directionList as dir (dir.id)}
-					<article class="flex flex-col gap-3 rounded-md bg-surface p-4 outline -outline-offset-1 outline-border" data-testid={`direction-board-${dir.id}`}>
-						<div class="flex items-start justify-between gap-2">
-							<div>
-								<h2 class="m-0 text-body font-semibold text-text">{dir.name}</h2>
-								<span class="font-mono text-label text-text-3">{dir.id}</span>
-							</div>
-							{#if dir.recommended}
-								<span class="rounded-xs bg-surface-2 px-2 py-0.5 font-mono text-label text-accent outline -outline-offset-1 outline-border">{m.studio_direction_recommended()}</span>
-							{/if}
+				</div>
+			{/if}
+
+			{#if pinPopoverOpen && selection && current}
+				<aside
+					data-part="pin-popover"
+					data-testid="direct-pin-popover"
+					aria-label={m.studio_feedback_label()}
+					class="absolute top-4 right-4 z-30 flex w-75 max-w-full flex-col gap-2.5 rounded-md bg-surface p-3.5 shadow-float outline -outline-offset-1 outline-border-strong"
+					style:left={pinAt ? `${Math.max(POPOVER_MARGIN, Math.min(pinAt.x + POPOVER_MARGIN, (stageEl?.clientWidth ?? 0) - POPOVER_WIDTH - POPOVER_MARGIN))}px` : null}
+					style:top={pinAt ? `${Math.max(POPOVER_MARGIN, Math.min(pinAt.y, (stageEl?.clientHeight ?? 0) - POPOVER_HEIGHT - POPOVER_MARGIN))}px` : null}
+					style:right={pinAt ? 'auto' : null}
+				>
+					<div class="flex flex-col">
+						<strong class="text-caption font-medium text-text">{selection.label}</strong>
+						<span class="text-label text-text-3">{KIND_LABELS[selection.kind]}</span>
+					</div>
+					<form class="flex flex-col gap-2" onsubmit={savePinFeedback}>
+						<!-- svelte-ignore a11y_autofocus -->
+						<textarea
+							rows="3"
+							maxlength={FEEDBACK_CHARS}
+							class="w-full rounded-sm bg-bg p-2 text-caption text-text outline -outline-offset-1 outline-border focus:outline-border-strong"
+							bind:value={pinWords}
+							placeholder={m.studio_feedback_placeholder()}
+							autofocus
+						></textarea>
+						<label class="flex items-center gap-1.5 text-caption text-text-2">
+							<input type="checkbox" bind:checked={pinInteraction} />
+							<span>{m.studio_feedback_interaction()}</span>
+						</label>
+						{#if feedbackError}<p class="m-0 text-caption text-danger" role="alert">{feedbackError}</p>{/if}
+						<div class="flex items-center justify-end gap-2">
+							<button type="button" class="cursor-pointer rounded-sm px-2.5 py-1 text-caption text-text-2 hover:text-text" onclick={() => (pinPopoverOpen = false)}>{m.studio_approve_cancel()}</button>
+							<button type="submit" class="cursor-pointer rounded-sm bg-accent px-3 py-1 text-caption font-medium text-accent-ink disabled:opacity-50" disabled={!pinDraft || sending}>{m.studio_pin_save()}</button>
 						</div>
-						<p class="m-0 text-ui text-text-2">{dir.summary}</p>
+					</form>
+				</aside>
+			{/if}
 
-						{#if dir.palette.length > 0}
-							<div class="flex flex-col gap-1.5">
-								<span class="font-mono text-label tracking-label text-text-3 uppercase">{m.studio_direction_palette()}</span>
-								<div class="flex flex-wrap gap-2">
-									{#each dir.palette as swatch (`${dir.id}-${swatch.name}-${swatch.hex}`)}
-										<div class="flex items-center gap-1.5 rounded-xs bg-surface-2 px-2 py-1 outline -outline-offset-1 outline-border">
-											<span class="size-3.5 rounded-xs outline -outline-offset-1 outline-border" style:background-color={swatch.hex}></span>
-											<span class="text-caption text-text">{swatch.name}</span>
-											<span class="font-mono text-label text-text-3">{swatch.hex}</span>
-										</div>
-									{/each}
-								</div>
-							</div>
-						{/if}
+			{#if waiting > 0}
+				<div
+					data-testid="revise-with-sora-bar"
+					class="absolute bottom-19 left-1/2 z-24 inline-flex -translate-x-1/2 items-center gap-3 rounded-full bg-surface py-1.5 pr-1.5 pl-4 whitespace-nowrap shadow-float outline -outline-offset-1 outline-border"
+					role="region"
+					aria-label={m.studio_refine_title()}
+				>
+					<span class="text-caption text-text-2">{m.studio_revise_bar_count({ count: waiting })}</span>
+					{#if asked}
+						<span class="text-caption text-text-2" role="status">{m.studio_refine_sent()}</span>
+						<button type="button" class="cursor-pointer rounded-full bg-surface-2 px-3 py-1 text-caption text-text" onclick={refresh}>{m.studio_refine_refresh()}</button>
+					{:else}
+						<button type="button" class="cursor-pointer rounded-full bg-accent px-3.5 py-1.5 text-caption font-medium text-accent-ink disabled:opacity-50" disabled={asking} onclick={() => askSora()}>{m.studio_revise_cta()}</button>
+					{/if}
+					{#if askError}<span class="text-caption text-danger" role="alert">{askError}</span>{/if}
+				</div>
+			{/if}
 
-						<div class="grid grid-cols-2 gap-2 rounded-sm bg-surface-2 p-2.5 outline -outline-offset-1 outline-border">
-							<div class="flex flex-col gap-0.5">
-								<span class="font-mono text-label text-text-3 uppercase">{m.studio_direction_typography()}</span>
-								<span class="text-caption font-medium text-text">{dir.typography.heading}</span>
-								<span class="text-caption text-text-2">{dir.typography.body}</span>
-							</div>
-							<div class="flex flex-col gap-0.5">
-								<span class="font-mono text-label text-text-3 uppercase">{m.studio_direction_layout()}</span>
-								<span class="text-caption text-text-2">{dir.layout}</span>
-							</div>
-						</div>
-
-						<div class="flex flex-col gap-1">
-							<span class="font-mono text-label text-text-3 uppercase">{m.studio_direction_rationale()}</span>
-							<p class="m-0 text-caption text-text-2">{dir.rationale}</p>
-						</div>
-
-						{#if dir.trade_offs.length > 0}
-							<div class="flex flex-col gap-1">
-								<span class="font-mono text-label text-text-3 uppercase">{m.studio_direction_tradeoffs()}</span>
-								<ul class="m-0 list-disc pl-4 text-caption text-text-2">
-									{#each dir.trade_offs as item (item)}
-										<li>{item}</li>
-									{/each}
-								</ul>
-							</div>
-						{/if}
-
-						<div class="mt-auto flex flex-wrap items-center gap-2 pt-2">
-							<button
-								type="button"
-								class="cursor-pointer rounded-sm bg-accent px-3 py-1.5 text-caption font-medium text-accent-ink disabled:opacity-50"
-								disabled={sendingDirection}
-								onclick={() => useDirection(dir)}
-							>
-								{m.studio_direction_use()}
-							</button>
-							<button
-								type="button"
-								class="cursor-pointer rounded-sm bg-surface-2 px-3 py-1.5 text-caption text-text outline -outline-offset-1 outline-border hover:outline-border-strong"
-								onclick={() => {
-									adjustingDirectionId = adjustingDirectionId === dir.id ? null : dir.id;
-									directionNote = '';
-								}}
-							>
-								{m.studio_direction_adjust()}
-							</button>
-						</div>
-
-						{#if adjustingDirectionId === dir.id}
-							<form class="flex flex-col gap-2 border-t border-border pt-2.5" onsubmit={(e) => submitDirectionAdjustment(e, dir)}>
-								<textarea
-									rows="2"
-									class="w-full rounded-sm bg-bg p-2 text-caption text-text outline -outline-offset-1 outline-border focus:outline-border-strong"
-									bind:value={directionNote}
-									placeholder={m.studio_direction_adjust_placeholder()}
-								></textarea>
-								<button
-									type="submit"
-									class="self-start cursor-pointer rounded-sm bg-surface-2 px-3 py-1 text-caption font-medium text-text outline -outline-offset-1 outline-border-strong disabled:opacity-50"
-									disabled={!directionNote.trim() || sendingDirection}
-								>
-									{m.studio_direction_send()}
-								</button>
-							</form>
-						{/if}
-					</article>
+			<div class="absolute bottom-4 left-1/2 z-25 inline-flex -translate-x-1/2 items-center gap-0.5 rounded-md bg-surface p-1 shadow-float outline -outline-offset-1 outline-border" role="toolbar" aria-label={m.studio_tools()}>
+				{#each TOOLS as option (option.tool)}
+					<button
+						type="button"
+						class={['inline-flex size-9 cursor-pointer items-center justify-center rounded-sm focus-visible:outline-2 focus-visible:outline-accent max-md:size-11', tool === option.tool ? 'bg-accent text-accent-ink' : 'text-text-2 hover:bg-surface-2 hover:text-text']}
+						aria-pressed={tool === option.tool}
+						aria-label={`${option.label} (${option.key})`}
+						title={`${option.label} (${option.key})`}
+						onclick={() => pickTool(option.tool)}
+					>
+						<Icon icon={option.icon} size={16} />
+					</button>
 				{/each}
+				<span class="mx-1 h-6 w-px bg-border" aria-hidden="true"></span>
+				<button type="button" class="inline-flex size-9 cursor-pointer items-center justify-center rounded-sm text-text-2 hover:bg-surface-2 hover:text-text max-sm:hidden" aria-label={m.studio_zoom_out()} title={m.studio_zoom_out()} onclick={zoomOut}><Icon icon={ZoomOut} size={16} /></button>
+				<span class="min-w-11 text-center font-mono text-label text-text-2 tabular-nums" data-testid="canvas-zoom-label">{zoomLabel(zoom)}</span>
+				<button type="button" class="inline-flex size-9 cursor-pointer items-center justify-center rounded-sm text-text-2 hover:bg-surface-2 hover:text-text max-sm:hidden" aria-label={m.studio_zoom_in()} title={m.studio_zoom_in()} onclick={zoomIn}><Icon icon={ZoomIn} size={16} /></button>
+				<button type="button" class="inline-flex size-9 cursor-pointer items-center justify-center rounded-sm text-text-2 hover:bg-surface-2 hover:text-text max-md:size-11" aria-label={m.studio_zoom_fit()} title={m.studio_zoom_fit()} onclick={fitCanvas}><Icon icon={Maximize2} size={14} /></button>
+				{#if canvasEngine === 'openpencil'}
+					<span class="mx-1 h-6 w-px bg-border" aria-hidden="true"></span>
+					<button
+						type="button"
+						class={['inline-flex size-9 cursor-pointer items-center justify-center rounded-sm max-md:size-11', inspectorOpen ? 'bg-surface-2 text-text' : 'text-text-2 hover:bg-surface-2 hover:text-text']}
+						aria-pressed={inspectorOpen}
+						aria-label={m.studio_inspector()}
+						title={m.studio_inspector()}
+						onclick={() => (inspectorOpen = !inspectorOpen)}
+					>
+						<Icon icon={PanelRight} size={16} />
+					</button>
+				{/if}
 			</div>
 		</div>
-	{:else if current}
-		<div class="relative flex min-h-0 flex-1 flex-col bg-bg">
-					<!-- 2D Spatial Canvas: Stage filter bar + zoomable/pannable artboard plane -->
-					<div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-surface px-4 py-2">
-						<div class="flex flex-wrap items-center gap-2">
-							<div class="inline-flex rounded-sm bg-surface-2 p-0.5 outline -outline-offset-1 outline-border" role="group" aria-label={m.studio_mode_canvas()}>
-								{#each [
-									{ id: 'all' as const, label: m.studio_stage_all() },
-									...(directionList.length > 0 ? [{ id: 'directions' as const, label: m.studio_stage_directions() }] : []),
-									{ id: 'system' as const, label: m.studio_stage_system() },
-									{ id: 'flow' as const, label: m.studio_stage_flow() },
-								] as tab (tab.id)}
-									<button
-										type="button"
-										class={[
-											'cursor-pointer rounded-xs px-2.5 py-1 text-caption',
-											stageFilter === tab.id ? 'bg-surface font-medium text-text outline -outline-offset-1 outline-border-strong' : 'text-text-2 hover:text-text',
-										]}
-										aria-pressed={stageFilter === tab.id}
-										onclick={() => (stageFilter = tab.id)}
-									>
-										{tab.label}
-									</button>
-								{/each}
-							</div>
-
-							<div class="inline-flex rounded-sm bg-surface-2 p-0.5 outline -outline-offset-1 outline-border" role="group" aria-label={m.studio_canvas_openpencil()}>
-								<button
-									type="button"
-									class={[
-										'cursor-pointer rounded-xs px-2.5 py-1 text-caption',
-										canvasEngine === 'openpencil' ? 'bg-surface font-medium text-text outline -outline-offset-1 outline-border-strong' : 'text-text-2 hover:text-text',
-									]}
-									aria-pressed={canvasEngine === 'openpencil'}
-									onclick={() => (userEngine = 'openpencil')}
-								>
-									{m.studio_canvas_openpencil()}
-								</button>
-								<button
-									type="button"
-									class={[
-										'cursor-pointer rounded-xs px-2.5 py-1 text-caption',
-										canvasEngine === 'frames' ? 'bg-surface font-medium text-text outline -outline-offset-1 outline-border-strong' : 'text-text-2 hover:text-text',
-									]}
-									aria-pressed={canvasEngine === 'frames'}
-									onclick={() => (userEngine = 'frames')}
-								>
-									{m.studio_canvas_frames()}
-								</button>
-							</div>
-						</div>
-						<span class="font-mono text-label text-text-3">{m.studio_select_hint()}</span>
-					</div>
-
-					{#if canvasEngine === 'openpencil'}
-						<OpenPencilViewer
-							model={openPencilModel}
-							bind:zoom
-							bind:panX
-							bind:panY
-							selectedNodeId={selection?.id ?? null}
-							onhit={handleOpenPencilHit}
-							onpickDirection={(dirId) => {
-								const dir = directionList.find((d) => d.id === dirId);
-								if (dir) useDirection(dir);
-							}}
-						/>
-					{:else}
-						<!-- svelte-ignore a11y_no_static_element_interactions -->
-						<div
-							bind:this={viewportEl}
-						class="relative min-h-0 flex-1 overflow-auto p-6"
-						data-testid="spatial-canvas-viewport"
-						onpointerdown={startCanvasPan}
-						onpointermove={moveCanvasPan}
-						onpointerup={endCanvasPan}
-						onpointercancel={endCanvasPan}
-						onwheel={handleCanvasWheel}
-					>
-						<div
-							class="flex flex-col gap-8"
-							data-testid="spatial-canvas-plane"
-							style:transform={`translate(${panX}px, ${panY}px) scale(${zoom})`}
-							style:transform-origin="0 0"
-						>
-							{#if (stageFilter === 'all' || stageFilter === 'directions') && directionList.length > 0}
-								<section class="flex flex-col gap-3" aria-label={m.studio_stage_directions()}>
-									<span class="font-mono text-label tracking-label text-text-3 uppercase">{m.studio_stage_directions()}</span>
-									<div class="flex flex-wrap items-start gap-6">
-										{#each directionList as dir (dir.id)}
-											<article
-												class={[
-													'flex w-88 shrink-0 flex-col gap-3 rounded-md bg-surface p-4 outline -outline-offset-1',
-													current.direction_id.toLowerCase() === dir.id.toLowerCase() ? 'outline-border-strong' : 'outline-border',
-												]}
-												data-testid={`direction-board-${dir.id}`}
-											>
-												<div class="flex items-start justify-between gap-2">
-													<div>
-														<h3 class="m-0 text-ui font-semibold text-text">{dir.name}</h3>
-														<span class="font-mono text-label text-text-3">{dir.id}</span>
-													</div>
-													{#if dir.recommended}
-														<span class="rounded-xs bg-surface-2 px-1.5 py-0.5 font-mono text-micro text-accent outline -outline-offset-1 outline-border">
-															{m.studio_direction_recommended()}
-														</span>
-													{/if}
-												</div>
-												<p class="m-0 text-caption text-text-2">{dir.summary}</p>
-												{#if dir.palette.length > 0}
-													<div class="flex flex-wrap gap-1.5">
-														{#each dir.palette as swatch (`${dir.id}-${swatch.name}-${swatch.hex}`)}
-															<div class="flex items-center gap-1.5 rounded-xs bg-surface-2 px-2 py-1 outline -outline-offset-1 outline-border">
-																<span class="size-3 rounded-xs outline -outline-offset-1 outline-border" style:background-color={swatch.hex}></span>
-																<span class="text-caption text-text">{swatch.name}</span>
-																<span class="font-mono text-micro text-text-3">{swatch.hex}</span>
-															</div>
-														{/each}
-													</div>
-												{/if}
-												<div class="flex items-center justify-between gap-2 border-t border-border pt-2 font-mono text-label text-text-3">
-													<span>{dir.typography.heading} / {dir.typography.body}</span>
-												</div>
-												<div class="flex flex-wrap items-center gap-2">
-													<button
-														type="button"
-														class="cursor-pointer rounded-sm bg-accent px-2.5 py-1 text-caption font-medium text-accent-ink disabled:opacity-50"
-														disabled={sendingDirection}
-														onclick={() => useDirection(dir)}
-													>
-														{m.studio_direction_use()}
-													</button>
-													<button
-														type="button"
-														class="cursor-pointer rounded-sm bg-surface-2 px-2.5 py-1 text-caption text-text outline -outline-offset-1 outline-border hover:outline-border-strong"
-														onclick={() => {
-															adjustingDirectionId = adjustingDirectionId === dir.id ? null : dir.id;
-															directionNote = '';
-														}}
-													>
-														{m.studio_direction_adjust()}
-													</button>
-												</div>
-												{#if adjustingDirectionId === dir.id}
-													<form class="flex flex-col gap-2 border-t border-border pt-2" onsubmit={(e) => submitDirectionAdjustment(e, dir)}>
-														<textarea
-															rows="2"
-															class="w-full rounded-sm bg-bg p-2 text-caption text-text outline -outline-offset-1 outline-border focus:outline-border-strong"
-															bind:value={directionNote}
-															placeholder={m.studio_direction_adjust_placeholder()}
-														></textarea>
-														<button
-															type="submit"
-															class="self-start cursor-pointer rounded-sm bg-surface-2 px-2.5 py-1 text-caption font-medium text-text outline -outline-offset-1 outline-border-strong disabled:opacity-50"
-															disabled={!directionNote.trim() || sendingDirection}
-														>
-															{m.studio_direction_send()}
-														</button>
-													</form>
-												{/if}
-											</article>
-										{/each}
-									</div>
-								</section>
-							{/if}
-
-							<div class="flex items-start gap-8">
-								{#if stageFilter === 'all' || stageFilter === 'system'}
-									<section class="flex shrink-0 flex-col gap-3" aria-label={m.studio_system_board()} data-testid="design-system-artboard">
-										<div class="flex items-center justify-between gap-2">
-											<span class="font-mono text-label tracking-label text-text-3 uppercase">{m.studio_system_board()}</span>
-											<span class="font-mono text-label text-text-3">{current.direction_id}</span>
-										</div>
-										{#if splitPages.systemPages.length > 0}
-											{#each splitPages.systemPages as sysPage (sysPage.path)}
-												<div class="flex flex-col gap-2 rounded-md bg-surface p-3 outline -outline-offset-1 outline-border" style:width={`${canvasBoardWidth}px`}>
-													<div class="flex items-center justify-between font-mono text-label text-text-2">
-														<span>{sysPage.title}</span>
-														<span class="text-text-3">{sysPage.path}</span>
-													</div>
-													<iframe
-														bind:this={canvasFrames[sysPage.path]}
-														class="h-140 w-full rounded-sm bg-bg outline -outline-offset-1 outline-border"
-														src={previewUrl(current, sysPage.path)}
-														sandbox="allow-scripts"
-														referrerpolicy="no-referrer"
-														title={m.studio_frame_title({ title: sysPage.title })}
-													></iframe>
-												</div>
-											{/each}
-										{:else}
-											<article class="flex w-88 flex-col gap-3 rounded-md bg-surface p-4 outline -outline-offset-1 outline-border">
-												<div class="flex items-center justify-between">
-													<h3 class="m-0 text-ui font-semibold text-text">{activeDirection?.name ?? current.title}</h3>
-													<span class="font-mono text-label text-text-3">v{current.version}</span>
-												</div>
-												{#if activeDirection}
-													{#if activeDirection.palette.length > 0}
-														<div class="flex flex-col gap-1.5">
-															<span class="font-mono text-label text-text-3 uppercase">{m.studio_direction_palette()}</span>
-															<div class="flex flex-wrap gap-1.5">
-																{#each activeDirection.palette as swatch (`sys-${swatch.name}-${swatch.hex}`)}
-																	<div class="flex items-center gap-1.5 rounded-xs bg-surface-2 px-2 py-1 outline -outline-offset-1 outline-border">
-																		<span class="size-3 rounded-xs outline -outline-offset-1 outline-border" style:background-color={swatch.hex}></span>
-																		<span class="text-caption text-text">{swatch.name}</span>
-																		<span class="font-mono text-micro text-text-3">{swatch.hex}</span>
-																	</div>
-																{/each}
-															</div>
-														</div>
-													{/if}
-													<div class="flex flex-col gap-1 rounded-sm bg-surface-2 p-2.5 outline -outline-offset-1 outline-border">
-														<span class="font-mono text-label text-text-3 uppercase">{m.studio_direction_typography()}</span>
-														<span class="text-caption font-medium text-text">{activeDirection.typography.heading}</span>
-														<span class="text-caption text-text-2">{activeDirection.typography.body}</span>
-													</div>
-												{/if}
-												<div class="flex flex-col gap-1.5">
-													<span class="font-mono text-label text-text-3 uppercase">
-														{m.studio_system_components({ count: current.elements.length })}
-													</span>
-													<div class="flex flex-wrap gap-1.5">
-														{#each current.elements as el (el.id)}
-															<button
-																type="button"
-																class={[
-																	'cursor-pointer rounded-xs px-2 py-1 text-left font-mono text-label outline -outline-offset-1',
-																	selection?.id === el.id ? 'bg-surface-2 text-text outline-border-strong' : 'bg-bg text-text-2 outline-border hover:text-text',
-																]}
-																onclick={() => pick(el)}
-															>
-																{el.label}
-															</button>
-														{/each}
-													</div>
-												</div>
-											</article>
-										{/if}
-									</section>
-								{/if}
-
-								{#if stageFilter === 'all' || stageFilter === 'flow'}
-									<section class="flex flex-col gap-3" aria-label={m.studio_stage_flow()}>
-										<span class="font-mono text-label tracking-label text-text-3 uppercase">{m.studio_stage_flow()}</span>
-										<div class="flex items-start gap-6">
-											{#each splitPages.flowPages as flowPage (flowPage.path)}
-												<div
-													class={[
-														'flex shrink-0 flex-col gap-2 rounded-md bg-surface p-3 outline -outline-offset-1',
-														shownPage === flowPage.path ? 'outline-border-strong' : 'outline-border',
-													]}
-													style:width={`${canvasBoardWidth}px`}
-													data-testid={`flow-artboard-${flowPage.path}`}
-												>
-													<div class="flex items-center justify-between gap-2">
-														<button
-															type="button"
-															class="cursor-pointer text-left text-caption font-medium text-text hover:underline"
-															onclick={() => openPage(flowPage.path)}
-														>
-															{flowPage.title}
-														</button>
-														<span class="font-mono text-label text-text-3">{flowPage.path} · {canvasBoardWidth}px</span>
-													</div>
-													<iframe
-														bind:this={canvasFrames[flowPage.path]}
-														class="h-150 w-full rounded-sm bg-bg outline -outline-offset-1 outline-border"
-														src={previewUrl(current, flowPage.path)}
-														sandbox="allow-scripts"
-														referrerpolicy="no-referrer"
-														title={m.studio_frame_title({ title: flowPage.title })}
-													></iframe>
-												</div>
-											{/each}
-										</div>
-									</section>
-								{/if}
-							</div>
-						</div>
-					</div>
-					{/if}
-
-				{#if pinPopoverOpen && selection}
-					<aside
-						data-part="pin-popover"
-						data-testid="direct-pin-popover"
-						aria-label={m.studio_feedback_label()}
-						class="absolute right-5 bottom-16 z-20 flex w-80 max-w-full flex-col gap-2.5 rounded-md bg-surface p-3.5 shadow-float outline -outline-offset-1 outline-border-strong"
-					>
-						<div class="flex items-start justify-between gap-2">
-							<div class="flex flex-col">
-								<span class="font-mono text-label text-text-3">{KIND_LABELS[selection.kind]} · {selection.page}</span>
-								<strong class="text-caption font-medium text-text">{selection.label}</strong>
-							</div>
-							<button
-								type="button"
-								class="cursor-pointer font-mono text-label text-text-2 hover:text-text"
-								onclick={() => (pinPopoverOpen = false)}
-							>
-								{m.studio_approve_cancel()}
-							</button>
-						</div>
-						<form class="flex flex-col gap-2" onsubmit={savePinFeedback}>
-							<textarea
-								rows="3"
-								maxlength={FEEDBACK_CHARS}
-								class="w-full rounded-sm bg-bg p-2 text-caption text-text outline -outline-offset-1 outline-border focus:outline-border-strong"
-								bind:value={pinWords}
-								placeholder={m.studio_feedback_placeholder()}
-							></textarea>
-							<label class="flex items-center gap-1.5 text-caption text-text-2">
-								<input type="checkbox" bind:checked={pinInteraction} />
-								<span>{m.studio_feedback_interaction()}</span>
-							</label>
-							{#if feedbackError}
-								<p class="m-0 text-caption text-danger" role="alert">{feedbackError}</p>
-							{/if}
-							<div class="flex items-center justify-end gap-2">
-								<button
-									type="submit"
-									class="cursor-pointer rounded-sm bg-accent px-3 py-1 text-caption font-medium text-accent-ink disabled:opacity-50"
-									disabled={!pinDraft || sending}
-								>
-									{m.studio_pin_save()}
-								</button>
-							</div>
-						</form>
-					</aside>
-				{/if}
-
-				{#if waiting > 0}
-					<div
-						data-testid="revise-with-sora-bar"
-						class="flex flex-wrap items-center justify-between gap-3 border-t border-border bg-surface px-4 py-2.5"
-					>
-						<div class="flex items-center gap-2">
-							<span class="font-mono text-label text-accent">{m.studio_revise_bar_count({ count: waiting })}</span>
-							{#if refineSent}
-								<span class="text-caption text-text-2" role="status">{m.studio_refine_sent()}</span>
-							{/if}
-							{#if refineError}
-								<span class="text-caption text-danger" role="alert">{refineError}</span>
-							{/if}
-						</div>
-						<div class="flex items-center gap-2">
-							{#if refineSent}
-								<button
-									type="button"
-									class="cursor-pointer rounded-sm bg-surface-2 px-2.5 py-1 text-caption text-text outline -outline-offset-1 outline-border hover:outline-border-strong"
-									onclick={checkForNewVersion}
-								>
-									{m.studio_refine_refresh()}
-								</button>
-							{/if}
-							<button
-								type="button"
-								class="cursor-pointer rounded-sm bg-accent px-3 py-1 text-caption font-medium text-accent-ink disabled:opacity-50"
-								disabled={refining}
-								onclick={() => void askSora()}
-							>
-								{m.studio_revise_cta()}
-							</button>
-						</div>
-					</div>
-				{/if}
-			</div>
 	{/if}
 </div>

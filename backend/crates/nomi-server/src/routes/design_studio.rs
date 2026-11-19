@@ -56,6 +56,8 @@ pub struct StudioPreview {
     pub published_url: Option<String>,
     /// Why it isn't published, when its newest publish failed.
     pub publish_error: Option<String>,
+    /// Its OpenPencil `.pen` files, served beside its pages, for the Studio's canvas.
+    pub pen_files: Vec<String>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -107,6 +109,7 @@ pub async fn list(State(state): State<AppState>, AuthClaims(claims): AuthClaims,
                 preview_token: stored.preview_token,
                 published_url: stored.published_url,
                 publish_error: stored.publish_error,
+                pen_files: stored.pen_files,
                 created_at: stored.created_at,
             })
             .collect(),
@@ -161,7 +164,8 @@ pub async fn add_feedback(
 }
 
 /// `POST /api/sessions/:id/design/approval`: the person says this version is the design to
-/// build. Only a signed-in person who can open the chat can; no agent has a tool for it.
+/// build. Only a signed-in person who can open the chat can; in the chat, Sora records the
+/// approval they type with approve_version, which checks their own words.
 pub async fn approve(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,

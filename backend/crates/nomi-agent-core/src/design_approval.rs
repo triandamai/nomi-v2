@@ -1,7 +1,7 @@
 //! The person's approval of one version of a chat's design previews, given in the Design
 //! Studio. Approvals are only ever added (`design_approvals`): the newest is the one that
-//! stands, and the earlier ones stay as the record of what was approved when. Sora has no way
-//! to add one.
+//! stands, and the earlier ones stay as the record of what was approved when. Sora adds one only
+//! for an approval the person gave in the chat, quoting their latest message (approve_version).
 
 use serde::Serialize;
 use serde_json::Value;

@@ -84,86 +84,78 @@ const openNote: StudioFeedback = {
 };
 
 describe('DesignCanvas', () => {
-	it('renders Stage 1 direction style-tile artboards before any HTML preview exists and lets the person pick or adjust one', async () => {
-		const fetchSpy = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 202, headers: { 'content-type': 'application/json' } }));
+	it('draws the proposed directions on the vector canvas before any preview exists, with the canvas tools and no board tabs', async () => {
+		render(DesignCanvas, { sessionId: 's1', directions, previews: [], feedback: [], approval: null });
+
+		await expect.element(page.getByTestId('openpencil-canvas')).toBeInTheDocument();
+		await expect.element(page.getByRole('toolbar', { name: 'Canvas tools' })).toBeInTheDocument();
+		expect(document.body.textContent).not.toContain('All boards');
+		expect(document.body.textContent).not.toContain('Artboards');
+	});
+
+	it("shows an HTML version's pages as artboards, with zoom and no publishing", async () => {
+		await page.viewport(1280, 800);
+		render(DesignCanvas, { sessionId: 's1', directions, previews, feedback: [], approval: null });
+
+		await expect.element(page.getByTestId('spatial-canvas-viewport')).toBeInTheDocument();
+		expect([...document.querySelectorAll('[data-artboard-page] iframe')].map((f) => f.getAttribute('src'))).toEqual([
+			`/design-preview/${TOKEN}/index.html`,
+			`/design-preview/${TOKEN}/menu/index.html`,
+		]);
+		await expect.element(page.getByTestId('canvas-zoom-label')).toHaveTextContent('100%');
+		await page.getByRole('button', { name: 'Zoom out' }).click();
+		await expect.element(page.getByTestId('canvas-zoom-label')).toHaveTextContent('75%');
+		expect(document.querySelector('a[href="https://preview.example/v2/"]')).toBeNull();
+		expect(document.body.textContent).not.toContain('Publish again');
+	});
+
+	it('draws a .pen version from its own file and never frames its pages as HTML', async () => {
+		const pen = JSON.stringify({ version: '1.0', children: [{ id: 'design-system', type: 'frame', name: 'Design system', width: 390, height: 600 }] });
+		const fetchSpy = vi.fn(async () => new Response(pen, { status: 200 }));
 		vi.stubGlobal('fetch', fetchSpy);
 		try {
-			render(DesignCanvas, {
-				sessionId: 's1',
-				directions,
-				previews: [],
-				feedback: [],
-				approval: null,
-			});
+			const penVersion: StudioPreview = { ...previews[1], version: 3, pages: [{ path: 'design-system', title: 'Design system' }], elements: [], pen_files: ['canvas.pen'] };
+			render(DesignCanvas, { sessionId: 's1', directions, previews: [penVersion], feedback: [], approval: null });
 
-			await expect.element(page.getByTestId('direction-board-editorial')).toBeInTheDocument();
-			await expect.element(page.getByTestId('direction-board-swiss')).toBeInTheDocument();
-			await expect.element(page.getByText('Recommended')).toBeInTheDocument();
-
-			await page.getByTestId('direction-board-editorial').getByRole('button', { name: 'Use this direction' }).click();
-			expect(fetchSpy).toHaveBeenCalledWith(
-				'/chat/s1/api/design/refine',
-				expect.objectContaining({
-					method: 'POST',
-					body: JSON.stringify({
-						text: '@Sora Use the "Editorial" direction (editorial) and build the design system and multi-page preview.',
-					}),
-				}),
-			);
+			await expect.element(page.getByTestId('openpencil-canvas')).toBeInTheDocument();
+			await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledWith(`/design-preview/${TOKEN}/canvas.pen`));
+			expect(document.querySelector('iframe')).toBeNull();
 		} finally {
 			vi.unstubAllGlobals();
 		}
 	});
 
-	it('renders the 2D Spatial Canvas with zoom controls, design system board, and multi-page app flow artboards', async () => {
-		render(DesignCanvas, {
-			sessionId: 's1',
-			directions,
-			previews,
-			feedback: [],
-			approval: null,
-		});
-
-		await expect.element(page.getByTestId('spatial-canvas-viewport')).toBeInTheDocument();
-		await expect.element(page.getByTestId('design-system-artboard')).toBeInTheDocument();
-		await expect.element(page.getByTestId('flow-artboard-index.html')).toBeInTheDocument();
-		await expect.element(page.getByTestId('flow-artboard-menu/index.html')).toBeInTheDocument();
-		await expect.element(page.getByTestId('canvas-zoom-label')).toHaveTextContent('100%');
-
-		await page.getByRole('button', { name: 'Zoom out' }).click();
-		await expect.element(page.getByTestId('canvas-zoom-label')).toHaveTextContent('75%');
-	});
-
-	it('opens the direct click-to-pin popover when an element is picked and queues open notes in the Revise with Sora bar', async () => {
+	it('picks a tool by click or key, selects without a note, and pins a note with the comment tool', async () => {
 		const fetchSpy = vi.fn(async () => new Response(JSON.stringify(openNote), { status: 201, headers: { 'content-type': 'application/json' } }));
 		vi.stubGlobal('fetch', fetchSpy);
 		try {
-			render(DesignCanvas, {
-				sessionId: 's1',
-				directions,
-				previews,
-				feedback: [],
-				approval: null,
-			});
+			render(DesignCanvas, { sessionId: 's1', directions, previews, feedback: [], approval: null });
+
+			await expect.element(page.getByRole('button', { name: 'Select (V)' })).toHaveAttribute('aria-pressed', 'true');
+			window.dispatchEvent(new KeyboardEvent('keydown', { key: 'h' }));
+			await expect.element(page.getByRole('button', { name: 'Move (H)' })).toHaveAttribute('aria-pressed', 'true');
+			window.dispatchEvent(new KeyboardEvent('keydown', { key: 'v' }));
 
 			const frame = document.querySelector('iframe[title="Preview of Home"]') as HTMLIFrameElement;
-			window.dispatchEvent(
-				new MessageEvent('message', {
-					source: frame.contentWindow,
-					data: { source: PREVIEW_SOURCE, type: 'select', page: 'index.html', id: 'hero', tag: 'section', text: 'Fresh bread', point: { x: 0.4, y: 0.3 } },
-				}),
-			);
+			const pick = () =>
+				window.dispatchEvent(
+					new MessageEvent('message', {
+						source: frame.contentWindow,
+						data: { source: PREVIEW_SOURCE, type: 'select', page: 'index.html', id: 'hero', tag: 'section', text: 'Fresh bread', point: { x: 0.4, y: 0.3 } },
+					}),
+				);
+			pick();
+			await new Promise((r) => setTimeout(r, 50));
+			expect(document.querySelector('[data-testid="direct-pin-popover"]')).toBeNull();
 
+			await page.getByRole('button', { name: 'Comment (C)' }).click();
+			pick();
 			await expect.element(page.getByTestId('direct-pin-popover')).toBeInTheDocument();
 			await page.getByTestId('direct-pin-popover').getByPlaceholder('What should change?').fill('Make the headline shorter');
 			await page.getByRole('button', { name: 'Save note' }).click();
 
-			expect(fetchSpy).toHaveBeenCalledWith(
-				'/chat/s1/api/design/feedback',
-				expect.objectContaining({ method: 'POST' }),
-			);
+			expect(fetchSpy).toHaveBeenCalledWith('/chat/s1/api/design/feedback', expect.objectContaining({ method: 'POST' }));
 			await expect.element(page.getByTestId('revise-with-sora-bar')).toBeInTheDocument();
-			await expect.element(page.getByText('1 open notes')).toBeInTheDocument();
 			await expect.element(page.getByRole('button', { name: 'Revise with Sora' })).toBeInTheDocument();
 		} finally {
 			vi.unstubAllGlobals();
