@@ -410,6 +410,7 @@ export class Workspace {
 	acting = $state(false);
 	actError = $state<string>();
 	openDialog(which: 'transfer' | 'takedown' | 'delete' | 'rename') {
+		if (which !== 'rename' && !this.projectAdmin) return;
 		this.confirmName = '';
 		this.renameName = this.project.name;
 		this.actError = undefined;

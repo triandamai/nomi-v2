@@ -635,10 +635,12 @@
 		{#if ws.people}<SheetRow icon={Users} label={m.people_title()} meta={m.pb_people_count({ count: peopleCount })} more onclick={() => open('people')} />{/if}
 		{#if ws.secrets}<SheetRow icon={KeyRound} label={m.env_title()} meta={m.pb_variables({ count: ws.secrets.secrets.length })} more onclick={() => open('environment')} />{/if}
 		{#if ws.liveUrl && data.showcase}<SheetRow icon={Eye} label={m.pb_visibility_row()} meta={ws.showcased ? m.pb_public() : m.bshare_unlisted()} more onclick={() => open('visibility')} />{/if}
-		<p class="px-1 pt-1.5 pb-0.5 font-mono text-label tracking-label text-text-3 uppercase">{m.settings_ownership()}</p>
-		<SheetRow icon={Users} label={m.settings_transfer()} more onclick={() => (ws.openDialog('transfer'), (ws.dialog = null), open('transfer'))} />
-		{#if ws.liveUrl}<SheetRow icon={Globe} label={m.settings_takedown()} onclick={() => open('takedown')} />{/if}
-		<SheetRow icon={Trash2} label={m.projects_menu_delete()} danger onclick={() => open('delete')} />
+		{#if ws.projectAdmin}
+			<p class="px-1 pt-1.5 pb-0.5 font-mono text-label tracking-label text-text-3 uppercase">{m.settings_ownership()}</p>
+			<SheetRow icon={Users} label={m.settings_transfer()} more onclick={() => (ws.openDialog('transfer'), (ws.dialog = null), open('transfer'))} />
+			{#if ws.liveUrl}<SheetRow icon={Globe} label={m.settings_takedown()} onclick={() => open('takedown')} />{/if}
+			<SheetRow icon={Trash2} label={m.projects_menu_delete()} danger onclick={() => open('delete')} />
+		{/if}
 	</div>
 </BottomSheet>
 
