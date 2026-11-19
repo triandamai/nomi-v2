@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { invalidate } from '$app/navigation';
 	import { untrack, tick } from 'svelte';
 	import { Activity, Code, Database, Eye, FileCode, FileText, Folder, Globe, History, KeyRound, Link, Plus, Rocket, Settings, SquareTerminal, Trash2, Undo2, Users, Download, GitBranch } from '@lucide/svelte';
 	import { m } from '$lib/paraglide/messages';
@@ -21,7 +22,7 @@
 	import DeleteProjectSheet from '$lib/ds/projects/DeleteProjectSheet.svelte';
 	import PhoneWorkspaceNav, { type PhonePill } from '$lib/ds/projects/PhoneWorkspaceNav.svelte';
 	import PhoneAskBar from '$lib/ds/projects/PhoneAskBar.svelte';
-	import PhoneDeviceToggle, { type Device } from '$lib/ds/projects/PhoneDeviceToggle.svelte';
+	import PhonePreviewBar, { type Device } from '$lib/ds/projects/PhonePreviewBar.svelte';
 	import PhoneList from '$lib/ds/projects/PhoneList.svelte';
 	import PhoneListRow from '$lib/ds/projects/PhoneListRow.svelte';
 	import PhoneTile from '$lib/ds/projects/PhoneTile.svelte';
@@ -297,31 +298,39 @@
 		{#if tab === 'preview'}
 			<div class="relative min-h-0 flex-1">
 				{#if ws.frame}
-					{#if device === 'phone'}
-						<div class="flex h-full flex-col">
-							<div class="flex justify-center px-4 pt-3 pb-3"><PhoneDeviceToggle bind:value={device} /></div>
+					<div class="flex h-full flex-col">
+						<PhonePreviewBar
+							address={ws.sandboxOn ? m.workspace_preview_sandbox() : ws.shownUrl}
+							href={ws.sandboxOn ? undefined : (ws.liveUrl ?? undefined)}
+							bind:device
+							onreload={async () => {
+								// A fresh grant for the static preview, then the frame again (as the desktop's Reload).
+								if (!ws.sandboxOn && !ws.liveUrl) await invalidate('app:workspace-project');
+								ws.reloads += 1;
+							}}
+						/>
+						{#if device === 'phone'}
 							<div class="relative min-h-0 flex-1 overflow-hidden">
 								{#key ws.reloads}
 									<iframe src={ws.frame} title={ws.project.name} class="h-full w-full bg-surface" onload={() => (frameLoaded = true)}></iframe>
 								{/key}
 								{#if !frameLoaded}<p class="absolute inset-x-0 top-6 text-center text-ui text-text-3" aria-live="polite">{m.pb_preview_loading()}</p>{/if}
 							</div>
-						</div>
-					{:else}
-						<!-- Desktop preview (PsC5F): the toggle, the 1440 layout in a 240 card, and the hint, padded [12,16] 12 apart. -->
-						<div class="flex h-full flex-col items-center gap-3 overflow-y-auto px-4 pt-3 pb-24">
-							<PhoneDeviceToggle bind:value={device} />
-							<div class="relative h-60 w-full shrink-0 rounded-md bg-bg p-3 outline -outline-offset-1 outline-border-strong">
-								<div bind:clientWidth={frameWidth} bind:clientHeight={frameHeight} class="relative h-full w-full overflow-hidden rounded-xs">
-									{#key ws.reloads}
-										<iframe src={ws.frame} title={ws.project.name} class="origin-top-left bg-surface" style="width: 1440px; height: {frameHeight / scale}px; transform: scale({scale})" onload={() => (frameLoaded = true)}></iframe>
-									{/key}
-									{#if !frameLoaded}<p class="absolute inset-x-0 top-6 text-center text-ui text-text-3" aria-live="polite">{m.pb_preview_loading()}</p>{/if}
+						{:else}
+							<!-- Desktop (PsC5F): the 1440 layout in a 240 card, then the hint, padded [12,16] 12 apart. -->
+							<div class="flex min-h-0 flex-1 flex-col items-center gap-3 overflow-y-auto px-4 pt-3 pb-24">
+								<div class="relative h-60 w-full shrink-0 rounded-md bg-bg p-3 outline -outline-offset-1 outline-border-strong">
+									<div bind:clientWidth={frameWidth} bind:clientHeight={frameHeight} class="relative h-full w-full overflow-hidden rounded-xs">
+										{#key ws.reloads}
+											<iframe src={ws.frame} title={ws.project.name} class="origin-top-left bg-surface" style="width: 1440px; height: {frameHeight / scale}px; transform: scale({scale})" onload={() => (frameLoaded = true)}></iframe>
+										{/key}
+										{#if !frameLoaded}<p class="absolute inset-x-0 top-6 text-center text-ui text-text-3" aria-live="polite">{m.pb_preview_loading()}</p>{/if}
+									</div>
 								</div>
+								<p class="text-center text-ui text-text-3">{m.pb_desktop_note()}</p>
 							</div>
-							<p class="text-center text-ui text-text-3">{m.pb_desktop_note()}</p>
-						</div>
-					{/if}
+						{/if}
+					</div>
 				{:else}
 					<div class="h-full overflow-y-auto px-4 pt-6 pb-24">
 						{#if ws.sandboxOn}

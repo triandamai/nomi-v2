@@ -33,7 +33,13 @@ date: 19 Nov 2026
 1. **Desktop preview (PsC5F), high.**
    - The build filled the whole screen with the scaled page: tiny content, no frame, and the hint hidden under the Ask Bar.
    - The pen draws the 1440 layout in a 240-high card (`border-strong`, radius 10, padding 12), centred, with the hint in sans 13 `text-3` under it. It's now built that way.
-2. **Device toggle (G0ih1), medium.** The build used the generic `Segmented`: 44 high, no icons. The pen's toggle is 40 high (radius 10, inset 2), with smartphone and monitor icons at 14 and words at 13, the chosen side on bg at 500. It's now `projects/PhoneDeviceToggle`, with its docs entry, live example and component test.
+2. **The device switch: redesigned in the pen, then built. Medium.**
+   - The pen's centred Phone | Desktop pill (G0ih1) under Chat | Preview read as a second tab bar. In dark mode its chosen side sat darker than the track, so it looked recessed, not chosen. Mario flagged it ("this one is not good").
+   - Decided under nomi-ux-rules, "best for mobile": the preview gets its own bar.
+     - The pen now draws this bar as Preview Bar `GppXE` (dark) and `ScEam` (light) in PsC5F / n5JJS. The pill is hidden, not deleted, and the step caption is updated.
+     - Layout: 40 high with a bottom stroke. The app's address in mono at 12, then Reload, Open in browser (left out where the address holds a secret, the sandbox's), then Phone | Desktop as two 28px icons on a surface-2 track, the chosen one raised (surface, border-strong).
+     - Why: one tab bar instead of two, the choice reads in both themes, and Reload and Open give a way out when the app doesn't load.
+   - Built as `projects/PhonePreviewBar`, with its docs entry, live example and component test.
 3. **The preview while loading, medium (UX).** The frame was blank white until the app answered, which read as broken. It now says "Loading the preview…" until the frame has loaded.
 4. **Failed card meta (ALFZb), high.**
    - It read "deploy #0 · publish step · 0:00" for a publish with no number and no finish time.
@@ -44,7 +50,7 @@ date: 19 Nov 2026
 ## Still open (suggestions, not blocking)
 
 - **Ask Bar over the app's bottom:** on Phone it floats over the app's own foot, so a pre-order button at the bottom of the app sits under it. The pen draws it that way. Hiding it while the person scrolls the app would need the app's scroll position, which a sandboxed frame doesn't give.
-- **A preview that can't be reached:** an app that never answers still ends on the browser's own blank error page inside the frame, which the app can't detect across origins. An "Open in browser" link beside the hint would give a way out.
+- **A preview that can't be reached:** an app that never answers still ends on the browser's own blank error page inside the frame, which the app can't detect across origins. The bar's Reload and Open in browser are the way out.
 
 ## Not reached locally
 
