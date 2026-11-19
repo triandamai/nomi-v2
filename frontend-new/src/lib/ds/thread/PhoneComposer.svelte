@@ -8,8 +8,8 @@
 
 	// Flow / Mobile Chat — Start & answer → Composer (steps 2–7): the phone's composer, on the ground
 	// over a top stroke, [8,12]. Attach on the left (38, surface-2), the message in a round pill
-	// (border-strong, [9,10,9,14]) at 16pt so iOS doesn't zoom, the mic inside it, and Send (mint)
-	// only once there's text; while a reply streams, Stop takes Send's place. While the person writes,
+	// (border-strong, [9,10,9,14], kept while typing: Mention picker vfYWh) at 16pt so iOS doesn't
+	// zoom, the mic inside it, and Send (mint) only once there's text; while a reply streams, Stop takes Send's place. While the person writes,
 	// the toolbar shows under it: the model chip (mono) and "@ Crew", each opening the page's sheet.
 	// "@" opens the crew picker above the composer (step 3), the desktop's MentionPicker: it keeps
 	// its 300 width where the pen runs it the screen's width (it's the old app's twin).
@@ -143,7 +143,7 @@
 					<Icon icon={Plus} size={20} />
 				</button>
 			{/if}
-			<div class="flex min-h-9.5 min-w-0 flex-1 items-end gap-2 rounded-full border border-border-strong bg-surface py-2 pr-2.25 pl-3.25 focus-within:border-accent">
+			<div class="flex min-h-9.5 min-w-0 flex-1 items-end gap-2 rounded-full border border-border-strong bg-surface py-2 pr-2.25 pl-3.25">
 				<textarea
 					bind:this={field}
 					bind:value

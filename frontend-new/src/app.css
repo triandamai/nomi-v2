@@ -193,6 +193,8 @@
 	--radius-cell: 2px;
 	/* The 26px crew tiles in the Inbox's Coming up (App / Inbox BFoiZ → Agenda). */
 	--radius-agenda: 6.5px;
+	/* A workspace's 36 tile in the phone's Workspaces and Move sheets (Mobile Projects a9NrP, I5UHw). */
+	--radius-workspace: 9px;
 	/* Phones only, as the Mobile sheet draws them: buttons 12, options 14, toasts 16, bubbles 18. */
 	--radius-lg: 12px;
 	--radius-xl: 14px;
@@ -211,6 +213,9 @@
 	--shadow-float-lg: 0 12px 32px var(--nm-shadow);
 	/* The phone's floating New chat button (Mobile Chat → Chats), 0 6 16. */
 	--shadow-fab: 0 6px 16px var(--nm-shadow);
+	/* Your message lifted over the scrim while its sheet is open (Mobile Chat — Message controls
+	   nzT7f), 0 6 18. */
+	--shadow-lift: 0 6px 18px var(--nm-shadow);
 	/* Not elevation: the soft glow around a focused field, as the pen draws it. */
 	--shadow-focus: 0 0 8px var(--nm-focus);
 	--inset-shadow-*: initial;

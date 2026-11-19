@@ -15,9 +15,9 @@
 	// lights up (accent stroke and icon) with the reason in place of "optional".
 	// Enter starts building, Shift+Enter a new line; the field grows with what's written.
 	// `phone` is Mobile / New Project Sheet's (Flow / Mobile Projects — New project): the box on the
-	// page's ground with 14 corners, 14 in and 12 apart, the text at 16, the chips round and 28 tall,
-	// wrapping (the database's in accent once Koda says what it's for), then Import from GitHub and
-	// Start building as an inverse pill, outside the box.
+	// page's ground with 14 corners, 14 in and 12 apart, the text at 16, the chips round and 28 tall
+	// with their labels in text-3, wrapping (the database's in accent once Koda says what it's for),
+	// then Import from GitHub and Start building as an inverse pill, outside the box.
 	type Props = {
 		value?: string;
 		/** The workspace's domain: chips read "*.trian.space". Empty where none is set (no chip). */
@@ -71,17 +71,17 @@
 			<ul aria-label={m.projects_provisions()} class="flex flex-wrap gap-1.5">
 				<li class="inline-flex h-7 items-center gap-1.25 rounded-full border border-border-strong px-2.25">
 					<span class="inline-flex text-text-3"><Icon icon={GitBranch} size={13} /></span>
-					<span class="font-mono text-label text-text-2">{m.projects_provision_repo()}</span>
+					<span class="font-mono text-label text-text-3">{m.projects_provision_repo()}</span>
 				</li>
 				{#if domain}
 					<li class="inline-flex h-7 items-center gap-1.25 rounded-full border border-border-strong px-2.25">
 						<span class="inline-flex text-text-3"><Icon icon={Globe} size={13} /></span>
-						<span class="font-mono text-label text-text-2">*.{domain}</span>
+						<span class="font-mono text-label text-text-3">*.{domain}</span>
 					</li>
 				{/if}
 				<li class={['inline-flex h-7 items-center gap-1.25 rounded-full border px-2.25', database ? 'border-accent bg-accent-bg' : 'border-border-strong']}>
 					<span class={['inline-flex', database ? 'text-accent' : 'text-text-3']}><Icon icon={Database} size={13} /></span>
-					<span class={['font-mono text-label', database ? 'text-accent' : 'text-text-2']}>{m.projects_provision_database({ note: database ?? m.projects_provision_optional() })}</span>
+					<span class={['font-mono text-label', database ? 'text-accent' : 'text-text-3']}>{m.projects_provision_database({ note: database ?? m.projects_provision_optional() })}</span>
 				</li>
 			</ul>
 		</div>

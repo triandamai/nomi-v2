@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ProjectSummary } from '$lib/adapters/api';
-import { databaseName, liveLine, moveTargets, panelParts, peopleLine, projectChats, took } from './about';
+import { alertTitle, databaseName, detailLine, liveLine, moveTargets, panelParts, peopleLine, projectChats, took } from './about';
 import { projectCards } from './list';
 
 const now = new Date('2026-11-13T10:00:00Z');
@@ -28,7 +28,7 @@ const about = {
 		{ name: 'Mario', owner: false, me: true },
 		{ name: 'Trian', owner: true, me: false },
 	],
-	deploys: { count: 14, builtIn: 41, liveNumber: 14, liveAt: '2026-11-11T09:00:00Z' },
+	deploys: { count: 14, builtIn: 41, liveNumber: 14, liveAt: '2026-11-11T09:00:00Z', failedNumber: null },
 };
 
 describe('what’s in a project', () => {
@@ -40,7 +40,7 @@ describe('what’s in a project', () => {
 			deploys: '14 · last built in 41s',
 			members: 'Trian (owner), you',
 		});
-		expect(panelParts(draft, { ...about, files: 1, stack: 'static', database: 'postgres', deploys: { count: 0, builtIn: null, liveNumber: null, liveAt: null } })).toMatchObject({
+		expect(panelParts(draft, { ...about, files: 1, stack: 'static', database: 'postgres', deploys: { count: 0, builtIn: null, liveNumber: null, liveAt: null, failedNumber: null } })).toMatchObject({
 			code: '1 file · static site',
 			url: 'after the first deploy',
 			data: 'Postgres',
@@ -76,6 +76,29 @@ describe('what’s in a project', () => {
 		expect(liveLine(live, about, now)).toBe('live · deploy #14 · 2d ago');
 		expect(liveLine(live, undefined, now)).toBe('live · deploy #14');
 		expect(liveLine(draft, about, now)).toBeUndefined();
+	});
+
+	it('never says “deploy #0”: a live deploy without a number falls back to the card’s, or leaves it out', () => {
+		const zero = { ...about, deploys: { ...about.deploys, liveNumber: 0 } };
+		expect(liveLine(live, zero, now)).toBe('live · deploy #14 · 2d ago');
+		const [first] = projectCards([summary({ deploys_count: 0 })], now);
+		expect(liveLine(first, zero, now)).toBe('live · 2d ago');
+	});
+
+	it('says the state under a project’s name on a phone, as the Detail panel draws it (AL711)', () => {
+		const [failed] = projectCards([summary({ last_deploy: { status: 'failed', at: '2026-11-13T09:00:00Z' } })], now);
+		const broke = { ...about, deploys: { ...about.deploys, liveNumber: 5, failedNumber: 6 } };
+		expect(detailLine(failed, broke, now)).toBe('deploy #6 failed · #5 still live');
+		expect(alertTitle(failed, broke)).toBe('Deploy #6 failed');
+		const [firstFailed] = projectCards([summary({ deploy_url: null, last_deploy: { status: 'failed', at: '2026-11-13T09:00:00Z' } })], now);
+		expect(detailLine(firstFailed, { ...broke, deploys: { ...broke.deploys, liveNumber: null } }, now)).toBe('deploy #6 failed');
+		// Before the deploys are read, the card's own words.
+		expect(detailLine(failed, undefined, now)).toBe(failed.detail);
+		expect(alertTitle(failed, undefined)).toBe('Deploy failed');
+		const [changing] = projectCards([summary()], now, { active: new Set(['s1']) });
+		expect(detailLine(changing, about, now)).toBe('Koda is changing it · #14 stays live');
+		expect(detailLine(live, about, now)).toBe('live · deploy #14 · 2d ago');
+		expect(detailLine(draft, about, now)).toBe(draft.footer);
 	});
 });
 

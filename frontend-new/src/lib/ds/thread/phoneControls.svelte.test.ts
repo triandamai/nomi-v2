@@ -6,6 +6,7 @@ import SheetTiles from '../overlays/SheetTiles.svelte';
 import PhoneMessageEditor from './PhoneMessageEditor.svelte';
 import PhoneDislikeSheet from './PhoneDislikeSheet.svelte';
 import PhoneShareSheet from './PhoneShareSheet.svelte';
+import LiftedSheetFixture from './LiftedSheetFixture.svelte';
 import { tokenBackground, tokenColor } from '../test-utils';
 
 // The phone's message controls (Flow / Mobile Chat — Message controls, Like & dislike, Share &
@@ -23,7 +24,7 @@ describe('SheetTiles', () => {
 		await render(SheetTiles, { tiles: [{ label: 'Good', icon: ThumbsUp, pressed: true, onclick: () => {} }, { label: 'Copy', icon: Copy, onclick: oncopy }] });
 		const good = page.getByRole('button', { name: 'Good' }).element();
 		const copy = page.getByRole('button', { name: 'Copy' }).element();
-		expect([box(good).width, box(good).height, getComputedStyle(good).color, getComputedStyle(good).backgroundColor]).toEqual([box(copy).width, 64, tokenColor('nm-accent'), tokenBackground('nm-surface-2')]);
+		expect([box(good).width, box(good).height, getComputedStyle(good).color, getComputedStyle(good).backgroundColor]).toEqual([box(copy).width, 68, tokenColor('nm-accent'), tokenBackground('nm-surface-2')]);
 		await page.getByRole('button', { name: 'Copy' }).click();
 		expect(oncopy).toHaveBeenCalledOnce();
 	});
@@ -85,5 +86,20 @@ describe('PhoneShareSheet', () => {
 		await page.getByRole('button', { name: 'Copy link' }).click();
 		expect(oncopy).toHaveBeenCalledOnce();
 		await expect.element(page.getByRole('link', { name: 'WhatsApp' })).toHaveAttribute('href', 'https://wa.me/?text=https%3A%2F%2Fnomi.app%2Fshared%2Fabc');
+	});
+});
+
+describe('Your message lifted over its sheet (Message controls nzT7f)', () => {
+	it('holds the bubble right-aligned 12 above the sheet, 16 from the edge, stroked border-strong with the lift shadow', async () => {
+		await page.viewport(390, 844);
+		await render(LiftedSheetFixture);
+		const bubble = page.getByText('How much did I spend on food in October? @Dana').element();
+		const sheet = document.querySelector('[data-sheet]')!;
+		expect([Math.round(box(sheet).top - box(bubble).bottom), Math.round(390 - box(bubble).right), Math.round(box(bubble).width)]).toEqual([12, 16, 278]);
+		const look = getComputedStyle(bubble);
+		expect([look.outlineColor, look.backgroundColor, look.borderRadius, look.boxShadow.includes('6px 18px')]).toEqual([tokenColor('nm-border-strong'), tokenBackground('nm-surface-2'), '18px', true]);
+		// A tap beside the bubble closes the sheet, as the scrim does.
+		(document.querySelector('[data-lifted]') as HTMLElement).click();
+		await expect.element(page.getByRole('dialog')).not.toBeInTheDocument();
 	});
 });
