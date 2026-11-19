@@ -3144,5 +3144,15 @@
 	"studio_openpencil_tokens": "Token & Variabel",
 	"studio_openpencil_export_svg": "Ekspor SVG",
 	"phone_form_edit": "Ubah {title}",
-	"phone_run_option_research_detail": "Tidak ada yang dibagikan."
+	"phone_run_option_research_detail": "Tidak ada yang dibagikan.",
+	"phone_home_to": "Kirim ke {name}, ganti",
+	"phone_home_to_title": "Kirim ke",
+	"phone_home_today": "Hari ini",
+	"phone_home_updated": "diperbarui {time}",
+	"phone_home_try": "Coba",
+	"phone_home_crew": "Kru kamu",
+	"phone_inbox_sub_clear": "Tidak ada yang perlu kamu urus · {coming} lagi hari ini",
+	"phone_inbox_clear_body": "Persetujuan, undangan, dan apa pun yang tidak bisa kru selesaikan sendiri muncul di sini lebih dulu.",
+	"phone_you_detail": "@{username} · Profil",
+	"phone_you_back": "Kembali ke Kamu"
 }

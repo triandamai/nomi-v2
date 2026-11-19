@@ -57,11 +57,11 @@ test('a phone has the tab bar, and Chats as the pen draws it: large title, rows,
 	await page.getByRole('link', { name: 'New chat' }).click();
 	await expect(page).toHaveURL(/\/chat\/new$/);
 
-	// The other tabs go where they say; You is Settings.
+	// The other tabs go where they say; You is Settings' own index (phone-tabs.e2e.ts has the rest).
 	await page.goto('/inbox', { waitUntil: 'networkidle' });
 	await expect(page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Inbox' })).toHaveAttribute('aria-current', 'page');
 	await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'You' }).click();
-	await expect(page).toHaveURL(/\/settings\/profile$/);
+	await expect(page).toHaveURL(/\/settings$/);
 });
 
 test.describe('on a desktop', () => {

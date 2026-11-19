@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { Bell, CheckCheck, Download, Folder, House, Inbox, MessageCircle, MessageSquare, Plus, User } from '@lucide/svelte';
+	import { Bell, CheckCheck, ChevronLeft, Download, Folder, House, Inbox, MessageCircle, MessageSquare, Plus, User } from '@lucide/svelte';
 	import { goto, invalidate } from '$app/navigation';
 	import { navigating, page } from '$app/state';
 	import { m } from '$lib/paraglide/messages';
@@ -50,6 +50,7 @@
 	import { toasts } from '$lib/ds/overlays/toasts.svelte';
 	import Button from '$lib/ds/actions/Button.svelte';
 	import IconButton from '$lib/ds/actions/IconButton.svelte';
+	import Icon from '$lib/ds/foundations/Icon.svelte';
 	import TextField from '$lib/ds/inputs/TextField.svelte';
 
 	// The signed-in app around every page, as App / Home (Vr4nn) draws it: the sidebar (Vp4Ax) with
@@ -81,6 +82,8 @@
 	// A project's workspace has its own bar and no sidebar (Flow / Build draws it edge to edge).
 	const isWorkspace = $derived(page.route.id === WORKSPACE && !page.error);
 	const isSettings = $derived(!!page.route.id?.startsWith('/(app)/settings') && !page.error);
+	// Settings' own index is the You tab on a phone, with its large title.
+	const isYou = $derived(page.route.id === '/(app)/settings' && !page.error);
 	const path = $derived(page.url.pathname);
 
 	// Home and a chat have the crew column: Home runs its top bar across it, a chat stops beside it.
@@ -120,7 +123,7 @@
 			return inThread || phoneScreenState.inside ? null : { label: m.nav_main(), tabs };
 		},
 		get ownTitle() {
-			return isChats || isHome || inThread || isProjects;
+			return isChats || isHome || inThread || isProjects || isInbox || isYou;
 		},
 	});
 	// What the chat page says about itself as it changes (renamed, pinned, moved, deleted).
@@ -502,14 +505,20 @@
 			onshare={() => header.handlers?.share()}
 		/>
 	{:else if isSettings}
-		<SettingsTopBar section={m.settings_nav()} page={pageTitle.title ?? ''} meta={pageTitle.meta}>
+		<!-- On a phone a settings page is a screen inside You: back to it, then where the person is. -->
+		<div class="flex min-w-0 items-center gap-1">
+		{#if phone.current}
+			<a href="/settings" aria-label={m.phone_you_back()} class="-ml-2 inline-flex size-11 shrink-0 items-center justify-center rounded-full text-text outline-offset-1 focus-visible:outline-2 focus-visible:outline-focus"><Icon icon={ChevronLeft} size={22} /></a>
+		{/if}
+		<div class="min-w-0 flex-1"><SettingsTopBar section={m.settings_nav()} page={pageTitle.title ?? ''} meta={pageTitle.meta}>
 			{#snippet actions()}
 				{#if pageTitle.autosave}<AutosaveNote text={m.general_autosave()} />{/if}
 				{#if pageTitle.csv}<Button label={m.plan_export()} variant="ghost" iconStart={Download} href={pageTitle.csv} data-sveltekit-reload />{/if}
 				{#if pageTitle.exportLink}<Button label={pageTitle.exportLink.label} variant="secondary" iconEnd={Download} href={pageTitle.exportLink.href} data-sveltekit-reload />{/if}
 				{#if pageTitle.connect}<Button label={m.models_connect()} variant="inverse" iconEnd={Plus} href={pageTitle.connect} data-sveltekit-noscroll />{/if}
 			{/snippet}
-		</SettingsTopBar>
+		</SettingsTopBar></div>
+		</div>
 	{:else if isProjects}
 		<ProjectTopBar
 			workspaces={data.workspaces}

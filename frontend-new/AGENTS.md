@@ -393,9 +393,21 @@ leaves out what v2 or the backend can't do yet, rather than draw it dead:
   floating above the tab bar. Each row's avatar is the chat glyph and there are no crew filters
   (All, Dana, Kala…): both are who last answered, which the chat list doesn't say
   (BACKEND_TODO.md). The pen's sheet for a chat comes from a long press (or More, for the
-  keyboard) with Pin to top and Delete chat, the two things the desktop row does; You is Settings.
-  The pen draws no phone Home, Projects, Inbox or Settings yet: they keep their own layout under
-  the tab bar, and Home leaves out its empty top bar.
+  keyboard) with Pin to top and Delete chat, the two things the desktop row does.
+- Home, Inbox and You on a phone (Flow / Mobile — Home, Inbox & You M4PZDC, light C6xDTg) are the
+  pen's screens, each with its own large title in place of the top bar. Home: the date in mono, the
+  greeting, `PhoneAskCard` (who it goes to and the model open bottom sheets), Today as
+  `PhoneTodayList` rows, the starters, `PhoneCrewRow`, and New chat floating as on Chats. The Inbox:
+  Mark all read beside the title, the line under it (the desktop's meta, or "Nothing needs you · N
+  coming up today"), `PhoneFilters`, Needs you as `PhoneInboxCard`s with phone pills, the day as
+  `PhoneTimelineRow`s (⋯ opens a sheet of the desktop row's menu), then the week ahead, because a
+  phone has no Coming up column; New reminder floats and opens the quick reminder in a sheet. You
+  is `/settings` itself on a phone (the server still sends a desktop to Profile, and a window that
+  widens goes there too): `PhonePerson`, `PhonePlanCard`, `PhoneSettingsGroup`s in the settings
+  nav's own groups (Account, AI, Workspace; the pen was changed to match) and Log out. A row shows a
+  value only where the shell already knows it (the crew's size, how many workspaces), so Models,
+  Memory and Connections show none rather than load for it. A settings page opened from You keeps
+  the tab bar and gets a back link to You before "Settings › Page".
 - A chat on a phone (Mobile Chat — Start & answer, steps 2–7) is the pen's: the nav bar (back to
   Chats, the title, who answers, "· thinking" while they work, and More for the chat's sheet:
   Rename, Pin to top, Move to a project, Export, Share whole chat, Delete chat), the thread padded

@@ -11,7 +11,7 @@
 	import { QUICK_REMINDER, inboxAction } from '$lib/inbox/actions';
 	import type { EmailPreferences } from '$lib/adapters/api';
 	import { toasts } from '$lib/ds/overlays/toasts.svelte';
-	import type { MenuEntry } from '$lib/ds/overlays/MenuPanel.svelte';
+	import type { MenuEntry, MenuItem } from '$lib/ds/overlays/MenuPanel.svelte';
 	import Button from '$lib/ds/actions/Button.svelte';
 	import IconButton from '$lib/ds/actions/IconButton.svelte';
 	import Menu from '$lib/ds/overlays/Menu.svelte';
@@ -26,6 +26,17 @@
 	import QuickReminder from '$lib/ds/inbox/QuickReminder.svelte';
 	import Agenda from '$lib/ds/inbox/Agenda.svelte';
 	import PreferenceRow from '$lib/ds/inbox/PreferenceRow.svelte';
+	import { CheckCheck } from '@lucide/svelte';
+	import { phoneView } from '$lib/phone.svelte';
+	import LargeTitle from '$lib/ds/chrome/LargeTitle.svelte';
+	import Fab from '$lib/ds/chrome/Fab.svelte';
+	import Icon from '$lib/ds/foundations/Icon.svelte';
+	import PhoneFilters from '$lib/ds/projects/PhoneFilters.svelte';
+	import PhonePill from '$lib/ds/actions/PhonePill.svelte';
+	import PhoneInboxCard from '$lib/ds/inbox/PhoneInboxCard.svelte';
+	import PhoneTimelineRow from '$lib/ds/inbox/PhoneTimelineRow.svelte';
+	import BottomSheet from '$lib/ds/overlays/BottomSheet.svelte';
+	import SheetRow from '$lib/ds/mobile/SheetRow.svelte';
 
 	// The Inbox (App / Inbox BFoiZ): the feed (padded [24,32,20,32], its sections 18 apart) beside
 	// the Coming up column (340, its left stroke), which goes under the feed on narrower screens.
@@ -36,6 +47,27 @@
 	// one to N minutes from now, which would bring it forward), and its Push for reminders and Quiet
 	// hours settings, which live in Settings › General.
 	let { data } = $props();
+
+	// On a phone the Inbox is its own screen (Flow / Mobile — Home, Inbox & You, steps 2 and 4: fpYK0,
+	// C6vql9): the large title with Mark all read, what needs the person as cards, the day as a
+	// timeline, and New reminder floating over the tab bar, opening the quick reminder in a sheet.
+	const guess = () => data.phone;
+	const phone = phoneView(guess());
+	let reminderOpen = $state(false);
+	let rowSheet = $state<InboxEntry | null>(null);
+	let markingRead = $state(false);
+
+	async function markAllRead() {
+		markingRead = true;
+		const result = await inboxAction('readAll');
+		markingRead = false;
+		if (!result.ok) {
+			if (result.message) toasts.show({ kind: 'error', title: m.inbox_action_failed(), detail: result.message });
+			return;
+		}
+		await invalidate('app:shell');
+		toasts.show({ kind: 'success', title: m.inbox_all_read() });
+	}
 
 	const time = clock();
 	const language = getLocale();
@@ -54,6 +86,11 @@
 	const today = $derived(dayKey(time.now, zone));
 	const more = $derived(data.shown < data.pages);
 	const nothing = $derived(!feed.needs.length && !feed.today.length && !feed.later.length && !feed.earlier.length && !more);
+	// A phone has no Coming up column, so the week ahead follows Today in its timeline (Reminders
+	// already lists later days in the feed itself; Updates has none).
+	const phoneLater = $derived(filter === 'reminders' ? feed.later : filter === 'all' ? coming.filter((day) => day.day !== today) : []);
+	// What's still ahead today, for the phone's line when nothing needs the person (C6vql9).
+	const laterToday = $derived(entries.filter((entry) => dayKey(new Date(entry.at), zone) === today && Date.parse(entry.at) > time.now.getTime() && !(entry.kind === 'reminder' && entry.status !== 'active')).length);
 	const filters = $derived([
 		{ value: 'all', label: m.inbox_filter_all(), count: counts.all },
 		{ value: 'needs', label: m.inbox_filter_needs(), count: counts.needs },
@@ -136,6 +173,7 @@
 		setting = false;
 		if (!result.ok) return void (failed = { line, message: result.message || m.inbox_action_failed() });
 		line = '';
+		reminderOpen = false;
 		toasts.show({ kind: 'success', title: m.inbox_reminder_set({ when: `${dayName(reminder.date!, language)} · ${reminder.time}` }) });
 		await invalidate('app:inbox');
 	}
@@ -184,6 +222,107 @@
 	</InboxRow>
 {/snippet}
 
+{#snippet phoneRow(entry: InboxEntry)}
+	{@const done = entry.kind === 'reminder' && (entry.status === 'done' || entry.status === 'cancelled')}
+	{@const ahead = !done && Date.parse(entry.at) > time.now.getTime()}
+	<PhoneTimelineRow time={entryTime(entry, time.now, zone, language)} title={entry.title} meta={entryTag(entry, language)} state={entryCaption(entry, time.now) || undefined} done={done || (!ahead && entry.kind === 'notification' && entry.read)}>
+		{#snippet tools()}
+			{#if entry.kind === 'notification' && inApp(entry.link)}
+				<button type="button" aria-label={m.inbox_open()} class="inline-flex size-11 cursor-pointer items-center justify-center rounded-full text-text-2 outline-offset-1 focus-visible:outline-2 focus-visible:outline-focus" onclick={() => open(entry)}><Icon icon={ExternalLink} size={18} /></button>
+			{:else if entry.kind === 'task' || (entry.kind === 'reminder' && entry.status === 'active')}
+				<button type="button" aria-label={m.inbox_more({ title: entry.title })} class="inline-flex size-11 cursor-pointer items-center justify-center rounded-full text-text-2 outline-offset-1 focus-visible:outline-2 focus-visible:outline-focus" onclick={() => (rowSheet = entry)}><Icon icon={Ellipsis} size={18} /></button>
+			{/if}
+		{/snippet}
+	</PhoneTimelineRow>
+{/snippet}
+
+{#if phone.current}
+	<div class="flex h-full flex-col overflow-y-auto pb-24">
+		<LargeTitle title={m.nav_inbox()}>
+			{#snippet trailing()}
+				<button type="button" aria-label={m.inbox_mark_all_read()} disabled={data.notifications.every((one) => one.read) || markingRead} class="inline-flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-full text-text outline-offset-1 focus-visible:outline-2 focus-visible:outline-focus disabled:cursor-default disabled:text-text-3" onclick={markAllRead}>
+					<Icon icon={CheckCheck} size={22} />
+				</button>
+			{/snippet}
+		</LargeTitle>
+		<p class="px-5 pb-3 text-phone-sm text-text-3">
+			{counts.needs > 0 ? m.inbox_meta({ needs: counts.needs, coming: coming.reduce((sum, day) => sum + day.entries.length, 0) }) : m.phone_inbox_sub_clear({ coming: laterToday })}
+		</p>
+		<PhoneFilters label={m.inbox_filter_label()} options={filters} value={filter} onchange={(value) => (filter = value as Filter)} />
+
+		{#if feed.needs.length}
+			<section class="flex flex-col">
+				<div class="flex items-center px-5 pt-3.5 pb-2">
+					<h2 class="flex-1 font-mono text-label tracking-label text-text-3 uppercase">{m.inbox_filter_needs()}</h2>
+					<span class="font-mono text-label text-text-3">{feed.needs.length}</span>
+				</div>
+				<div class="flex flex-col gap-2.5 px-4 pb-1.5">
+					{#each feed.needs as entry (key(entry))}
+						<PhoneInboxCard kind={entryTag(entry, language)} when={entryTime(entry, time.now, zone, language)} title={entry.title} body={entryCaption(entry, time.now) || undefined} unread={entry.kind === 'notification'}>
+							{#snippet actions()}
+								{#if entry.kind === 'notification'}
+									{#if inApp(entry.link)}<PhonePill label={m.inbox_open()} variant="inverse" loading={busy === key(entry)} onclick={() => open(entry)} />{/if}
+									<PhonePill label={m.inbox_mark_read()} onclick={() => run(entry, 'read', { id: entry.id })} />
+								{:else}
+									<PhonePill label={m.inbox_done()} variant="inverse" icon={Check} loading={busy === key(entry)} onclick={() => finish(entry)} />
+									<PhonePill label={m.inbox_snooze_hour()} icon={AlarmClockPlus} onclick={() => snooze(entry)} />
+								{/if}
+							{/snippet}
+						</PhoneInboxCard>
+					{/each}
+				</div>
+			</section>
+		{:else if filter === 'all' && !nothing}
+			<!-- Inbox, all clear (C6vql9): nothing waits on the person; what's still coming follows. -->
+			<div class="px-4 pt-6"><EmptyState icon={CircleCheck} title={m.inbox_empty_needs_title()} body={m.phone_inbox_clear_body()} /></div>
+		{/if}
+
+		{#if feed.today.length}
+			<section class="flex flex-col">
+				<h2 class="px-5 pt-3.5 pb-2 font-mono text-label tracking-label text-text-3 uppercase">{m.inbox_today({ date: dayName(today, language) })}</h2>
+				<ul class="flex flex-col px-5">
+					{#each feed.today as entry (key(entry))}{@render phoneRow(entry)}{/each}
+				</ul>
+			</section>
+		{/if}
+
+		{#each phoneLater as day (day.day)}
+			<section class="flex flex-col">
+				<h2 class="px-5 pt-3.5 pb-2 font-mono text-label tracking-label text-text-3 uppercase">{dayName(day.day, language)}</h2>
+				<ul class="flex flex-col px-5">{#each day.entries as entry (key(entry))}{@render phoneRow(entry)}{/each}</ul>
+			</section>
+		{/each}
+
+		{#if feed.earlier.length || more}
+			<section class="flex flex-col gap-2 px-5 pt-3.5">
+				<EarlierToggle label={m.inbox_earlier()} count={feed.earlier.length} bind:expanded />
+				{#if expanded}
+					{#if feed.earlier.length}<ul class="flex flex-col">{#each feed.earlier as entry (key(entry))}{@render phoneRow(entry)}{/each}</ul>{/if}
+					{#if more}<span><PhonePill label={m.inbox_show_older()} variant="ghost" onclick={() => goto(`?shown=${data.shown + 1}`, { noScroll: true, keepFocus: true })} /></span>{/if}
+				{/if}
+			</section>
+		{/if}
+
+		{#if nothing}<div class="px-4 pt-6"><EmptyState icon={empty.icon} title={empty.title} body={empty.body} /></div>{/if}
+	</div>
+	<div class="fixed right-4 bottom-14"><Fab label={m.inbox_new_reminder()} icon={AlarmClockPlus} iconSize={22} onclick={() => (reminderOpen = true)} /></div>
+	<BottomSheet bind:open={reminderOpen} title={m.inbox_new_reminder()}>
+		<div class="px-4 pb-2">
+			<QuickReminder id={QUICK_REMINDER} label={m.inbox_quick()} placeholder={m.inbox_quick_placeholder()} bind:value={line} {chips} {hint} error={quickError} busy={setting} onsubmit={remind} />
+		</div>
+	</BottomSheet>
+	{#if rowSheet && rowSheet.kind !== 'notification'}
+		{@const entry = rowSheet}
+		<BottomSheet open title={entry.title} onclose={() => rowSheet === entry && (rowSheet = null)}>
+			{#if entry.kind === 'reminder' && !entry.repeat}
+				<SheetRow icon={Check} label={m.inbox_mark_done()} onclick={() => ((rowSheet = null), finishEarly(entry))} />
+			{/if}
+			{#each menu(entry).filter((item): item is MenuItem => typeof item === 'object' && 'label' in item) as item (item.label)}
+				<SheetRow icon={item.icon ?? MessageSquare} label={item.label} danger={item.danger} onclick={() => ((rowSheet = null), item.onselect?.())} />
+			{/each}
+		</BottomSheet>
+	{/if}
+{:else}
 <div class="flex h-full flex-col overflow-y-auto xl:flex-row xl:overflow-hidden">
 	<div class="flex min-w-0 flex-1 flex-col gap-4.5 px-4 pt-6 pb-5 lg:px-8 xl:overflow-y-auto">
 		<header class="flex flex-wrap items-end gap-x-6 gap-y-3">
@@ -291,3 +430,4 @@
 		</section>
 	</aside>
 </div>
+{/if}

@@ -29,7 +29,7 @@ import { setThemeCookie } from './theme';
 
 /** Everything the app shell shows around a page, in the design system's terms. */
 export type Shell = {
-	person: { name: string; firstName: string; avatar: string | null };
+	person: { name: string; firstName: string; avatar: string | null; /** The handle they chose, for You on a phone ("@mario"). */ username: string | null };
 	theme: Theme;
 	/** The person's saved time zone; null when they never saved one (the browser's decides). */
 	timeZone: string | null;
@@ -99,7 +99,7 @@ export async function loadShell(event: ApiEvent & { userAgent: string }, now: Da
 	const members = agents?.agents ?? [];
 
 	return {
-		person: { name, firstName: firstName(name), avatar: profile?.avatar_url ?? null },
+		person: { name, firstName: firstName(name), avatar: profile?.avatar_url ?? null, username: profile?.username ?? null },
 		theme,
 		timeZone,
 		usage: usage ? { card: usageCard(usage), account: accountLine(usage), canUpgrade: usage.can_upgrade, tokens: { used: formatTokens(usage.tokens_used), total: formatTokens(usage.plan.monthly_tokens) } } : null,
