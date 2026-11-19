@@ -453,6 +453,15 @@ export default [
 		related: ['mobile/AskBar.svelte'],
 	},
 	{
+		file: 'projects/PhoneDeviceToggle.svelte',
+		summary: 'Phone or Desktop over a phone’s preview: the app as a phone sees it, or its 1440 layout scaled to fit in a card.',
+		use: ['The Preview tab of the workspace on a phone.'],
+		dos: ['Keep both words and their icons: the choice is about the app’s layout, not the person’s device.'],
+		donts: ['Stretch it to the screen’s width: it hugs its two choices, centred over the preview.'],
+		accessibility: ['A radio group named “Device”; the arrow keys move the choice.'],
+		related: ['projects/PhoneAskBar.svelte', 'inputs/Segmented.svelte'],
+	},
+	{
 		file: 'projects/PhoneList.svelte',
 		summary: 'Rows in one 14-round card on a phone: deploys, a table’s rows, files, people.',
 		use: ['Lists inside the workspace’s phone sheets and screens.'],

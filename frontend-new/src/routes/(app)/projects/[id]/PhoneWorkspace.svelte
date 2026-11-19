@@ -21,6 +21,7 @@
 	import DeleteProjectSheet from '$lib/ds/projects/DeleteProjectSheet.svelte';
 	import PhoneWorkspaceNav, { type PhonePill } from '$lib/ds/projects/PhoneWorkspaceNav.svelte';
 	import PhoneAskBar from '$lib/ds/projects/PhoneAskBar.svelte';
+	import PhoneDeviceToggle, { type Device } from '$lib/ds/projects/PhoneDeviceToggle.svelte';
 	import PhoneList from '$lib/ds/projects/PhoneList.svelte';
 	import PhoneListRow from '$lib/ds/projects/PhoneListRow.svelte';
 	import PhoneTile from '$lib/ds/projects/PhoneTile.svelte';
@@ -36,7 +37,6 @@
 	import EmptyState from '$lib/ds/lists/EmptyState.svelte';
 	import TextField from '$lib/ds/inputs/TextField.svelte';
 	import Checkbox from '$lib/ds/inputs/Checkbox.svelte';
-	import Segmented from '$lib/ds/inputs/Segmented.svelte';
 	import Icon from '$lib/ds/foundations/Icon.svelte';
 	import { plainLines } from '$lib/ds/chat/code';
 	import { cellText } from '$lib/projects/database';
@@ -177,10 +177,21 @@
 	});
 
 	// ── Preview ───────────────────────────────────────────────────────────────────────────────
-	let device = $state<'phone' | 'desktop'>('phone');
-	let frameWidth = $state(390);
-	let frameHeight = $state(600);
+	let device = $state<Device>('phone');
+	// The desktop layout is 1440 wide, drawn in the pen's 240-high card (PsC5F, Desktop Frame k964L):
+	// scaled to the card's inner width, as tall as its inner height allows.
+	let frameWidth = $state(334);
+	let frameHeight = $state(216);
 	const scale = $derived(Math.min(1, frameWidth / 1440));
+	// The frame shows a quiet "Loading…" until it has loaded, so a slow app never looks like a blank
+	// screen; a new address, a reload or the other device starts it again.
+	let frameLoaded = $state(false);
+	$effect(() => {
+		void ws.frame;
+		void ws.reloads;
+		void device;
+		frameLoaded = false;
+	});
 
 	// ── Tools ─────────────────────────────────────────────────────────────────────────────────
 	async function openExport() {
@@ -270,7 +281,7 @@
 			failure={ws.sandboxPhase === 'failed' ? { title: m.sandbox_failed_title(), detail: ws.runtime?.error || m.sandbox_failed_body(), fix: m.projects_action_fix(), onfix: () => (ws.askToFix(), void toChat()) } : undefined}
 		/>
 	{:else if screen === 'log' && failure}
-		<NavBar title={m.pb_log_title()} who={{ agent: 'koda', name: m.projects_deploy({ number: failure.number }) }} onback={() => (screen = null)} />
+		<NavBar title={m.pb_log_title()} who={{ agent: 'koda', name: failure.number > 0 ? m.projects_deploy({ number: failure.number }) : ws.project.name }} onback={() => (screen = null)} />
 		<PhoneTerminal label={m.pb_log_title()} lines={failure.tail.length ? failure.tail.map((text) => ({ kind: 'out' as const, text })) : [{ kind: 'out', text: m.sandbox_terminal_empty() }]} />
 	{:else}
 		<PhoneWorkspaceNav project={ws.project.name} status={statusLine} live={Boolean(ws.liveUrl)} {pill} onback={() => void goto('/projects')} onmenu={() => open('tools')} />
@@ -286,21 +297,31 @@
 		{#if tab === 'preview'}
 			<div class="relative min-h-0 flex-1">
 				{#if ws.frame}
-					<div class="flex h-full flex-col">
-						<div class="flex justify-center px-4 pt-1 pb-2">
-							<Segmented label={m.workspace_device()} value={device} onchange={(value) => (device = value as 'phone' | 'desktop')} options={[{ value: 'phone', label: m.workspace_phone() }, { value: 'desktop', label: m.workspace_desktop() }]} />
+					{#if device === 'phone'}
+						<div class="flex h-full flex-col">
+							<div class="flex justify-center px-4 pt-3 pb-3"><PhoneDeviceToggle bind:value={device} /></div>
+							<div class="relative min-h-0 flex-1 overflow-hidden">
+								{#key ws.reloads}
+									<iframe src={ws.frame} title={ws.project.name} class="h-full w-full bg-surface" onload={() => (frameLoaded = true)}></iframe>
+								{/key}
+								{#if !frameLoaded}<p class="absolute inset-x-0 top-6 text-center text-ui text-text-3" aria-live="polite">{m.pb_preview_loading()}</p>{/if}
+							</div>
 						</div>
-						<div bind:clientWidth={frameWidth} bind:clientHeight={frameHeight} class="relative min-h-0 flex-1 overflow-hidden">
-							{#key ws.reloads}
-								{#if device === 'phone'}
-									<iframe src={ws.frame} title={ws.project.name} class="h-full w-full bg-surface"></iframe>
-								{:else}
-									<iframe src={ws.frame} title={ws.project.name} class="origin-top-left bg-surface" style="width: 1440px; height: {frameHeight / scale}px; transform: scale({scale})"></iframe>
-								{/if}
-							{/key}
+					{:else}
+						<!-- Desktop preview (PsC5F): the toggle, the 1440 layout in a 240 card, and the hint, padded [12,16] 12 apart. -->
+						<div class="flex h-full flex-col items-center gap-3 overflow-y-auto px-4 pt-3 pb-24">
+							<PhoneDeviceToggle bind:value={device} />
+							<div class="relative h-60 w-full shrink-0 rounded-md bg-bg p-3 outline -outline-offset-1 outline-border-strong">
+								<div bind:clientWidth={frameWidth} bind:clientHeight={frameHeight} class="relative h-full w-full overflow-hidden rounded-xs">
+									{#key ws.reloads}
+										<iframe src={ws.frame} title={ws.project.name} class="origin-top-left bg-surface" style="width: 1440px; height: {frameHeight / scale}px; transform: scale({scale})" onload={() => (frameLoaded = true)}></iframe>
+									{/key}
+									{#if !frameLoaded}<p class="absolute inset-x-0 top-6 text-center text-ui text-text-3" aria-live="polite">{m.pb_preview_loading()}</p>{/if}
+								</div>
+							</div>
+							<p class="text-center text-ui text-text-3">{m.pb_desktop_note()}</p>
 						</div>
-						{#if device === 'desktop'}<p class="px-4 py-2 text-center font-mono text-label text-text-3">{m.pb_desktop_note()}</p>{/if}
-					</div>
+					{/if}
 				{:else}
 					<div class="h-full overflow-y-auto px-4 pt-6 pb-24">
 						{#if ws.sandboxOn}
@@ -337,11 +358,11 @@
 					title={m.pb_build_failed()}
 					provider={failure.step}
 					reason={failure.message}
-					meta={m.pb_failed_meta({ number: failure.number, step: failure.step, elapsed: failure.elapsed })}
+					meta={[failure.number > 0 ? m.projects_deploy({ number: failure.number }) : null, m.pb_failed_step({ step: failure.step }), failure.elapsed].filter(Boolean).join(' · ')}
 					primary={{
 						label: m.pb_fix_it(),
 						onclick: () => {
-							ws.quote = { file: m.pb_log_title(), range: m.projects_deploy({ number: failure.number }), snippet: failure.message, text: m.sandbox_fix_text({ error: failure.message }) };
+							ws.quote = { file: m.pb_log_title(), range: failure.number > 0 ? m.projects_deploy({ number: failure.number }) : ws.project.name, snippet: failure.message, text: m.sandbox_fix_text({ error: failure.message }) };
 							void toChat(true);
 						},
 					}}
@@ -377,7 +398,7 @@
 		{#if ws.sandboxOn}<SheetRow icon={SquareTerminal} label={m.workspace_terminal()} meta={m.pb_what_koda_ran()} more onclick={() => ((screen = 'terminal'), shut())} />{/if}
 		<div class="flex gap-2 pt-2">
 			{#if ws.liveUrl}<PhoneButton variant="secondary" label={m.workspace_share()} onclick={() => open('share')} />{/if}
-			<PhoneButton variant="secondary" icon={Download} label={m.workspace_export()} onclick={() => void openExport()} />
+			<PhoneButton variant="secondary" icon={Download} label={m.projects_detail_export()} onclick={() => void openExport()} />
 		</div>
 	</div>
 </BottomSheet>

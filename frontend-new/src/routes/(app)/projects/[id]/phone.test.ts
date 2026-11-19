@@ -58,11 +58,14 @@ describe('a failed publish', () => {
 	it('is the newest production publish, with the backend’s step, message and log, and the deploy still live', () => {
 		const failed = row({ id: 'p2', version: 2, status: 'failed', error: 'build failed', created_at: '2026-11-18T08:45:00Z', finished_at: '2026-11-18T08:45:41Z', failure: { step: 'build', message: "Cannot find module './PickupSlots.svelte'", tail: ['vite v5', 'error'] } });
 		const live = row({ id: 'p1', version: 1, is_live: true });
-		expect(failedPublish(overview([failed, live]))).toEqual({ number: 2, step: 'build', message: "Cannot find module './PickupSlots.svelte'", tail: ['vite v5', 'error'], elapsed: '0:41', live: 1 });
+		expect(failedPublish(overview([failed, live]))).toEqual({ number: 2, step: 'build', message: "Cannot find module './PickupSlots.svelte'", tail: ['vite v5', 'error'], elapsed: '00:41', live: 1 });
 	});
 
 	it('says nothing is live when it was the first (G3), and falls back to the row’s error without a failure', () => {
 		expect(failedPublish(overview([row({ status: 'failed', error: 'exit 1', failure: null })]))).toMatchObject({ number: 1, step: 'publish', message: 'exit 1', tail: [], live: null });
+		// A publish with no finish time has no elapsed time to show (never "0:00"), and the pen's
+		// meta reads "deploy #2 · build step · 00:41" (ALFZb): minutes in two digits.
+		expect(failedPublish(overview([row({ status: 'failed', error: 'exit 1', failure: null, finished_at: null })]))?.elapsed).toBeNull();
 	});
 
 	it('is gone once a newer publish runs or succeeded', () => {

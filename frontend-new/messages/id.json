@@ -3221,5 +3221,7 @@
 	"studio_openpencil_tokens": "Token & Variabel",
 	"studio_openpencil_export_svg": "Ekspor SVG",
 	"phone_form_edit": "Ubah {title}",
-	"phone_run_option_research_detail": "Tidak ada yang dibagikan."
+	"phone_run_option_research_detail": "Tidak ada yang dibagikan.",
+	"pb_failed_step": "tahap {step}",
+	"pb_preview_loading": "Memuat pratinjau…"
 }

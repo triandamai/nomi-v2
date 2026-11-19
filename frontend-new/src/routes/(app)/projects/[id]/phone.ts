@@ -47,11 +47,14 @@ export function publishPill(button: PublishState, role: string | null, asked: bo
 	return { kind: 'none' };
 }
 
-export type FailedPublish = { number: number; step: string; message: string; tail: string[]; elapsed: string; live: number | null };
+export type FailedPublish = { number: number; step: string; message: string; tail: string[]; elapsed: string | null; live: number | null };
 
+// How long the publish ran, as the pen writes it ("00:41", ALFZb); null without a finish time, so
+// the card never claims "0:00".
 const elapsed = (from: string, to: string | null) => {
-	const seconds = to ? Math.max(0, Math.round((Date.parse(to) - Date.parse(from)) / 1000)) : 0;
-	return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+	if (!to) return null;
+	const seconds = Math.max(0, Math.round((Date.parse(to) - Date.parse(from)) / 1000));
+	return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
 };
 
 /**
