@@ -62,6 +62,12 @@ describe('the chat page’s own endpoints', () => {
 		expect((await chatRequest(event, 's1', ['reminders', 'r1'], request('POST', { action: 'later' }))).status).toBe(400);
 	});
 
+	it('forgets a memory the reply saved, for its Undo', async () => {
+		const { backend, event } = eventWith(() => new Response(null, { status: 204 }));
+		expect((await chatRequest(event, 's1', ['memory', 'f9'], request('DELETE'))).status).toBe(200);
+		expect(backend.calls[0]).toMatchObject({ method: 'DELETE', url: 'http://api.test/api/memory/f9' });
+	});
+
 	it('sends, and answers what was sent', async () => {
 		const { backend, event } = eventWith(() => json({ user_message: { id: 'u' } }, 202));
 		const response = await chatRequest(event, 's1', ['messages'], request('POST', { text: 'hi' }));
@@ -95,6 +101,16 @@ describe('the chat page’s own endpoints', () => {
 			'PUT /thinking',
 			'PUT /model',
 		]);
+	});
+
+	it('says what deleting a reply takes with it, then deletes it (Share & delete, step 4)', async () => {
+		const related = { message_ids: ['m1'], transactions: [], reminders: [{ id: 'r1', label: 'Bayar listrik', amount_cents: null, kind: null }], plans: [], tasks: [], files: [] };
+		const { backend, event } = eventWith(() => json(related));
+		const preview = await chatRequest(event, 's1', ['messages', 'm1', 'delete'], request('GET'));
+		expect(await preview.json()).toEqual(related);
+		const gone = await chatRequest(event, 's1', ['messages', 'm1'], request('DELETE'));
+		expect(gone.status).toBe(200);
+		expect(backend.calls.map((call) => `${call.method} ${call.url.replace('http://api.test/api/sessions/s1', '')}`)).toEqual(['GET /messages/m1/delete', 'DELETE /messages/m1']);
 	});
 
 	it('refuses what it doesn’t know, or a body that isn’t right', async () => {

@@ -392,8 +392,10 @@ leaves out what v2 or the backend can't do yet, rather than draw it dead:
   Chats is the pen's: the large title, the search pill, the days in mono, phone rows and New chat
   floating above the tab bar. Each row's avatar is the chat glyph and there are no crew filters
   (All, Dana, Kala…): both are who last answered, which the chat list doesn't say
-  (BACKEND_TODO.md). The pen's sheet for a chat comes from a long press (or More, for the
-  keyboard) with Pin to top and Delete chat, the two things the desktop row does.
+  (BACKEND_TODO.md), so a row's line also has no "Tara:" before it. The pen's sheet for a chat comes
+  from a long press (or More, for the keyboard) with Pin to top and Delete chat, the two things the
+  desktop row does; its subtitle is when the chat last moved, not the pen's "14 messages · Dana"
+  (the list says neither how many messages nor who answered: BACKEND_TODO.md).
 - Home, Inbox and You on a phone (Flow / Mobile — Home, Inbox & You M4PZDC, light C6xDTg) are the
   pen's screens, each with its own large title in place of the top bar. Home: the date in mono, the
   greeting, `PhoneAskCard` (who it goes to and the model open bottom sheets), Today as
@@ -408,19 +410,40 @@ leaves out what v2 or the backend can't do yet, rather than draw it dead:
   value only where the shell already knows it (the crew's size, how many workspaces), so Models,
   Memory and Connections show none rather than load for it. A settings page opened from You keeps
   the tab bar and gets a back link to You before "Settings › Page".
-- A chat on a phone (Mobile Chat — Start & answer, steps 2–7) is the pen's: the nav bar (back to
-  Chats, the title, who answers, "· thinking" while they work, and More for the chat's sheet:
-  Rename, Pin to top, Move to a project, Export, Share whole chat, Delete chat), the thread padded
-  [16,16,20,16] and sitting at the bottom while it's short, your messages in the 18-round bubble,
-  each reply under the Mobile byline with its prose at 16 / 1.55 and the round action bar, and
-  `PhoneComposer` (the model chip and "@ Crew" open sheets). New chat is the pen's step 2: Nomi's
-  mascot, the question at 22, the line and the starters.
+- A chat on a phone (Mobile Chat — Start & answer, steps 2–7) is the pen's: the nav bar
+  (`PhoneChatNavBar`: back to Chats, the title, who answers with their 20 mascot, "· thinking" while
+  they work, and More for the chat's sheet, "N messages · Dana": Rename, Pin to top, Move to a
+  project, Export, Share whole chat, Delete chat), the thread padded [16,16,20,16] and sitting at
+  the bottom while it's short (a thread of one day has no date divider), your messages in the
+  18-round bubble (`PhoneMessageBubble`, its text at most 250), each reply under the Mobile byline
+  with its prose at 16 / 1.55 and the round action bar, and `PhoneComposer` (the model chip and
+  "@ Crew" open sheets). New chat is the pen's step 2: Nomi's mascot, the question at 22, the line
+  and the pen's starters (`PhoneStarters`, at 15). Not yet: the composer's attach (+) and mic. The
+  backend takes files and voice notes (`/api/attachments`), but no v2 composer sends them yet, the
+  desktop's neither; they come to both at once (UXP-001), as the pen measures them (`PhoneComposer`
+  already draws them with their handlers). The chat's sheet counts the messages only once every
+  one is loaded (a long chat's sheet says who answers). A finished reply's reasoning reads "Thought
+  for 8s" when the app timed it live; loaded later it reads "Thinking": the backend doesn't keep
+  how long a reply thought (BACKEND_TODO.md).
 - A chat's controls on a phone (Like & dislike `M0VaJC`, Share & delete `yoVD6`, Message controls
   `ctP7Q`): a reply's More (or a long press on it) opens its sheet, the quick tiles (`SheetTiles`:
-  Good, Bad, Copy, Share) over Regenerate (its own sheet of styles) and Edit question; Bad opens
-  `PhoneDislikeSheet` with the reasons; Share opens `PhoneShareSheet`; deleting asks in an
-  `ActionSheet`. A long press on your own message opens its sheet (Edit, Copy), and editing is
-  `PhoneMessageEditor` in place of the bubble. Still the desktop's: the crew picker's 300 width (the
+  Good, Bad, Copy, Share) over Regenerate (its own sheet: "Each result is kept as a version", the
+  styles, then With another model), Try another model (the same sheet) and Edit question. Picking
+  another model moves the chat to it, as the composer's chip then says, and runs the turn again on
+  it: the backend regenerates on the chat's model; each of those models reads its name with what
+  pays in mono ("your key", "Nomi credits"). Left out of the reply's sheet: Save to memory (nothing
+  in the backend makes a memory from a reply: BACKEND_TODO.md). Delete reply asks in an
+  `ActionSheet`: the pen's "Things the crew already did aren't undone" only where the reply's cards
+  made nothing; where they did, it names what goes with it (the backend deletes the reminders and
+  plans its cards show). Undo is the app holding the delete back for ten seconds (the backend can't
+  bring a reply back: BACKEND_TODO.md), and the placeholder (`DeletedReply`) has no Regenerate: a
+  deleted reply can't be asked again in its place.
+  Bad opens `PhoneDislikeSheet` with the pen's six reasons (the desktop's "Unsafe or harmful" isn't
+  drawn); Share opens `PhoneShareSheet`, whose footnote says when the link expires without the
+  pen's "· revoke in Settings › Data" (v2 has no such page); deleting asks in an `ActionSheet`. A
+  long press on your own message opens its sheet (Edit, Copy, Select text, which selects it where
+  it stands), lifting your bubble over the scrim just above it (`BottomSheet`'s `lifted`), and
+  editing is `PhoneMessageEditor` in place of the bubble. Still the desktop's: the crew picker's 300 width (the
   pen runs it the screen's width; MentionPicker is the old app's twin) and Export's PDF (the pen's
   "md · pdf": markdown only). The thinking level isn't on the phone's
   toolbar (the pen draws the model and the crew).
@@ -481,6 +504,25 @@ leaves out what v2 or the backend can't do yet, rather than draw it dead:
   sparkles icon on "Switch to Nomi credits" (Mobile / Error Card) and after "Make the plan" is left
   out: Nomi's UI rules ban sparkles. "Research only" says "Nothing shared." without the research
   steps the pen names (the plan doesn't say which steps research).
+- The rest of a chat on a phone (Flow / Mobile Chat — Rich replies `XO7DI`, Manage chat & long threads
+  `W3a8j`, Crew, memory & connections `YuWzO`; UX contract `docs/ux/work/phone-chat-more`). The pen draws
+  these with the desktop's own chat cards (Cart, Selection, Link preview, Code, Reminder, Boundary, Memory,
+  Follow-ups, the jump pill and the NEW divider), so a phone renders those as they are. What's the phone's
+  own:
+  - **Moving a chat:** `PhoneMoveSheet`: search, the projects, Move chat. Once the chat is in a project,
+    the nav bar names the project under the title. The moved toast says the chat "stays private to you",
+    not the pen's "Keluarga members can see it now": the backend keeps a filed chat private (`moveTargets`).
+  - **Connecting an app:** `PhoneConnectSheet` opens on its own for the latest reply that asks to connect,
+    and the card in the thread stays. Google and GitHub start their sign-in from it and come back to the
+    chat (`?connected=google` says "Google connected" once). Any other app opens Connections, and
+    answering yourself focuses the composer. Its lines say what holds for every app ("Only what this
+    request needs is read", "Nothing is created or changed without asking", "Disconnect in You ›
+    Connections"), not the pen's Calendar-only "Read-only access" and "Read events and free/busy times".
+  - **A saved memory:** Edit opens Settings › Memory, and Undo forgets it at once (`DELETE …/memory/:id`),
+    on both layouts.
+
+  Left out (BACKEND_TODO.md): the hand-off line ("Nomi handed this to Dana · Ask Nomi") and the diff card
+  with Apply and Reject.
 - Projects on a phone (Flow / Mobile Projects) is the pen's list: `PhoneProjectsHeader` (the
   workspace pill opening the Workspaces sheet, how many people are in it, Invite to the workspace's
   page, the large title and New), `PhoneProjectSearch` with Sort (a sheet of `SheetOption`s), the
@@ -494,7 +536,17 @@ leaves out what v2 or the backend can't do yet, rather than draw it dead:
   deploys from the `DeploySheet`, and deleting a project wants its name typed in the
   `DeleteProjectSheet`, and moving it picks among workspace cards in the `ProjectMoveSheet`, as the
   pen draws them. Loading and a list that couldn't load keep the search and filters (counts left
-  out while there are none) over phone loading cards or the centred error with Retry. Not yet:
+  out while there are none) over phone loading cards or the centred error with Retry; that error's
+  line names "Nomi's server" where the pen writes "api.nomi.app": the app reaches the backend at
+  its own internal address, which means nothing to the person. The card's sheet and the project's
+  screen say its state ("deploy #6 failed · #5 still live", "Koda is changing it · #15 stays live")
+  without the pen's "1 of 3" (Koda's step isn't given: BACKEND_TODO.md) and, under what broke,
+  without the build's error (not given with the list, as on a desktop). Deleting says what the backend does: the pen's "Your code stays in
+  your account for 30 days" isn't so (the files go at once), so the sheet says the code goes for
+  good, to export first. The project's ask bar has no mic until voice notes come to the composers
+  (UXP-001), and what's typed in it is 16pt (the pen's 15) so iOS doesn't zoom. The Workspaces
+  sheet's note says "Projects and their chats" are shared, without the pen's "shared crew
+  templates", as the desktop switcher does. Not yet:
   offline (the desktop has none either), Koda checking an app that's down from its own flow, and
   Import from GitHub (BACKEND_TODO.md). The sort isn't saved per workspace (the pen's "Saved for Trian's space"):
   nothing keeps it. The Workspaces sheet's "Join" for an invitation waits for that flow.
@@ -823,6 +875,35 @@ steps; what isn't there yet is left out, not drawn dead:
   (BACKEND_TODO.md). On a phone the bar's ask is its icon, so the project's name keeps its room.
 - The chat pane is the project's chat itself (`ChatView`), as on its own page; its header's history
   and collapse buttons are left out, and it names Koda and Nomi as the crew building.
+- On a phone (Flow / Mobile Build: Sign in → live URL `zM0xh`, Workspace tools `tJh5G`, Landing page
+  `yY8qf`, Roll back & hand-over `Wv14s`, Code, terminal & phone preview `r3IvZk`, Invite & build together
+  `L8dgcS`) the workspace is the phone's own screen below 768, not the split squeezed. Both layouts read
+  one `Workspace` (`projects/[id]/workspace.svelte.ts`: the deploy overview and its poll, the sandbox, the
+  live link, the asks and requests, every tool's state and action), and only one is mounted. The phone
+  (`projects/[id]/PhoneWorkspace.svelte`) has `PhoneWorkspaceNav` (the publish pill in every state: a
+  member's ask is its icon, a viewer's pill a state with nothing to press; the desktop gives viewers the
+  same since F1), Chat | Preview (the chat stays mounted under the preview, so switching never
+  reconnects it), the presence strip and follow bar, the preview full width with Phone / Desktop (1440
+  scaled to fit) and `PhoneAskBar`. ··· opens the desktop's tools as bottom sheets in its order, one at
+  a time (one opened from Settings goes back to it); the confirms that can be undone are action sheets;
+  Code, a file, Terminal and a failed publish's log are pushed screens. Toasts sit at the top
+  (`PhoneToastRegion`). Database is read only (D4), Monitor is today (D5), Settings has no Name row
+  (D3), and a build starts from Projects › New (D2). Left out, with the pen's slips: the pen's
+  `deploy #2` over a `deploy #1` card (`bR1XV`), its lock-screen times (`I8tuK0`, `z0NpLc`), "Can edit"
+  (`OgP6t`: the desktop's role words), "Ask Koda about this screen" (`I6z3D6`, `yS6ev`: the frame is
+  sandboxed, so it's the pen's own "Ask Koda for a change…"), "~3 min left" (`SaEJ7`) and "About 5 min"
+  (`jXfT8`) (no estimate), and the flow header's "ACCEPT TRANSFER → HANDED OVER" (`Wv14s`), which has
+  no steps. Also left out, nothing behind them (BACKEND_TODO.md): the line a teammate is on, Stop on a
+  running publish, the lock-screen push on the web, commits and RECENTLY CHANGED in Code, a running
+  ask's time, PRE-ORDERS, QR and embed, the build allowance (`AqQ3n`) and a schema-change review
+  (`CY7CO`). A publish's live and failed cards come from the deploy overview (the newest failed publish
+  with its step, message and log; the live card for a publish that went live while the workspace was
+  open), not from the chat's `project_event` block, which `ChatView` doesn't render yet. A role is
+  changed from a sheet and someone is taken off after an action sheet; Transfer lists the workspaces
+  as sheet options; Delete is the built `DeleteProjectSheet`. `AskQueue` (the twin) offers its button
+  on the ask that's next, so the phone offers Let … go first only when that one is the teammate's ask
+  behind yours. The Usage sheet (tokens & cost) isn't on the phone's ··· yet: the pen draws no row. Nor is Sora's Design pane (the desktop's Design tab, once a project has previews or
+  directions): the pen draws no phone frame for it.
 - The chat is 520 wide as the flow draws it, dragged between 360 and 720 by the resize handle:
   `ProjectWorkspace` lays it out. The shells' `WorkspaceShell` (440, fixed) is a twin of the old
   app's and stays as it is.

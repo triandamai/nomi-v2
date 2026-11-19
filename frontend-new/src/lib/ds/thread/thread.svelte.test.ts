@@ -252,6 +252,11 @@ describe('AgentReply', () => {
 		await render(AgentReplyFixture, { dimmed: true });
 		expect(getComputedStyle(page.getByRole('article').element()).opacity).toBe('0.4');
 	});
+
+	it('dims to 0.35 on a phone, as Message controls draws it (bRx3K)', async () => {
+		await render(AgentReplyFixture, { dimmed: true, phone: true });
+		expect(getComputedStyle(page.getByRole('article').element()).opacity).toBe('0.35');
+	});
 });
 
 describe('ReplyBar', () => {
@@ -415,15 +420,23 @@ describe('PhoneComposer', () => {
 	it('doesn’t stop the reply it just sent on the second tap of a double tap', async () => {
 		const onsend = vi.fn();
 		const onstop = vi.fn();
-		const screen = await render(PhoneComposer, { placeholder: 'Message Nomi', value: 'Halo', onsend, onstop });
-		const send = page.getByRole('button', { name: 'Send' });
-		await send.click();
-		await screen.rerender({ placeholder: 'Message Nomi', streaming: true, onsend, onstop });
-		await page.getByRole('button', { name: 'Stop reply' }).click();
-		expect(onstop).not.toHaveBeenCalled();
-		await new Promise((resolve) => setTimeout(resolve, 600));
-		await page.getByRole('button', { name: 'Stop reply' }).click();
-		expect(onstop).toHaveBeenCalledOnce();
+		// The guard's clock is held still, so a slow machine can't make the second tap “late”.
+		let now = 1000;
+		const clock = vi.spyOn(performance, 'now').mockImplementation(() => now);
+		try {
+			const screen = await render(PhoneComposer, { placeholder: 'Message Nomi', value: 'Halo', onsend, onstop });
+			const send = page.getByRole('button', { name: 'Send' });
+			await send.click();
+			await screen.rerender({ placeholder: 'Message Nomi', streaming: true, onsend, onstop });
+			now += 100;
+			await page.getByRole('button', { name: 'Stop reply' }).click();
+			expect(onstop).not.toHaveBeenCalled();
+			now += 500;
+			await page.getByRole('button', { name: 'Stop reply' }).click();
+			expect(onstop).toHaveBeenCalledOnce();
+		} finally {
+			clock.mockRestore();
+		}
 	});
 });
 

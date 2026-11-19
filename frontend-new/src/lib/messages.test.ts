@@ -16,6 +16,14 @@ describe('messages', () => {
 	const en = load('en');
 	const id = load('id');
 
+	it('names each key once: a second one silently replaces the first’s copy everywhere it’s used', () => {
+		for (const locale of ['en', 'id']) {
+			const text = readFileSync(new URL(`../../messages/${locale}.json`, import.meta.url), 'utf8');
+			const keys = [...text.matchAll(/^\t"([^"]+)":/gm)].map((match) => match[1]);
+			expect(keys.filter((key, index) => keys.indexOf(key) !== index), locale).toEqual([]);
+		}
+	});
+
 	it('has the same keys in English and Indonesian', () => {
 		expect(Object.keys(en).length).toBeGreaterThan(0);
 		expect(Object.keys(id).sort()).toEqual(Object.keys(en).sort());

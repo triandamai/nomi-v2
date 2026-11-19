@@ -73,7 +73,7 @@ describe('coming back from Google and GitHub', () => {
 	};
 
 	it('finishes Google, back to the chat that asked or to Connections', async () => {
-		expect(await thrown(() => back(google.GET, '?code=c&state=s', () => json({ email: 'a@b.c', services: ['gmail'], resume_session_id: CHAT })))).toMatchObject({ location: `/chat/${CHAT}` });
+		expect(await thrown(() => back(google.GET, '?code=c&state=s', () => json({ email: 'a@b.c', services: ['gmail'], resume_session_id: CHAT })))).toMatchObject({ location: `/chat/${CHAT}?connected=google` });
 		expect(await thrown(() => back(google.GET, '?code=c&state=s', () => json({ email: 'a@b.c', services: ['gmail'], resume_session_id: null })))).toMatchObject({ location: '/settings/connections?connected=google' });
 	});
 

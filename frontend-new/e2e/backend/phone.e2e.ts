@@ -82,6 +82,8 @@ test('a chat on a phone: New chat, the nav bar, the bubble, the action bar, and 
 	await page.goto('/chat/new', { waitUntil: 'networkidle' });
 	await expect(page.getByRole('heading', { level: 1, name: 'What should the crew pick up?' })).toBeVisible();
 	await expect(page.getByRole('navigation', { name: 'Main' })).toHaveCount(0);
+	// The pen's own starters (kEp8c): Nomi's is always there.
+	await expect(page.getByRole('button', { name: /What can I build in 10 minutes\?/ })).toBeVisible();
 	await page.getByRole('textbox', { name: 'Message' }).fill('How much did I spend on food in October?');
 	await page.getByRole('button', { name: 'Send' }).click();
 	await expect(page).toHaveURL(/\/chat\/[0-9a-f-]{36}$/);
@@ -100,16 +102,27 @@ test('a chat on a phone: New chat, the nav bar, the bubble, the action bar, and 
 	await page.reload({ waitUntil: 'networkidle' });
 	await expect(reply.getByRole('button', { name: 'Good reply' })).toHaveAttribute('aria-pressed', 'true');
 
-	// More: the reply's sheet, then Regenerate's own sheet, then try again (which asks the backend).
+	// A thread of one day has no date divider (Answer yr0gh).
+	await expect(page.getByText('Today', { exact: true })).toHaveCount(0);
+
+	// More: the reply's sheet, then Regenerate's own sheet (each result kept as a version, then the
+	// other models the chat can move to), then try again (which asks the backend).
+	type Options = { groups: { models: { key: string; enabled: boolean }[] }[]; current: { key: string } | null };
+	const options = (await (await api(account, '/api/llm/model-options')).json()) as Options;
+	const others = options.groups.flatMap((group) => group.models).filter((model) => model.enabled && model.key !== options.current?.key);
 	await reply.getByRole('button', { name: 'More' }).click();
+	await expect(page.getByRole('dialog').getByRole('button', { name: /Try another model/ })).toHaveCount(others.length ? 1 : 0);
 	await page.getByRole('dialog').getByRole('button', { name: 'Regenerate' }).click();
+	await expect(page.getByRole('dialog').getByText('Each result is kept as a version')).toBeVisible();
+	await expect(page.getByRole('dialog').getByText('With another model')).toHaveCount(others.length ? 1 : 0);
 	const regenerated = page.waitForResponse((response) => response.url().endsWith('/regenerate') && response.request().method() === 'POST');
 	await page.getByRole('dialog').getByRole('button', { name: 'Try again' }).click();
 	expect((await regenerated).ok()).toBe(true);
 	await expect(page.getByRole('dialog')).toHaveCount(0);
 
-	// The nav bar's More is the chat's sheet: rename, then pin.
+	// The nav bar's More is the chat's sheet (how many messages, who answers): rename, then pin.
 	await page.getByRole('button', { name: 'Chat options' }).click();
+	await expect(page.getByRole('dialog').getByText(/^\d+ messages · Nomi$/)).toBeVisible();
 	await page.getByRole('dialog').getByRole('button', { name: 'Rename' }).click();
 	await page.getByRole('textbox', { name: 'Chat name' }).fill('Belanja makan Oktober');
 	await page.getByRole('button', { name: 'Save name' }).click();
@@ -182,6 +195,36 @@ test('Projects on a phone: the header, New project from its sheet, the card’s 
 	await sort.getByRole('button', { name: /Name/ }).click();
 	await page.getByRole('button', { name: 'Sort' }).click();
 	await expect(page.getByRole('dialog', { name: 'Sort projects' }).getByRole('button', { name: /Name/ })).toHaveAttribute('aria-pressed', 'true');
+	// The phone's order and words (M7SCRS).
+	await expect(page.getByRole('dialog', { name: 'Sort projects' }).getByRole('button')).toHaveText(['', 'Updated', 'Status · needs you first', 'Name · A–Z', 'Created']);
+	await page.keyboard.press('Escape');
+
+	// Searching: Cancel takes Sort's place and the chips count what's found (wDi32); no match is
+	// the phone's own, with Clear search (OC2PS).
+	const search = page.getByRole('searchbox', { name: 'Search projects' });
+	await search.fill('zzz-nothing');
+	await expect(page.getByRole('button', { name: 'Sort' })).toHaveCount(0);
+	await expect(page.getByRole('radio', { name: /^All/ })).toHaveText(/^All\s*0$/);
+	await expect(page.getByText('No projects match “zzz-nothing”')).toBeVisible();
+	await page.getByRole('button', { name: 'Clear search' }).last().click();
+	await expect(search).toHaveValue('');
+	await search.fill('zzz');
+	await page.getByRole('button', { name: 'Cancel' }).click();
+	await expect(search).toHaveValue('');
+	await expect(page.getByRole('button', { name: 'Sort' })).toBeVisible();
+	await expect(page.getByRole('radio', { name: /^All/ })).toHaveText(/^All\s*1$/);
+
+	// The workspace pill: the workspaces as cards, the boundary, Create workspace (a9NrP, C8evkZ).
+	await page.getByRole('button', { name: /^Workspace: / }).click();
+	const spaces = page.getByRole('dialog', { name: 'Workspaces' });
+	await expect(spaces.getByText('Shared in a workspace')).toBeVisible();
+	await expect(spaces.getByText('Always personal')).toBeVisible();
+	await expect(spaces.getByRole('button', { name: 'Create workspace' })).toBeVisible();
+	await page.keyboard.press('Escape');
+
+	// The project's own screen asks Koda from the pen's ask bar (kB2Dt).
+	await page.getByRole('article').first().getByRole('heading', { level: 3 }).getByRole('button').click();
+	await expect(page.getByRole('textbox', { name: 'Ask Koda to change something' })).toBeVisible();
 });
 
 test('a chat’s controls on a phone: your message’s sheet and editing, a reply’s sheet and dislike, share, delete', async ({ page, context }) => {
@@ -204,6 +247,11 @@ test('a chat’s controls on a phone: your message’s sheet and editing, a repl
 	await page.waitForTimeout(650);
 	await page.mouse.up();
 	const yours = page.getByRole('dialog', { name: 'Your message' });
+	await expect(yours.getByRole('button')).toHaveText(['', 'Edit and resend', 'Copy text', 'Select text']);
+	// Opened by a long press, the sheet has the focus, not its close (no ring on Close: rQ4w3).
+	await expect(yours.getByRole('button', { name: 'Close' })).not.toBeFocused();
+	// Your message is lifted over the scrim, above the sheet (nzT7f).
+	await expect(yours.getByText('How much did I spend on food in October?')).toBeVisible();
 	await yours.getByRole('button', { name: 'Edit and resend' }).click();
 	const editor = page.getByRole('textbox', { name: 'Your message' });
 	await expect(editor).toBeFocused();
@@ -212,13 +260,25 @@ test('a chat’s controls on a phone: your message’s sheet and editing, a repl
 	await page.getByRole('button', { name: 'Send' }).first().click();
 	await expect(page.getByText('How much did I spend on food in October, without office lunches?')).toBeVisible();
 
-	// A reply's sheet: Bad opens the dislike sheet, sent with a reason.
+	// Select text selects your message where it stands (once the edited turn has settled).
 	await page.reload({ waitUntil: 'networkidle' });
+	await expect(page.getByRole('article', { name: 'Nomi' }).last().getByRole('button', { name: 'More' })).toBeVisible();
+	const edited = page.getByText('How much did I spend on food in October, without office lunches?');
+	const spot = (await edited.boundingBox())!;
+	await page.mouse.move(spot.x + 20, spot.y + spot.height / 2);
+	await page.mouse.down();
+	await page.waitForTimeout(650);
+	await page.mouse.up();
+	await page.getByRole('dialog', { name: 'Your message' }).getByRole('button', { name: 'Select text' }).click();
+	await expect.poll(() => page.evaluate(() => getSelection()?.toString())).toBe('How much did I spend on food in October, without office lunches?');
+
+	// A reply's sheet: Bad opens the dislike sheet, sent with a reason.
 	await page.getByRole('article', { name: 'Nomi' }).last().getByRole('button', { name: 'More' }).click();
 	const sheet = page.getByRole('dialog', { name: 'Reply' });
 	await expect(sheet.getByRole('button', { name: 'Good' })).toBeVisible();
 	await sheet.getByRole('button', { name: 'Bad' }).click();
 	const why = page.getByRole('dialog', { name: 'What went wrong?' });
+	await expect(why.getByRole('group', { name: 'What went wrong?' }).getByRole('button')).toHaveText(['Not accurate', 'Wrong crew member', "Didn't do what I asked", 'Too long', 'Out of date', 'Other']);
 	await why.getByRole('button', { name: 'Not accurate' }).click();
 	await why.getByRole('button', { name: 'Send feedback' }).click();
 	await expect(page.getByText('Thanks. The crew learns from this.')).toBeVisible();
@@ -226,12 +286,33 @@ test('a chat’s controls on a phone: your message’s sheet and editing, a repl
 	// Share: the phone's sheet.
 	await page.getByRole('article', { name: 'Nomi' }).last().getByRole('button', { name: 'Share' }).click();
 	await expect(page.getByRole('dialog', { name: 'Share' }).getByRole('button', { name: 'Copy link' })).toBeVisible();
+	await expect(page.getByRole('dialog', { name: 'Share' }).getByText('Read-only, no sign-in', { exact: true })).toBeVisible();
 	await page.keyboard.press('Escape');
+
+	// Delete reply (Share & delete, steps 4–5): asked in an action sheet, then a placeholder with
+	// Undo; undone it's back, and left alone it's deleted for good after ten seconds.
+	type Messages = { messages: { id: string }[] };
+	const count = async () => ((await (await api(account, `/api/sessions/${id}/messages`)).json()) as Messages).messages.length;
+	const before = await count();
+	const deleteLast = async () => {
+		await page.getByRole('article', { name: 'Nomi' }).last().getByRole('button', { name: 'More' }).click();
+		await page.getByRole('dialog', { name: 'Reply' }).getByRole('button', { name: 'Delete reply' }).click();
+		const confirm = page.getByRole('dialog', { name: 'Delete this reply?' });
+		await expect(confirm.getByText('Your message stays so you can ask again. Things the crew already did aren’t undone.')).toBeVisible();
+		await confirm.getByRole('button', { name: 'Delete reply' }).click();
+		await expect(page.getByText("You deleted Nomi's reply")).toBeVisible();
+	};
+	await deleteLast();
+	await page.getByText("You deleted Nomi's reply").locator('..').getByRole('button', { name: 'Undo' }).click();
+	await expect(page.getByText("You deleted Nomi's reply")).toHaveCount(0);
+	await deleteLast();
+	await expect.poll(count, { timeout: 20_000 }).toBe(before - 1);
 
 	// Delete asks in an action sheet; Cancel keeps the chat.
 	await page.getByRole('button', { name: 'Chat options' }).click();
 	await page.getByRole('dialog').getByRole('button', { name: 'Delete chat' }).click();
 	const ask = page.getByRole('dialog', { name: 'Delete this chat?' });
+	await expect(ask.getByText(/^\d+ messages and their cards are removed\. Reminders, money records and sent emails stay\.$/)).toBeVisible();
 	await expect(ask.getByRole('button', { name: 'Delete chat' })).toBeVisible();
 	await ask.getByRole('button', { name: 'Cancel' }).click();
 	await expect(page).toHaveURL(new RegExp(`/chat/${id}$`));

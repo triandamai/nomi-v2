@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use futures_util::FutureExt;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -97,9 +98,38 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
             };
             let turns = turns.clone();
             let finished = finished.clone();
+            let claimed_id = claimed.id;
+            let session_id = claimed.session_id;
             tokio::spawn(async move {
                 let _slot = slot;
-                run_turn_job(&turns, claimed).await;
+                let task = std::panic::AssertUnwindSafe(run_turn_job(&turns, claimed));
+                if let Err(panic_err) = task.catch_unwind().await {
+                    let msg = if let Some(s) = panic_err.downcast_ref::<&str>() {
+                        (*s).to_string()
+                    } else if let Some(s) = panic_err.downcast_ref::<String>() {
+                        s.clone()
+                    } else {
+                        "An unexpected error occurred while processing your message".to_string()
+                    };
+                    tracing::error!(job_id = %claimed_id, panic = %msg, "worker: turn job panicked");
+                    let _ = queue::mark_failed(&turns.pool, claimed_id, &msg).await;
+
+                    let error_msg = format!("Turn error: {}", msg);
+                    let inserted: Result<Uuid, sqlx::Error> = sqlx::query_scalar(
+                        "INSERT INTO messages (session_id, sender_channel_identity_id, content, is_notice) VALUES ($1, NULL, $2, true) RETURNING id"
+                    )
+                    .bind(session_id)
+                    .bind(&error_msg)
+                    .fetch_one(&turns.pool)
+                    .await;
+                    if let Ok(message_id) = inserted {
+                        let _ = turns.mqtt.publish(session_id, &StreamEnvelope::MessageCreated { message_id }).await;
+                    }
+                    let _ = turns.mqtt.publish(session_id, &StreamEnvelope::TurnFailed {
+                        turn_job_id: claimed_id,
+                        error: error_msg,
+                    }).await;
+                }
                 finished.notify_one();
             });
         }
@@ -142,17 +172,19 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
                 }
             };
 
-            let provider = crate::bootstrap::build_llm_provider_in_session(&pool, user_id, session_id, &settings_key, http_client.clone(), crate::bootstrap::ModelPurpose::Chat).await;
-            let embedding_provider = build_embedding_provider_from_settings_or_env(&pool, &settings_key, http_client.clone(), Some(user_id)).await;
+            let handle = std::panic::AssertUnwindSafe(async {
+                let provider = crate::bootstrap::build_llm_provider_in_session(&pool, user_id, session_id, &settings_key, http_client.clone(), crate::bootstrap::ModelPurpose::Chat).await;
+                let embedding_provider = build_embedding_provider_from_settings_or_env(&pool, &settings_key, http_client.clone(), Some(user_id)).await;
 
-            let result = nomi_turn::resume_paused_turn_with(
-                &pool, &mqtt, s3.as_ref(), provider.as_ref(), embedding_provider.as_ref(), &registry, &catalog,
-                claimed.message_id, &claimed.decision, claimed.remember, &claimed.extras,
-            )
-            .await;
+                nomi_turn::resume_paused_turn_with(
+                    &pool, &mqtt, s3.as_ref(), provider.as_ref(), embedding_provider.as_ref(), &registry, &catalog,
+                    claimed.message_id, &claimed.decision, claimed.remember, &claimed.extras,
+                )
+                .await
+            });
 
-            match result {
-                Ok(outcome) => {
+            match handle.catch_unwind().await {
+                Ok(Ok(outcome)) => {
                     let _ = nomi_turn::approval::mark_completed(&pool, claimed.id).await;
                     let _ = mqtt
                         .publish(
@@ -166,10 +198,34 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
                     nomi_turn::activity::announce(&pool, &mqtt, outcome.session_id, user_id, nomi_turn::activity::Ended::Completed).await;
                     tracing::info!(resume_id = %claimed.id, "worker: approval resume completed");
                 }
-                Err(e) => {
+                Ok(Err(e)) => {
                     let _ = nomi_turn::approval::mark_failed(&pool, claimed.id, &e.to_string()).await;
                     nomi_turn::activity::announce(&pool, &mqtt, session_id, user_id, nomi_turn::activity::Ended::Failed).await;
+                    let _ = mqtt
+                        .publish(
+                            session_id,
+                            &StreamEnvelope::TurnFailed { turn_job_id: Uuid::nil(), error: e.to_string() },
+                        )
+                        .await;
                     tracing::warn!(resume_id = %claimed.id, error = %e, "worker: approval resume failed");
+                }
+                Err(panic_err) => {
+                    let msg = if let Some(s) = panic_err.downcast_ref::<&str>() {
+                        (*s).to_string()
+                    } else if let Some(s) = panic_err.downcast_ref::<String>() {
+                        s.clone()
+                    } else {
+                        "Internal error in approval resume".to_string()
+                    };
+                    tracing::error!(resume_id = %claimed.id, panic = %msg, "worker: approval resume panicked");
+                    let _ = nomi_turn::approval::mark_failed(&pool, claimed.id, &msg).await;
+                    nomi_turn::activity::announce(&pool, &mqtt, session_id, user_id, nomi_turn::activity::Ended::Failed).await;
+                    let _ = mqtt
+                        .publish(
+                            session_id,
+                            &StreamEnvelope::TurnFailed { turn_job_id: Uuid::nil(), error: format!("Approval resume error: {}", msg) },
+                        )
+                        .await;
                 }
             }
         }
@@ -230,6 +286,10 @@ async fn run_turn_job(turns: &Turns, claimed: queue::ClaimedJob) {
         Err(e) => {
             tracing::error!(error = %e, job_id = %claimed.id, "worker: failed to resolve user_id for claimed job");
             let _ = queue::mark_failed(&turns.pool, claimed.id, &e.to_string()).await;
+            let _ = turns.mqtt.publish(claimed.session_id, &StreamEnvelope::TurnFailed {
+                turn_job_id: claimed.id,
+                error: format!("Failed to resolve sender identity: {}", e),
+            }).await;
             return;
         }
     };
