@@ -530,17 +530,20 @@ pub struct StoredVersion {
     pub published_url: Option<String>,
     /// Why it isn't published, when its newest publish failed.
     pub publish_error: Option<String>,
+    /// Its OpenPencil `.pen` files, which the Studio draws on its canvas.
+    pub pen_files: Vec<String>,
 }
 
 /// Every version of the chat's previews, oldest first.
 pub async fn list(conn: &mut PgConnection, session_id: Uuid) -> Result<Vec<StoredVersion>, sqlx::Error> {
-    type Row = (i32, sqlx::types::Json<Manifest>, String, chrono::DateTime<chrono::Utc>, Option<String>, Option<String>);
+    type Row = (i32, sqlx::types::Json<Manifest>, String, chrono::DateTime<chrono::Utc>, Option<String>, Option<String>, Vec<String>);
     let rows: Vec<Row> = sqlx::query_as(
         "SELECT a.version, a.manifest, a.preview_token, a.created_at, \
                 (SELECT p.url FROM design_artifact_publications p WHERE p.artifact_id = a.id ORDER BY p.created_at DESC, p.id DESC LIMIT 1), \
                 (SELECT f.reason FROM design_artifact_publish_failures f WHERE f.artifact_id = a.id \
                    AND f.created_at >= COALESCE((SELECT MAX(p.created_at) FROM design_artifact_publications p WHERE p.artifact_id = a.id), '-infinity') \
-                 ORDER BY f.created_at DESC, f.id DESC LIMIT 1) \
+                 ORDER BY f.created_at DESC, f.id DESC LIMIT 1), \
+                ARRAY(SELECT f.path FROM design_artifact_files f WHERE f.artifact_id = a.id AND f.path LIKE '%.pen' ORDER BY f.path) \
          FROM design_artifacts a WHERE a.session_id = $1 ORDER BY a.version",
     )
     .bind(session_id)
@@ -548,13 +551,14 @@ pub async fn list(conn: &mut PgConnection, session_id: Uuid) -> Result<Vec<Store
     .await?;
     Ok(rows
         .into_iter()
-        .map(|(version, manifest, preview_token, created_at, published_url, publish_error)| StoredVersion {
+        .map(|(version, manifest, preview_token, created_at, published_url, publish_error, pen_files)| StoredVersion {
             version,
             manifest: manifest.0,
             preview_token,
             created_at,
             published_url,
             publish_error,
+            pen_files,
         })
         .collect())
 }

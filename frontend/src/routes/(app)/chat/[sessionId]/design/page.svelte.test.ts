@@ -97,44 +97,10 @@ describe('design studio page', () => {
 		expect(root.querySelector('.studio__pin-popover')).toBeNull();
 	});
 
-	it('links the published address when the version has one', () => {
-		const root = studio([preview(1, { published_url: 'https://ship.example.com/dpl/d1' })]);
-		const link = root.querySelector('a[href="https://ship.example.com/dpl/d1"]') as HTMLAnchorElement;
-		expect(link.getAttribute('rel')).toContain('noopener');
-	});
-
-	it('says when a version is not published outside Nomi, and why', () => {
-		const root = studio([preview(1, { publish_error: 'publishing previews isn’t set up' })]);
-		expect(text(root)).toContain('Not published outside Nomi: publishing previews isn’t set up');
-		expect(button(root, 'Publish again')).toBeDefined();
-	});
-
-	it('says nothing about publishing when the version is published', () => {
-		const root = studio([preview(1, { published_url: 'https://ship.example.com/dpl/d1', publish_error: null })]);
+	it('never offers to publish a version', () => {
+		const root = studio([preview(1, { publish_error: 'Shipyard refused it' })]);
 		expect(text(root)).not.toContain('Not published outside Nomi');
 		expect(button(root, 'Publish again')).toBeUndefined();
-	});
-
-	it('publishes a version again and links it once it is out', async () => {
-		const fetched = vi.fn(async (_url: string, _init?: RequestInit) => new Response(JSON.stringify({ version: 1, published_url: 'https://ship.example.com/dpl/d2', publish_error: null }), { status: 200 }));
-		vi.stubGlobal('fetch', fetched);
-		const root = studio([preview(1, { publish_error: 'Shipyard refused it' })]);
-		button(root, 'Publish again').click();
-		await settle();
-		await settle();
-		expect(fetched.mock.calls[0][0]).toBe('/chat/s1/design/publish');
-		expect(JSON.parse(fetched.mock.calls[0][1]?.body as string)).toEqual({ version: 1 });
-		expect(root.querySelector('a[href="https://ship.example.com/dpl/d2"]')).not.toBeNull();
-		expect(text(root)).not.toContain('Not published outside Nomi');
-	});
-
-	it('keeps saying why when publishing again fails', async () => {
-		vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ version: 1, published_url: null, publish_error: 'Shipyard is down' }), { status: 200 })));
-		const root = studio([preview(1, { publish_error: 'Shipyard refused it' })]);
-		button(root, 'Publish again').click();
-		await settle();
-		await settle();
-		expect(text(root)).toContain('Not published outside Nomi: Shipyard is down');
 	});
 
 	it('approves a version only after the person confirms', async () => {
@@ -171,9 +137,7 @@ describe('design studio page', () => {
 		expect(root.querySelector('.studio__approved')).toBeNull();
 	});
 
-	it('renders Stage 1 direction style-tile artboards before previews exist and lets the person pick or adjust a direction', async () => {
-		const fetched = vi.fn(async (_url: string, _init?: RequestInit) => new Response(JSON.stringify({ ok: true }), { status: 202 }));
-		vi.stubGlobal('fetch', fetched);
+	it('draws the proposed directions on the vector canvas before previews exist, with the canvas tools', () => {
 		const directions = {
 			version: 1,
 			brief_version: 1,
@@ -198,21 +162,14 @@ describe('design studio page', () => {
 			data: { directions, previews: [], feedback: [], approval: null, wanted: null, sessionId: 's1' } as never,
 			params: { sessionId: 's1' } as never,
 		});
-		expect(text(root)).toContain('Editorial');
-		expect(text(root)).toContain('#F6EFE4');
-		expect(text(root)).toContain('Fraunces');
-		button(root, 'Use this direction').click();
-		await settle();
-		await settle();
-		expect(fetched.mock.calls[0][0]).toBe('/chat/s1/design/refine');
-		expect(JSON.parse(fetched.mock.calls[0][1]?.body as string)).toEqual({
-			text: '@Sora Use the "Editorial" direction (editorial) and build the design system and multi-page preview.',
-		});
+		expect(root.querySelector('canvas[data-testid="openpencil-canvas"]')).not.toBeNull();
+		expect(root.querySelector('[role="toolbar"]')).not.toBeNull();
+		expect(button(root, 'All boards')).toBeUndefined();
+		expect(button(root, 'Artboards')).toBeUndefined();
 	});
 
-	it('renders the 2D spatial canvas with Design System and multi-page App Flow artboards and zoom controls by default', async () => {
+	it("shows an HTML version's pages as artboards with zoom controls", async () => {
 		const root = studio([preview(1)]);
-		expect(root.querySelector('[data-artboard="design-system"]')).not.toBeNull();
 		const flowFrames = [...root.querySelectorAll('.studio__artboard--flow iframe')];
 		expect(flowFrames.map((f) => f.getAttribute('src'))).toEqual([
 			`/design-preview/${TOKEN}/index.html`,
@@ -224,7 +181,37 @@ describe('design studio page', () => {
 		expect(text(root)).toContain('75%');
 	});
 
-	it('opens a direct pin popover when an element is picked and sends batch revisions from the Revise with Sora bar', async () => {
+	it('draws a .pen version from its own file and never frames its pages as HTML', async () => {
+		const pen = JSON.stringify({ version: '1.0', children: [{ id: 'design-system', type: 'frame', name: 'Design system', width: 390, height: 600, children: [{ id: 'buttons', type: 'frame', name: 'Buttons', width: 390, height: 120 }] }] });
+		const fetched = vi.fn(async (_url: string) => new Response(pen, { status: 200 }));
+		vi.stubGlobal('fetch', fetched);
+		const root = studio([
+			preview(1, {
+				pages: [{ path: 'design-system', title: 'Design system' }],
+				elements: [{ id: 'buttons', kind: 'component', label: 'Buttons', pages: ['design-system'] }],
+				pen_files: ['canvas.pen'],
+			}),
+		]);
+		await settle();
+		await settle();
+		expect(fetched.mock.calls[0][0]).toBe(`/design-preview/${TOKEN}/canvas.pen`);
+		expect(root.querySelector('iframe')).toBeNull();
+		expect(root.querySelector('canvas[data-testid="openpencil-canvas"]')).not.toBeNull();
+	});
+
+	it('picks the canvas tool with a click or its key, as in a design tool', async () => {
+		const root = studio([preview(1)]);
+		const pressed = () => root.querySelector('[role="toolbar"] button[aria-pressed="true"]')?.getAttribute('aria-label');
+		expect(pressed()).toBe('Select (V)');
+		window.dispatchEvent(new KeyboardEvent('keydown', { key: 'h' }));
+		await settle();
+		expect(pressed()).toBe('Move (H)');
+		(root.querySelector('button[aria-label="Comment (C)"]') as HTMLButtonElement).click();
+		await settle();
+		expect(pressed()).toBe('Comment (C)');
+	});
+
+	it('selects an element without opening a note, and pins a note with the comment tool', async () => {
 		const fetched = vi.fn(async (url: string, _init?: RequestInit) => {
 			if (url.endsWith('/feedback')) return new Response(JSON.stringify(said(1)), { status: 201 });
 			return new Response(JSON.stringify({ ok: true }), { status: 202 });
@@ -232,12 +219,19 @@ describe('design studio page', () => {
 		vi.stubGlobal('fetch', fetched);
 		const root = studio([preview(1)]);
 		const homeFrame = root.querySelector('.studio__artboard--flow iframe') as HTMLIFrameElement;
-		window.dispatchEvent(
-			new MessageEvent('message', {
-				source: homeFrame.contentWindow,
-				data: { source: PREVIEW_SOURCE, type: 'select', page: 'index.html', id: 'hero', tag: 'section', text: 'Fresh bread', point: { x: 0.4, y: 0.3 } },
-			}),
-		);
+		const pick = () =>
+			window.dispatchEvent(
+				new MessageEvent('message', {
+					source: homeFrame.contentWindow,
+					data: { source: PREVIEW_SOURCE, type: 'select', page: 'index.html', id: 'hero', tag: 'section', text: 'Fresh bread', point: { x: 0.4, y: 0.3 } },
+				}),
+			);
+		pick();
+		await settle();
+		expect(root.querySelector('.studio__pin-popover')).toBeNull();
+		window.dispatchEvent(new KeyboardEvent('keydown', { key: 'c' }));
+		await settle();
+		pick();
 		await settle();
 		expect(root.querySelector('.studio__pin-popover')).not.toBeNull();
 		await type(root, 'Make it shorter');
@@ -251,17 +245,4 @@ describe('design studio page', () => {
 		await settle();
 		expect(fetched.mock.calls[1][0]).toBe('/chat/s1/design/refine');
 	});
-
-	it('switches between OpenPencil vector canvas and iframe artboards', async () => {
-		const root = studio([preview(1)]);
-		expect(button(root, 'OpenPencil Vector')).toBeDefined();
-		button(root, 'OpenPencil Vector').click();
-		await settle();
-		expect(root.querySelector('canvas')).not.toBeNull();
-		button(root, 'Artboards').click();
-		await settle();
-		expect(root.querySelector('[data-artboard="design-system"]')).not.toBeNull();
-	});
 });
-
-
