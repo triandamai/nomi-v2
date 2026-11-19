@@ -816,11 +816,40 @@ export function buildStudioSceneModel(options: {
 	const penJson = options.rawPenJson?.trim() || JSON.stringify(built.doc);
 	let graph: SceneGraph;
 	let penDocument: PenDocument = built.doc;
+	let normalizedPenJson = penJson;
 
 	if (options.rawPenJson?.trim()) {
 		try {
-			penDocument = JSON.parse(options.rawPenJson) as PenDocument;
-			graph = parsePenFile(options.rawPenJson);
+			const parsed = JSON.parse(options.rawPenJson) as Record<string, unknown>;
+			// Merge default design tokens from built.doc.variables if not explicitly defined
+			if (built.doc.variables) {
+				const existingVars =
+					parsed.variables && typeof parsed.variables === 'object' && !Array.isArray(parsed.variables)
+						? (parsed.variables as Record<string, PenVariable>)
+						: {};
+				parsed.variables = { ...built.doc.variables, ...existingVars };
+			}
+			// Auto-arrange top-level frames if they lack x or are all stacked at 0
+			if (Array.isArray(parsed.children)) {
+				const frames = (parsed.children as Array<Record<string, unknown>>).filter(
+					(c) => c && (c.type === 'frame' || !c.type)
+				);
+				const allAtZero = frames.length > 1 && frames.every((f) => !f.x || f.x === 0);
+				if (allAtZero) {
+					let cursorX = 0;
+					const frameGap = 64;
+					const defaultWidth = CANVAS_ARTBOARD_WIDTHS[options.device ?? 'desktop'];
+					for (const frame of frames) {
+						frame.x = cursorX;
+						frame.y = (frame.y as number) ?? 0;
+						const w = typeof frame.width === 'number' && frame.width > 0 ? frame.width : defaultWidth;
+						cursorX += w + frameGap;
+					}
+				}
+			}
+			normalizedPenJson = JSON.stringify(parsed);
+			penDocument = parsed as unknown as PenDocument;
+			graph = parsePenFile(normalizedPenJson);
 		} catch {
 			graph = parsePenFile(JSON.stringify(built.doc));
 		}
@@ -934,7 +963,7 @@ export function buildStudioSceneModel(options: {
 
 	return {
 		penDocument,
-		penJson,
+		penJson: normalizedPenJson,
 		graph,
 		editor,
 		pageId,
@@ -1033,7 +1062,10 @@ function resolveNodeFillCss(graph: SceneGraph, node: SceneNode): string | null {
 	for (let i = 0; i < node.fills.length; i++) {
 		const fill = node.fills[i];
 		if (!fill || fill.visible === false || fill.type !== 'SOLID') continue;
-		const boundVarId = node.boundVariables[`fills[${i}].color`] ?? node.boundVariables['fill'];
+		const boundVarId =
+			node.boundVariables[`fills[${i}]`] ??
+			node.boundVariables[`fills[${i}].color`] ??
+			node.boundVariables['fill'];
 		let color: Color = fill.color;
 		if (boundVarId) {
 			const resolved = graph.resolveColorVariable(boundVarId);
@@ -1051,7 +1083,10 @@ function resolveNodeStrokeCss(
 	for (let i = 0; i < node.strokes.length; i++) {
 		const stroke = node.strokes[i];
 		if (!stroke || stroke.visible === false) continue;
-		const boundVarId = node.boundVariables[`strokes[${i}].color`] ?? node.boundVariables['stroke'];
+		const boundVarId =
+			node.boundVariables[`strokes[${i}]`] ??
+			node.boundVariables[`strokes[${i}].color`] ??
+			node.boundVariables['stroke'];
 		let color: Color = stroke.color;
 		if (boundVarId) {
 			const resolved = graph.resolveColorVariable(boundVarId);
@@ -1137,16 +1172,39 @@ export function paintOpenPencilSceneCanvas(
 	const accentCss = view.accentCss || '#2563EB';
 	const componentCss = view.componentCss || '#8B5CF6';
 
-	function drawSceneSubtree(node: SceneNode): void {
+	const topNodes = model.graph.getChildren(model.pageId);
+	const topNodeIds = new Set(topNodes.map((n) => n.id));
+
+	function drawSceneSubtree(node: SceneNode, isTopLevel = false): void {
 		if (!node.visible) return;
 		const bounds = model.graph.getAbsoluteBounds(node.id);
-		const fillCss = resolveNodeFillCss(model.graph, node);
-		const stroke = resolveNodeStrokeCss(model.graph, node);
+		let fillCss = resolveNodeFillCss(model.graph, node);
+		let stroke = resolveNodeStrokeCss(model.graph, node);
 		const radius = node.cornerRadius || 0;
 
 		ctx.save();
 		if (node.opacity < 1) {
 			ctx.globalAlpha *= node.opacity;
+		}
+
+		let filled = false;
+		if (isTopLevel && (node.type === 'FRAME' || node.type === 'COMPONENT')) {
+			if (!fillCss) {
+				fillCss = '#FFFFFF';
+			}
+			if (!stroke) {
+				stroke = { css: 'rgba(0, 0, 0, 0.08)', weight: 1 };
+			}
+			// Subtle card drop shadow for artboards so they stand out from the canvas
+			ctx.save();
+			ctx.shadowColor = 'rgba(0, 0, 0, 0.06)';
+			ctx.shadowBlur = 12 / view.zoom;
+			ctx.shadowOffsetY = 4 / view.zoom;
+			roundedRectPath(ctx, bounds.x, bounds.y, bounds.width, bounds.height, radius || 4);
+			ctx.fillStyle = fillCss;
+			ctx.fill();
+			ctx.restore();
+			filled = true;
 		}
 
 		if (node.type === 'TEXT') {
@@ -1157,29 +1215,30 @@ export function paintOpenPencilSceneCanvas(
 			ctx.font = `${weight} ${size}px ${family}`;
 			ctx.fillStyle = textColor;
 			ctx.textBaseline = 'top';
-			const text = node.text || '';
+			const text = node.text || (node as unknown as { content?: string }).content || '';
 			const maxW = bounds.width > 0 ? bounds.width : 360;
 			// Simple word wrap within bounds
 			const words = text.split(/\s+/);
 			let line = '';
 			let lineY = bounds.y + 2;
 			const lineHeight = node.lineHeight || Math.round(size * 1.38);
+			const maxBottom = bounds.height > 0 ? bounds.y + bounds.height + lineHeight : Infinity;
 			for (const word of words) {
 				const testLine = line ? `${line} ${word}` : word;
 				if (ctx.measureText(testLine).width > maxW && line) {
 					ctx.fillText(line, bounds.x, lineY);
 					line = word;
 					lineY += lineHeight;
-					if (lineY > bounds.y + bounds.height + lineHeight) break;
+					if (lineY > maxBottom) break;
 				} else {
 					line = testLine;
 				}
 			}
-			if (line) {
+			if (line && lineY <= maxBottom) {
 				ctx.fillText(line, bounds.x, lineY);
 			}
 		} else {
-			if (fillCss) {
+			if (!filled && fillCss) {
 				roundedRectPath(ctx, bounds.x, bounds.y, bounds.width, bounds.height, radius);
 				ctx.fillStyle = fillCss;
 				ctx.fill();
@@ -1192,21 +1251,38 @@ export function paintOpenPencilSceneCanvas(
 			}
 		}
 
-		if (node.clipsContent && node.childIds.length > 0) {
+		if (node.clipsContent && node.childIds.length > 0 && bounds.width > 0 && bounds.height > 0) {
 			roundedRectPath(ctx, bounds.x, bounds.y, bounds.width, bounds.height, radius);
 			ctx.clip();
 		}
 
+		// If this is an INSTANCE with no explicit child nodes, render master component children
+		if (node.type === 'INSTANCE' && node.childIds.length === 0) {
+			const compId = (node as unknown as { componentId?: string }).componentId;
+			if (compId) {
+				const comp = model.graph.getNode(compId);
+				if (comp && comp.childIds.length > 0) {
+					const compBounds = model.graph.getAbsoluteBounds(comp.id);
+					ctx.save();
+					ctx.translate(bounds.x - compBounds.x, bounds.y - compBounds.y);
+					for (const childId of comp.childIds) {
+						const child = model.graph.getNode(childId);
+						if (child) drawSceneSubtree(child, false);
+					}
+					ctx.restore();
+				}
+			}
+		}
+
 		for (const childId of node.childIds) {
 			const child = model.graph.getNode(childId);
-			if (child) drawSceneSubtree(child);
+			if (child) drawSceneSubtree(child, false);
 		}
 		ctx.restore();
 	}
 
-	const topNodes = model.graph.getChildren(model.pageId);
 	for (const topNode of topNodes) {
-		drawSceneSubtree(topNode);
+		drawSceneSubtree(topNode, true);
 	}
 
 	// 2. Draw hover and selection outlines in OpenPencil / Figma style
