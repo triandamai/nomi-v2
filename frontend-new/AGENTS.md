@@ -469,6 +469,25 @@ leaves out what v2 or the backend can't do yet, rather than draw it dead:
   sparkles icon on "Switch to Nomi credits" (Mobile / Error Card) and after "Make the plan" is left
   out: Nomi's UI rules ban sparkles. "Research only" says "Nothing shared." without the research
   steps the pen names (the plan doesn't say which steps research).
+- The rest of a chat on a phone (Flow / Mobile Chat — Rich replies `XO7DI`, Manage chat & long threads
+  `W3a8j`, Crew, memory & connections `YuWzO`; UX contract `docs/ux/work/phone-chat-more`). The pen draws
+  these with the desktop's own chat cards (Cart, Selection, Link preview, Code, Reminder, Boundary, Memory,
+  Follow-ups, the jump pill and the NEW divider), so a phone renders those as they are. What's the phone's
+  own:
+  - **Moving a chat:** `PhoneMoveSheet`: search, the projects, Move chat. Once the chat is in a project,
+    the nav bar names the project under the title. The moved toast says the chat "stays private to you",
+    not the pen's "Keluarga members can see it now": the backend keeps a filed chat private (`moveTargets`).
+  - **Connecting an app:** `PhoneConnectSheet` opens on its own for the latest reply that asks to connect,
+    and the card in the thread stays. Google and GitHub start their sign-in from it and come back to the
+    chat (`?connected=google` says "Google connected" once). Any other app opens Connections, and
+    answering yourself focuses the composer. Its lines say what holds for every app ("Only what this
+    request needs is read", "Nothing is created or changed without asking", "Disconnect in You ›
+    Connections"), not the pen's Calendar-only "Read-only access" and "Read events and free/busy times".
+  - **A saved memory:** Edit opens Settings › Memory, and Undo forgets it at once (`DELETE …/memory/:id`),
+    on both layouts.
+
+  Left out (BACKEND_TODO.md): the hand-off line ("Nomi handed this to Dana · Ask Nomi") and the diff card
+  with Apply and Reject.
 - Projects on a phone (Flow / Mobile Projects) is the pen's list: `PhoneProjectsHeader` (the
   workspace pill opening the Workspaces sheet, how many people are in it, Invite to the workspace's
   page, the large title and New), `PhoneProjectSearch` with Sort (a sheet of `SheetOption`s), the

@@ -1,6 +1,7 @@
 import { isRedirect, json } from '@sveltejs/kit';
 import type { ApiEvent } from './api';
 import * as chat from './chat';
+import { forgetMemory } from './memory';
 import { addStudioFeedback, approveStudioVersion, loadStudio, publishStudioVersion } from './designStudio';
 
 // The chat page's own JSON endpoints (/chat/[id]/api/…, and POST /chat to start one): the page
@@ -124,7 +125,12 @@ export function chatRequest(event: ApiEvent, sessionId: string, path: string[], 
 				const change = sessionChange(await read(request));
 				return change ? answer(await chat.updateSession(event, sessionId, change)) : bad();
 			}
-			case 'DELETE session':
+			case 'DELETE memory/:id': {
+				// A reply's "Saved to memory" Undo (Crew, memory & connections crHO0) forgets that memory.
+				const done = await forgetMemory(event, messageId);
+				return done.ok ? json(null) : json({ error: done.message }, { status: done.status });
+			}
+						case 'DELETE session':
 				return answer(await chat.deleteSession(event, sessionId));
 			case 'PUT thinking': {
 				const { level } = await read(request);

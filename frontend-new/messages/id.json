@@ -3147,7 +3147,7 @@
 	"phone_run_option_research_detail": "Tidak ada yang dibagikan.",
 	"phone_move_shared": "Anggota {workspace} akan melihat chat ini. Memori dan catatan uang tetap pribadi.",
 	"phone_connect_title_google": "Hubungkan Google {service}",
-	"phone_connect_title": "Hubungkan {service}",
+	"phone_connect_sheet_title": "Hubungkan {service}",
 	"phone_connect_needs": "{agent} butuh ini untuk menjawabmu",
 	"phone_connect_lead": "Kamu bisa memutusnya kapan saja.",
 	"phone_connect_only": "Hanya yang dibutuhkan permintaan ini yang dibaca",

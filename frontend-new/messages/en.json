@@ -3147,7 +3147,7 @@
 	"phone_run_option_research_detail": "Nothing shared.",
 	"phone_move_shared": "{workspace} members will see this chat. Memory and money records stay personal.",
 	"phone_connect_title_google": "Connect Google {service}",
-	"phone_connect_title": "Connect {service}",
+	"phone_connect_sheet_title": "Connect {service}",
 	"phone_connect_needs": "{agent} needs it to answer you",
 	"phone_connect_lead": "You can disconnect any time.",
 	"phone_connect_only": "Only what this request needs is read",

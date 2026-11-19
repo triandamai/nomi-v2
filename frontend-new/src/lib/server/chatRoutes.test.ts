@@ -62,6 +62,12 @@ describe('the chat page’s own endpoints', () => {
 		expect((await chatRequest(event, 's1', ['reminders', 'r1'], request('POST', { action: 'later' }))).status).toBe(400);
 	});
 
+	it('forgets a memory the reply saved, for its Undo', async () => {
+		const { backend, event } = eventWith(() => new Response(null, { status: 204 }));
+		expect((await chatRequest(event, 's1', ['memory', 'f9'], request('DELETE'))).status).toBe(200);
+		expect(backend.calls[0]).toMatchObject({ method: 'DELETE', url: 'http://api.test/api/memory/f9' });
+	});
+
 	it('sends, and answers what was sent', async () => {
 		const { backend, event } = eventWith(() => json({ user_message: { id: 'u' } }, 202));
 		const response = await chatRequest(event, 's1', ['messages'], request('POST', { text: 'hi' }));

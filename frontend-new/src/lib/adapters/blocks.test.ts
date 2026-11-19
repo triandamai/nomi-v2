@@ -68,6 +68,9 @@ describe('reply blocks', () => {
 			{ sources: [{ title: 'BCA', url: 'https://bca.co.id' }], used_memories: [{ id: 'f1', content: 'Paid on the 5th', kind: 'fact' }] },
 		);
 		expect(kinds(message)).toEqual(['reminder', 'connect', 'stopped', 'voice', 'sources', 'memory_used']);
+		// A saved memory keeps its id, so Undo can forget it (Crew, memory & connections crHO0).
+		const saved = replyBlocks(reply([], { sender: 'assistant', saved_memories: [{ id: 'f9', content: 'Likes places open late', kind: 'preference' }] }), { language: 'id' });
+		expect(saved.find((block) => block.kind === 'memory_saved')).toMatchObject({ facts: ['Likes places open late'], ids: ['f9'] });
 		// What to connect, raw, so a phone's sheet can start it itself (Crew, memory & connections SYohQ).
 		expect(replyBlocks(message as never, { language: 'id' }).find((block) => block.kind === 'connect')).toMatchObject({ provider: 'google', services: ['gmail'], service: 'Gmail' });
 	});

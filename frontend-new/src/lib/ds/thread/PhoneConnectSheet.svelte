@@ -29,7 +29,7 @@
 
 	const GLYPH: Record<string, typeof Plug> = { calendar: Calendar, gmail: Mail, drive: HardDrive, docs: FileText, sheets: Table };
 	const glyph = $derived(GLYPH[services[0] ?? ''] ?? Plug);
-	const title = $derived(provider === 'google' ? m.phone_connect_title_google({ service }) : m.phone_connect_title({ service }));
+	const title = $derived(provider === 'google' ? m.phone_connect_title_google({ service }) : m.phone_connect_sheet_title({ service }));
 </script>
 
 <BottomSheet bind:open {title} subtitle={m.phone_connect_needs({ agent: agentName })}>

@@ -44,7 +44,7 @@ export type ReplyBlock =
 	| { kind: 'stopped'; key: string; tasks: { agent: CrewId; title: string; detail?: string; state: 'done' | 'stopped' | 'waiting' }[] }
 	| { kind: 'voice'; key: string; url: string; text: string }
 	| { kind: 'memory_used'; key: string; facts: string[] }
-	| { kind: 'memory_saved'; key: string; facts: string[] }
+	| { kind: 'memory_saved'; key: string; facts: string[]; /** Each fact's memory, for Undo to forget it. */ ids: string[] }
 	| { kind: 'unsupported'; key: string; view: string };
 
 export type FormField = { key: string; label: string; type: 'text' | 'textarea' | 'number' | 'date' | 'time' | 'select' | 'multiselect' | 'checkbox'; required: boolean; options: string[]; placeholder?: string; initial?: Scalar };
@@ -307,6 +307,6 @@ export function replyBlocks(message: RenderedMessage, { language }: { language: 
 	const sources = message.sources ?? [];
 	if (sources.length) items.push({ kind: 'sources', key: `${message.id}-sources`, sources: sources.map((source) => ({ title: source.title ?? host(source.url), detail: host(source.url), kind: 'web', href: source.url })) });
 	if (message.used_memories?.length) items.push({ kind: 'memory_used', key: `${message.id}-used`, facts: message.used_memories.map((memory) => memory.content) });
-	if (message.saved_memories?.length && message.sender === 'assistant') items.push({ kind: 'memory_saved', key: `${message.id}-saved`, facts: message.saved_memories.map((memory) => memory.content) });
+	if (message.saved_memories?.length && message.sender === 'assistant') items.push({ kind: 'memory_saved', key: `${message.id}-saved`, facts: message.saved_memories.map((memory) => memory.content), ids: message.saved_memories.map((memory) => memory.id) });
 	return items;
 }

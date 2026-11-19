@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Info, Plug } from '@lucide/svelte';
+	import { goto } from '$app/navigation';
 	import { m } from '$lib/paraglide/messages';
 	import { answersText, formText, type FormField, type ReplyBlock } from '$lib/adapters/blocks';
 	import type { CrewId } from '$lib/ds/agents/crew';
@@ -76,6 +77,12 @@
 	let { blocks, api, messageId, agentName, language, timeZone, now, working, latest, onsend, phone = false, flows, onreload, chatId = '', onanswer }: Props = $props();
 	// A phone's connect sheet opens on its own for the latest reply, once; closed, the card stays.
 	let connectShown = $state<Record<string, boolean>>({});
+	// Memories the person took back from a reply's "Saved to memory".
+	let forgotten = $state<Record<string, boolean>>({});
+	async function forget(id: string) {
+		const done = await callJson(`${api}/memory/${encodeURIComponent(id)}`, { method: 'DELETE' });
+		if (done.ok) forgotten[id] = true;
+	}
 	// A decision on its way, a phone's approval preview and form sheet that are open.
 	let deciding = $state<string | null>(null);
 	let preview = $state<string | null>(null);
@@ -228,6 +235,20 @@
 		/>
 	{:else if phone && block.kind === 'replies'}
 		{#if latest && !working && !answered[block.key]}<PhoneQuickReplies replies={block.replies} onpick={(reply) => send(block.key, reply)} />{/if}
+	{:else if phone && block.kind === 'connect' && block.reason !== 'key_rejected' && block.reason !== 'service_not_allowed'}
+		<!-- A first connect (Crew, memory & connections SYohQ): the sheet opens on its own for the latest
+		     reply; the card stays in the thread as the way back to it. -->
+		<ConnectPrompt agent={block.agent} icon={Plug} service={block.service} why={m.connect_why({ service: block.service })} reads={m.connect_reads()} href="/settings/connections" />
+		<PhoneConnectSheet
+			open={latest && !working && connectShown[block.key] !== false}
+			agent={block.agent}
+			{agentName}
+			service={block.service}
+			provider={block.provider}
+			services={block.services}
+			resume={chatId}
+			onanswer={() => ((connectShown[block.key] = false), setTimeout(() => onanswer?.()))}
+		/>
 	{:else if phone && block.kind === 'connect'}
 		<PhoneErrorCard
 			title={m.phone_connect_title({ service: block.service })}
@@ -349,18 +370,6 @@
 			reads={m.connect_reads()}
 			href="/settings/connections"
 		/>
-		{#if phone}
-			<PhoneConnectSheet
-				open={latest && !working && connectShown[block.key] !== false}
-				agent={block.agent}
-				agentName={agentName}
-				service={block.service}
-				provider={block.provider}
-				services={block.services}
-				resume={chatId}
-				onanswer={() => ((connectShown[block.key] = false), onanswer?.())}
-			/>
-		{/if}
 	{:else if block.kind === 'stopped'}
 		<SupervisorStopped tasks={block.tasks} onresume={latest && !working && !answered[block.key] ? () => send(block.key, m.stopped_resume_message()) : undefined} />
 	{:else if block.kind === 'voice'}
@@ -371,7 +380,15 @@
 	{:else if block.kind === 'memory_used'}
 		{#each block.facts as fact (fact)}<MemoryUsed {fact} />{/each}
 	{:else if block.kind === 'memory_saved'}
-		{#each block.facts as fact (fact)}<MemorySaved {fact} />{/each}
+		<!-- Saved to memory (crHO0): Edit opens it in Settings › Memory, Undo forgets it at once. -->
+		{#each block.facts as fact, index (fact)}
+			{@const id = block.ids[index]}
+			{#if forgotten[id]}
+				<TurnNote icon={Info} text={m.memory_forgotten()} />
+			{:else}
+				<MemorySaved {fact} onedit={() => void goto('/settings/memory')} onundo={id ? () => void forget(id) : undefined} />
+			{/if}
+		{/each}
 	{:else if block.kind === 'unsupported'}
 		<TurnNote icon={Info} text={m.block_unsupported({ view: block.view })} />
 	{/if}
