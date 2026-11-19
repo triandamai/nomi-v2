@@ -29,8 +29,9 @@ describe('Settings › Workspaces', () => {
 	});
 
 	it('chooses where projects come from', async () => {
-		const used = event(() => new Response(null, { status: 204 }), { id: 'b' });
+		const used = event((call) => (call.url.endsWith('/api/auth/active-org') ? json({ access_token: 'new-token' }) : new Response(null, { status: 204 })), { id: 'b' });
 		expect(await actions.use(used.event as never)).toEqual({ used: 'b' });
-		expect(used.api.calls[0]).toMatchObject({ method: 'PUT', url: 'http://api.test/api/preferences/project-org', body: { org_id: 'b' } });
+		expect(used.api.calls[0]).toMatchObject({ method: 'PUT', url: 'http://api.test/api/auth/active-org', body: { org_id: 'b' } });
+		expect(used.api.calls[1]).toMatchObject({ method: 'PUT', url: 'http://api.test/api/preferences/project-org', body: { org_id: 'b' } });
 	});
 });

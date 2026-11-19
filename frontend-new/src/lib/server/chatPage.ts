@@ -11,13 +11,14 @@ import * as chat from './chat';
  */
 export async function loadChatPage(event: ApiEvent & { depends: (...deps: `${string}:${string}`[]) => void }, id: string) {
 	event.depends('chat:page');
-	const [page, session, moveTargets, thinking, models, model] = await Promise.all([
+	const [page, session, moveTargets, thinking, models, model, activeAgent] = await Promise.all([
 		chat.messagePage(event, id),
 		chat.findSession(event, id),
 		chat.moveTargets(event),
 		chat.thinkingLevel(event, id),
 		chat.modelOptions(event),
 		chat.sessionModel(event, id),
+		chat.agentStatus(event, id),
 	]);
 	if (!page.messages) {
 		if (page.status === 404 || page.status === 403) error(404, { message: m.chat_missing_title() });
@@ -26,6 +27,7 @@ export async function loadChatPage(event: ApiEvent & { depends: (...deps: `${str
 	const title = session?.title?.trim() || m.recents_untitled();
 	const project = moveTargets.find((target) => target.id === session?.in_project_id);
 	const meta = project?.name ?? `chat_${id.replace(/-/g, '').slice(0, 6)}`;
+	const agentStatus = activeAgent.ok ? activeAgent.data : null;
 	return {
 		// The app shell's top bar (the layout draws the chat's own).
 		title,
@@ -37,6 +39,7 @@ export async function loadChatPage(event: ApiEvent & { depends: (...deps: `${str
 		thinking,
 		models,
 		model,
+		agentStatus,
 	};
 }
 

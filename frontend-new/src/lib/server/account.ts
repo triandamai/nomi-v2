@@ -3,7 +3,7 @@ import type { OrgSummary } from '$lib/adapters/api';
 import { apiFetch, apiUrl, type ApiEvent } from './api';
 import { readApiError } from './apiError';
 import { setLanguageCookie } from './locale';
-import { REFRESH_COOKIE, clearSession } from './session';
+import { REFRESH_COOKIE, clearSession, setSession } from './session';
 import { safeRedirect } from './signIn';
 import { setThemeCookie } from './theme';
 
@@ -87,9 +87,21 @@ export async function savePreferences(event: ApiEvent, change: PreferenceChange)
 	return { ok: true };
 }
 
-/** Picks the workspace projects are listed from and started in. It changes nothing else: the
- * active workspace can't be switched (BACKEND_TODO). */
+/** Switches the person's active workspace (`PUT /api/auth/active-org`) and keeps the new access
+ * token on this device. */
+export async function switchActiveOrg(event: ApiEvent, orgId: string): Promise<Outcome> {
+	const response = await apiFetch(event, '/api/auth/active-org', { method: 'PUT', body: JSON.stringify({ org_id: orgId }) });
+	if (!response.ok) return outcome(response);
+	const { access_token } = (await response.json()) as { access_token: string };
+	event.locals.accessToken = access_token;
+	setSession(event.cookies, { access_token });
+	return { ok: true };
+}
+
+/** Picks the workspace projects are listed from and started in, switching the active workspace too. */
 export async function chooseProjectsWorkspace(event: ApiEvent, orgId: string): Promise<Outcome> {
+	const switched = await switchActiveOrg(event, orgId);
+	if (!switched.ok) return switched;
 	return outcome(await apiFetch(event, '/api/preferences/project-org', { method: 'PUT', body: JSON.stringify({ org_id: orgId }) }));
 }
 

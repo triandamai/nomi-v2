@@ -350,20 +350,22 @@
 							</SettingRow>
 						{/if}
 					</div>
-					<section class="flex flex-col gap-2">
-						<h3 class="font-mono text-label tracking-label text-text-3 uppercase">{m.settings_ownership()}</h3>
-						<div class="flex flex-col border-t border-border">
-							<SettingRow title={m.settings_transfer()} description={m.settings_transfer_body({ name: ws.project.name })}>
-								{#snippet control()}<Button variant="secondary" label={m.settings_transfer_action()} onclick={() => ws.openDialog('transfer')} />{/snippet}
-							</SettingRow>
-							<SettingRow title={m.settings_takedown()} description={ws.liveUrl ? m.settings_takedown_body() : m.settings_takedown_not_live()}>
-								{#snippet control()}{#if ws.liveUrl}<Button variant="secondary" label={m.settings_takedown_action()} onclick={() => ws.openDialog('takedown')} />{/if}{/snippet}
-							</SettingRow>
-							<SettingRow title={m.settings_delete()} description={m.settings_delete_body()} danger>
-								{#snippet control()}<Button variant="danger" label={m.settings_delete_action()} onclick={() => ws.openDialog('delete')} />{/snippet}
-							</SettingRow>
-						</div>
-					</section>
+					{#if ws.projectAdmin}
+						<section class="flex flex-col gap-2">
+							<h3 class="font-mono text-label tracking-label text-text-3 uppercase">{m.settings_ownership()}</h3>
+							<div class="flex flex-col border-t border-border">
+								<SettingRow title={m.settings_transfer()} description={m.settings_transfer_body({ name: ws.project.name })}>
+									{#snippet control()}<Button variant="secondary" label={m.settings_transfer_action()} onclick={() => ws.openDialog('transfer')} />{/snippet}
+								</SettingRow>
+								<SettingRow title={m.settings_takedown()} description={ws.liveUrl ? m.settings_takedown_body() : m.settings_takedown_not_live()}>
+									{#snippet control()}{#if ws.liveUrl}<Button variant="secondary" label={m.settings_takedown_action()} onclick={() => ws.openDialog('takedown')} />{/if}{/snippet}
+								</SettingRow>
+								<SettingRow title={m.settings_delete()} description={m.settings_delete_body()} danger>
+									{#snippet control()}<Button variant="danger" label={m.settings_delete_action()} onclick={() => ws.openDialog('delete')} />{/snippet}
+								</SettingRow>
+							</div>
+						</section>
+					{/if}
 				</WorkspaceSheet>
 			</div>
 		{/if}

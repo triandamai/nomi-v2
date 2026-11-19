@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyChatEvent, idleTurn, isWorking, retryInfo, turnSent, turnStopped, type LiveTurn } from './turn';
+import { applyChatEvent, idleTurn, isWorking, retryInfo, turnSent, turnStopped, turnWithAgentActivity, type LiveTurn } from './turn';
 import type { ChatEvent } from './events';
 
 const T = 'turn-1';
@@ -101,6 +101,30 @@ describe('the live turn', () => {
 		);
 		expect(state.openTurns).toEqual(['two']);
 		expect(isWorking(state)).toBe(true);
+	});
+
+	it('restores active agent session activity and settles on waiting', () => {
+		const active = turnWithAgentActivity(idleTurn(), { agent_session_id: 'a1', agent_name: 'Koda', phase: 'thinking', detail: null }, 1000);
+		expect(isWorking(active)).toBe(true);
+		expect(active.agent).toBe('Koda');
+		expect(active.openTurns).toEqual(['a1']);
+		expect(active.phase).toEqual({ phase: 'thinking', detail: null, subject: null });
+
+		const waiting = turnWithAgentActivity(active, { agent_session_id: 'a1', agent_name: 'Koda', phase: 'waiting', detail: null }, 1500);
+		expect(isWorking(waiting)).toBe(false);
+		expect(waiting.phase).toBeNull();
+		expect(waiting.openTurns).toEqual([]);
+	});
+
+	it('tracks agent session lifecycle via events', () => {
+		const started = applyChatEvent(idleTurn(), { kind: 'AgentSessionStarted', agent_session_id: 'a2', agent_type: 'coding', agent_display_name: 'Koda' }, 1000);
+		expect(isWorking(started)).toBe(true);
+		expect(started.openTurns).toEqual(['a2']);
+		expect(started.agent).toBe('Koda');
+
+		const ended = applyChatEvent(started, { kind: 'AgentSessionEnded', agent_session_id: 'a2', reason: 'done' }, 2000);
+		expect(isWorking(ended)).toBe(false);
+		expect(ended.openTurns).toEqual([]);
 	});
 });
 

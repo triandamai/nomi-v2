@@ -49,6 +49,14 @@ export type CrewMember = {
 	status: string;
 };
 
+/** An active agent session in a chat (`GET /api/sessions/:id/agent-status`). */
+export type AgentStatus = {
+	agent_session_id: string;
+	agent_type: string;
+	current_phase: string;
+	current_phase_detail: string | null;
+};
+
 /** One chat in `GET /api/sessions` (`{ sessions }`), latest first. */
 export type SessionSummary = {
 	id: string;

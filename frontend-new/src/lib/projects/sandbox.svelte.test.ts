@@ -40,12 +40,9 @@ describe('the sandbox runtime', () => {
 		await runtime.start();
 		expect(runtime.phase, 'nothing to preview yet').toBe('building');
 		expect(count('start', 'POST')).toBe(0);
-		await vi.advanceTimersByTimeAsync(5_000);
-		expect(runtime.phase).toBe('building');
-		expect(count('start', 'POST'), 'still nothing started').toBe(0);
 		status = { ...status, preview_ready: true };
-		await vi.advanceTimersByTimeAsync(5_000);
-		await vi.waitFor(() => expect(count('start', 'POST'), 'the first build is done: it starts on its own').toBe(1));
+		await runtime.onSandboxChange();
+		expect(count('start', 'POST'), 'the first build is done: it starts on its own').toBe(1);
 		expect(runtime.phase).toBe('waking');
 		runtime.stop();
 	});
@@ -60,17 +57,17 @@ describe('the sandbox runtime', () => {
 			expect(count('start', 'POST'), phase).toBe(1);
 			expect(runtime.phase, `${phase}: it was asked to start, so it is waking`).toBe('waking');
 			const reads = count('status');
-			await vi.advanceTimersByTimeAsync(5_000);
-			await vi.waitFor(() => expect(count('status')).toBeGreaterThan(reads));
+			await runtime.onSandboxChange();
+			expect(count('status')).toBeGreaterThan(reads);
 			expect(runtime.phase, `${phase}: still waking on the next read`).toBe('waking');
 			expect(count('start', 'POST'), phase).toBe(1);
 			status = { ...status, state: 'running', phase: 'running', preview_url: SECRET };
-			await vi.advanceTimersByTimeAsync(5_000);
-			await vi.waitFor(() => expect(runtime.phase, phase).toBe('running'));
+			await runtime.onSandboxChange();
+			expect(runtime.phase, phase).toBe('running');
 			// Stopped later (it idled out): that is shown as it is, not as waking.
 			status = { ...status, state: 'stopped', phase: 'stopped', preview_url: null };
-			await vi.advanceTimersByTimeAsync(5_000);
-			await vi.waitFor(() => expect(runtime.phase, phase).toBe('stopped'));
+			await runtime.onSandboxChange();
+			expect(runtime.phase, phase).toBe('stopped');
 			runtime.stop();
 		}
 	});
@@ -98,11 +95,11 @@ describe('the sandbox runtime', () => {
 		expect(count('start', 'POST')).toBe(1);
 		expect(runtime.phase).toBe('waking');
 		status = { ...status, state: 'running', phase: 'running', preview_url: null };
-		await vi.advanceTimersByTimeAsync(5_000);
-		await vi.waitFor(() => expect(runtime.phase).toBe('starting'));
+		await runtime.onSandboxChange();
+		expect(runtime.phase).toBe('starting');
 		status = { ...status, preview_url: SECRET };
-		await vi.advanceTimersByTimeAsync(5_000);
-		await vi.waitFor(() => expect([runtime.phase, runtime.previewUrl]).toEqual(['running', SECRET]));
+		await runtime.onSandboxChange();
+		expect([runtime.phase, runtime.previewUrl]).toEqual(['running', SECRET]);
 		expect(count('beat')).toBe(1);
 		runtime.stop();
 	});
@@ -137,8 +134,8 @@ describe('the sandbox runtime', () => {
 		const runtime = new SandboxRuntime('p1');
 		await runtime.start();
 		expect(runtime.log).toBe('$ npm run dev\n');
-		await vi.advanceTimersByTimeAsync(5_000);
-		await vi.waitFor(() => expect(runtime.log).toBe('$ npm run dev\nready\n'));
+		await runtime.onSandboxChange();
+		expect(runtime.log).toBe('$ npm run dev\nready\n');
 		expect(requests.map((one) => one.path)).toContain('logs?offset=14');
 		runtime.stop();
 	});
@@ -147,7 +144,6 @@ describe('the sandbox runtime', () => {
 		const spies = (['log', 'info', 'warn', 'error', 'debug'] as const).map((key) => vi.spyOn(console, key).mockImplementation(() => {}));
 		const runtime = new SandboxRuntime('p1');
 		await runtime.start();
-		await vi.advanceTimersByTimeAsync(5_000);
 		expect(runtime.previewUrl).toBe(SECRET);
 		expect(runtime.log).not.toContain('s3cr3t');
 		expect(runtime.error ?? '').not.toContain('s3cr3t');
@@ -156,7 +152,7 @@ describe('the sandbox runtime', () => {
 		runtime.stop();
 	});
 
-	it('doesn’t read the same offset twice when a poll lands during a slow read', async () => {
+	it('doesn’t read the same offset twice when a change lands during a slow read', async () => {
 		let release: () => void = () => {};
 		const gate = new Promise<void>((resolve) => (release = resolve));
 		let served = 0;
@@ -172,12 +168,32 @@ describe('the sandbox runtime', () => {
 		});
 		const runtime = new SandboxRuntime('p1');
 		const started = runtime.start();
-		await vi.advanceTimersByTimeAsync(5_000);
+		const changed = runtime.onSandboxChange();
 		release();
 		await started;
-		await vi.advanceTimersByTimeAsync(0);
+		await changed;
 		expect(served).toBe(1);
 		expect(runtime.log).toBe('once\n');
+		runtime.stop();
+	});
+
+	it('listens to MQTT sandbox changes via listen()', async () => {
+		let listener: ((phase: string) => void) | null = null;
+		const subscribe = (fn: (phase: string) => void) => {
+			listener = fn;
+			return () => {
+				listener = null;
+			};
+		};
+		const runtime = new SandboxRuntime('p1');
+		await runtime.start();
+		const unlisten = runtime.listen(subscribe);
+		expect(listener).not.toBeNull();
+		const reads = count('status');
+		listener!('running');
+		await vi.waitFor(() => expect(count('status')).toBeGreaterThan(reads));
+		unlisten();
+		expect(listener).toBeNull();
 		runtime.stop();
 	});
 });
