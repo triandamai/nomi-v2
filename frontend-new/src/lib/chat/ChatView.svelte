@@ -5,7 +5,7 @@
 	import { page } from '$app/state';
 	import { m } from '$lib/paraglide/messages';
 	import { getLocale } from '$lib/paraglide/runtime';
-	import type { MessageItem, MessageVersion, RenderedMessage, RerunResult, ThinkingLevel } from '$lib/adapters/api';
+	import type { AgentStatus, MessageItem, MessageVersion, RenderedMessage, RerunResult, ThinkingLevel } from '$lib/adapters/api';
 	import { chatCrewRows, crewIdOf, failureView, mentionOptions, modelMenu, type FailureAction } from '$lib/adapters/chat';
 	import { clock as appClock } from '$lib/clock';
 	import { callJson } from '$lib/chat/client';
@@ -18,7 +18,7 @@
 	import * as outbox from '$lib/chat/outbox';
 	import { afterRerun } from '$lib/chat/rerun';
 	import { threadEntries, turnDuration } from '$lib/chat/thread';
-	import { applyChatEvent, idleTurn, isWorking, retryInfo, turnSent, turnStopped } from '$lib/chat/turn';
+	import { applyChatEvent, idleTurn, isWorking, retryInfo, turnSent, turnStopped, turnWithAgentActivity, type LiveTurn } from '$lib/chat/turn';
 	import { toasts } from '$lib/ds/overlays/toasts.svelte';
 	import MessageUser from '$lib/ds/conversation/MessageUser.svelte';
 	import TeammateMessage from '$lib/ds/build/TeammateMessage.svelte';
@@ -162,13 +162,32 @@
 
 	type Pending = { key: number; text: string; status: 'sending' | 'queued' | 'failed'; reason?: string };
 
+	function crewNameOf(agentType: string): string {
+		const crewId = crewOf(agentType);
+		return CREW.find((member) => member.id === crewId)?.name ?? (agentType ? agentType.charAt(0).toUpperCase() + agentType.slice(1) : 'Nomi');
+	}
+
+	function initialTurn(status: AgentStatus | null | undefined): LiveTurn {
+		if (!status) return idleTurn();
+		return turnWithAgentActivity(
+			idleTurn(),
+			{
+				agent_session_id: status.agent_session_id,
+				agent_name: crewNameOf(status.agent_type),
+				phase: status.current_phase,
+				detail: status.current_phase_detail,
+			},
+			Date.now(),
+		);
+	}
+
 	const chatId = $derived(data.chat.id);
 	const api = $derived(`/chat/${data.chat.id}/api`);
 	const outboxKey = $derived(`/chat/${data.chat.id}`);
 
 	let messages = $state<RenderedMessage[]>(untrack(() => data.messages));
 	let hasOlder = $state(untrack(() => data.hasOlder));
-	let turn = $state(idleTurn());
+	let turn = $state<LiveTurn>(untrack(() => initialTurn(data.agentStatus)));
 	let tickNow = $state(Date.now());
 	let pending = $state<Pending[]>([]);
 	let nextKey = 1;
@@ -246,7 +265,8 @@
 				shownId = id;
 				messages = incoming;
 				hasOlder = older;
-				turn = idleTurn();
+				turn = initialTurn(data.agentStatus);
+				void readCrewAtWork();
 				pending = [];
 				editing = null;
 				versions = {};
@@ -467,11 +487,29 @@
 
 	/** Who of the crew is at work in the chat already (the feed only says who starts from now). */
 	async function readCrewAtWork() {
-		if (!phone) return;
-		const result = await callJson<{ agent_session_id: string; agent_type: string } | null>(`${api}/agent-status`);
-		if (!result.ok || !result.data) return;
-		const crewId = crewOf(result.data.agent_type);
-		flows.sessionStarted(result.data.agent_session_id, CREW.find((member) => member.id === crewId)?.name ?? 'Nomi');
+		const result = await callJson<AgentStatus | null>(`${api}/agent-status`);
+		if (!result.ok) return;
+		if (result.data) {
+			const agentName = crewNameOf(result.data.agent_type);
+			flows.sessionStarted(result.data.agent_session_id, agentName);
+			if (!turn.stopRequested) {
+				turn = turnWithAgentActivity(
+					turn,
+					{
+						agent_session_id: result.data.agent_session_id,
+						agent_name: agentName,
+						phase: result.data.current_phase,
+						detail: result.data.current_phase_detail,
+					},
+					Date.now(),
+				);
+			}
+			header.crew = { replied: header.crew.replied, working: agentName };
+			onactivity?.();
+		} else if (!turn.pending && turn.openTurns.length > 0 && !turn.reply.text.trim()) {
+			turn = idleTurn();
+			header.crew = { replied: header.crew.replied, working: null };
+		}
 	}
 
 	function continueReply() {
@@ -928,12 +966,18 @@
 		// Signed back in (or reloaded) with a message waiting: it goes now.
 		void flushOutbox();
 		restoreDraft(chatId);
+		void readCrewAtWork();
+		const onVisible = () => {
+			if (document.visibilityState === 'visible') void readCrewAtWork();
+		};
+		document.addEventListener('visibilitychange', onVisible);
 		if (!matchMedia('(pointer: coarse)').matches) field?.focus();
 		jumpToLatest();
 		return () => {
 			clearTimeout(hide);
 			window.removeEventListener('offline', offline);
 			window.removeEventListener('online', back);
+			document.removeEventListener('visibilitychange', onVisible);
 		};
 	});
 
