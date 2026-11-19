@@ -66,3 +66,33 @@ test('a reply that needs an app opens the phone’s connect sheet; answering you
 	await expect(sheet).not.toBeVisible();
 	await expect(page.getByRole('textbox', { name: 'Message' })).toBeFocused();
 });
+
+test('rich replies on a phone: the cart, a selection, a link, code, a reminder, a boundary and a table, none wider than the phone', async ({ page, context }) => {
+	const account = await createAccount();
+	const { session_id } = (await (await api(account, '/api/sessions', { method: 'POST' })).json()) as { session_id: string };
+	await api(account, `/api/sessions/${session_id}/messages`, { method: 'POST', body: JSON.stringify({ text: 'Order this week’s groceries, same as usual' }) });
+	await seedReply(session_id, {
+		content: 'Your usual Sayurbox list. Ikan kembung is out today; tongkol is the closest swap.',
+		agent: 'Nomi',
+		blocks: [
+			{ kind: 'view', view: 'cart', title: 'Weekly groceries', store: 'Sayurbox', items: [{ name: 'Telur ayam negeri', detail: '1 tray · 10 butir', quantity: 2, price: 29000 }, { name: 'Ikan kembung', detail: 'out of stock', quantity: 0, available: false, swap: 'tongkol' }], delivery: 10000, checkout_url: 'https://sayurbox.com/c/1' },
+			{ kind: 'view', view: 'selection', question: 'Track as subscriptions?', items: [{ name: 'Netflix Premium', detail: 'monthly · BCA debit', amount: 186000, selected: true }, { name: 'Spotify Duo', detail: 'monthly · GoPay', amount: 54990 }], confirm_label: 'Track', per: 'month' },
+			{ kind: 'view', view: 'link', url: 'https://kosku.id/kos-mawar-tebet', title: 'Kos Mawar Tebet — kamar AC, kamar mandi dalam' },
+			{ kind: 'view', view: 'code', code: 'export function weeklyBudget(total: number, weeks = 4) {\n  return Math.round(total / weeks) - 25_000 // leave room for one GoFood order every week\n}', language: 'typescript', file: 'src/lib/budget.ts' },
+			{ kind: 'view', view: 'boundary', title: 'I can’t cancel subscriptions', reason: 'Nomi only records money. Instead I can:', alternatives: [{ title: 'Remind me 3 days before the next charge', agent: 'Kala', detail: 'Kala · 2 Nov, 09:00', message: 'Remind me 3 days before Netflix charges' }] },
+			{ kind: 'table', variant: 'data', title: 'Food by week', columns: [{ key: 'week', label: 'Week' }, { key: 'groceries', label: 'Groceries' }, { key: 'gofood', label: 'GoFood' }, { key: 'total', label: 'Total' }, { key: 'change', label: 'Change' }], rows: [{ week: '1–7 Oct', groceries: 312000, gofood: 168000, total: 480000, change: '+12%' }] },
+		],
+	});
+	await signInAs(context, account);
+	await page.goto(`/chat/${session_id}`, { waitUntil: 'networkidle' });
+	const thread = page.getByRole('main');
+	await expect(thread.getByText('Weekly groceries')).toBeVisible();
+	await expect(thread.getByText('Track as subscriptions?')).toBeVisible();
+	await expect(thread.getByText('Kos Mawar Tebet — kamar AC, kamar mandi dalam')).toBeVisible();
+	await expect(thread.getByText('src/lib/budget.ts')).toBeVisible();
+	await expect(thread.getByText('I can’t cancel subscriptions')).toBeVisible();
+	await expect(thread.getByText('Food by week')).toBeVisible();
+	// Nothing on the page is wider than the phone: a long code line scrolls inside its card.
+	expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+	await page.screenshot({ path: test.info().outputPath('rich-replies-phone.png'), fullPage: true });
+});
