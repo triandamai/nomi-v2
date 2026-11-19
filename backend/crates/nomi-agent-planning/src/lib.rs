@@ -55,6 +55,21 @@ pub fn create_project_tool_definition() -> ToolDefinition {
     }
 }
 
+pub fn rename_project_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        name: "rename_project".to_string(),
+        description: "Rename the current project or change its title and description. Call this when the user wants to rename or change the title of their company, app, or project.".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "The new project or company name"},
+                "description": {"type": "string", "description": "Optional updated one-sentence description of what it does"}
+            },
+            "required": ["name"]
+        }),
+    }
+}
+
 pub struct PlanningAgent {
     project_ops: SharedProjectOps,
     relay_ops: SharedRelayOps,
@@ -128,7 +143,12 @@ impl SubAgent for PlanningAgent {
 
     fn tools(&self) -> Vec<ToolDefinition> {
         let create_project = tools::CreateProject { relay: self.relay_ops.clone() };
-        vec![nomi_agent_core::Tool::definition(&create_project), publish_tool_definition()]
+        let rename_project = tools::RenameProject { relay: self.relay_ops.clone() };
+        vec![
+            nomi_agent_core::Tool::definition(&create_project),
+            nomi_agent_core::Tool::definition(&rename_project),
+            publish_tool_definition(),
+        ]
     }
 
     async fn execute_tool(
@@ -143,6 +163,10 @@ impl SubAgent for PlanningAgent {
         match name {
             "create_project" => {
                 let tool = tools::CreateProject { relay: self.relay_ops.clone() };
+                nomi_agent_core::Tool::execute(&tool, conn, session_id, agent_session_id, user_id, input).await
+            }
+            "rename_project" => {
+                let tool = tools::RenameProject { relay: self.relay_ops.clone() };
                 nomi_agent_core::Tool::execute(&tool, conn, session_id, agent_session_id, user_id, input).await
             }
             discovery::SAVE_DESIGN_BRIEF if nomi_settings::config::agent_on(nomi_agent_core::crew::DESIGN_AGENT_TYPE).await => {
@@ -184,7 +208,7 @@ impl SubAgent for PlanningAgent {
     /// Rena only names and describes the chat's own project, and notes what she found out about
     /// it: nothing to approve.
     fn tool_needs_approval(&self, tool_name: &str) -> bool {
-        tool_name != "create_project" && tool_name != discovery::SAVE_DESIGN_BRIEF
+        tool_name != "create_project" && tool_name != "rename_project" && tool_name != discovery::SAVE_DESIGN_BRIEF
     }
 
     fn supports_plans(&self) -> bool {
@@ -345,3 +369,48 @@ async fn choose_backend(
         .map_err(db_error)?;
     Ok(note)
 }
+
+/// Renames the project for the chat session, and keeps the chat session title aligned.
+pub async fn rename_project(
+    conn: &mut PoolConnection<Postgres>,
+    session_id: Uuid,
+    user_id: Uuid,
+    input: Value,
+    relay: &dyn RelayOps,
+) -> Result<String, String> {
+    let name = input.get("name").and_then(|v| v.as_str()).map(str::trim).filter(|s| !s.is_empty()).ok_or("name is required")?;
+    let description = input.get("description").and_then(|v| v.as_str()).map(str::trim);
+
+    let existing_id: Option<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM projects WHERE id = chat_project($1) AND can_open_project(id, $2)",
+    )
+    .bind(session_id)
+    .bind(user_id)
+    .fetch_optional(&mut **conn)
+    .await
+    .map_err(db_error)?;
+
+    match existing_id {
+        Some(project_id) => {
+            sqlx::query(
+                "UPDATE projects SET name = $1, \
+                 description = CASE WHEN $2::text IS NULL THEN description ELSE NULLIF($2, '') END, \
+                 updated_at = now() WHERE id = $3",
+            )
+            .bind(name)
+            .bind(description)
+            .bind(project_id)
+            .execute(&mut **conn)
+            .await
+            .map_err(db_error)?;
+
+            let _ = nomi_agent_core::chat_title::rename(&mut **conn, session_id, name).await;
+
+            Ok(format!("Project renamed to '{name}' (id {project_id})."))
+        }
+        None => {
+            create_project(conn, session_id, user_id, input, relay).await
+        }
+    }
+}
+

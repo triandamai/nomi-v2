@@ -4,7 +4,7 @@ import { loadChatPage } from '$lib/server/chatPage';
 import { loadStudio } from '$lib/server/designStudio';
 import * as tools from '$lib/server/workspace';
 import { changeDomain, loadDeploy, loadDomain, loadProject, publish, rollBack, takeDown, transfer } from '$lib/server/workspace';
-import { deleteProject } from '$lib/server/projects';
+import { deleteProject, renameProject } from '$lib/server/projects';
 import { usesSandbox } from '$lib/projects/sandbox';
 import { sealPreview } from '$lib/server/previewGrant';
 import type { Actions, PageServerLoad } from './$types';
@@ -80,6 +80,13 @@ export const actions: Actions = {
 		const changed = await changeDomain(event, event.params.id, name);
 		if (changed.ok) return { url: changed.url };
 		return fail(changed.status, { message: changed.message || m.action_failed(), suggestions: changed.answer?.suggestions ?? [] });
+	},
+	/** Renames the project (builders only). */
+	rename: async (event) => {
+		const name = String((await event.request.formData()).get('name') ?? '').trim();
+		if (!name) return fail(400, { message: m.domain_name_needed() });
+		const sent = await renameProject(event, event.params.id, name);
+		return sent.ok ? { renamed: name } : refused(sent);
 	},
 	/** Gives the project to another workspace; the name, typed, confirms it. */
 	transfer: async (event) => {

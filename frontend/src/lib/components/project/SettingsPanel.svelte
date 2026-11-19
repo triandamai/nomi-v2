@@ -18,10 +18,34 @@
 	import { formatTransferNoticeParams } from '$lib/projectTransfer';
 	import type { TransferOrgSummary } from '$lib/types';
 
-	let { deploy, projectName }: { deploy: ProjectDeploy; projectName: string } = $props();
+	let { deploy, projectName, onrename }: { deploy: ProjectDeploy; projectName: string; onrename?: (name: string) => void } = $props();
 
 	const isAdmin = $derived(deploy.isAdmin);
 	const live = $derived(Boolean(deploy.overview?.live));
+
+	let renameOpen = $state(false);
+	let renameName = $state('');
+	let renaming = $state(false);
+	let renameError = $state<string | null>(null);
+
+	async function saveRename() {
+		const wanted = renameName.trim();
+		if (!wanted || wanted === projectName) {
+			renameOpen = false;
+			return;
+		}
+		renaming = true;
+		renameError = null;
+		try {
+			await projectApi(deploy.projectId, '', { method: 'PATCH', body: { name: wanted } });
+			renameOpen = false;
+			onrename?.(wanted);
+		} catch (e) {
+			renameError = (e as Error).message;
+		} finally {
+			renaming = false;
+		}
+	}
 
 	let offlineOpen = $state(false);
 	let deleteOpen = $state(false);
@@ -140,6 +164,16 @@
 		}
 	}
 </script>
+
+<section class="block">
+	<div class="block__row">
+		<div class="block__text">
+			<h3 class="block__title">{m.projects_rename_title()}</h3>
+			<p class="block__hint">{projectName}</p>
+		</div>
+		<Button variant="tonal" onclick={() => { renameName = projectName; renameError = null; renameOpen = true; }}>{m.projects_rename()}</Button>
+	</div>
+</section>
 
 <section class="block">
 	<div class="block__row">
@@ -356,6 +390,19 @@
 		{/if}
 	</div>
 </BottomSheet>
+
+<Dialog bind:open={renameOpen} headline={m.projects_rename_title()}>
+	<div style="display: flex; flex-direction: column; gap: 8px; padding-top: 8px;">
+		<TextField label={m.projects_rename_title()} bind:value={renameName} autocomplete="off" />
+		{#if renameError}<p class="error">{renameError}</p>{/if}
+	</div>
+	{#snippet actions()}
+		<Button variant="text" onclick={() => (renameOpen = false)}>{m.issues_cancel()}</Button>
+		<Button variant="filled" disabled={!renameName.trim() || renameName.trim() === projectName || renaming} onclick={saveRename}>
+			{m.issues_save()}
+		</Button>
+	{/snippet}
+</Dialog>
 
 <style>
 	.block {

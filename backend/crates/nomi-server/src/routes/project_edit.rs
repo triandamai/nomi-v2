@@ -67,6 +67,18 @@ pub async fn rename(
     .fetch_one(&state.pool)
     .await
     .map_err(internal("failed to rename the project"))?;
+
+    crate::project_events::changed(project_id, "project.renamed");
+    if let Ok(Some(session_id)) = sqlx::query_scalar::<_, Uuid>("SELECT session_id FROM projects WHERE id = $1")
+        .bind(project_id)
+        .fetch_optional(&state.pool)
+        .await
+    {
+        if let Ok(mut conn) = state.pool.acquire().await {
+            let _ = nomi_agent_core::chat_title::rename(&mut *conn, session_id, &name).await;
+        }
+    }
+
     Ok(Json(
         json!({ "id": project_id, "name": name, "description": description }),
     ))
