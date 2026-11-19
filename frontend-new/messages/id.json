@@ -1983,6 +1983,8 @@
 	"projects_actions": "Tindakan {name}",
 	"projects_menu_open": "Buka workspace",
 	"projects_menu_visit": "Kunjungi situs live",
+	"projects_rename": "Ganti nama",
+	"projects_rename_title": "Ganti nama proyek",
 	"projects_menu_rename": "Ganti nama",
 	"projects_menu_duplicate": "Duplikat",
 	"projects_menu_move": "Pindahkan ke workspace…",

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
-	import { Activity, ArrowDownUp, ChevronLeft, ChevronRight, Coins, Cpu, Database, Download, Globe, History, Hourglass, KeyRound, Link, Lock, MemoryStick, MonitorX, RefreshCw, Rocket, Settings, Trash2, UserMinus, Users } from '@lucide/svelte';
+	import { Activity, ArrowDownUp, ChevronLeft, ChevronRight, Coins, Cpu, Database, Download, Globe, History, Hourglass, KeyRound, Link, Lock, MemoryStick, MonitorX, Pencil, RefreshCw, Rocket, Settings, Trash2, UserMinus, Users } from '@lucide/svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { pageAction } from '$lib/pageAction';
 	import { clock as appClock } from '$lib/clock';
@@ -384,16 +384,19 @@
 		return true;
 	}
 
-	// Settings (steps 12, 15–17): transfer to another workspace, take the live app down, delete.
-	let dialog = $state<'transfer' | 'takedown' | 'delete' | null>(null);
+	// Settings (steps 12, 15–17): transfer to another workspace, take the live app down, delete, rename.
+	let dialog = $state<'transfer' | 'takedown' | 'delete' | 'rename' | null>(null);
 	let targets = $state<TransferTarget[]>([]);
 	let targetQuery = $state('');
 	let target = $state<string | null>(null);
 	let confirmName = $state('');
+	let renameName = $state('');
+	let projectRenaming = $state(false);
 	let acting = $state(false);
 	let actError = $state<string>();
 	function openDialog(which: NonNullable<typeof dialog>) {
 		confirmName = '';
+		renameName = project.name;
 		actError = undefined;
 		target = null;
 		dialog = which;
@@ -404,18 +407,36 @@
 		const response = await fetch(`/projects/${project.id}/transfer?q=${encodeURIComponent(query)}`).catch(() => null);
 		targets = response?.ok ? ((await response.json()) as TransferTarget[]) : [];
 	}
-	async function act(name: 'transfer' | 'takedown' | 'delete', fields: Record<string, string>) {
+	async function act(name: 'transfer' | 'takedown' | 'delete' | 'rename', fields: Record<string, string>) {
 		acting = true;
 		actError = undefined;
 		const result = await pageAction(`/projects/${project.id}`, name, fields);
 		acting = false;
 		if (!result.ok) return void (actError = result.message || m.action_failed());
-		if (name === 'takedown') {
+		if (name === 'rename') {
+			dialog = null;
+			project.name = fields.name;
+			toasts.show({ kind: 'success', title: m.projects_renamed({ name: fields.name }) });
+			await invalidate('app:workspace-project');
+		} else if (name === 'takedown') {
 			dialog = null;
 			toasts.show({ kind: 'success', title: m.takedown_done({ name: project.name }) });
 			await invalidate('app:workspace-project');
 			await refresh();
 		}
+	}
+
+	async function renameFromBar(nextName: string) {
+		const wanted = nextName.trim();
+		if (!wanted || wanted === project.name) return;
+		const result = await pageAction(`/projects/${project.id}`, 'rename', { name: wanted });
+		if (!result.ok) {
+			toasts.show({ kind: 'error', title: result.message || m.action_failed() });
+			return;
+		}
+		project.name = wanted;
+		toasts.show({ kind: 'success', title: m.projects_renamed({ name: wanted }) });
+		await invalidate('app:workspace-project');
 	}
 
 	// People (step 13) and Environment (step 14), opened from Settings.
@@ -808,6 +829,13 @@
 			onexport={openExport}
 			presence={peers.length ? here : undefined}
 			onshare={liveUrl ? () => (sharing = true) : undefined}
+			renaming={projectRenaming}
+			onstartrename={() => (projectRenaming = true)}
+			onrename={(name) => {
+				projectRenaming = false;
+				void renameFromBar(name);
+			}}
+			oncancelrename={() => (projectRenaming = false)}
 		>
 			{#snippet publish()}
 				{#if role === 'member'}
@@ -936,6 +964,9 @@
 			<div bind:this={sheetBox} class="absolute inset-y-0 right-0 flex w-180 max-w-full">
 				<WorkspaceSheet icon={Settings} title={m.project_settings()} meta={project.name} onclose={() => (sheet = null)}>
 					<div class="flex flex-col border-t border-border">
+						<SettingRow title={m.projects_rename_title()} description={project.name}>
+							{#snippet control()}<Button variant="secondary" iconStart={Pencil} label={m.projects_rename()} onclick={() => openDialog('rename')} />{/snippet}
+						</SettingRow>
 						{#if people}
 							<SettingRow title={m.people_title()} description={m.people_summary({ count: people.people.filter((one) => one.project_role || one.is_owner).length })}>
 								{#snippet control()}<Button variant="secondary" iconStart={Users} label={m.settings_manage()} onclick={() => (sheet = 'people')} />{/snippet}
@@ -1455,6 +1486,16 @@
 	{#snippet actions()}
 		<Button variant="ghost" label={m.action_cancel()} onclick={() => (dialog = null)} />
 		<Button variant="inverse" label={m.transfer_send()} loading={acting} disabled={!target || confirmName.trim() !== project.name} onclick={() => act('transfer', { to: target ?? '', name: confirmName.trim() })} />
+	{/snippet}
+</ProjectDialog>
+
+<ProjectDialog open={dialog === 'rename'} title={m.projects_rename_title()} width={460} onclose={() => (dialog = null)}>
+	<div class="flex flex-col gap-3 pt-2">
+		<TextField label={m.projects_rename_label()} bind:value={renameName} autocomplete="off" error={actError} />
+	</div>
+	{#snippet actions()}
+		<Button variant="ghost" label={m.action_cancel()} onclick={() => (dialog = null)} />
+		<Button variant="inverse" label={m.workspace_rename_save()} loading={acting} disabled={!renameName.trim() || renameName.trim() === project.name} onclick={() => act('rename', { name: renameName.trim() })} />
 	{/snippet}
 </ProjectDialog>
 

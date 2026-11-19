@@ -1983,6 +1983,8 @@
 	"projects_actions": "{name} actions",
 	"projects_menu_open": "Open workspace",
 	"projects_menu_visit": "Visit live site",
+	"projects_rename": "Rename",
+	"projects_rename_title": "Rename project",
 	"projects_menu_rename": "Rename",
 	"projects_menu_duplicate": "Duplicate",
 	"projects_menu_move": "Move to workspace…",

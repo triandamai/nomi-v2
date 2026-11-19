@@ -24,6 +24,9 @@
 	import AgentShape from '$lib/components/m3/AgentShape.svelte';
 	import BottomSheet from '$lib/components/m3/BottomSheet.svelte';
 	import Button from '$lib/components/m3/Button.svelte';
+	import Dialog from '$lib/components/m3/Dialog.svelte';
+	import TextField from '$lib/components/m3/TextField.svelte';
+	import { Pencil } from '@lucide/svelte';
 	import { ProjectPresence } from '$lib/projectPresence.svelte';
 	import Snackbar from '$lib/components/m3/Snackbar.svelte';
 	import ModelManager from '$lib/components/models/ModelManager.svelte';
@@ -980,6 +983,38 @@
 			await askToPublish();
 		}
 	}
+
+	let renameDialogOpen = $state(false);
+	let renameName = $state('');
+	let renamingProject = $state(false);
+	let renameError = $state<string | null>(null);
+
+	function openRenameDialog() {
+		if (!data.project) return;
+		renameName = data.project.name;
+		renameError = null;
+		renameDialogOpen = true;
+	}
+
+	async function saveProjectRename() {
+		if (!data.project) return;
+		const wanted = renameName.trim();
+		if (!wanted || wanted === data.project.name) {
+			renameDialogOpen = false;
+			return;
+		}
+		renamingProject = true;
+		renameError = null;
+		try {
+			await projectApi(data.project.id, '', { method: 'PATCH', body: { name: wanted } });
+			data.project.name = wanted;
+			renameDialogOpen = false;
+		} catch (e) {
+			renameError = (e as Error).message || m.projects_err_rename();
+		} finally {
+			renamingProject = false;
+		}
+	}
 </script>
 
 {#snippet modelControl()}
@@ -1013,7 +1048,21 @@
 	<header class="topbar" bind:this={topbar}>
 		<a class="topbar__brand" href="/projects" aria-label={m.pj_all_projects()} title={m.pj_all_projects()}><AgentShape size={28} face live /></a>
 		<div class="topbar__titles">
-			<h1 class="topbar__name">{project.name}<span class="topbar__status" data-status={project.status}>{PROJECT_STATUS[project.status]()}</span></h1>
+			<h1 class="topbar__name">
+				{project.name}
+				{#if !viewer}
+					<button
+						type="button"
+						class="topbar__rename-btn"
+						aria-label={m.projects_rename_title()}
+						title={m.projects_rename_title()}
+						onclick={openRenameDialog}
+					>
+						<Pencil size={13} />
+					</button>
+				{/if}
+				<span class="topbar__status" data-status={project.status}>{PROJECT_STATUS[project.status]()}</span>
+			</h1>
 			<p class="topbar__meta">
 				{project.org_name}
 				{#if deploy?.overview?.url}
@@ -1350,6 +1399,21 @@
 	</div>
 {/if}
 
+{#if data.project}
+	<Dialog bind:open={renameDialogOpen} headline={m.projects_rename_title()}>
+		<div style="display: flex; flex-direction: column; gap: 8px; padding-top: 8px;">
+			<TextField label={m.projects_rename_title()} bind:value={renameName} autocomplete="off" />
+			{#if renameError}<p class="topbar__rename-error">{renameError}</p>{/if}
+		</div>
+		{#snippet actions()}
+			<Button variant="text" onclick={() => (renameDialogOpen = false)}>{m.issues_cancel()}</Button>
+			<Button variant="filled" disabled={!renameName.trim() || (data.project && renameName.trim() === data.project.name) || renamingProject} onclick={saveProjectRename}>
+				{m.issues_save()}
+			</Button>
+		{/snippet}
+	</Dialog>
+{/if}
+
 {#if data.project && sheet}
 	{@const project = data.project}
 	<BottomSheet bind:open={sheetOpen} full top={sheetTop} label={SHEET_TITLE[sheet]()}>
@@ -1379,7 +1443,7 @@
 			{:else if sheet === 'members'}
 				<MembersPanel projectId={project.id} orgId={project.org_id} projectName={project.name} bind:tab={membersTab} {presence} {deploy} />
 			{:else if sheet === 'settings' && deploy}
-				<SettingsPanel {deploy} projectName={project.name} />
+				<SettingsPanel {deploy} projectName={project.name} onrename={(newName) => { if (data.project) data.project.name = newName; }} />
 			{/if}
 		</WorkspaceSheet>
 	</BottomSheet>
@@ -1448,6 +1512,8 @@
 	}
 	.topbar__name {
 		margin: 0;
+		display: flex;
+		align-items: center;
 		overflow: hidden;
 		color: var(--md-sys-color-on-surface);
 		font-family: var(--md-ref-typeface-brand);
@@ -1455,6 +1521,30 @@
 		font-weight: 700;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+	.topbar__rename-btn {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		padding: 2px;
+		margin-left: 4px;
+		border: none;
+		border-radius: 4px;
+		background: transparent;
+		color: var(--md-sys-color-on-surface-variant);
+		cursor: pointer;
+		opacity: 0.6;
+		vertical-align: middle;
+		transition: opacity 150ms ease, background-color 150ms ease;
+	}
+	.topbar__rename-btn:hover {
+		opacity: 1;
+		background-color: var(--md-sys-color-surface-container-high);
+	}
+	.topbar__rename-error {
+		margin: 0;
+		color: var(--md-sys-color-error);
+		font-size: 0.8125rem;
 	}
 	.topbar__meta {
 		margin: 0;

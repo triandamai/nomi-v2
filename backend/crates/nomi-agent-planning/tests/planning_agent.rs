@@ -120,8 +120,58 @@ async fn create_project_is_refused_at_the_plans_project_limit(pool: PgPool) {
     assert_eq!(count, 0);
 }
 
+#[sqlx::test(migrations = "../../migrations")]
+async fn rename_project_updates_project_name_and_session_title(pool: PgPool) {
+    let (user_id, session_id) = seed_user_and_session(&pool).await;
+    let agent = PlanningAgent::new();
+    let mut conn = pool.acquire().await.unwrap();
+
+    let result = agent
+        .execute_tool(
+            &mut conn,
+            session_id,
+            Uuid::new_v4(),
+            user_id,
+            "create_project",
+            serde_json::json!({"name": "Initial Name", "description": "A description"}),
+        )
+        .await
+        .unwrap();
+
+    let project_id = project_id_in(&result.display_text);
+
+    let renamed = agent
+        .execute_tool(
+            &mut conn,
+            session_id,
+            Uuid::new_v4(),
+            user_id,
+            "rename_project",
+            serde_json::json!({"name": "Acme Coffee Co"}),
+        )
+        .await
+        .unwrap();
+
+    assert!(renamed.display_text.contains("Acme Coffee Co"));
+
+    let stored_name: String = sqlx::query_scalar("SELECT name FROM projects WHERE id = $1")
+        .bind(project_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(stored_name, "Acme Coffee Co");
+
+    let session_title: Option<String> = sqlx::query_scalar("SELECT title FROM sessions WHERE id = $1")
+        .bind(session_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(session_title.as_deref(), Some("Acme Coffee Co"));
+}
+
 /// The project id in create_project's result ("Project ready (id <uuid>). ...").
 fn project_id_in(text: &str) -> Uuid {
     let after = text.split("(id ").nth(1).unwrap_or_else(|| panic!("no project id in {text:?}"));
     after[..36].parse().unwrap_or_else(|_| panic!("no project id in {text:?}"))
 }
+
