@@ -188,4 +188,66 @@ describe('OpenPencil Scene-Graph Canvas Engine', () => {
 		expect(heroBounds).not.toBeNull();
 		expect(heroBounds?.width).toBe(1200);
 	});
+
+	it('merges direction tokens into rawPenJson and spaces stacked frames horizontally', () => {
+		const rawPen = JSON.stringify({
+			version: '1.0',
+			children: [
+				{
+					type: 'frame',
+					id: 'screen-home',
+					name: 'Home Screen',
+					width: 1280,
+					height: 800,
+					fill: '$color-bg',
+					children: [
+						{
+							type: 'frame',
+							id: 'header',
+							name: 'Site Header',
+							width: 1200,
+							height: 60,
+							fill: '$color-surface',
+							children: [
+								{ type: 'text', id: 'title', content: 'Fresh Bakery', fill: '$color-text' }
+							]
+						}
+					]
+				},
+				{
+					type: 'frame',
+					id: 'screen-menu',
+					name: 'Menu Screen',
+					width: 1280,
+					height: 800,
+					fill: '$color-bg',
+					children: [
+						{ type: 'text', id: 'menu-title', content: 'Menu Items', fill: '$color-text' }
+					]
+				}
+			]
+		});
+
+		const model = buildStudioSceneModel({
+			directions,
+			preview,
+			activeDirection: directions[0],
+			device: 'desktop',
+			rawPenJson: rawPen
+		});
+
+		expect(model.frames).toHaveLength(2);
+		// Frames should not be stacked at x = 0
+		expect(model.frames[0].x).toBe(0);
+		expect(model.frames[1].x).toBeGreaterThan(1280);
+
+		// Variables should have been merged
+		const bgVar = model.variables.find((v) => v.name === 'color-bg');
+		expect(bgVar).toBeDefined();
+		expect(bgVar?.cssValue).toBe('rgb(250, 248, 245)');
+
+		// Target bounds should reflect the spaced position
+		const menuBounds = getStudioTargetBounds(model, 'menu/index.html', 'screen-menu');
+		expect(menuBounds?.x).toBe(model.frames[1].x);
+	});
 });
