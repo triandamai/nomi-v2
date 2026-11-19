@@ -48,8 +48,15 @@ test('below 768 the workspace is the phone’s screen: the nav, Chat | Preview, 
 	await expect(frame.getByRole('heading', { name: 'Warung Kopi Bu Siti' })).toBeVisible();
 	const box = await page.locator(`iframe[src^="/projects/${id}/preview/~"]`).boundingBox();
 	expect(box?.width).toBe(390);
+	// The preview's own bar (PsC5F, Preview Bar GppXE): the address, Reload, and Phone | Desktop; no
+	// second switch under Chat | Preview.
+	await expect(page.getByRole('button', { name: 'Reload' })).toBeVisible();
+	await expect(page.getByRole('radio', { name: 'Phone' })).toHaveAttribute('aria-checked', 'true');
 	await page.getByRole('radio', { name: 'Desktop' }).click();
 	await expect(page.getByText('1440 px wide, scaled to fit · pinch to zoom')).toBeVisible();
+	// The desktop layout sits in the pen's 240-high card, not stretched down the screen.
+	const card = await page.locator(`iframe[src^="/projects/${id}/preview/~"]`).locator('xpath=../..').boundingBox();
+	expect(card?.height).toBe(240);
 	await expect(page.locator(`iframe[src^="/projects/${id}/preview/~"]`)).toHaveAttribute('style', /width: 1440px/);
 
 	// The Ask bar goes to the chat with the composer ready.
@@ -194,7 +201,7 @@ test('a failed publish: the card with the backend’s reason, Fix it, and the lo
 	await expect(page.getByText('Publishing stopped at the build step. Nothing is live yet.')).toBeVisible();
 	const card = page.getByRole('alert').filter({ hasText: 'Build failed' });
 	await expect(card.getByText("Cannot find module './PickupSlots.svelte'")).toBeVisible();
-	await expect(card.getByText(/^deploy #1 · build step · 0:41$/)).toBeVisible();
+	await expect(card.getByText(/^deploy #1 · build step · 00:41$/)).toBeVisible();
 
 	await card.getByRole('button', { name: 'View log' }).click();
 	await expect(page.getByRole('heading', { level: 1, name: 'Publish log' })).toBeVisible();
