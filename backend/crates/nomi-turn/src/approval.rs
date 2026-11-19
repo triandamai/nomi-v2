@@ -295,4 +295,17 @@ mod tests {
         let claimed = claim_next(&pool).await.unwrap().expect("the approve is claimable");
         assert_eq!(claimed.extras, extras);
     }
+
+    #[test]
+    fn undo_open_respects_the_ten_second_window() {
+        let now = chrono::Utc::now();
+        let fresh = now - chrono::Duration::seconds(5);
+        assert!(undo_open(fresh, now));
+
+        let boundary = now - chrono::Duration::seconds(UNDO_WINDOW_SECONDS);
+        assert!(!undo_open(boundary, now));
+
+        let expired = now - chrono::Duration::seconds(UNDO_WINDOW_SECONDS + 5);
+        assert!(!undo_open(expired, now));
+    }
 }
