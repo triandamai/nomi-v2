@@ -596,3 +596,55 @@ L3. **Sort sheet's check.** Severity: low.
 
 ### Result (Projects)
 changes-required: P1–P11, M1–M12, L1–L6.
+
+## Gate 3
+
+**Verdict: PASS.** No high or medium deviations remain.
+- Branch: `fix/frontend-new-v2-phone-pen-fidelity`, with main merged at 0e4518f7 and later (#305, #306, #308, #311, #312).
+- Setup: run at 390 × 844 with an iPhone UA, dark and light, against the local backend with the fake model.
+- Pen frames read with `Get` (resolveInstances).
+
+### Chat (audit items 1–35)
+- **New chat (Uuu5f):** the title, line, four starters with their crew and arrows, and "Message Nomi" match the pen word for word.
+- **Reply sheet (SwByh):**
+  - Good · Bad · Copy · Share, then Regenerate, Edit my question and Delete reply (danger, below a divider), in the pen's order.
+  - Try another model shows only when another model exists (`otherModels.length`). The test account has one model, so it's correctly absent.
+  - Save to memory is left out. The reason holds: `app.rs` has `/api/memory/:id` (PUT, DELETE) and `/confirm`, but no route that creates a memory.
+- **Regenerate (lVDqs):** "Each result is kept as a version", then Try again · Shorter · More detail · As a list, as drawn. WITH ANOTHER MODEL follows the same rule as Try another model.
+- **Your message (nzT7f):**
+  - Edit and resend · Copy text · Select text, as drawn.
+  - The bubble is lifted over the scrim with its stroke, just above the sheet.
+- **Share (eMuOP):**
+  - Title, subtitle, segment, preview card, both switches and their lines match.
+  - The tiles are 65-wide columns 73.5 apart (the pen: 65 plus a gap of 8).
+  - More shows only where `navigator.share` exists, which phones have. It's absent in desktop Chromium. Accepted.
+  - The footnote drops "· revoke in Settings › Data", since v2 has no such page. Accepted.
+- **Delete chat (jk7EC):** "Delete this chat?", "{n} messages and their cards are removed. Reminders, money records and sent emails stay.", then Export first · Delete chat · Cancel, as drawn.
+- **Dislike (D4O2g):** the pen's six reasons, the note field, "Include the whole chat" with its line, and Send feedback.
+
+### Projects (audit P1–P11, M1–M12, L1–L6)
+- **Search (epdb3):**
+  - Cancel replaces Sort, the field gets a clear button, and the field has the focus stroke.
+  - Filter counts follow the search: "kos" gives All 1, Needs you 1, Live 0, Building 0.
+- **No match (Ifa4i):** the icon tile, "No projects match “zzz”", the line naming the workspace, and the "Clear search ×" pill.
+- **Sort (TIuwF):** Updated · Status · needs you first · Name · A–Z · Created, with the pen's icons.
+- **Card sheet (M4p0u):**
+  - Its state as the subtitle ("live · deploy #1 · 2d ago").
+  - The pen's icons, inset separators, and chevrons on Move, Share and Settings.
+- **Workspaces (V3fmpB):**
+  - Inset cards, with the chosen one filled and checked.
+  - The "Shared in a workspace / Always personal" box, Create workspace, and Workspace settings & members.
+- **Move (WbD1H):**
+  - "Move laundry-orders" / "To another workspace", with "current · only you" once.
+  - The pen's "Trian approves the move" is left out, per §9: the backend moves the project at once.
+- **Detail (V9w2zU, reached by tapping a card):**
+  - The back bar, the hero with its state line, the failed card with Ask Koda to fix, and Open workspace (+ Visit once live).
+  - What's in this project, the chats, and the Ask Bar at 52 with Koda's mascot. There's no mic until voice notes reach the composer (§9).
+  - A first deploy that failed reads "The first deploy failed". It never shows "deploy #0".
+- **Delete (Z6OsC):** the pen's "Your code stays in your account for 30 days" is replaced, because it's false. `routes/deploy.rs` `delete_project` deletes the storage prefix and the project row at once. Accepted in §9.
+
+### Not reached
+- The Stop and Deploy sheets: they need a build running at that moment, and Shipyard publishing.
+- The Rename, Duplicate and Invite steps.
+
+These are unchanged since the audit and are covered by the component tests.
