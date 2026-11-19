@@ -392,16 +392,19 @@ export class Workspace {
 		return true;
 	}
 
-	// ── Settings: transfer, take down, delete ─────────────────────────────────────────────────
-	dialog = $state<'transfer' | 'takedown' | 'delete' | null>(null);
+	// ── Settings: transfer, take down, delete, rename ─────────────────────────────────────────
+	dialog = $state<'transfer' | 'takedown' | 'delete' | 'rename' | null>(null);
 	targets = $state<TransferTarget[]>([]);
 	targetQuery = $state('');
 	target = $state<string | null>(null);
 	confirmName = $state('');
+	renameName = $state('');
+	projectRenaming = $state(false);
 	acting = $state(false);
 	actError = $state<string>();
-	openDialog(which: 'transfer' | 'takedown' | 'delete') {
+	openDialog(which: 'transfer' | 'takedown' | 'delete' | 'rename') {
 		this.confirmName = '';
+		this.renameName = this.project.name;
 		this.actError = undefined;
 		this.target = null;
 		this.dialog = which;
@@ -412,18 +415,35 @@ export class Workspace {
 		const response = await fetch(`/projects/${this.project.id}/transfer?q=${encodeURIComponent(query)}`).catch(() => null);
 		this.targets = response?.ok ? ((await response.json()) as TransferTarget[]) : [];
 	}
-	async act(name: 'transfer' | 'takedown' | 'delete', fields: Record<string, string>) {
+	async act(name: 'transfer' | 'takedown' | 'delete' | 'rename', fields: Record<string, string>) {
 		this.acting = true;
 		this.actError = undefined;
 		const result = await pageAction(`/projects/${this.project.id}`, name, fields);
 		this.acting = false;
 		if (!result.ok) return void (this.actError = result.message || m.action_failed());
-		if (name === 'takedown') {
+		if (name === 'rename') {
+			this.dialog = null;
+			this.project.name = fields.name;
+			toasts.show({ kind: 'success', title: m.projects_renamed({ name: fields.name }) });
+			await invalidate('app:workspace-project');
+		} else if (name === 'takedown') {
 			this.dialog = null;
 			toasts.show({ kind: 'success', title: m.takedown_done({ name: this.project.name }) });
 			await invalidate('app:workspace-project');
 			await this.refresh();
 		}
+	}
+	async renameFromBar(nextName: string) {
+		const wanted = nextName.trim();
+		if (!wanted || wanted === this.project.name) return;
+		const result = await pageAction(`/projects/${this.project.id}`, 'rename', { name: wanted });
+		if (!result.ok) {
+			toasts.show({ kind: 'error', title: result.message || m.action_failed() });
+			return;
+		}
+		this.project.name = wanted;
+		toasts.show({ kind: 'success', title: m.projects_renamed({ name: wanted }) });
+		await invalidate('app:workspace-project');
 	}
 
 	// ── People and Environment ────────────────────────────────────────────────────────────────

@@ -17,8 +17,9 @@ fn rena_describes_herself() {
     assert!(agent.uses_memory() && agent.uses_personality() && agent.can_delegate() && agent.supports_todos() && agent.supports_plans() && agent.keeps_plans_in_drafts());
     assert!(!agent.surfaces_activity());
     assert!(!agent.tool_needs_approval("create_project"));
+    assert!(!agent.tool_needs_approval("rename_project"));
     assert!(agent.tool_needs_approval("publish_project"));
-    assert_eq!(agent.tools().len(), 2);
+    assert_eq!(agent.tools().len(), 3);
 }
 
 #[sqlx::test(migrations = "../../migrations")]

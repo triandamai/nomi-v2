@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { Activity, ArrowDownUp, ChevronLeft, ChevronRight, Coins, Cpu, Database, Download, Globe, History, Hourglass, KeyRound, Link, Lock, MemoryStick, MonitorX, RefreshCw, Rocket, Settings, Trash2, UserMinus, Users } from '@lucide/svelte';
+	import { Activity, ArrowDownUp, ChevronLeft, ChevronRight, Coins, Cpu, Database, Download, Globe, History, Hourglass, KeyRound, Link, Lock, MemoryStick, MonitorX, Pencil, RefreshCw, Rocket, Settings, Trash2, UserMinus, Users } from '@lucide/svelte';
 	import { m } from '$lib/paraglide/messages';
 	import ChatView from '$lib/chat/ChatView.svelte';
 	import Button from '$lib/ds/actions/Button.svelte';
@@ -196,6 +196,13 @@
 			onexport={ws.openExport}
 			presence={ws.peers.length ? here : undefined}
 			onshare={ws.liveUrl ? () => (ws.sharing = true) : undefined}
+			renaming={ws.projectRenaming}
+			onstartrename={() => (ws.projectRenaming = true)}
+			onrename={(name) => {
+				ws.projectRenaming = false;
+				void ws.renameFromBar(name);
+			}}
+			oncancelrename={() => (ws.projectRenaming = false)}
 		>
 			{#snippet publish()}
 				{#if ws.role === 'viewer'}
@@ -329,6 +336,9 @@
 			<div bind:this={sheetBox} class="absolute inset-y-0 right-0 flex w-180 max-w-full">
 				<WorkspaceSheet icon={Settings} title={m.project_settings()} meta={ws.project.name} onclose={() => (ws.sheet = null)}>
 					<div class="flex flex-col border-t border-border">
+						<SettingRow title={m.projects_rename_title()} description={ws.project.name}>
+							{#snippet control()}<Button variant="secondary" iconStart={Pencil} label={m.projects_rename()} onclick={() => ws.openDialog('rename')} />{/snippet}
+						</SettingRow>
 						{#if ws.people}
 							<SettingRow title={m.people_title()} description={m.people_summary({ count: ws.people.people.filter((one) => one.project_role || one.is_owner).length })}>
 								{#snippet control()}<Button variant="secondary" iconStart={Users} label={m.settings_manage()} onclick={() => (ws.sheet = 'people')} />{/snippet}
@@ -848,6 +858,16 @@
 	{#snippet actions()}
 		<Button variant="ghost" label={m.action_cancel()} onclick={() => (ws.dialog = null)} />
 		<Button variant="inverse" label={m.transfer_send()} loading={ws.acting} disabled={!ws.target || ws.confirmName.trim() !== ws.project.name} onclick={() => ws.act('transfer', { to: ws.target ?? '', name: ws.confirmName.trim() })} />
+	{/snippet}
+</ProjectDialog>
+
+<ProjectDialog open={ws.dialog === 'rename'} title={m.projects_rename_title()} width={460} onclose={() => (ws.dialog = null)}>
+	<div class="flex flex-col gap-3 pt-2">
+		<TextField label={m.projects_rename_label()} bind:value={ws.renameName} autocomplete="off" error={ws.actError} />
+	</div>
+	{#snippet actions()}
+		<Button variant="ghost" label={m.action_cancel()} onclick={() => (ws.dialog = null)} />
+		<Button variant="inverse" label={m.workspace_rename_save()} loading={ws.acting} disabled={!ws.renameName.trim() || ws.renameName.trim() === ws.project.name} onclick={() => ws.act('rename', { name: ws.renameName.trim() })} />
 	{/snippet}
 </ProjectDialog>
 
