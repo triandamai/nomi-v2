@@ -3245,6 +3245,19 @@
 	"studio_openpencil_export_svg": "Ekspor SVG",
 	"phone_form_edit": "Ubah {title}",
 	"phone_run_option_research_detail": "Tidak ada yang dibagikan.",
+	"phone_move_shared": "Anggota {workspace} akan melihat chat ini. Memori dan catatan uang tetap pribadi.",
+	"phone_connect_title_google": "Hubungkan Google {service}",
+	"phone_connect_sheet_title": "Hubungkan {service}",
+	"phone_connect_needs": "{agent} butuh ini untuk menjawabmu",
+	"phone_connect_lead": "Kamu bisa memutusnya kapan saja.",
+	"phone_connect_only": "Hanya yang dibutuhkan permintaan ini yang dibaca",
+	"phone_connect_asks": "Tidak ada yang dibuat atau diubah tanpa bertanya",
+	"phone_connect_disconnect": "Putuskan di Kamu › Koneksi",
+	"phone_connect_with_google": "Hubungkan dengan Google",
+	"phone_connect_with_github": "Hubungkan dengan GitHub",
+	"phone_connect_open_connections": "Buka Koneksi",
+	"phone_connect_answer": "Aku kasih tahu {agent} sendiri",
+	"chat_connected_google": "Google terhubung"
 	"pb_failed_step": "tahap {step}",
 	"pb_preview_loading": "Memuat pratinjau…"
 }

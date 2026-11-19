@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, tick, untrack, type Snippet } from 'svelte';
-	import { ArrowUpRight, Check, Copy, Cpu, Download, FilePlus2, FolderInput, Hourglass, ImageOff, Info, KeyRound, List, LogIn, Maximize2, Minimize2, Pencil, Pin, PinOff, RefreshCw, RotateCcw, RotateCw, Share, Sparkles, TextSelect, ThumbsDown, ThumbsUp, Trash2, Undo2, Unplug, X } from '@lucide/svelte';
+	import { ArrowUpRight, Check, Copy, Cpu, Download, FilePlus2, FolderCheck, FolderInput, Hourglass, ImageOff, Info, KeyRound, List, LogIn, Maximize2, Minimize2, Pencil, Pin, PinOff, RefreshCw, RotateCcw, RotateCw, Share, Sparkles, TextSelect, ThumbsDown, ThumbsUp, Trash2, Undo2, Unplug, X } from '@lucide/svelte';
 	import { goto, invalidate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { m } from '$lib/paraglide/messages';
@@ -34,6 +34,7 @@
 	import LoadingOlder from '$lib/ds/chat/LoadingOlder.svelte';
 	import Banner from '$lib/ds/chat/Banner.svelte';
 	import MoveDialog from '$lib/ds/chat/MoveDialog.svelte';
+	import PhoneMoveSheet from '$lib/ds/thread/PhoneMoveSheet.svelte';
 	import ShareDialog from '$lib/ds/chat/ShareDialog.svelte';
 	import Dialog from '$lib/ds/overlays/Dialog.svelte';
 	import Button from '$lib/ds/actions/Button.svelte';
@@ -191,6 +192,7 @@
 	let modelKey = $state<string | null>(untrack(() => data.model?.key ?? data.models.current?.key ?? null));
 	let thinking = $state<ThinkingLevel | null>(untrack(() => data.thinking));
 	let moveOpen = $state(false);
+	let connectedNote = $state<string | null>(null);
 	let deleteOpen = $state(false);
 
 	// Long threads: where the person is, what came in while they read further up, earlier pages.
@@ -633,8 +635,12 @@
 		const asking = phone && !working ? latestApproval : null;
 		if (asking) return { agent: crewIdOf(asking), name: m.phone_approval_nav({ agent: asking }) };
 		if (phone && !working && flows.working.length > 0) return { agent: crewIdOf(flows.working[0]), name: m.phone_crew_working({ count: String(flows.working.length) }) };
+		// A chat in a project names the project under the title (Manage chat & long threads, step 4 NCfNM).
+		if (phone && !working && projectName) return { agent: crewIdOf(name), name: projectName };
 		return { agent: crewIdOf(name), name: working ? m.chat_nav_working({ name }) : name };
 	});
+	/** The project the chat is filed under: what the page loaded, or where it was just moved. */
+	const projectName = $derived(header.shown(chatId, 'meta', data.projects.find((one) => one.id === data.chat.inProjectId)?.name ?? null));
 	/** Who of the crew waits on an approval in the latest reply. */
 	const latestApproval = $derived.by(() => {
 		const reply = messages.findLast((message) => message.sender === 'assistant');
@@ -698,7 +704,10 @@
 		header.meta = project?.name ?? null;
 		toasts.show({
 			kind: 'success',
+			icon: FolderCheck,
 			title: m.chat_moved({ project: project?.name ?? '' }),
+			// The pen's NCfNM says a shared workspace's members can see it now; the backend keeps a filed
+			// chat private (moveTargets), so the detail says that instead (AGENTS.md §9).
 			detail: m.chat_moved_detail(),
 			duration: 10_000,
 			action: {
@@ -895,6 +904,13 @@
 	}
 
 	onMount(() => {
+		// Back from connecting an app the crew asked for: say so once, then drop the mark from the address.
+		const url = new URL(location.href);
+		if (url.searchParams.get('connected') === 'google') {
+			connectedNote = m.chat_connected_google();
+			url.searchParams.delete('connected');
+			history.replaceState(history.state, '', url);
+		}
 		online = navigator.onLine;
 		let hide: ReturnType<typeof setTimeout> | undefined;
 		const offline = () => {
@@ -1391,6 +1407,8 @@
 										{phone}
 										{flows}
 										onreload={() => void fetchMessage(message.id)}
+										chatId={chatId}
+										onanswer={() => field?.focus()}
 									/>
 									{#if continued && message.created_at > continued.after}<TurnNote icon={Unplug} text={phone ? m.phone_net_continued() : m.continued_note({ elapsed: continued.elapsed })} />{/if}
 									{#if phone}
@@ -1445,6 +1463,11 @@
 				{#if item.reason && !phone}<TurnNote icon={Hourglass} align="end" tone="danger" text={item.reason} />{/if}
 			{/each}
 
+			{#if connectedNote}
+				<!-- Back from Google's sign-in (Crew, memory & connections, step 6 mfedO): one line says it's
+				     connected; the crew's answer follows as the chat carries on. -->
+				<TurnNote kind="box" icon={Check} text={connectedNote} />
+			{/if}
 			{#if phone && flows.working.length > 0 && !working}
 				<TurnNote kind="box" icon={Info} text={m.phone_crew_leave({ agent: flows.working.at(-1) ?? 'Nomi' })} />
 			{/if}
@@ -1720,7 +1743,11 @@
 	/>
 {/if}
 
-<MoveDialog bind:open={moveOpen} projects={data.projects} initialChosen={data.chat.inProjectId ?? undefined} onmove={move} />
+{#if phone}
+	<PhoneMoveSheet bind:open={moveOpen} projects={data.projects} current={data.chat.inProjectId ?? undefined} onmove={move} />
+{:else}
+	<MoveDialog bind:open={moveOpen} projects={data.projects} initialChosen={data.chat.inProjectId ?? undefined} onmove={move} />
+{/if}
 
 {#if phone}
 <!-- Delete reply's question (Share & delete, step 4 EQUZo). -->

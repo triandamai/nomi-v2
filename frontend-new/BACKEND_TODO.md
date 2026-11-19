@@ -494,3 +494,13 @@ Checked against `backend/crates/nomi-server/src/app.rs`, `routes/attachments.rs`
 - **Built:** `GET /api/devices/web-push/key` (the VAPID public key; 404 when push is off) and `POST /api/devices/web-push { endpoint, keys }`; needs-you, approval and plan-finished pushes go to it too (migration 0161; keys in `.env.example`).
 
 Found while building the phone's chat flows (2026-11-18).
+
+### A chat's hand-off, and a code change to apply from a reply
+- **Needed by:** *Flow / Mobile Chat — Crew, memory & connections* (YuWzO) step 1 ("Nomi handed this to Dana · Ask Nomi" over the reply), and *Rich replies* (XO7DI) step 4 (a diff card with `+3 −1`, its hunk, Reject and Apply change), on both layouts (hiAY1, y2Qxt2).
+- **What exists today:** a reply names who answered (`agent_display_name`), but nothing says Nomi routed the question there, or why. A reply can carry a `code` block (a file and its lines), but no diff, and there's no route to apply or reject one.
+- **Proposed contract:**
+  - A `handoff` content block on the reply that took over: `{ kind: 'handoff', from: 'Nomi', to: 'Dana', reason?: string }`. "Ask Nomi" would send the next message to Nomi as it does today.
+  - A `diff` block: `{ kind: 'diff', file, added, removed, hunks: [{ header, lines: [{ old?, new?, kind: 'add'|'remove'|'same', text }] }], change_id }`, with `POST /api/sessions/:id/changes/:change_id` taking `{ decision: 'apply'|'reject' }`.
+- **Until then:** the reply shows who answered without the hand-off line, and code shows as a code block with no Apply or Reject.
+
+Found while building the rest of a chat on a phone (2026-11-19).
