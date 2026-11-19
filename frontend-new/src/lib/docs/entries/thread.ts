@@ -74,6 +74,16 @@ export default [
 		related: ['chat/MoveDialog.svelte', 'overlays/BottomSheet.svelte'],
 	},
 	{
+		file: 'thread/PhoneConnectSheet.svelte',
+		summary: 'A crew member needs an app the person hasn’t connected, on a phone: who needs it, what access means, Connect (Google and GitHub sign in and come back to the chat), or answer it yourself.',
+		use: ['A reply that asks to connect an app, on a phone. It opens on its own for the latest reply; the card in the thread stays.'],
+		avoid: ['Wider screens: the ConnectPrompt card.'],
+		dos: ['Say only what holds for every app: what the request needs, nothing changed without asking, where to disconnect.'],
+		donts: ['Promise “read-only” for an app whose access isn’t.'],
+		accessibility: ['A dialog named by its title; Connect is a form button; answering yourself closes it and focuses the composer.'],
+		related: ['chat/ConnectPrompt.svelte', 'overlays/BottomSheet.svelte'],
+	},
+	{
 		file: 'thread/PhoneComposer.svelte',
 		summary: 'Where a message is written on a phone: attach, the round pill at 16pt with the mic, Send once there’s text (Stop while a reply streams), and while writing the model chip and “@ Crew”.',
 		use: ['A chat on a phone.'],

@@ -19,6 +19,7 @@
 	import QuickReplies from '$lib/ds/chat/QuickReplies.svelte';
 	import Reminder from '$lib/ds/chat/Reminder.svelte';
 	import ConnectPrompt from '$lib/ds/chat/ConnectPrompt.svelte';
+	import PhoneConnectSheet from '$lib/ds/thread/PhoneConnectSheet.svelte';
 	import SupervisorStopped from '$lib/ds/chat/SupervisorStopped.svelte';
 	import MemoryUsed from '$lib/ds/chat/MemoryUsed.svelte';
 	import MemorySaved from '$lib/ds/chat/MemorySaved.svelte';
@@ -67,8 +68,14 @@
 		flows?: PhoneFlows;
 		/** The message changed elsewhere (an approval decided on another device): read it again. */
 		onreload?: () => void;
+		/** The chat, for a phone's connect sheet to come back to after signing in. */
+		chatId?: string;
+		/** The person will answer themselves: the composer is theirs. */
+		onanswer?: () => void;
 	};
-	let { blocks, api, messageId, agentName, language, timeZone, now, working, latest, onsend, phone = false, flows, onreload }: Props = $props();
+	let { blocks, api, messageId, agentName, language, timeZone, now, working, latest, onsend, phone = false, flows, onreload, chatId = '', onanswer }: Props = $props();
+	// A phone's connect sheet opens on its own for the latest reply, once; closed, the card stays.
+	let connectShown = $state<Record<string, boolean>>({});
 	// A decision on its way, a phone's approval preview and form sheet that are open.
 	let deciding = $state<string | null>(null);
 	let preview = $state<string | null>(null);
@@ -342,6 +349,18 @@
 			reads={m.connect_reads()}
 			href="/settings/connections"
 		/>
+		{#if phone}
+			<PhoneConnectSheet
+				open={latest && !working && connectShown[block.key] !== false}
+				agent={block.agent}
+				agentName={agentName}
+				service={block.service}
+				provider={block.provider}
+				services={block.services}
+				resume={chatId}
+				onanswer={() => ((connectShown[block.key] = false), onanswer?.())}
+			/>
+		{/if}
 	{:else if block.kind === 'stopped'}
 		<SupervisorStopped tasks={block.tasks} onresume={latest && !working && !answered[block.key] ? () => send(block.key, m.stopped_resume_message()) : undefined} />
 	{:else if block.kind === 'voice'}

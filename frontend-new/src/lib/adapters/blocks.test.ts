@@ -68,6 +68,8 @@ describe('reply blocks', () => {
 			{ sources: [{ title: 'BCA', url: 'https://bca.co.id' }], used_memories: [{ id: 'f1', content: 'Paid on the 5th', kind: 'fact' }] },
 		);
 		expect(kinds(message)).toEqual(['reminder', 'connect', 'stopped', 'voice', 'sources', 'memory_used']);
+		// What to connect, raw, so a phone's sheet can start it itself (Crew, memory & connections SYohQ).
+		expect(replyBlocks(message as never, { language: 'id' }).find((block) => block.kind === 'connect')).toMatchObject({ provider: 'google', services: ['gmail'], service: 'Gmail' });
 	});
 
 	it('leaves out what the thread already handles: thinking, failures, quota and follow-ups', () => {

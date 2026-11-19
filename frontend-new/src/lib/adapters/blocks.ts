@@ -40,7 +40,7 @@ export type ReplyBlock =
 	| { kind: 'boundary'; key: string; title: string; reason: string; alternatives: { agent: CrewId; title: string; detail?: string; href?: string; message?: string }[] }
 	| { kind: 'replies'; key: string; replies: string[] }
 	| { kind: 'reminder'; key: string; id: string; title: string; dueAt: string; recurrence: string | null }
-	| { kind: 'connect'; key: string; agent: CrewId; service: string; reason: string }
+	| { kind: 'connect'; key: string; agent: CrewId; service: string; reason: string; /** Who signs the person in, and the services asked for, raw (`calendar`, `gmail`). */ provider: 'google' | 'github' | 'other'; services: string[] }
 	| { kind: 'stopped'; key: string; tasks: { agent: CrewId; title: string; detail?: string; state: 'done' | 'stopped' | 'waiting' }[] }
 	| { kind: 'voice'; key: string; url: string; text: string }
 	| { kind: 'memory_used'; key: string; facts: string[] }
@@ -282,10 +282,10 @@ export function replyBlocks(message: RenderedMessage, { language }: { language: 
 				items.push({ kind: 'reminder', key, id: String(block.reminder_id), title: String(block.title ?? ''), dueAt: String(block.due_at ?? ''), recurrence: (block.recurrence as string | null) ?? null });
 				break;
 			case 'workspace_connect':
-				items.push({ kind: 'connect', key, agent: crewIdOf(block.agent_type === 'workspace' ? 'Tara' : message.agent_display_name), service: list<string>(block.services).map(titleCase).join(', ') || 'Google', reason: String(block.reason ?? '') });
+				items.push({ kind: 'connect', key, agent: crewIdOf(block.agent_type === 'workspace' ? 'Tara' : message.agent_display_name), service: list<string>(block.services).map(titleCase).join(', ') || 'Google', reason: String(block.reason ?? ''), provider: 'google', services: list<string>(block.services) });
 				break;
 			case 'connector_connect':
-				items.push({ kind: 'connect', key, agent, service: titleCase(String(block.connector ?? '')), reason: String(block.reason ?? '') });
+				items.push({ kind: 'connect', key, agent, service: titleCase(String(block.connector ?? '')), reason: String(block.reason ?? ''), provider: String(block.connector ?? '') === 'github' ? 'github' : 'other', services: [] });
 				break;
 			case 'stopped':
 				items.push({

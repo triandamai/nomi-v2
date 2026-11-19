@@ -190,6 +190,7 @@
 	let modelKey = $state<string | null>(untrack(() => data.model?.key ?? data.models.current?.key ?? null));
 	let thinking = $state<ThinkingLevel | null>(untrack(() => data.thinking));
 	let moveOpen = $state(false);
+	let connectedNote = $state<string | null>(null);
 	let deleteOpen = $state(false);
 
 	// Long threads: where the person is, what came in while they read further up, earlier pages.
@@ -829,6 +830,13 @@
 	}
 
 	onMount(() => {
+		// Back from connecting an app the crew asked for: say so once, then drop the mark from the address.
+		const url = new URL(location.href);
+		if (url.searchParams.get('connected') === 'google') {
+			connectedNote = m.chat_connected_google();
+			url.searchParams.delete('connected');
+			history.replaceState(history.state, '', url);
+		}
 		online = navigator.onLine;
 		let hide: ReturnType<typeof setTimeout> | undefined;
 		const offline = () => {
@@ -1319,6 +1327,8 @@
 										{phone}
 										{flows}
 										onreload={() => void fetchMessage(message.id)}
+										chatId={chatId}
+										onanswer={() => field?.focus()}
 									/>
 									{#if continued && message.created_at > continued.after}<TurnNote icon={Unplug} text={phone ? m.phone_net_continued() : m.continued_note({ elapsed: continued.elapsed })} />{/if}
 									{#if phone}
@@ -1373,6 +1383,11 @@
 				{#if item.reason && !phone}<TurnNote icon={Hourglass} align="end" tone="danger" text={item.reason} />{/if}
 			{/each}
 
+			{#if connectedNote}
+				<!-- Back from Google's sign-in (Crew, memory & connections, step 6 mfedO): one line says it's
+				     connected; the crew's answer follows as the chat carries on. -->
+				<TurnNote kind="box" icon={Check} text={connectedNote} />
+			{/if}
 			{#if phone && flows.working.length > 0 && !working}
 				<TurnNote kind="box" icon={Info} text={m.phone_crew_leave({ agent: flows.working.at(-1) ?? 'Nomi' })} />
 			{/if}
