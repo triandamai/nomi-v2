@@ -65,6 +65,15 @@ export default [
 		related: ['overlays/BottomSheet.svelte'],
 	},
 	{
+		file: 'thread/PhoneMoveSheet.svelte',
+		summary: 'Moving a chat into a project on a phone: search the projects, pick one, read who gains access, then Move chat.',
+		use: ['Move to a project, from a chat’s sheet on a phone.'],
+		avoid: ['Wider screens: MoveDialog.'],
+		dos: ['Say who will see the chat before the move, when the project’s workspace is shared.'],
+		accessibility: ['The search is labelled; the projects are a radio group; Move chat stays off until another project is picked.'],
+		related: ['chat/MoveDialog.svelte', 'overlays/BottomSheet.svelte'],
+	},
+	{
 		file: 'thread/PhoneComposer.svelte',
 		summary: 'Where a message is written on a phone: attach, the round pill at 16pt with the mic, Send once there’s text (Stop while a reply streams), and while writing the model chip and “@ Crew”.',
 		use: ['A chat on a phone.'],

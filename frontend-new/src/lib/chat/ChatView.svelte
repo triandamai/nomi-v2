@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, tick, untrack, type Snippet } from 'svelte';
-	import { ArrowUpRight, Check, Copy, Cpu, Download, FilePlus2, FolderInput, Hourglass, ImageOff, Info, KeyRound, List, LogIn, Maximize2, Minimize2, Pencil, Pin, PinOff, RefreshCw, RotateCcw, RotateCw, Share, Sparkles, ThumbsDown, ThumbsUp, Trash2, Unplug, Undo2, X } from '@lucide/svelte';
+	import { ArrowUpRight, Check, FolderCheck, Copy, Cpu, Download, FilePlus2, FolderInput, Hourglass, ImageOff, Info, KeyRound, List, LogIn, Maximize2, Minimize2, Pencil, Pin, PinOff, RefreshCw, RotateCcw, RotateCw, Share, Sparkles, ThumbsDown, ThumbsUp, Trash2, Unplug, Undo2, X } from '@lucide/svelte';
 	import { goto, invalidate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { m } from '$lib/paraglide/messages';
@@ -34,6 +34,7 @@
 	import LoadingOlder from '$lib/ds/chat/LoadingOlder.svelte';
 	import Banner from '$lib/ds/chat/Banner.svelte';
 	import MoveDialog from '$lib/ds/chat/MoveDialog.svelte';
+	import PhoneMoveSheet from '$lib/ds/thread/PhoneMoveSheet.svelte';
 	import ShareDialog from '$lib/ds/chat/ShareDialog.svelte';
 	import Dialog from '$lib/ds/overlays/Dialog.svelte';
 	import Button from '$lib/ds/actions/Button.svelte';
@@ -626,8 +627,12 @@
 		const asking = phone && !working ? latestApproval : null;
 		if (asking) return { agent: crewIdOf(asking), name: m.phone_approval_nav({ agent: asking }) };
 		if (phone && !working && flows.working.length > 0) return { agent: crewIdOf(flows.working[0]), name: m.phone_crew_working({ count: String(flows.working.length) }) };
+		// A chat in a project names the project under the title (Manage chat & long threads, step 4 NCfNM).
+		if (phone && !working && projectName) return { agent: crewIdOf(name), name: projectName };
 		return { agent: crewIdOf(name), name: working ? m.chat_nav_working({ name }) : name };
 	});
+	/** The project the chat is filed under: what the page loaded, or where it was just moved. */
+	const projectName = $derived(header.shown(chatId, 'meta', data.projects.find((one) => one.id === data.chat.inProjectId)?.name ?? null));
 	/** Who of the crew waits on an approval in the latest reply. */
 	const latestApproval = $derived.by(() => {
 		const reply = messages.findLast((message) => message.sender === 'assistant');
@@ -665,7 +670,10 @@
 		header.meta = project?.name ?? null;
 		toasts.show({
 			kind: 'success',
+			icon: FolderCheck,
 			title: m.chat_moved({ project: project?.name ?? '' }),
+			// The pen's NCfNM says a shared workspace's members can see it now; the backend keeps a filed
+			// chat private (moveTargets), so the detail says that instead (AGENTS.md §9).
 			detail: m.chat_moved_detail(),
 			duration: 10_000,
 			action: {
@@ -1606,7 +1614,11 @@
 	/>
 {/if}
 
-<MoveDialog bind:open={moveOpen} projects={data.projects} initialChosen={data.chat.inProjectId ?? undefined} onmove={move} />
+{#if phone}
+	<PhoneMoveSheet bind:open={moveOpen} projects={data.projects} current={data.chat.inProjectId ?? undefined} onmove={move} />
+{:else}
+	<MoveDialog bind:open={moveOpen} projects={data.projects} initialChosen={data.chat.inProjectId ?? undefined} onmove={move} />
+{/if}
 
 {#if phone}
 	<ActionSheet
