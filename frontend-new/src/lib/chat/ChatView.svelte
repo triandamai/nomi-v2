@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, tick, untrack, type Snippet } from 'svelte';
-	import { ArrowUpRight, Check, Copy, Cpu, Download, FilePlus2, FolderInput, Hourglass, ImageOff, Info, KeyRound, List, LogIn, Maximize2, Minimize2, Pencil, Pin, PinOff, RefreshCw, RotateCcw, RotateCw, Share, Sparkles, TextSelect, ThumbsDown, ThumbsUp, Trash2, Undo2, Unplug, X } from '@lucide/svelte';
+	import { ArrowUpRight, Check, Copy, Cpu, Download, FilePlus2, FolderCheck, FolderInput, Hourglass, ImageOff, Info, KeyRound, List, LogIn, Maximize2, Minimize2, Pencil, Pin, PinOff, RefreshCw, RotateCcw, RotateCw, Share, Sparkles, TextSelect, ThumbsDown, ThumbsUp, Trash2, Undo2, Unplug, X } from '@lucide/svelte';
 	import { goto, invalidate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { m } from '$lib/paraglide/messages';
@@ -34,6 +34,7 @@
 	import LoadingOlder from '$lib/ds/chat/LoadingOlder.svelte';
 	import Banner from '$lib/ds/chat/Banner.svelte';
 	import MoveDialog from '$lib/ds/chat/MoveDialog.svelte';
+	import PhoneMoveSheet from '$lib/ds/thread/PhoneMoveSheet.svelte';
 	import ShareDialog from '$lib/ds/chat/ShareDialog.svelte';
 	import Dialog from '$lib/ds/overlays/Dialog.svelte';
 	import Button from '$lib/ds/actions/Button.svelte';
@@ -116,11 +117,11 @@
 	// the nav bar (back to Chats, the title, who answers, the chat's sheet), the thread padded
 	// [16,16,20,16] with messages 24 apart, your messages in the 18-round bubble, each reply under the
 	// Mobile byline with its prose at 16 and the round action bar (More: regenerate), and the phone's
-	// composer, whose model chip and "@ Crew" open sheets. The workspace's chat pane comes with the
-	// phone's Build screens (Mobile Build).
+	// composer, whose model chip and "@ Crew" open sheets. In a project's workspace on a phone (Mobile
+	// Build) the chat is the Chat tab: the same, under the workspace's own nav, so without this one's.
 	const phoneGuess = () => Boolean(page.data.phone);
 	const phoneWidth = phoneView(phoneGuess());
-	const phone = $derived(phoneWidth.current && !pane);
+	const phone = $derived(phoneWidth.current);
 	type Sheet =
 		| { kind: 'chat' }
 		| { kind: 'rename' }
@@ -191,6 +192,7 @@
 	let modelKey = $state<string | null>(untrack(() => data.model?.key ?? data.models.current?.key ?? null));
 	let thinking = $state<ThinkingLevel | null>(untrack(() => data.thinking));
 	let moveOpen = $state(false);
+	let connectedNote = $state<string | null>(null);
 	let deleteOpen = $state(false);
 
 	// Long threads: where the person is, what came in while they read further up, earlier pages.
@@ -633,8 +635,12 @@
 		const asking = phone && !working ? latestApproval : null;
 		if (asking) return { agent: crewIdOf(asking), name: m.phone_approval_nav({ agent: asking }) };
 		if (phone && !working && flows.working.length > 0) return { agent: crewIdOf(flows.working[0]), name: m.phone_crew_working({ count: String(flows.working.length) }) };
+		// A chat in a project names the project under the title (Manage chat & long threads, step 4 NCfNM).
+		if (phone && !working && projectName) return { agent: crewIdOf(name), name: projectName };
 		return { agent: crewIdOf(name), name: working ? m.chat_nav_working({ name }) : name };
 	});
+	/** The project the chat is filed under: what the page loaded, or where it was just moved. */
+	const projectName = $derived(header.shown(chatId, 'meta', data.projects.find((one) => one.id === data.chat.inProjectId)?.name ?? null));
 	/** Who of the crew waits on an approval in the latest reply. */
 	const latestApproval = $derived.by(() => {
 		const reply = messages.findLast((message) => message.sender === 'assistant');
@@ -698,7 +704,10 @@
 		header.meta = project?.name ?? null;
 		toasts.show({
 			kind: 'success',
+			icon: FolderCheck,
 			title: m.chat_moved({ project: project?.name ?? '' }),
+			// The pen's NCfNM says a shared workspace's members can see it now; the backend keeps a filed
+			// chat private (moveTargets), so the detail says that instead (AGENTS.md §9).
 			detail: m.chat_moved_detail(),
 			duration: 10_000,
 			action: {
@@ -895,6 +904,13 @@
 	}
 
 	onMount(() => {
+		// Back from connecting an app the crew asked for: say so once, then drop the mark from the address.
+		const url = new URL(location.href);
+		if (url.searchParams.get('connected') === 'google') {
+			connectedNote = m.chat_connected_google();
+			url.searchParams.delete('connected');
+			history.replaceState(history.state, '', url);
+		}
 		online = navigator.onLine;
 		let hide: ReturnType<typeof setTimeout> | undefined;
 		const offline = () => {
@@ -1253,7 +1269,7 @@
 
 <div class="flex h-full">
 <div class="flex h-full min-w-0 flex-1 flex-col">
-	{#if phone}<NavBar title={shownTitle ?? m.nav_new_chat()} who={answering} onback={() => void goto('/chats')} onmenu={() => (sheet = { kind: 'chat' })} />{/if}
+	{#if phone && !pane}<NavBar title={shownTitle ?? m.nav_new_chat()} who={answering} onback={() => void goto('/chats')} onmenu={() => (sheet = { kind: 'chat' })} />{/if}
 	{#if phone && (!online || backOnline || quota !== null || flows.working.length > 0)}
 		<!-- On a phone the banners stay under the nav bar, wherever the person is in the thread (UX
 		     contract S3.4, S4 5.1, 6.2): the connection or the month's credits, then who's at work
@@ -1391,6 +1407,8 @@
 										{phone}
 										{flows}
 										onreload={() => void fetchMessage(message.id)}
+										chatId={chatId}
+										onanswer={() => field?.focus()}
 									/>
 									{#if continued && message.created_at > continued.after}<TurnNote icon={Unplug} text={phone ? m.phone_net_continued() : m.continued_note({ elapsed: continued.elapsed })} />{/if}
 									{#if phone}
@@ -1445,6 +1463,11 @@
 				{#if item.reason && !phone}<TurnNote icon={Hourglass} align="end" tone="danger" text={item.reason} />{/if}
 			{/each}
 
+			{#if connectedNote}
+				<!-- Back from Google's sign-in (Crew, memory & connections, step 6 mfedO): one line says it's
+				     connected; the crew's answer follows as the chat carries on. -->
+				<TurnNote kind="box" icon={Check} text={connectedNote} />
+			{/if}
 			{#if phone && flows.working.length > 0 && !working}
 				<TurnNote kind="box" icon={Info} text={m.phone_crew_leave({ agent: flows.working.at(-1) ?? 'Nomi' })} />
 			{/if}
@@ -1488,12 +1511,13 @@
 			<div class="absolute -top-12 left-1/2 -translate-x-1/2"><JumpToLatest count={unseen} onclick={() => jumpToLatest(true)} /></div>
 		{/if}
 		{#if phone}
+			{#if quote}<div class="px-4 pb-2"><CodeQuote file={quote.file} range={quote.range} snippet={quote.snippet} onremove={() => onunquote?.()} /></div>{/if}
 			<PhoneChatFlows {flows} {entries} chat={shownTitle ?? m.nav_new_chat()} {language} {working} onsend={(text) => void send(text)} onfocus={() => requestAnimationFrame(() => field?.focus())} />
 			<PhoneComposer
 				notice={flows.notice ?? undefined}
 				bind:value={draft}
 				bind:field
-				placeholder={m.mobile_message()}
+				placeholder={pane ? m.workspace_chat_placeholder() : m.mobile_message()}
 				streaming={working}
 				{crew}
 				model={modelLabel}
@@ -1719,7 +1743,11 @@
 	/>
 {/if}
 
-<MoveDialog bind:open={moveOpen} projects={data.projects} initialChosen={data.chat.inProjectId ?? undefined} onmove={move} />
+{#if phone}
+	<PhoneMoveSheet bind:open={moveOpen} projects={data.projects} current={data.chat.inProjectId ?? undefined} onmove={move} />
+{:else}
+	<MoveDialog bind:open={moveOpen} projects={data.projects} initialChosen={data.chat.inProjectId ?? undefined} onmove={move} />
+{/if}
 
 {#if phone}
 <!-- Delete reply's question (Share & delete, step 4 EQUZo). -->

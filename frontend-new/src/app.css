@@ -267,3 +267,8 @@
 		outline-offset: 2px;
 	}
 }
+
+@utility top-safe {
+	/* The phone toasts sit under the status bar (Mobile Build: Mobile / Toast at the top). */
+	top: env(safe-area-inset-top, 0px);
+}

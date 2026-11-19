@@ -353,6 +353,15 @@ Found while building Invite & build together, steps 9–10 (2026-11-15).
 Found while building the phone's Chats (2026-11-16).
 
 
+### A project's workspace on a phone: the line a teammate is on, cancelling a publish, web push
+- **Needed by:** *Flow / Mobile Build* — Invite & build together (L8dgcS) step 8 (following draws a "Sari" tag on the line she's on); Workspace tools (tJh5G) steps 3–4 and Sign in → live URL (zM0xh) step 5 (a publish that's running, and a build, offer Stop); Sign in → live URL step 6 (the lock-screen notification "warung-kopi-menu is live").
+- **Why:** following on a phone (and the desktop) can go to the file a teammate has open but not the line; a publish, once started, can't be stopped; and "We'll notify you" reaches a phone's lock screen only in the native apps.
+- **What exists today:** presence (`POST/GET /api/projects/:id/presence`) carries `view` and `path`, not a line; there's no route to cancel a running publish (`project_publishes` goes from `running` to `succeeded`/`failed` only); a published app's notice goes to the Inbox and by email (`notify_admins("published")`), and pushes only to native iOS and Android devices through FCM/APNs (`push.rs`).
+- **Proposed contract:** `line: number | null` (and optionally `to`) on a person's presence; `DELETE /api/projects/:id/deploy/publishes/:id` to cancel a running publish (already proposed under "Projects: a card's progress"); Web Push as proposed under "Web Push for a phone's browser" below, also sending the published notice (`notify_admins("published")`) the native apps get.
+- **Until then:** following has no line tag; the phone's publishing pill shows the time with no Stop; the web app says "We'll notify you" (true through the Inbox and email) and draws no lock screen.
+
+Found while building the workspace on a phone (2026-11-18).
+
 ### How many messages each chat holds
 - **Needed by:** *Flow / Mobile Chat — Manage chat* (W3a8j) step 1, the chat's sheet (G8cFz: "14 messages · Dana"), opened from the Chats list's long press as well as from inside the chat.
 - **Why:** from the Chats list the sheet can't say how big the chat is, and inside a long chat (older messages not loaded yet) neither can the chat's own sheet.
@@ -485,3 +494,13 @@ Checked against `backend/crates/nomi-server/src/app.rs`, `routes/attachments.rs`
 - **Built:** `GET /api/devices/web-push/key` (the VAPID public key; 404 when push is off) and `POST /api/devices/web-push { endpoint, keys }`; needs-you, approval and plan-finished pushes go to it too (migration 0161; keys in `.env.example`).
 
 Found while building the phone's chat flows (2026-11-18).
+
+### A chat's hand-off, and a code change to apply from a reply
+- **Needed by:** *Flow / Mobile Chat — Crew, memory & connections* (YuWzO) step 1 ("Nomi handed this to Dana · Ask Nomi" over the reply), and *Rich replies* (XO7DI) step 4 (a diff card with `+3 −1`, its hunk, Reject and Apply change), on both layouts (hiAY1, y2Qxt2).
+- **What exists today:** a reply names who answered (`agent_display_name`), but nothing says Nomi routed the question there, or why. A reply can carry a `code` block (a file and its lines), but no diff, and there's no route to apply or reject one.
+- **Proposed contract:**
+  - A `handoff` content block on the reply that took over: `{ kind: 'handoff', from: 'Nomi', to: 'Dana', reason?: string }`. "Ask Nomi" would send the next message to Nomi as it does today.
+  - A `diff` block: `{ kind: 'diff', file, added, removed, hunks: [{ header, lines: [{ old?, new?, kind: 'add'|'remove'|'same', text }] }], change_id }`, with `POST /api/sessions/:id/changes/:change_id` taking `{ decision: 'apply'|'reject' }`.
+- **Until then:** the reply shows who answered without the hand-off line, and code shows as a code block with no Apply or Reject.
+
+Found while building the rest of a chat on a phone (2026-11-19).

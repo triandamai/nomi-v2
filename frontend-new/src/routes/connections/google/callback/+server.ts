@@ -8,5 +8,5 @@ export const GET: RequestHandler = async (event) => {
 	if (event.url.searchParams.get('error') || !code || !state) redirect(303, '/settings/connections?error=declined');
 	const done = await finishGoogle(event, code, state);
 	if (!done.ok) redirect(303, '/settings/connections?error=failed');
-	redirect(303, done.data.resume_session_id ? `/chat/${done.data.resume_session_id}` : '/settings/connections?connected=google');
+	redirect(303, done.data.resume_session_id ? `/chat/${done.data.resume_session_id}?connected=google` : '/settings/connections?connected=google');
 };

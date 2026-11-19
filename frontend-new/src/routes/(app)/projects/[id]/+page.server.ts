@@ -120,7 +120,7 @@ export const actions: Actions = {
 		if (!/^[^\s@]+@[^\s@]+\.[^\s@.]+$/.test(email)) return fail(400, { field: 'email', message: m.people_email_needed() });
 		if (role !== 'build' && role !== 'prompt' && role !== 'view') return fail(400, { message: m.action_failed() });
 		const sent = await tools.invitePerson(event, event.params.id, email, role);
-		return sent.ok ? { invited: email } : refused(sent);
+		return sent.ok ? { invited: email, added: sent.added, path: sent.path, expires_at: sent.expires_at } : refused(sent);
 	},
 	role: async (event) => {
 		const form = await event.request.formData();
