@@ -108,7 +108,8 @@ export type ProjectAbout = {
 	/** The database its files use (`postgres`, `sqlite` or `none`), as the export reads it. */
 	database: string | null;
 	people: { name: string; owner: boolean; me: boolean }[] | null;
-	deploys: { count: number; builtIn: number | null; liveNumber: number | null; liveAt: string | null } | null;
+	/** `failedNumber`: the latest publish's number when it failed. */
+	deploys: { count: number; builtIn: number | null; liveNumber: number | null; liveAt: string | null; failedNumber: number | null } | null;
 };
 
 const seconds = (from: string, to: string | null) => (to ? Math.max(0, Math.round((Date.parse(to) - Date.parse(from)) / 1000)) : null);
@@ -139,7 +140,7 @@ export async function projectAbout(event: ApiEvent, id: string): Promise<Project
 			? team.people.filter((person) => team.access === 'org' || person.is_owner || person.project_role !== null).map((person) => ({ name: person.name, owner: person.is_owner, me: person.user_id === team.me }))
 			: null,
 		deploys: overview?.publishes
-			? { count: production.filter((one) => one.status === 'succeeded').length, builtIn: built ? seconds(built.created_at, built.finished_at) : null, liveNumber: live?.version ?? null, liveAt: live?.finished_at ?? live?.created_at ?? null }
+			? { count: production.filter((one) => one.status === 'succeeded').length, builtIn: built ? seconds(built.created_at, built.finished_at) : null, liveNumber: live?.version ?? null, liveAt: live?.finished_at ?? live?.created_at ?? null, failedNumber: production[0]?.status === 'failed' ? production[0].version : null }
 			: null,
 	};
 }

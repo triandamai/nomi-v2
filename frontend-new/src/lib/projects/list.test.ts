@@ -111,6 +111,11 @@ describe('filtering, finding and sorting', () => {
 		expect(filterCounts(projectCards([project('a', { status: 'building' })], now, { active: new Set(['s-a']) })).building).toBe(1);
 	});
 
+	it('counts among what the search finds, as the phone’s chips do (Find & filter wDi32)', () => {
+		expect(filterCounts(cards, ' kopi ')).toEqual({ all: 1, live: 0, building: 0, attention: 0 });
+		expect(filterCounts(cards, 'b.trian')).toEqual({ all: 1, live: 1, building: 0, attention: 0 });
+	});
+
 	it('filters, finds by name or description, and sorts', () => {
 		expect(visibleCards(cards, 'live', '', 'updated').map((card) => card.id)).toEqual(['b-live']);
 		expect(visibleCards(cards, 'all', 'KOPI', 'updated').map((card) => card.id)).toEqual(['c-draft']);

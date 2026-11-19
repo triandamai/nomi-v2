@@ -85,7 +85,7 @@ describe('projects on the server', () => {
 				{ name: 'Trian', owner: true, me: false },
 				{ name: 'Mario', owner: false, me: true },
 			],
-			deploys: { count: 1, builtIn: 41, liveNumber: 2, liveAt: '2026-11-12T09:00:41Z' },
+			deploys: { count: 1, builtIn: 41, liveNumber: 2, liveAt: '2026-11-12T09:00:41Z', failedNumber: 3 },
 		});
 	});
 

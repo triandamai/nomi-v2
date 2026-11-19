@@ -1,12 +1,12 @@
 <script lang="ts">
-	import { Activity, ArrowDownAZ, Building2, Calendar, FolderPlus, MessageCircle, Wrench, CalendarCheck, CircleAlert, Clock, FileText, FolderSearch, Plus, SearchX, Settings, Store } from '@lucide/svelte';
+	import { Activity, ArrowDownAZ, Building2, Calendar, CircleCheck, FolderPlus, MessageCircle, Wrench, CalendarCheck, CircleAlert, Clock, FileText, FolderSearch, Plus, SearchX, Settings, Store, X } from '@lucide/svelte';
 	import { onMount, tick } from 'svelte';
 	import { goto, invalidate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { m } from '$lib/paraglide/messages';
 	import { pageAction } from '$lib/pageAction';
 	import { filterCounts, projectCards, runningFor, visibleCards, type ProjectCardData } from '$lib/projects/list';
-	import { databaseName, liveLine, moveTargets, panelParts, projectChats, took } from '$lib/projects/about';
+	import { alertTitle, databaseName, detailLine, liveLine, moveTargets, panelParts, projectChats, took } from '$lib/projects/about';
 	import type { DeployOverview } from '$lib/adapters/api';
 	import type { MoveChoices, ProjectAbout } from '$lib/server/projects';
 	import { toasts } from '$lib/ds/overlays/toasts.svelte';
@@ -16,13 +16,15 @@
 	import ProjectToolbar, { type ProjectFilter } from '$lib/ds/projects/ProjectToolbar.svelte';
 	import type { ProjectSort } from '$lib/ds/projects/SortMenu.svelte';
 	import ProjectCard from '$lib/ds/projects/ProjectCard.svelte';
-	import { projectMenu, type ProjectActions } from '$lib/ds/projects/ProjectCardMenu.svelte';
-	import { SORTS, sortLabel } from '$lib/ds/projects/SortMenu.svelte';
+	import type { ProjectActions } from '$lib/ds/projects/ProjectCardMenu.svelte';
 	import PhoneProjectsHeader from '$lib/ds/projects/PhoneProjectsHeader.svelte';
 	import PhoneProjectSearch from '$lib/ds/projects/PhoneProjectSearch.svelte';
 	import PhoneFilters from '$lib/ds/projects/PhoneFilters.svelte';
 	import PhoneProjectDetail from '$lib/ds/projects/PhoneProjectDetail.svelte';
-	import PhoneComposer from '$lib/ds/thread/PhoneComposer.svelte';
+	import PhoneAskBar from '$lib/ds/projects/PhoneAskBar.svelte';
+	import PhoneProjectEmpty from '$lib/ds/projects/PhoneProjectEmpty.svelte';
+	import PhoneProjectMenu from '$lib/ds/projects/PhoneProjectMenu.svelte';
+	import PhoneWorkspaceList from '$lib/ds/projects/PhoneWorkspaceList.svelte';
 	import ActionSheet from '$lib/ds/overlays/ActionSheet.svelte';
 	import DeploySheet from '$lib/ds/projects/DeploySheet.svelte';
 	import DeleteProjectSheet from '$lib/ds/projects/DeleteProjectSheet.svelte';
@@ -356,17 +358,31 @@
 		screen.inside = phone.current && selectedId !== null;
 		return () => (screen.inside = false);
 	});
+	/** A card's sheet, its state read for the subtitle ("live · deploy #15 · 2d ago"). */
+	function openCardSheet(card: ProjectCardData) {
+		phoneSheet = { kind: 'card', card };
+		if (!(card.id in about)) void readAbout(card.id);
+	}
 	const sheetClosed = (kind: PhoneSheet['kind']) => () => phoneSheet?.kind === kind && (phoneSheet = null);
+	// The chips count what the search finds (Find & filter wDi32); Needs you leads while anything does.
+	const phoneCounts = $derived(filterCounts(cards, query));
 	const filterOptions = $derived([
-		...(counts.attention > 0 ? [{ value: 'attention', label: m.projects_phone_needs_you(), count: counts.attention }] : []),
-		{ value: 'all', label: m.projects_filter_all(), count: counts.all },
-		{ value: 'live', label: m.projects_filter_live(), count: counts.live },
-		{ value: 'building', label: m.projects_filter_building(), count: counts.building },
-		...(counts.attention > 0 ? [] : [{ value: 'attention', label: m.projects_phone_needs_you(), count: counts.attention }]),
+		...(phoneCounts.attention > 0 ? [{ value: 'attention', label: m.projects_phone_needs_you(), count: phoneCounts.attention }] : []),
+		{ value: 'all', label: m.projects_filter_all(), count: phoneCounts.all },
+		{ value: 'live', label: m.projects_filter_live(), count: phoneCounts.live },
+		{ value: 'building', label: m.projects_filter_building(), count: phoneCounts.building },
+		...(phoneCounts.attention > 0 ? [] : [{ value: 'attention', label: m.projects_phone_needs_you(), count: phoneCounts.attention }]),
 	]);
 	const workspaceHref = $derived(orgId ? `/settings/workspaces/${orgId}` : null);
 	type WorkspaceRow = { id: string; name: string; meta: string; chosen: boolean };
 	const SORT_ICON = { updated: Clock, status: CircleAlert, name: ArrowDownAZ, created: Calendar } as const;
+	// The phone's sort sheet (Find & filter → Sort M7SCRS): its own order and words.
+	const PHONE_SORTS: { value: ProjectSort; label: () => string }[] = [
+		{ value: 'updated', label: m.projects_sort_updated },
+		{ value: 'status', label: m.projects_phone_sort_status },
+		{ value: 'name', label: m.projects_phone_sort_name },
+		{ value: 'created', label: m.projects_sort_created },
+	];
 	const workspaces = $derived((page.data.workspaces ?? []) as WorkspaceRow[]);
 	async function chooseWorkspace(id: string) {
 		const name = workspaces.find((one) => one.id === id)?.name ?? '';
@@ -380,16 +396,17 @@
 <svelte:head><title>{m.nav_projects()} · {m.app_name()}</title></svelte:head>
 <svelte:window {onkeydown} />
 
+<!-- The phone's own empty list (Find & filter → No match OC2PS, Empty / Tab uDnnd): no box, a pill to clear. -->
 {#snippet phoneEmpty()}
 	{#if query.trim()}
-		<ProjectEmpty
+		<PhoneProjectEmpty
 			icon={SearchX}
 			title={m.projects_no_match_title({ query: query.trim() })}
 			body={m.projects_no_match_body({ workspace: workspaceName })}
-			action={{ label: m.projects_clear_search(), onclick: () => (query = '') }}
+			action={{ label: m.projects_clear_search(), icon: X, onclick: () => (query = '') }}
 		/>
 	{:else}
-		<ProjectEmpty icon={FolderSearch} title={TAB_EMPTY[filter].title()} body={TAB_EMPTY[filter].body()} />
+		<PhoneProjectEmpty icon={filter === 'attention' ? CircleCheck : FolderSearch} title={TAB_EMPTY[filter].title()} body={TAB_EMPTY[filter].body()} />
 	{/if}
 {/snippet}
 
@@ -425,7 +442,7 @@
 					{#each { length: 3 }, index (index)}<li><ProjectCardLoading phone /></li>{/each}
 				</ul>
 			{:else}
-				<LoadError phone reason={m.projects_load_failed_reason({ status: data.failure?.status ?? 503, time: failedAt })} onretry={retry} />
+				<div class="px-4"><LoadError phone reason={m.projects_load_failed_reason({ status: data.failure?.status ?? 503, time: failedAt })} onretry={retry} /></div>
 			{/if}
 		{:else if cards.length}
 			<PhoneProjectSearch placeholder={m.projects_search()} sortLabel={m.projects_phone_sort()} bind:value={query} onsort={() => (phoneSheet = { kind: 'sort' })} />
@@ -451,7 +468,7 @@
 								renaming={renamingId === card.id}
 								onrename={(name) => void rename(card, name)}
 								oncancelrename={() => (renamingId = null)}
-								onmore={() => (phoneSheet = { kind: 'card', card })}
+								onmore={() => openCardSheet(card)}
 								selected={card.id === selectedId}
 								onselect={() => select(card)}
 							/>
@@ -544,11 +561,11 @@
 	<PhoneProjectDetail
 		name={card.name}
 		tone={card.tone}
-		status={liveLine(card, read, now) ?? card.footer}
-		dot={card.status === 'live' ? 'live' : card.status === 'failed' || card.status === 'down' ? 'failed' : 'idle'}
+		status={detailLine(card, read, now)}
+		dot={card.status === 'live' ? 'live' : card.status === 'failed' || card.status === 'down' ? 'failed' : card.status === 'building' ? 'working' : 'idle'}
 		alert={broke
 			? {
-					title: card.statusLabel ?? (card.status === 'failed' ? m.projects_status_failed() : card.status === 'down' ? m.projects_status_down() : card.questions === 1 ? m.projects_status_question() : m.projects_status_questions({ count: card.questions ?? 0 })),
+					title: card.statusLabel ?? (card.status === 'failed' ? alertTitle(card, read) : card.status === 'down' ? m.projects_status_down() : card.questions === 1 ? m.projects_status_question() : m.projects_status_questions({ count: card.questions ?? 0 })),
 					detail: card.detail,
 					...(run && {
 						action: {
@@ -569,7 +586,7 @@
 		onmore={() => (phoneSheet = { kind: 'card', card })}
 	>
 		{#snippet ask()}
-			<PhoneComposer placeholder={m.projects_phone_ask()} bind:value={question} onsend={(text) => void sendAsk(card, text)} />
+			<PhoneAskBar placeholder={m.projects_phone_ask()} bind:value={question} onsend={(text) => void sendAsk(card, text)} />
 		{/snippet}
 	</PhoneProjectDetail>
 {/snippet}
@@ -577,37 +594,25 @@
 {#snippet phoneSheets()}
 {#if phoneSheet?.kind === 'card'}
 	{@const card = phoneSheet.card}
-	<BottomSheet open title={card.name} subtitle={card.footer} onclose={sheetClosed('card')}>
-		{#each projectMenu(cardActions(card), card.status === 'live') as entry, index (index)}
-			{#if entry === 'divider'}
-				<span class="h-px bg-border"></span>
-			{:else if 'label' in entry && entry.icon && entry.onselect}
-				{@const run = entry.onselect}
-				<SheetRow icon={entry.icon} label={entry.label} danger={entry.danger} onclick={() => ((phoneSheet = null), run())} />
-			{/if}
-		{/each}
+	<!-- Card menu (M4p0u): its state for a subtitle, as the detail screen says it. -->
+	<BottomSheet open title={card.name} subtitle={detailLine(card, about[card.id], now)} onclose={sheetClosed('card')}>
+		<PhoneProjectMenu actions={cardActions(card)} live={card.status === 'live'} onpick={() => (phoneSheet = null)} />
 	</BottomSheet>
 {/if}
 <BottomSheet open={phoneSheet?.kind === 'new'} title={m.projects_phone_new_title()} subtitle={m.projects_phone_new_body()} onclose={sheetClosed('new')}>
-	<div class="px-4 pb-2">
+	<div class="px-4 pt-1 pb-2">
 		<ProjectComposer phone bind:value={description} domain={data.list?.base_domain ?? ''} onbuild={(text) => ((phoneSheet = null), void build(text))} />
 	</div>
 </BottomSheet>
 <BottomSheet open={phoneSheet?.kind === 'sort'} title={m.projects_phone_sort_title()} onclose={sheetClosed('sort')}>
-	{#each SORTS as option (option)}
-		<SheetOption icon={SORT_ICON[option]} label={sortLabel(option)} chosen={option === sort} onclick={() => ((sort = option), (phoneSheet = null))} />
+	{#each PHONE_SORTS as option (option.value)}
+		<SheetOption icon={SORT_ICON[option.value]} label={option.label()} chosen={option.value === sort} onclick={() => ((sort = option.value), (phoneSheet = null))} />
 	{/each}
 </BottomSheet>
 <BottomSheet open={phoneSheet?.kind === 'workspace'} title={m.projects_phone_workspaces()} subtitle={m.projects_phone_workspaces_body()} onclose={sheetClosed('workspace')}>
-	{#each workspaces as one (one.id)}
-		<SheetOption label={one.name} detail={one.meta} chosen={one.id === orgId} onclick={() => ((phoneSheet = null), one.id !== orgId && void chooseWorkspace(one.id))}>
-			{#snippet lead()}
-				<span aria-hidden="true" class="inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-surface-2 text-body font-semibold text-text">{one.name.charAt(0).toUpperCase()}</span>
-			{/snippet}
-		</SheetOption>
-	{/each}
-	<span class="h-px bg-border"></span>
-	<SheetRow icon={Plus} label={m.workspace_create_title()} more onclick={() => ((phoneSheet = null), void goto('/settings/workspaces'))} />
+	<PhoneWorkspaceList {workspaces} chosen={orgId} onchoose={(id) => ((phoneSheet = null), id !== orgId && void chooseWorkspace(id))} />
+	<span class="pt-2"></span>
+	<SheetRow icon={Plus} label={m.workspace_create()} onclick={() => ((phoneSheet = null), void goto('/settings/workspaces'))} />
 	{#if workspaceHref}
 		<SheetRow icon={Settings} label={m.projects_phone_workspace_settings()} more onclick={() => ((phoneSheet = null), void goto(workspaceHref!))} />
 	{/if}
