@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { CrewMember, HomeSummary, ModelOptions, SessionSummary } from './api';
-import { chatCrewRows, chatListGroups, crewIdOf, failureView, modelMenu, starters, todayColumns, withMention, mentionOptions } from './chat';
+import { chatCrewRows, chatListGroups, crewIdOf, failureView, modelMenu, phoneStarters, starters, todayColumns, withMention, mentionOptions } from './chat';
 
 const member = (agent_type: string, name: string, role = ''): CrewMember => ({ agent_type, name, role, is_dynamic: false, state: 'idle', status: '' });
 const crew = [member('chitchat', 'Nomi', 'Talks with you'), member('money', 'Dana', 'Transactions'), member('planning', 'Rena', 'Plans'), member('coding', 'Koda', 'Builds'), member('reminders', 'Kala', 'Reminds you')];
@@ -25,6 +25,19 @@ describe('starters', () => {
 			['kala', '→ kala'],
 		]);
 		expect(starters(crew.filter((one) => one.name !== 'Koda'))).toHaveLength(3);
+	});
+});
+
+describe('phoneStarters', () => {
+	it('is the phone’s New chat (kEp8c): the pen’s four, each to its owner, Nomi’s without an @', () => {
+		const maya = [...crew, member('vision', 'Maya', 'Reads photos')];
+		expect(phoneStarters(maya).map((starter) => [starter.label, starter.route, starter.text])).toEqual([
+			['Build a menu page for my warung', '→ koda', '@Koda Build a menu page for my warung'],
+			['Turn a photo of my price list into an order form', '→ maya', '@Maya Turn a photo of my price list into an order form'],
+			['What can I build in 10 minutes?', '→ nomi', 'What can I build in 10 minutes?'],
+			['Remind me to check pre-orders at 4pm', '→ rena', '@Rena Remind me to check pre-orders at 4pm'],
+		]);
+		expect(phoneStarters(crew).map((starter) => starter.agent)).toEqual(['koda', 'nomi', 'rena']);
 	});
 });
 

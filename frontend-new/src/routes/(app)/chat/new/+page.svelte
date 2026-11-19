@@ -2,15 +2,15 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { m } from '$lib/paraglide/messages';
-	import { mentionOptions, modelMenu, starters } from '$lib/adapters/chat';
+	import { mentionOptions, modelMenu, phoneStarters, starters } from '$lib/adapters/chat';
 	import { chatHeader } from '$lib/chat/header.svelte';
 	import { startChat } from '$lib/chat/start';
 	import { toasts } from '$lib/ds/overlays/toasts.svelte';
 	import ChatComposer from '$lib/ds/thread/ChatComposer.svelte';
 	import Starters from '$lib/ds/thread/Starters.svelte';
-	import SuggestionRow from '$lib/ds/lists/SuggestionRow.svelte';
+	import PhoneStarters from '$lib/ds/thread/PhoneStarters.svelte';
 	import PhoneComposer from '$lib/ds/thread/PhoneComposer.svelte';
-	import NavBar from '$lib/ds/mobile/NavBar.svelte';
+	import NavBar from '$lib/ds/thread/PhoneChatNavBar.svelte';
 	import Mascot from '$lib/ds/agents/Mascot.svelte';
 	import { phoneView } from '$lib/phone.svelte';
 
@@ -18,8 +18,8 @@
 	// answer, ENb07: the thread column 720, the composer pinned at the bottom), with the starters
 	// where the thread will be. Its first message makes the chat and opens it in place.
 	// On a phone it's Flow / Mobile Chat — Start & answer, step 2: the nav bar (New chat, Nomi),
-	// Nomi's mascot over the question at 22 and the line under it, centred, the starters 8 apart,
-	// and the phone's composer.
+	// Nomi's mascot over the question at 22 and the line under it, centred, the pen's own starters
+	// (kEp8c) 8 apart at 15, and the phone's composer.
 	let { data } = $props();
 	const guess = () => data.phone;
 	const phone = phoneView(guess());
@@ -34,6 +34,7 @@
 	const models = $derived(modelMenu(data.models, modelKey ?? data.models.current?.key ?? null));
 	const modelLabel = $derived(models.flatMap((group) => group.models).find((option) => option.chosen)?.label ?? data.models.current?.label);
 	const picks = $derived(starters(data.crew.rows));
+	const phonePicks = $derived(phoneStarters(data.crew.rows));
 
 	async function start(text: string) {
 		if (busy) return;
@@ -62,11 +63,7 @@
 				<Mascot agent="nomi" size={32} />
 				<h1 class="text-center text-phone-display font-semibold text-text">{m.chat_blank_title()}</h1>
 				<p class="text-center text-body leading-comfy text-text-2">{m.home_intro()}</p>
-				{#if picks.length > 0}
-					<ul class="flex w-full flex-col gap-2 pt-2">
-						{#each picks as pick, index (pick.label)}<li><SuggestionRow agent={pick.agent} label={pick.label} route={pick.route} onclick={() => start(picks[index].text)} /></li>{/each}
-					</ul>
-				{/if}
+				<PhoneStarters items={phonePicks} onpick={(index) => start(phonePicks[index].text)} />
 			</div>
 		</div>
 		<PhoneComposer bind:value={draft} bind:field placeholder={m.mobile_message()} {crew} model={modelLabel} onsend={start} />

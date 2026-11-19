@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, tick, untrack, type Snippet } from 'svelte';
-	import { ArrowUpRight, Check, Copy, Cpu, Download, FilePlus2, FolderInput, Hourglass, ImageOff, Info, KeyRound, List, LogIn, Maximize2, Minimize2, Pencil, Pin, PinOff, RefreshCw, RotateCcw, RotateCw, Share, Sparkles, ThumbsDown, ThumbsUp, Trash2, Unplug, Undo2, X } from '@lucide/svelte';
+	import { ArrowUpRight, Check, Copy, Cpu, Download, FilePlus2, FolderInput, Hourglass, ImageOff, Info, KeyRound, List, LogIn, Maximize2, Minimize2, Pencil, Pin, PinOff, RefreshCw, RotateCcw, RotateCw, Share, Sparkles, TextSelect, ThumbsDown, ThumbsUp, Trash2, Undo2, Unplug, X } from '@lucide/svelte';
 	import { goto, invalidate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { m } from '$lib/paraglide/messages';
@@ -50,9 +50,9 @@
 	import SheetTiles from '$lib/ds/overlays/SheetTiles.svelte';
 	import ActionSheet from '$lib/ds/overlays/ActionSheet.svelte';
 	import { longPress } from '$lib/longPress';
-	import NavBar from '$lib/ds/mobile/NavBar.svelte';
+	import NavBar from '$lib/ds/thread/PhoneChatNavBar.svelte';
 	import Mascot from '$lib/ds/agents/Mascot.svelte';
-	import PhoneUserMessage from '$lib/ds/mobile/UserMessage.svelte';
+	import PhoneUserMessage from '$lib/ds/thread/PhoneMessageBubble.svelte';
 	import ActionBar from '$lib/ds/mobile/ActionBar.svelte';
 	import SheetRow from '$lib/ds/mobile/SheetRow.svelte';
 	import BottomSheet from '$lib/ds/overlays/BottomSheet.svelte';
@@ -72,6 +72,8 @@
 	import PhoneChatFlows from './PhoneChatFlows.svelte';
 	import { PhoneFlows } from './phoneFlows.svelte';
 	import type { ChatPageData } from '$lib/server/chatPage';
+	import type { DeletePreview } from '$lib/server/chat';
+	import DeletedReply from '$lib/ds/chat/DeletedReply.svelte';
 	import { blockedReason, composeMessage, extensionOf, formatBytes, hiddenLine, kindLabel, progressParts, readyCount, seesImages, splitAttachments, visionSplit, type SentFile } from '$lib/chat/attachments';
 	import { ComposerUploads, type Chip } from '$lib/chat/uploads.svelte';
 	import { clearDraft, loadDraft, saveDraft } from '$lib/chat/draft';
@@ -321,8 +323,9 @@
 				void fetchMessage(event.message_id);
 				break;
 			case 'MessagesDeleted': {
-				const gone = new Set(event.message_ids);
-				messages = messages.filter((message) => !gone.has(message.id));
+			const gone = new Set(event.message_ids);
+			// A reply deleted here keeps its placeholder in the thread (Share & delete, step 5).
+			messages = messages.filter((message) => !gone.has(message.id) || message.id in deletedReplies);
 				break;
 			}
 			case 'SessionRenamed':
@@ -639,6 +642,32 @@
 		return waiting ? nameOf(reply!) : null;
 	});
 	const pinned = $derived(header.shown(chatId, 'pinned', data.chat.pinned));
+	// The chat's sheet says how many messages it holds and who answers (W3a8j G8cFz: "14 messages ·
+	// Dana"); the count only once every message is loaded, so it's never short.
+	const chatSubtitle = $derived.by(() => {
+		const name = working ? (turn.agent ?? 'Nomi') : (messages.findLast((message) => message.sender === 'assistant' && message.agent_display_name)?.agent_display_name ?? 'Nomi');
+		return hasOlder ? name : m.chat_sheet_subtitle({ count: messages.length, name });
+	});
+	// A reply asked for again on another model (Message controls lVDqs, "With another model"): the
+	// chat moves to that model (the composer's chip says so), then the turn runs again on it.
+	const otherModels = $derived(models.flatMap((group) => group.models).filter((option) => !option.chosen));
+	async function regenerateWith(replyId: string, key: string) {
+		if (await useModel(key)) await regenerate(replyId, 'again');
+	}
+	/**
+	 * Select text (Message controls sKD62): your message's text, selected in place for the phone's own
+	 * handles, once its sheet is gone (and the focus it gives back, which would take the selection).
+	 */
+	function selectText(id: string) {
+		void tick().then(() =>
+			requestAnimationFrame(() => {
+				const text = document.querySelector(`[data-message-id="${id}"] p`);
+				if (!text) return;
+				if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+				getSelection()?.selectAllChildren(text);
+			}),
+		);
+	}
 
 	async function patch(body: Record<string, unknown>): Promise<boolean> {
 		const result = await callJson(`${api}/session`, { method: 'PATCH', body });
@@ -719,6 +748,47 @@
 	async function copyShare() {
 		await navigator.clipboard?.writeText(shareUrl).catch(() => undefined);
 		toasts.show({ kind: 'success', title: m.link_copied(), detail: shareUrl.replace(/^https?:\/\//, '') });
+	}
+
+	// Delete reply (Share & delete yoVD6, steps 4–5): asked first in an action sheet that says what
+	// goes with it (the backend's preview: what the reply's cards made); then a placeholder stands
+	// in the thread and the toast offers Undo for ten seconds before the reply goes for good, as a
+	// deleted chat does (the backend can't bring a reply back). Leaving the page deletes it at once.
+	let replyDelete = $state<{ message: RenderedMessage; body: string } | null>(null);
+	let deletedReplies = $state<Record<string, 'waiting' | 'gone'>>({});
+	async function askDeleteReply(message: RenderedMessage) {
+		const result = await callJson<DeletePreview>(`${api}/messages/${message.id}/delete`);
+		if (!result.ok) return void toasts.show({ kind: 'error', title: m.reply_delete_failed(), detail: result.message || undefined });
+		const made = [...result.data.reminders, ...result.data.plans, ...result.data.tasks, ...result.data.transactions, ...result.data.files].map((item) => item.label);
+		replyDelete = { message, body: made.length ? m.delete_reply_body_phone_items({ items: made.join(', ') }) : m.delete_reply_body_phone() };
+	}
+	function deleteReplyLater(message: RenderedMessage) {
+		const id = message.id;
+		const path = `${api}/messages/${id}`;
+		replyDelete = null;
+		deletedReplies = { ...deletedReplies, [id]: 'waiting' };
+		later.schedule(
+			`reply:${id}`,
+			() => {
+				void fetch(path, { method: 'DELETE', keepalive: true })
+					.then((response) => {
+						if (!response.ok) throw new Error(String(response.status));
+						deletedReplies = { ...deletedReplies, [id]: 'gone' };
+					})
+					.catch(() => {
+						const { [id]: _back, ...rest } = deletedReplies;
+						deletedReplies = rest;
+						toasts.show({ kind: 'error', title: m.reply_delete_failed() });
+					});
+			},
+			10_000,
+		);
+		toasts.show({ kind: 'info', icon: Trash2, title: m.reply_deleted(), detail: m.reply_deleted_detail(), duration: 10_000, action: { label: m.action_undo(), onclick: () => undoDeleteReply(id) } });
+	}
+	function undoDeleteReply(id: string) {
+		if (!later.undo(`reply:${id}`)) return;
+		const { [id]: _back, ...rest } = deletedReplies;
+		deletedReplies = rest;
 	}
 
 	/** Deleted after ten seconds to undo, from Home; leaving the page deletes it at once. */
@@ -1102,9 +1172,10 @@
 	{:else if phone}
 		{#if parts.files.length}<SentFiles phone files={sentItems(parts.files, clock(message.created_at, time.timeZone))} />{/if}
 		{#if parts.text}
-			<!-- Long-pressing your message opens its sheet (Message controls, step 3). -->
+			<!-- Long-pressing your message opens its sheet (Message controls, step 3), lifting the bubble
+			     over the scrim: its place in the thread stays, empty, until the sheet closes (nzT7f). -->
 			<!-- A message with files isn't edited in place (editing with files is P1), so its sheet has no Edit. -->
-			<div use:longPress={() => (sheet = { kind: 'mine', message, latest: latest && !working && !shown && !parts.files.length })}>
+			<div class={[sheet?.kind === 'mine' && sheet.message.id === message.id && 'invisible']} use:longPress={() => (sheet = { kind: 'mine', message, latest: latest && !working && !shown && !parts.files.length })}>
 				<PhoneUserMessage text={parts.text} />
 			</div>
 		{/if}
@@ -1223,7 +1294,8 @@
 
 			{#each entries as entry, index (entry.type === 'day' ? `day-${entry.key}` : entry.type === 'new' ? 'new' : entry.message.id)}
 				{#if entry.type === 'day'}
-					<DateDivider label={entry.label} />
+					<!-- On a phone a thread of one day has no divider (Answer yr0gh). -->
+					{#if !phone || entries.filter((one) => one.type === 'day').length > 1}<DateDivider label={entry.label} />{/if}
 				{:else if entry.type === 'new'}
 					<NewDivider count={entry.count} />
 				{:else if entry.type === 'user' && entry.message.author_name}
@@ -1255,8 +1327,12 @@
 								</AgentReply>
 							{/each}
 						{/if}
+					{:else if message.id in deletedReplies}
+					<div data-message-id={message.id} class="flex flex-col">
+						<DeletedReply name={nameOf(message)} onundo={deletedReplies[message.id] === 'waiting' ? () => undoDeleteReply(message.id) : undefined} />
+					</div>
 					{:else}
-						<div data-message-id={message.id} class="flex flex-col" use:longPress={() => phone && (sheet = { kind: 'reply', message, latest: entry.latest, asked })}>
+					<div data-message-id={message.id} class="flex flex-col" use:longPress={() => phone && (sheet = { kind: 'reply', message, latest: entry.latest, asked })}>
 							<AgentReply
 								{phone}
 								agent={crewIdOf(message.agent_display_name)}
@@ -1469,11 +1545,11 @@
 	{@const close = () => (sheet = null)}
 	<!-- A sheet closing clears the state only while it's still the one showing (Rename follows the chat's). -->
 	{@const closed = (kind: Sheet['kind']) => () => sheet?.kind === kind && (sheet = null)}
-	<BottomSheet open={sheet?.kind === 'chat'} title={shownTitle ?? m.nav_new_chat()} subtitle={answering.name} onclose={closed('chat')}>
+	<BottomSheet open={sheet?.kind === 'chat'} title={shownTitle ?? m.nav_new_chat()} subtitle={chatSubtitle} onclose={closed('chat')}>
 		<SheetRow icon={Pencil} label={m.chat_rename()} onclick={() => ((newName = shownTitle ?? ''), (sheet = { kind: 'rename' }))} />
 		<SheetRow icon={pinned ? PinOff : Pin} label={pinned ? m.chat_unpin_top() : m.chat_pin_top()} onclick={() => (close(), onMenu('pin'))} />
 		{#if data.projects.length}<SheetRow icon={FolderInput} label={m.chat_move()} more onclick={() => (close(), onMenu('move'))} />{/if}
-		<SheetRow icon={Download} label={m.chat_export()} meta="md" onclick={() => (close(), onMenu('export'))} />
+		<SheetRow icon={Download} label={m.chat_export()} meta="md" more onclick={() => (close(), onMenu('export'))} />
 		<SheetRow icon={Share} label={m.chat_share_whole()} onclick={() => (close(), onMenu('share'))} />
 		<span class="h-px bg-border"></span>
 		<SheetRow icon={Trash2} label={m.chat_delete()} danger onclick={() => (close(), onMenu('delete'))} />
@@ -1505,20 +1581,51 @@
 				]}
 			/>
 			{#if reply.latest && !working}
-				<SheetRow icon={RefreshCw} label={m.reply_regenerate()} more onclick={() => (sheet = { kind: 'regen', message: reply.message })} />
+				<SheetRow icon={RefreshCw} label={m.reply_regenerate()} onclick={() => (sheet = { kind: 'regen', message: reply.message })} />
+				{#if otherModels.length}
+					<!-- Try another model (Wl0VM): opens Regenerate's sheet, whose last group is the other models. -->
+					<SheetRow icon={Cpu} label={m.reply_try_model()} meta={otherModels[0].label} more onclick={() => (sheet = { kind: 'regen', message: reply.message })} />
+				{/if}
 				{#if reply.asked}
 					{@const asked = reply.asked}
 					<SheetRow icon={Pencil} label={m.reply_edit_question()} onclick={() => ((editing = asked.id), close())} />
 				{/if}
 			{/if}
+			{#if !(reply.latest && working)}
+				<!-- Delete reply (SwByh XPHtc): under its own line, in danger; asked first. -->
+				<span class="h-px bg-border"></span>
+				<SheetRow
+					icon={Trash2}
+					label={m.reply_delete()}
+					danger
+					onclick={() => {
+						// Read before closing: the sheet (and its {@const}) is gone once it closes.
+						const target = reply.message;
+						close();
+						void askDeleteReply(target);
+					}}
+				/>
+			{/if}
 		</BottomSheet>
 	{/if}
 	{#if sheet?.kind === 'regen'}
 		{@const regen = sheet}
-		<BottomSheet open title={m.reply_regenerate()} subtitle={nameOf(regen.message)} onclose={closed('regen')}>
+		<BottomSheet open title={m.reply_regenerate()} subtitle={m.regen_sheet_subtitle()} onclose={closed('regen')}>
 			{#each [{ style: 'again', label: m.regen_again(), icon: RefreshCw }, { style: 'shorter', label: m.regen_shorter(), icon: Minimize2 }, { style: 'longer', label: m.regen_longer(), icon: Maximize2 }, { style: 'list', label: m.regen_list(), icon: List }] as const as option (option.style)}
 				<SheetRow icon={option.icon} label={option.label} onclick={() => (void regenerate(regen.message.id, option.style), close())} />
 			{/each}
+			{#if otherModels.length}
+				<p class="px-5 pt-3 pb-1 font-mono text-label tracking-label text-text-3 uppercase">{m.regen_models()}</p>
+				{#each otherModels as option (option.key)}
+					<!-- The model, and what pays for it in mono (lVDqs: claude-sonnet · your key, deepseek-flash ✦ Nomi credits). -->
+					<SheetRow
+						icon={option.source === m.models_nomi_credits() ? Sparkles : Cpu}
+						label={option.label}
+						meta={option.source === m.models_nomi_credits() ? option.source : m.regen_source_key()}
+						onclick={() => (void regenerateWith(regen.message.id, option.key), close())}
+					/>
+				{/each}
+			{/if}
 		</BottomSheet>
 	{/if}
 	{#if sheet?.kind === 'dislike'}
@@ -1538,8 +1645,10 @@
 		{@const mine = sheet}
 		<!-- Your message's sheet (Message controls, step 3). -->
 		<BottomSheet open title={m.mine_sheet_title()} subtitle={clock(mine.message.created_at, time.timeZone)} onclose={closed('mine')}>
+			{#snippet lifted()}<PhoneUserMessage text={splitAttachments(mine.message.content).text} lifted />{/snippet}
 			{#if mine.latest}<SheetRow icon={Pencil} label={m.mine_edit()} onclick={() => ((editing = mine.message.id), close())} />{/if}
 			<SheetRow icon={Copy} label={m.mine_copy()} onclick={() => (void copyText(mine.message.content), close())} />
+			<SheetRow icon={TextSelect} label={m.mine_select()} onclick={() => (selectText(mine.message.id), close())} />
 		</BottomSheet>
 	{/if}
 	<!-- Opened from a failure (Errors & recovery, scenario 1 step 2: MLk2U), picking a model retries on it. -->
@@ -1613,10 +1722,19 @@
 <MoveDialog bind:open={moveOpen} projects={data.projects} initialChosen={data.chat.inProjectId ?? undefined} onmove={move} />
 
 {#if phone}
-	<ActionSheet
-		bind:open={deleteOpen}
+<!-- Delete reply's question (Share & delete, step 4 EQUZo). -->
+<ActionSheet
+	open={replyDelete !== null}
+	title={m.delete_reply_title()}
+	body={replyDelete?.body}
+	actions={[{ label: m.reply_delete(), danger: true, onclick: () => replyDelete && deleteReplyLater(replyDelete.message) }]}
+	cancel={m.action_cancel()}
+	onclose={() => (replyDelete = null)}
+/>
+<ActionSheet
+	bind:open={deleteOpen}
 		title={m.chat_delete_title()}
-		body={m.chat_delete_body({ count: messages.length })}
+		body={m.chat_delete_body_phone({ count: messages.length })}
 		actions={[
 			{ label: m.chat_delete_export(), onclick: exportChat },
 			{ label: m.chat_delete(), danger: true, onclick: () => void deleteChat() },

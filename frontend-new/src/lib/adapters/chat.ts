@@ -31,10 +31,27 @@ const STARTERS: { owner: string; label: () => string }[] = [
 	{ owner: 'Kala', label: m.starter_stretch },
 ];
 
+/** A phone's New chat (Flow / Mobile Chat — Start & answer, step 2: kEp8c): the pen's own four. */
+const PHONE_STARTERS: { owner: string; label: () => string }[] = [
+	{ owner: 'Koda', label: m.phone_starter_warung },
+	{ owner: 'Maya', label: m.phone_starter_price_list },
+	{ owner: 'Nomi', label: m.phone_starter_ten_minutes },
+	{ owner: 'Rena', label: m.phone_starter_preorders },
+];
+
+/** The phone's New chat starters whose owner is on the crew, asked as the desktop's are. */
+export function phoneStarters(crew: { name: string }[]): Starter[] {
+	return pickStarters(PHONE_STARTERS, crew);
+}
+
 /** The starters whose owner is on the crew. Picking one asks it of them (an @mention). */
 export function starters(crew: { name: string }[]): Starter[] {
+	return pickStarters(STARTERS, crew);
+}
+
+function pickStarters(list: { owner: string; label: () => string }[], crew: { name: string }[]): Starter[] {
 	const names = new Set(crew.map((member) => member.name));
-	return STARTERS.filter((starter) => names.has(starter.owner)).map((starter) => {
+	return list.filter((starter) => names.has(starter.owner)).map((starter) => {
 		const agent = crewIdOf(starter.owner);
 		return { agent, label: starter.label(), route: `→ ${agent}`, text: withMention(starter.label(), starter.owner) };
 	});

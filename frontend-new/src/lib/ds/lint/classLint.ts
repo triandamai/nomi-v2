@@ -4,8 +4,9 @@
 
 const HEX = /#[0-9a-fA-F]{3,8}\b/;
 // shadow-float for what floats (shadow-float-lg for the sidebar's larger panels, as the pen draws
-// them; shadow-fab for the phone's floating New chat); shadow-focus is a focused field's glow.
-const ALLOWED_SHADOWS = new Set(['shadow-float', 'shadow-float-lg', 'shadow-fab', 'shadow-focus', 'shadow-none']);
+// them; shadow-fab for the phone's floating New chat; shadow-lift for your message lifted over a
+// sheet's scrim); shadow-focus is a focused field's glow.
+const ALLOWED_SHADOWS = new Set(['shadow-float', 'shadow-float-lg', 'shadow-fab', 'shadow-lift', 'shadow-focus', 'shadow-none']);
 
 function markup(source: string): string {
 	return source.replace(/<script[\s\S]*?<\/script>/g, '').replace(/<style[\s\S]*?<\/style>/g, '');

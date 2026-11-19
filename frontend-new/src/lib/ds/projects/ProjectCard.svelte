@@ -33,7 +33,7 @@
 	// changing it" (a live project), "Koda is deploying" (Act from the card, step 7).
 	// The description is cut short where the pen lets a long one run past its column (§9).
 	// `phone` is Mobile / Project Card (Flow / Mobile Projects): the column's width, 14 corners, the
-	// 40 tile (10 corners, the initial at 17), the name at 16 and its line at 13 on up to two lines,
+	// 40 tile (10 corners, the initial at 17), the name at 16 and, 3 below, its line at 13 / 1.35 on up to two lines,
 	// ⋯ (36, round) opening the page's sheet (`onmore`), the status box sized by its two lines
 	// ([10,12], 10 corners), and the action a Mobile Pill (40, round).
 	type Props = {
@@ -184,7 +184,7 @@
 		<span class={['inline-flex shrink-0 items-center justify-center', phone ? 'size-10 rounded-md' : 'size-9 rounded-sm']} style="background: var(--crew-{tone}-bg)">
 			<span aria-hidden="true" class={['font-app font-semibold', phone ? 'text-phone-title' : 'text-body']} style="color: var(--crew-{tone}-ink)">{name.charAt(0).toUpperCase()}</span>
 		</span>
-		<div class="flex min-w-0 flex-1 flex-col gap-0.5">
+		<div class={['flex min-w-0 flex-1 flex-col', phone ? 'gap-0.75' : 'gap-0.5']}>
 			{#if renaming}
 				<span class="flex h-5 items-center rounded-sm border border-accent bg-bg px-1.25">
 					<input
@@ -205,7 +205,7 @@
 						{name}
 					{/if}
 				</h3>
-				<p class={['text-text-3', phone ? 'line-clamp-2 text-ui' : 'truncate text-caption']}>{description}</p>
+				<p class={['text-text-3', phone ? 'line-clamp-2 text-ui leading-snug' : 'truncate text-caption']}>{description}</p>
 			{/if}
 		</div>
 		{#if phone && onmore}

@@ -127,20 +127,26 @@ const IN_TAB: Record<ProjectFilter, (card: ProjectCardData) => boolean> = {
 	attention: (card) => card.status === 'attention' || card.status === 'failed',
 };
 
-export function filterCounts(cards: ProjectCardData[]): Record<ProjectFilter, number> {
-	return { all: cards.length, live: cards.filter(IN_TAB.live).length, building: cards.filter(IN_TAB.building).length, attention: cards.filter(IN_TAB.attention).length };
+/** Whether a search finds a card: in its name, its description or its address. */
+const found = (card: ProjectCardData, wanted: string) => !wanted || [card.name, card.description, card.liveUrl ?? ''].some((text) => text.toLowerCase().includes(wanted));
+
+/** How many cards each filter holds; with a `query`, among those the search finds (Find & filter wDi32). */
+export function filterCounts(cards: ProjectCardData[], query = ''): Record<ProjectFilter, number> {
+	const wanted = query.trim().toLowerCase();
+	const searched = cards.filter((card) => found(card, wanted));
+	return { all: searched.length, live: searched.filter(IN_TAB.live).length, building: searched.filter(IN_TAB.building).length, attention: searched.filter(IN_TAB.attention).length };
 }
 
 const STATUS_ORDER: ProjectStatus[] = ['attention', 'failed', 'down', 'live', 'building', 'importing', 'stopped', 'draft'];
 
 export function visibleCards(cards: ProjectCardData[], filter: ProjectFilter, query: string, sort: ProjectSort): ProjectCardData[] {
 	const wanted = query.trim().toLowerCase();
-	const found = cards.filter((card) => IN_TAB[filter](card) && (!wanted || [card.name, card.description, card.liveUrl ?? ''].some((text) => text.toLowerCase().includes(wanted))));
+	const shown = cards.filter((card) => IN_TAB[filter](card) && found(card, wanted));
 	const by: Record<ProjectSort, (a: ProjectCardData, b: ProjectCardData) => number> = {
 		updated: (a, b) => b.updated - a.updated,
 		created: (a, b) => b.created - a.created,
 		name: (a, b) => a.name.localeCompare(b.name),
 		status: (a, b) => STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status) || b.updated - a.updated,
 	};
-	return [...found].sort(by[sort]);
+	return shown.sort(by[sort]);
 }

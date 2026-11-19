@@ -100,6 +100,10 @@ export function chatRequest(event: ApiEvent, sessionId: string, path: string[], 
 				return answer(await chat.agentStatus(event, sessionId));
 			case 'GET messages/:id':
 				return answer(await chat.message(event, sessionId, messageId));
+			case 'GET messages/:id/delete':
+				return answer(await chat.deletePreview(event, sessionId, messageId));
+			case 'DELETE messages/:id':
+				return answer(await chat.deleteMessage(event, sessionId, messageId));
 			case 'PATCH messages/:id': {
 				const body = await read(request);
 				return text(body.text) ? answer(await chat.editMessage(event, sessionId, messageId, body.text)) : bad();
