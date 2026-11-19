@@ -56,4 +56,15 @@ describe('PhoneSettingsGroup', () => {
 			['Memory & context', 52],
 		]);
 	});
+
+	it('keeps rows that share a link apart (the docs’ examples all link to #)', async () => {
+		await render(PhoneSettingsGroup, {
+			label: 'Account',
+			rows: [
+				{ href: '#', icon: Users, label: 'Profile' },
+				{ href: '#', icon: Brain, label: 'General' },
+			],
+		});
+		expect([...page.getByRole('region', { name: 'Account' }).element().querySelectorAll('a')].map((link) => link.textContent?.trim())).toEqual(['Profile', 'General']);
+	});
 });
