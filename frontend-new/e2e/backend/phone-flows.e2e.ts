@@ -74,8 +74,10 @@ test('Clarify → plan: the questions open in their sheet, park as “waiting”
 	// Many of many counts its ticks (AC5).
 	const again = page.getByRole('dialog');
 	await expect(again.getByRole('button', { name: 'Review 0' })).toBeDisabled();
-	await again.getByRole('checkbox', { name: /Train times/ }).check();
-	await again.getByRole('checkbox', { name: /Where to stay/ }).check();
+	// The row is what's tapped: the native box sits hidden behind the pen's drawn one.
+	await again.getByText('Train times').click();
+	await again.getByText('Where to stay').click();
+	await expect(again.getByRole('checkbox', { name: /Train times/ })).toBeChecked();
 	await again.getByRole('button', { name: 'Review 2' }).click();
 	const review = page.getByRole('dialog', { name: 'Your answers' });
 	await expect(review.getByText('Nothing runs yet')).toBeVisible();
@@ -119,6 +121,39 @@ test('Clarify → plan: a proposed plan shows its bar; Run plan sends the choice
 	await page.getByRole('button', { name: 'Review & run' }).click();
 	await page.getByRole('dialog', { name: 'Run this plan?' }).getByRole('button', { name: 'Run plan' }).click();
 	await sent(account, sessionId, 'Run it, ask before anything leaves Nomi');
+});
+
+test('Clarify → plan: a first plan’s bar opens the run sheet; Research only says nothing is shared; a form that isn’t a reminder has its own card', async ({ page, context }) => {
+	const { account, sessionId } = await chatAfter('Plan dinner on Friday');
+	const { agentSessionId, planId } = await seedPlan(sessionId, account.email, { title: 'Friday dinner', versions: ['- [ ] Find a table for 4\n- [ ] Book it\n- [ ] Tell Sari'] });
+	await seedReply(sessionId, { content: 'Here’s the plan.', agent: 'Rena', blocks: [{ kind: 'plan', plan_id: planId, agent_session_id: agentSessionId, title: 'Friday dinner' }] });
+	await signInAs(context, account);
+	await open(page, sessionId);
+
+	// One bar for a plan nothing runs yet: it opens the sheet, it runs nothing (gate 3 #1).
+	await expect(page.getByText('Plan ready · nothing runs yet')).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Run plan' })).toHaveCount(0);
+	await page.getByRole('button', { name: 'Review & run' }).click();
+	const run = page.getByRole('dialog', { name: 'Run this plan?' });
+	await expect(run.getByText('3 steps · Rena')).toBeVisible();
+	await expect(run.getByRole('radio', { name: /Research only.*Nothing shared\./ })).toBeVisible();
+	await run.getByRole('button', { name: 'Not now' }).click();
+	await expect(page.getByText('Plan ready · nothing runs yet')).toBeVisible();
+
+	// A form that isn't a reminder: its own card, its date as the content rules write it.
+	await page.getByRole('textbox', { name: /message/i }).fill('Book it');
+	await page.getByRole('button', { name: 'Send' }).click();
+	await answered(account, sessionId);
+	await seedReply(sessionId, {
+		content: '',
+		agent: 'Nomi',
+		blocks: [{ kind: 'view', view: 'form', title: 'Dinner booking', fields: [{ key: 'date', label: 'Date', type: 'date', required: true, default: '2030-11-29' }, { key: 'people', label: 'People', type: 'number', default: 4 }] }],
+	});
+	await page.reload({ waitUntil: 'networkidle' });
+	await expect(page.getByText('29 Nov 2030', { exact: false })).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Edit reminder' })).toHaveCount(0);
+	await page.getByRole('button', { name: 'Edit Dinner booking' }).click();
+	await expect(page.getByRole('dialog', { name: 'Dinner booking' })).toBeVisible();
 });
 
 test('Plan → approve → act: a decision, a form whose date has passed, and an approval that’s decided', async ({ page, context }) => {

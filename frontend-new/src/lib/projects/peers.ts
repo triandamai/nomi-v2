@@ -34,9 +34,10 @@ export function peerFor(key: string): 1 | 2 {
 	return ((hash % 2) + 1) as 1 | 2;
 }
 
-/** Where someone is, in words: "Preview", "Code · src/app.ts", "Terminal". */
-export function whereLabel(view: string | null | undefined, path: string | null | undefined, labels: { preview: string; code: string; terminal: string }): string {
+/** Where someone is, in words: "Preview", "Design", "Code · src/app.ts", "Terminal". */
+export function whereLabel(view: string | null | undefined, path: string | null | undefined, labels: { preview: string; design?: string; code: string; terminal: string }): string {
 	if (view === 'code') return path ? `${labels.code} · ${path}` : labels.code;
+	if (view === 'design' && labels.design) return labels.design;
 	if (view === 'terminal') return labels.terminal;
 	return labels.preview;
 }

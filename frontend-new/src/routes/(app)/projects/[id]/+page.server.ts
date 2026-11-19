@@ -1,6 +1,7 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import { m } from '$lib/paraglide/messages';
 import { loadChatPage } from '$lib/server/chatPage';
+import { loadStudio } from '$lib/server/designStudio';
 import * as tools from '$lib/server/workspace';
 import { changeDomain, loadDeploy, loadDomain, loadProject, publish, rollBack, takeDown, transfer } from '$lib/server/workspace';
 import { deleteProject } from '$lib/server/projects';
@@ -19,7 +20,7 @@ export const load: PageServerLoad = async (event) => {
 	if (!loaded.project) error(loaded.status === 404 || loaded.status === 403 ? 404 : 503, { message: loaded.status === 404 || loaded.status === 403 ? m.workspace_project_missing() : m.error_title() });
 	const id = event.params.id;
 	// A site keeps no data unless Koda gave it some: Database shows only when there are tables.
-	const [chat, deploy, address, people, secrets, showcase, sandbox, database, ownDomains] = await Promise.all([
+	const [chat, deploy, address, people, secrets, showcase, sandbox, database, ownDomains, designLoaded] = await Promise.all([
 		loadChatPage(event, loaded.project.session_id),
 		loadDeploy(event, id),
 		loadDomain(event, id),
@@ -29,11 +30,12 @@ export const load: PageServerLoad = async (event) => {
 		tools.loadSandbox(event, id),
 		loaded.project.stack === 'static' ? tools.hasTables(event, id) : true,
 		tools.loadOwnDomains(event, id),
+		loadStudio(event, loaded.project.session_id),
 	]);
 	// A static site shows its own files, sandboxed, through a grant made for this page (previewGrant.ts).
 	const token = event.locals.accessToken;
 	const preview = loaded.project.stack === 'static' && loaded.project.files.some((file) => file.path === 'index.html') && token ? `/projects/${id}/preview/~${sealPreview(id, token)}/` : null;
-	return { ...chat, preview, title: loaded.project.name, project: loaded.project, live: loaded.live, domain: loaded.domain, deploy, address, people, secrets, showcase, sandbox: usesSandbox(sandbox), database, ownDomains };
+	return { ...chat, preview, title: loaded.project.name, project: loaded.project, live: loaded.live, domain: loaded.domain, deploy, address, people, secrets, showcase, sandbox: usesSandbox(sandbox), database, ownDomains, design: designLoaded.studio };
 };
 
 const refused = (sent: { status: number; message: string }) => fail(sent.status, { message: sent.message || m.action_failed() });

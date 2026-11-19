@@ -5,6 +5,25 @@
 export type StudioElementKind = 'section' | 'component' | 'element';
 export type StudioElement = { id: string; kind: StudioElementKind; label: string; pages: string[] };
 export type StudioPage = { path: string; title: string };
+export type StudioColour = { name: string; hex: string };
+export type StudioTypography = { heading: string; body: string };
+export type StudioDirection = {
+	id: string;
+	name: string;
+	summary: string;
+	rationale: string;
+	trade_offs: string[];
+	palette: StudioColour[];
+	typography: StudioTypography;
+	layout: string;
+	imagery?: string | null;
+	recommended?: boolean;
+};
+export type StudioDirectionSet = {
+	version: number;
+	brief_version: number | null;
+	directions: StudioDirection[];
+};
 export type StudioPreview = {
 	version: number;
 	direction_id: string;
@@ -42,7 +61,12 @@ export type StudioFeedback = {
 };
 /** The version the person said is the design to build. */
 export type StudioApproval = { version: number; note: string | null; created_at: string };
-export type StudioResponse = { previews: StudioPreview[]; feedback: StudioFeedback[]; approval: StudioApproval | null };
+export type StudioResponse = {
+	directions?: StudioDirectionSet | null;
+	previews: StudioPreview[];
+	feedback: StudioFeedback[];
+	approval: StudioApproval | null;
+};
 
 /** Who a message is from: the preview's page, or the Studio around it. */
 export const PREVIEW_SOURCE = 'nomi-design-preview';
@@ -51,6 +75,12 @@ export const STUDIO_SOURCE = 'nomi-design-studio';
 export type Device = 'desktop' | 'tablet' | 'phone';
 /** How wide each device shows the preview, in CSS pixels; a desktop takes the room there is. */
 export const DEVICE_WIDTHS: Record<Device, number | null> = { desktop: null, tablet: 768, phone: 390 };
+/** Explicit pixel width for each device artboard on the 2D spatial canvas. */
+export const CANVAS_ARTBOARD_WIDTHS: Record<Device, number> = { desktop: 1120, tablet: 768, phone: 390 };
+export type CanvasStageFilter = 'all' | 'directions' | 'system' | 'flow';
+export const MIN_ZOOM = 0.25;
+export const MAX_ZOOM = 2;
+export const ZOOM_STEP = 0.25;
 
 const ENTRY_PAGE = 'index.html';
 /** The most of an element's text the Studio keeps. */
@@ -159,7 +189,7 @@ export function annotationsOn(feedback: StudioFeedback[], preview: StudioPreview
 	const here = new Set(elementsOnPage(preview, page).map((element) => element.id));
 	return feedback
 		.filter((f) => f.status === 'open' && f.element_id !== null && here.has(f.element_id))
-		.map((f) => ({ id: f.element_id as string, number: f.number, pin: f.pin }));
+		.map((f) => ({ id: f.element_id as string, number: f.number, pin: f.pin ? { x: f.pin.x, y: f.pin.y } : null }));
 }
 
 /** Tells the preview which elements to mark with a feedback number. */
@@ -193,3 +223,83 @@ export function compareWith(previews: StudioPreview[], current: StudioPreview, p
 	const before = others.filter((p) => p.version < current.version);
 	return before[before.length - 1] ?? others[0] ?? null;
 }
+
+/** Clamps a canvas zoom scale between 25% and 200%, rounded to two decimal places. */
+export function clampZoom(zoom: number): number {
+	if (!Number.isFinite(zoom)) return 1;
+	const clamped = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
+	return Math.round(clamped * 100) / 100;
+}
+
+/** Steps the canvas zoom in or out by 25%. */
+export function zoomStep(zoom: number, direction: 'in' | 'out'): number {
+	return clampZoom(zoom + (direction === 'in' ? ZOOM_STEP : -ZOOM_STEP));
+}
+
+/** Formats a canvas zoom ratio as a mono percentage label (`75%`, `100%`). */
+export function zoomLabel(zoom: number): string {
+	return `${Math.round(clampZoom(zoom) * 100)}%`;
+}
+
+/** Computes a zoom scale that fits `contentWidth` inside `viewportWidth` with breathing room. */
+export function fitZoom(viewportWidth: number, contentWidth: number): number {
+	if (!Number.isFinite(viewportWidth) || !Number.isFinite(contentWidth) || viewportWidth <= 0 || contentWidth <= 0) return 1;
+	const usable = Math.max(240, viewportWidth - 64);
+	return clampZoom(Math.min(1, usable / contentWidth));
+}
+
+const SYSTEM_PAGE_RE = /(?:^|\/|-|_)(?:design-?system|style-?guide|tokens|components|ui-?kit)(?:\.html|\/|$)/i;
+const SYSTEM_TITLE_RE = /\b(?:design\s+system|style\s*guide|tokens|component\s+library|ui\s+kit)\b/i;
+
+/** Whether a preview page is a dedicated Design System / token specimen page. */
+export function isDesignSystemPage(page: StudioPage): boolean {
+	return SYSTEM_PAGE_RE.test(page.path) || SYSTEM_TITLE_RE.test(page.title);
+}
+
+/** Splits a version's pages into dedicated design-system pages and app-flow pages. */
+export function splitCanvasPages(pages: StudioPage[]): { systemPages: StudioPage[]; flowPages: StudioPage[] } {
+	const systemPages = pages.filter(isDesignSystemPage);
+	const flowPages = pages.filter((page) => !isDesignSystemPage(page));
+	if (flowPages.length === 0 && systemPages.length > 0) {
+		return { systemPages: [], flowPages: pages };
+	}
+	return { systemPages, flowPages };
+}
+
+/** Finds the direction in `set` that matches `preview.direction_id`, or the recommended/first direction. */
+export function activeDirectionForPreview(set: StudioDirectionSet | null | undefined, preview: StudioPreview | null): StudioDirection | null {
+	const list = set?.directions ?? [];
+	if (list.length === 0) return null;
+	if (preview) {
+		const id = preview.direction_id.trim().toLowerCase();
+		const matched = list.find((d) => d.id.toLowerCase() === id || d.name.toLowerCase() === id);
+		if (matched) return matched;
+	}
+	return list.find((d) => d.recommended) ?? list[0] ?? null;
+}
+
+/** The chat message that picks a proposed direction so Sora builds the design system and preview. */
+export function pickDirectionMessage(direction: StudioDirection): string {
+	return `@${DESIGNER} Use the "${direction.name}" direction (${direction.id}) and build the design system and multi-page preview.`;
+}
+
+/** The chat message that asks Sora to adjust a proposed direction before picking. */
+export function adjustDirectionMessage(direction: StudioDirection, note: string): string | null {
+	const trimmed = note.trim();
+	if (!trimmed) return null;
+	return `@${DESIGNER} On the "${direction.name}" direction (${direction.id}): ${trimmed}`;
+}
+
+/** Creates an element feedback draft directly from a clicked selection on any artboard page. */
+export function elementPinDraft(version: number, selection: Selection | null, body: string, interaction: boolean = false): FeedbackDraft | null {
+	if (!selection) return null;
+	return feedbackDraft({
+		version,
+		scope: 'element',
+		page: selection.page,
+		selection,
+		interaction,
+		body,
+	});
+}
+

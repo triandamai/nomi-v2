@@ -123,6 +123,7 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route("/api/sessions/:id/messages/:message_id/delete", get(crate::routes::message_delete::preview_delete))
         .route("/api/sessions/:id/messages/:message_id/retry", post(crate::routes::message_retry::retry_failed_run))
+        .route("/api/sessions/:id/summarize", post(crate::routes::session_summarize::summarize))
         .route("/api/sessions/:id/messages/:message_id/regenerate", post(crate::routes::message_rerun::regenerate))
         .route("/api/sessions/:id/messages/:message_id/versions", get(crate::routes::message_rerun::versions))
         .route(
@@ -143,6 +144,8 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/sessions/:id/ws", get(sessions_routes::session_stream))
         .route("/api/realtime/ws", get(crate::routes::realtime::realtime_stream))
         .route("/api/devices", post(crate::routes::devices::register).get(crate::routes::devices::list))
+        .route("/api/devices/web-push", post(crate::routes::devices::subscribe_web_push))
+        .route("/api/devices/web-push/key", get(crate::routes::devices::web_push_key))
         .route("/api/devices/:id", delete(crate::routes::devices::remove))
         .route("/api/me/activity/ws", get(sessions_routes::user_activity_stream))
         .route("/api/sessions/:id/agent-activity", get(sessions_routes::list_agent_activity))
@@ -160,6 +163,9 @@ pub fn build_router(state: AppState) -> Router {
             "/api/sessions/:id/messages/:message_id/approval",
             put(sessions_routes::resolve_approval),
         )
+        .route("/api/sessions/:id/agent-plans/:agent_session_id/run", post(crate::routes::plan_run::run_plan))
+        .route("/api/sessions/:id/messages/:message_id/approval/undo", post(crate::routes::approval_actions::undo_deny))
+        .route("/api/sessions/:id/stopped/:message_id/discard", post(crate::routes::approval_actions::discard_stopped))
         .route(
             "/api/admin/settings/llm/models",
             get(llm_models_routes::list_admin_models).post(llm_models_routes::create_admin_model),
@@ -240,6 +246,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/connections/google", get(connections_routes::get_google).delete(connections_routes::disconnect_google))
         .route("/api/connections/google/start", post(connections_routes::start_google))
         .route("/api/connections/github", get(crate::routes::github::get).put(crate::routes::github::connect_token).delete(crate::routes::github::disconnect))
+        .route("/api/connections/github/repos", get(crate::routes::github::repos))
         .route("/api/connections/github/start", post(crate::routes::github::start))
         .route("/api/connections/github/callback", post(crate::routes::github::callback))
         .route("/api/connections/google/callback", post(connections_routes::complete_google))
@@ -271,6 +278,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/sessions/:id/shares/:share_id", put(crate::routes::shares::update).delete(crate::routes::shares::revoke))
         .route("/api/shared/:token", get(crate::routes::shares::read))
         .route("/api/shared/:token/report", post(crate::routes::shares::report))
+        .route("/api/shared/:token/files/:file_id", get(crate::routes::shares::open_file))
         .route("/api/admin/shared-reports", get(crate::routes::shares::admin_list))
         .route("/api/shares", get(crate::routes::shares::list))
         .route("/api/admin/maintenance", get(crate::routes::maintenance::admin_get).put(crate::routes::maintenance::put))
@@ -293,7 +301,13 @@ pub fn build_router(state: AppState) -> Router {
             "/api/admin/payment/xendit",
             get(crate::routes::admin_payment::get_xendit).put(crate::routes::admin_payment::save_xendit),
         )
+        .route("/api/admin/payment", get(crate::routes::admin_payment::get_overview).put(crate::routes::admin_payment::choose_provider))
         .route("/api/admin/payment/xendit/test", post(crate::routes::admin_payment::test_xendit))
+        .route(
+            "/api/admin/payment/doku",
+            get(crate::routes::admin_payment::get_doku).put(crate::routes::admin_payment::save_doku),
+        )
+        .route("/api/admin/payment/doku/test", post(crate::routes::admin_payment::test_doku))
         .route("/api/admin/shipyard", get(crate::routes::deploy::admin_get))
         .route("/api/admin/shipyard/apps", get(crate::routes::admin_shipyard::list_apps))
         .route("/api/admin/shipyard/apps/link", post(crate::routes::admin_shipyard::link_app))
@@ -395,9 +409,24 @@ pub fn build_router(state: AppState) -> Router {
             post(attachments_routes::upload).layer(axum::extract::DefaultBodyLimit::disable()),
         )
         .route("/api/attachments/limits", get(attachments_routes::limits))
+        .route("/api/attachments/uploads", post(crate::routes::attachment_uploads::create))
+        .route(
+            "/api/attachments/uploads/:upload_id",
+            // Pieces are streamed to disk and checked against their Content-Range by the handler.
+            patch(crate::routes::attachment_uploads::append)
+                .head(crate::routes::attachment_uploads::offset)
+                .layer(axum::extract::DefaultBodyLimit::disable()),
+        )
+        .route("/api/attachments/estimate", post(crate::routes::attachment_estimate::estimate))
         .route("/api/attachments/:id", get(attachments_routes::get_attachment).delete(attachments_routes::delete_attachment))
         .route("/api/attachments/:id/content", get(attachments_routes::get_content))
         .route("/api/attachments/:id/preview", get(attachments_routes::get_preview))
+        .route("/api/attachments/:id/pages/:n", get(attachments_routes::get_page))
+        .route("/api/sessions/:id/files/:file_id", delete(crate::routes::session_files::delete))
+        .route("/api/sessions/:id/files/:file_id/content", get(crate::routes::session_files::content))
+        .route("/api/sessions/:id/files/:file_id/preview", get(crate::routes::session_files::preview))
+        .route("/api/sessions/:id/files/:file_id/remake", post(crate::routes::session_files::remake))
+        .route("/api/me/plan", get(crate::routes::me_plan::get))
         .route("/api/plans", get(plans_routes::list_for_user))
         .route("/api/entitlements", get(plans_routes::entitlements_for_user))
         .route("/api/plans/:id/checkout", post(crate::routes::plan_checkout::checkout))
@@ -462,6 +491,11 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/search", get(crate::routes::search::search))
         .route("/api/projects/:id/transfer/orgs", get(projects_routes::search_transfer_orgs))
         .route("/api/projects/:id/transfer", post(projects_routes::transfer_project))
+        .route("/api/projects/:id/transfer/requests", get(crate::routes::project_transfers::for_project))
+        .route("/api/projects/:id/transfer/requests/:request_id", delete(crate::routes::project_transfers::cancel))
+        .route("/api/transfer-requests", get(crate::routes::project_transfers::mine))
+        .route("/api/transfer-requests/:request_id/approve", post(crate::routes::project_transfers::approve))
+        .route("/api/transfer-requests/:request_id/decline", post(crate::routes::project_transfers::decline))
         .route(
             "/api/projects/:id/agent-permissions",
             get(crate::routes::agent_permissions::list).put(crate::routes::agent_permissions::set),
@@ -479,7 +513,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/projects/:id/domains/:hostname", delete(crate::routes::custom_domains::remove))
         .route("/api/projects/:id/domains/:hostname/check", post(crate::routes::custom_domains::check))
         .route("/api/projects/:id/domains/:hostname/primary", put(crate::routes::custom_domains::make_primary))
-        .route("/api/projects/:id/deploy/publishes/:publish_id", get(crate::routes::deploy::get_publish))
+        .route("/api/projects/:id/deploy/publishes/:publish_id", get(crate::routes::deploy::get_publish).delete(crate::routes::deploy::cancel_publish))
         .route("/api/projects/:id/deploy/publishes/:publish_id/rollback", post(crate::routes::deploy::rollback))
         .route("/api/projects/:id/deploy/deployments/:deployment_id", get(crate::routes::deploy::get_deployment))
         .route("/api/projects/:id/deploy/logs", get(crate::routes::deploy::runtime_logs))
@@ -494,6 +528,7 @@ pub fn build_router(state: AppState) -> Router {
                 .layer(axum::extract::DefaultBodyLimit::max(crate::routes::project_import::MAX_ARCHIVE_BYTES)),
         )
         .route("/api/projects/:id/import/github", post(crate::routes::project_import::import_github))
+        .route("/api/projects/:id/import/review", get(crate::routes::project_import::review))
         .route("/api/projects/:id/export/github", post(crate::routes::github::export))
         .route("/api/projects/:id/export", get(crate::routes::project_export::summary))
         .route("/api/projects/:id/export/zip", get(crate::routes::project_export::download))

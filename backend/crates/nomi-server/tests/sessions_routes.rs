@@ -1100,3 +1100,34 @@ async fn a_build_belongs_to_the_newest_plan_before_it(pool: PgPool) {
     assert_eq!(states(&plans_of(&router, &token, session_id, trip).await), vec!["proposed"]);
     assert_eq!(states(&plans_of(&router, &token, session_id, app).await), vec!["active"]);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn another_persons_agent_never_names_an_agent_in_my_chat_list(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let token = register_and_login(router.clone(), "mine@example.com").await;
+    register_and_login(router.clone(), "theirs@example.com").await;
+    let theirs = user_id_by_email(&pool, "theirs@example.com").await;
+    let stranger: Uuid = sqlx::query_scalar(
+        "INSERT INTO dynamic_agents (name, system_prompt, intent_label, intent_description, created_by, owner_user_id) \
+         VALUES ('Scout', 'x', 'scout', 'scouting', $1, $1) RETURNING id",
+    )
+    .bind(theirs)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    // A stranger's agent also called Dana must not replace the crew's Dana.
+    sqlx::query("INSERT INTO dynamic_agents (name, system_prompt, intent_label, intent_description, created_by, owner_user_id) VALUES ('Dana', 'x', 'dana', 'dana', $1, $1)")
+        .bind(theirs)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let session_id = start_chat(router.clone(), &token).await;
+    for name in ["Scout", "Dana"] {
+        sqlx::query("INSERT INTO messages (session_id, content, agent_display_name) VALUES ($1::uuid, 'hello', $2)").bind(&session_id).bind(name).execute(&pool).await.unwrap();
+    }
+    let (_, list) = json_request(router, "GET", "/api/sessions", Value::Null, Some(&token)).await;
+    let agents: Vec<String> = list["sessions"][0]["agents"].as_array().unwrap().iter().map(|a| a.as_str().unwrap().to_string()).collect();
+    assert!(agents.contains(&"money".to_string()));
+    assert!(agents.contains(&"scout".to_string()), "an unknown name stays its plain form");
+    assert!(!agents.contains(&stranger.to_string()));
+}

@@ -586,7 +586,8 @@
 				case 'retry':
 					return { label: action.label, icon: RotateCcw, onclick: () => void retryRun(message, failure.text) };
 				case 'credits':
-					return { label: action.label, icon: Sparkles, onclick: async () => void (credits && (await useModel(credits.key)) && failure.retry && (await retryRun(message, failure.text, true))) };
+					// No icon: the pen's sparkles are banned by Nomi's UI rules (AGENTS.md §9).
+					return { label: action.label, onclick: async () => void (credits && (await useModel(credits.key)) && failure.retry && (await retryRun(message, failure.text, true))) };
 				case 'switch':
 					return { label: action.label, onclick: async () => void (action.model && (await useModel(action.model)) && failure.retry && (await retryRun(message, failure.text))) };
 				case 'models':
@@ -627,7 +628,7 @@
 		// On a phone the nav bar also says who waits on the person, or how many work in the background.
 		const asking = phone && !working ? latestApproval : null;
 		if (asking) return { agent: crewIdOf(asking), name: m.phone_approval_nav({ agent: asking }) };
-		if (phone && flows.working.length > 1) return { agent: crewIdOf(flows.working[0]), name: m.phone_crew_working({ count: String(flows.working.length) }) };
+		if (phone && !working && flows.working.length > 0) return { agent: crewIdOf(flows.working[0]), name: m.phone_crew_working({ count: String(flows.working.length) }) };
 		return { agent: crewIdOf(name), name: working ? m.chat_nav_working({ name }) : name };
 	});
 	/** Who of the crew waits on an approval in the latest reply. */
@@ -996,9 +997,14 @@
 		event.currentTarget.value = '';
 	}
 
-	/** Takes a file out; focus goes to the next chip, or the field. */
+	/**
+	 * Takes a file out; focus goes to the next chip, or the field (the contract's rule). When that
+	 * clears the way for the fix line (a picture the model can't see, behind a failed upload), focus
+	 * goes to Switch model instead, as when the warning first appears (gate 3, answer 2).
+	 */
 	async function removeChip(chip: Chip) {
 		const at = chips.findIndex((one) => one.key === chip.key);
+		const warnedBefore = warning;
 		const unfinished = chip.status === 'failed' || chip.status === 'rejected';
 		uploads.remove(chip.key);
 		if (unfinished) {
@@ -1007,7 +1013,8 @@
 			liveText = removedLine;
 		}
 		await tick();
-		const next = document.querySelectorAll<HTMLElement>('[data-file-chip]')[at] ?? document.querySelectorAll<HTMLElement>('[data-file-chip]')[at - 1];
+		if (warning && !warnedBefore) return void switchButton?.focus();
+		const next = document.querySelectorAll<HTMLElement>('[data-file-chip]')[at];
 		(next ?? field)?.focus();
 	}
 
@@ -1174,10 +1181,10 @@
 		{#if parts.files.length}<SentFiles files={sentItems(parts.files, clock(message.created_at, time.timeZone))} />{/if}
 		{#if parts.text}<MessageUser
 			text={parts.text}
-			time={clock(message.edited_at ?? message.created_at, time.timeZone)}
+			time={sentNotes[message.id] ? undefined : clock(message.edited_at ?? message.created_at, time.timeZone)}
 			edited={Boolean(message.edited_at) && !shown}
 			version={total > 1 && message.edited_at ? { current: viewing[message.id] || total, total, onprev: () => step(message, (viewing[message.id] || total) - 1), onnext: () => step(message, (viewing[message.id] || total) + 1) } : undefined}
-			onedit={latest && !working && !shown && !parts.files.length ? () => (editing = message.id) : undefined}
+			onedit={latest && !working && !shown && !parts.files.length && !sentNotes[message.id] ? () => (editing = message.id) : undefined}
 		/>{/if}
 		{#if sentNotes[message.id]}<FileNote icon={ImageOff} mono align="end" text={sentNotes[message.id]} />{/if}
 		{#if lateNotes[message.id]}<TurnNote icon={LogIn} align="end" text={lateNotes[message.id]} />{/if}
@@ -1203,7 +1210,8 @@
 				{/each}
 			</div>
 		{/if}
-		{#if removedLine}<FileNote icon={phone ? Check : undefined} mono text={removedLine} />{/if}
+		<!-- A phone's Notice is padded [0,4] (S61SO), as the failed-upload Notice is; a desktop's helper sits flush. -->
+		{#if removedLine}<div class={[phone && 'px-1']}><FileNote icon={phone ? Check : undefined} mono text={removedLine} /></div>{/if}
 	</div>
 {/snippet}
 
@@ -1242,21 +1250,32 @@
 <div class="flex h-full">
 <div class="flex h-full min-w-0 flex-1 flex-col">
 	{#if phone}<NavBar title={shownTitle ?? m.nav_new_chat()} who={answering} onback={() => void goto('/chats')} onmenu={() => (sheet = { kind: 'chat' })} />{/if}
+	{#if phone && (!online || backOnline || quota !== null || flows.working.length > 0)}
+		<!-- On a phone the banners stay under the nav bar, wherever the person is in the thread (UX
+		     contract S3.4, S4 5.1, 6.2): the connection or the month's credits, then who's at work
+		     (Approvals & background HsE8N) with Stop all. -->
+		<div data-phone-banners class="flex flex-col gap-2 px-4 pt-3">
+			{#if !online}
+				<Banner kind="offline" text={m.phone_net_offline()} action={{ label: m.banner_retry_now(), onclick: () => void flushOutbox() }} />
+			{:else if backOnline}
+				<Banner kind="online" text={pending.length === 0 ? m.banner_online_sent() : m.banner_online()} />
+			{:else if quota !== null}
+				<Banner kind="quota" text={m.phone_credits_low({ percent: String(quota), date: resetsOn(time.now, language, time.timeZone) })} action={{ label: m.phone_credits_usage(), href: '/settings/plan' }} />
+			{/if}
+			{#if flows.working.length > 0}<PhoneCrewWorking crew={flows.working.map((name) => crewIdOf(name))} onstop={() => void stopAll()} />{/if}
+		</div>
+	{/if}
 	<div bind:this={scroller} {onscroll} class={['min-h-0 flex-1 overflow-y-auto', phone ? 'px-4 pt-4' : pane ? 'px-5 pt-5' : 'px-4 pt-6 lg:px-12 lg:pt-10']}>
 		<!-- On a phone a short thread sits at the bottom, over the composer, as the pen draws it. -->
 		<div class={['mx-auto flex w-full max-w-180 flex-col', phone ? 'min-h-full justify-end gap-6 pb-5' : 'gap-8 pb-8']}>
-			{#if !online}
-				<Banner kind="offline" text={phone ? m.phone_net_offline() : m.banner_offline()} action={{ label: m.banner_retry_now(), onclick: () => void flushOutbox() }} />
-			{:else if backOnline}
-				<Banner kind="online" text={pending.length === 0 ? m.banner_online_sent() : m.banner_online()} />
-			{:else if quota !== null && phone}
-				<Banner kind="quota" text={m.phone_credits_low({ percent: String(quota), date: resetsOn(time.now, language, time.timeZone) })} action={{ label: m.phone_credits_usage(), href: '/settings/plan' }} />
-			{:else if quota !== null}
-				<Banner kind="quota" text={m.banner_quota({ percent: quota })} action={{ label: m.banner_see_usage(), href: '/settings/plan' }} />
-			{/if}
-			{#if phone && flows.working.length > 0}
-				<!-- Approvals & background (HsE8N): who works on this chat while the person may leave. -->
-				<PhoneCrewWorking crew={flows.working.map((name) => crewIdOf(name))} onstop={() => void stopAll()} />
+			{#if !phone}
+				{#if !online}
+					<Banner kind="offline" text={m.banner_offline()} action={{ label: m.banner_retry_now(), onclick: () => void flushOutbox() }} />
+				{:else if backOnline}
+					<Banner kind="online" text={pending.length === 0 ? m.banner_online_sent() : m.banner_online()} />
+				{:else if quota !== null}
+					<Banner kind="quota" text={m.banner_quota({ percent: quota })} action={{ label: m.banner_see_usage(), href: '/settings/plan' }} />
+				{/if}
 			{/if}
 
 			{#if hasOlder}

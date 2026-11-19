@@ -46,6 +46,8 @@ pub async fn create_session(
 pub struct LastMessagePreview {
     pub content: String,
     pub created_at: DateTime<Utc>,
+    /// The agent whose reply this is; null for a message a person wrote.
+    pub agent_type: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -66,6 +68,8 @@ pub struct SessionListItem {
     pub pinned_at: Option<DateTime<Utc>>,
     /// The project this chat was moved into (not its own project: that's `project_id`).
     pub in_project_id: Option<Uuid>,
+    /// The crew who have answered in this chat, in the order they first did.
+    pub agents: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -80,16 +84,20 @@ pub async fn list_sessions(
     AuthClaims(claims): AuthClaims,
 ) -> Result<Json<ListSessionsResponse>, (StatusCode, &'static str)> {
     #[allow(clippy::type_complexity)]
-    let rows: Vec<(Uuid, String, String, String, Option<String>, Option<String>, Option<DateTime<Utc>>, bool, DateTime<Utc>, Option<Uuid>, Option<DateTime<Utc>>, Option<Uuid>)> = sqlx::query_as(
+    let rows: Vec<(Uuid, String, String, String, Option<String>, Option<String>, Option<DateTime<Utc>>, bool, DateTime<Utc>, Option<Uuid>, Option<DateTime<Utc>>, Option<Uuid>, bool, Option<String>, Vec<String>)> = sqlx::query_as(
         "SELECT \
             s.id, s.channel, s.chat_type, s.chat_id, s.title, \
             lm.content, lm.created_at, \
             EXISTS (SELECT 1 FROM agent_sessions ag WHERE ag.session_id = s.id AND ag.status = 'active'), \
             COALESCE(lm.created_at, s.created_at), \
-            p.id, s.pinned_at, s.in_project_id \
+            p.id, s.pinned_at, s.in_project_id, (lm.sender_channel_identity_id IS NULL), lm.agent_display_name, \
+            COALESCE((SELECT array_agg(a.name ORDER BY a.first_at) FROM ( \
+                SELECT m.agent_display_name AS name, MIN(m.created_at) AS first_at FROM messages m \
+                WHERE m.session_id = s.id AND m.sender_channel_identity_id IS NULL AND m.agent_display_name IS NOT NULL AND m.content NOT LIKE '🧠%' \
+                GROUP BY m.agent_display_name) a), '{}') \
          FROM sessions s \
          LEFT JOIN LATERAL ( \
-             SELECT content, created_at FROM messages m WHERE m.session_id = s.id AND m.content NOT LIKE '🧠%' \
+             SELECT content, created_at, sender_channel_identity_id, agent_display_name FROM messages m WHERE m.session_id = s.id AND m.content NOT LIKE '🧠%' \
              ORDER BY m.created_at DESC LIMIT 1 \
          ) lm ON true \
          LEFT JOIN LATERAL ( \
@@ -105,13 +113,34 @@ pub async fn list_sessions(
     .await
     .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to list sessions"))?;
 
+    // A custom agent goes by its own name in a chat and by its id as an agent type.
+    let dynamic: std::collections::HashMap<String, String> = sqlx::query_as::<_, (String, String)>(
+        "SELECT name, id::text FROM dynamic_agents WHERE owner_user_id IS NULL OR owner_user_id = $1 ORDER BY owner_user_id NULLS FIRST, created_at",
+    )
+    .bind(claims.sub)
+    .fetch_all(&state.pool)
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to list sessions"))?
+        .into_iter()
+        .collect();
+    let agent_type_of = |name: &str| resolve_agent_type(&dynamic, name);
+
     let sessions = rows
         .into_iter()
-        .map(|(id, channel, chat_type, chat_id, title, last_content, last_created_at, agent_active, updated_at, project_id, pinned_at, in_project_id)| {
+        .map(|(id, channel, chat_type, chat_id, title, last_content, last_created_at, agent_active, updated_at, project_id, pinned_at, in_project_id, from_agent_side, last_agent_name, agent_names)| {
             let last_message = match (last_content, last_created_at) {
-                (Some(content), Some(created_at)) => Some(LastMessagePreview { content, created_at }),
+                (Some(content), Some(created_at)) => {
+                    let agent_type = if from_agent_side { last_agent_name.as_deref().map(agent_type_of) } else { None };
+                    Some(LastMessagePreview { content, created_at, agent_type })
+                }
                 _ => None,
             };
+            let agents = agent_names.iter().map(|n| agent_type_of(n)).fold(Vec::new(), |mut all, t| {
+                if !all.contains(&t) {
+                    all.push(t);
+                }
+                all
+            });
             SessionListItem {
                 id,
                 channel,
@@ -125,6 +154,7 @@ pub async fn list_sessions(
                 pinned: pinned_at.is_some(),
                 pinned_at,
                 in_project_id,
+                agents,
             }
         })
         .collect();
@@ -280,6 +310,39 @@ pub struct MessageItem {
     /// What this reply drew on from memory (the viewer's own memories only), most relevant first.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub used_memories: Vec<SavedMemory>,
+    /// Files the person sent this message without, and why (the bubble's "Sent without" note).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub left_out: Vec<LeftOut>,
+}
+
+/// Why a file was left out of a message.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum LeftOutReason {
+    /// The chosen model can't read that kind of file.
+    ModelCannotSee,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct LeftOut {
+    pub name: String,
+    pub reason: LeftOutReason,
+    pub model_label: String,
+}
+
+/// Most files a message may list as left out, and the longest name or model label kept.
+const MAX_LEFT_OUT: usize = 20;
+const MAX_LEFT_OUT_NAME_CHARS: usize = 200;
+const MAX_LEFT_OUT_LABEL_CHARS: usize = 80;
+
+/// The notes as stored: bounded, with control characters dropped (the crew reads them).
+fn clean_left_out(items: Vec<LeftOut>) -> Vec<LeftOut> {
+    let tidy = |s: String, max: usize| s.chars().filter(|c| !c.is_control()).take(max).collect::<String>();
+    items
+        .into_iter()
+        .take(MAX_LEFT_OUT)
+        .map(|i| LeftOut { name: tidy(i.name, MAX_LEFT_OUT_NAME_CHARS), reason: i.reason, model_label: tidy(i.model_label, MAX_LEFT_OUT_LABEL_CHARS) })
+        .collect()
 }
 
 #[derive(Serialize, Clone, Debug, sqlx::FromRow)]
@@ -370,12 +433,12 @@ pub struct ListMessagesResponse {
 /// begins halfway through the crew's replies to one request.
 const MESSAGE_COLUMNS: &str = "m.id, m.sender_channel_identity_id, m.content, m.created_at, m.content_blocks, mf.rating, m.agent_display_name, \
      (SELECT count(*) FROM message_memory_usage u WHERE u.message_id = m.id) AS memory_count, m.edited_at, \
-     (SELECT count(*) FROM message_versions v WHERE v.message_id = m.id) AS versions";
+     (SELECT count(*) FROM message_versions v WHERE v.message_id = m.id) AS versions, m.left_out";
 
-type MessageRow = (Uuid, Option<Uuid>, String, DateTime<Utc>, Option<serde_json::Value>, Option<String>, Option<String>, i64, Option<DateTime<Utc>>, i64);
+type MessageRow = (Uuid, Option<Uuid>, String, DateTime<Utc>, Option<serde_json::Value>, Option<String>, Option<String>, i64, Option<DateTime<Utc>>, i64, Option<serde_json::Value>);
 
 fn to_message_item(
-    (id, sender, content, created_at, content_blocks, my_feedback, agent_display_name, memory_count, edited_at, versions): MessageRow,
+    (id, sender, content, created_at, content_blocks, my_feedback, agent_display_name, memory_count, edited_at, versions, left_out): MessageRow,
 ) -> MessageItem {
     MessageItem {
         id,
@@ -394,6 +457,7 @@ fn to_message_item(
         versions,
         saved_memories: Vec::new(),
         used_memories: Vec::new(),
+        left_out: left_out.and_then(|v| serde_json::from_value(v).ok()).unwrap_or_default(),
     }
 }
 
@@ -581,6 +645,10 @@ pub struct AgentPlanItem {
     /// Where this version stands, from what's been done with it: "updated" once a newer version
     /// follows it, else "proposed", "active", "completed" or "blocked" (see `plan_state`).
     pub state: &'static str,
+    /// The checklist as steps: who does each, where it stands (see `nomi_agent_core::plans::steps_from_checklist`).
+    pub steps: Vec<nomi_agent_core::plans::PlanStep>,
+    /// Seconds the steps still open are expected to take; null when the plan has no steps.
+    pub estimate_seconds: Option<u32>,
 }
 
 /// The build that followed the newest version (a coding delegation handed over after it, before
@@ -603,6 +671,8 @@ pub struct PlanBuild {
 pub struct ListAgentPlansResponse {
     pub plans: Vec<AgentPlanItem>,
     pub build: Option<PlanBuild>,
+    /// The newest version's estimate: how long the plan is expected to take from here.
+    pub estimate_seconds: Option<u32>,
 }
 
 /// Where the newest version of a plan stands. With a build: running is active, failed, stopped or
@@ -664,6 +734,14 @@ pub async fn list_agent_plans(
         None => None,
     };
 
+    // Whose steps they are: the crew member that wrote the plan, when it has a session of its own.
+    let owner: Option<String> = sqlx::query_scalar("SELECT agent_type FROM agent_sessions WHERE id = $1")
+        .bind(agent_session_id)
+        .fetch_optional(&state.pool)
+        .await
+        .ok()
+        .flatten();
+
     let newest = rows.len().saturating_sub(1);
     let mut plans = Vec::with_capacity(rows.len());
     for (index, (id, title, version, content, content_s3_key, created_at)) in rows.into_iter().enumerate() {
@@ -681,10 +759,19 @@ pub async fn list_agent_plans(
             let report_status = build.as_ref().and_then(|b| b.report.as_ref()).and_then(|r| r.get("status")).and_then(|s| s.as_str());
             plan_state(build.as_ref().map(|b| (b.status.as_str(), report_status)), resolved_content.as_deref())
         };
-        plans.push(AgentPlanItem { id, title, version, content: resolved_content, created_at, state: plan_state });
+        // Only the newest version has a build to speak of.
+        let stand = build.as_ref().filter(|_| index == newest).map(|b| nomi_agent_core::plans::BuildStand {
+            status: b.status.as_str(),
+            failing: b.report.as_ref().and_then(|r| r.get("status")).and_then(|s| s.as_str()) == Some("failing"),
+            error: b.error.as_deref(),
+        });
+        let steps = resolved_content.as_deref().map(|c| nomi_agent_core::plans::steps_from_checklist(c, owner.as_deref(), stand)).unwrap_or_default();
+        let estimate_seconds = nomi_agent_core::plans::estimate_seconds(&steps);
+        plans.push(AgentPlanItem { id, title, version, content: resolved_content, created_at, state: plan_state, steps, estimate_seconds });
     }
+    let estimate_seconds = plans.last().and_then(|p| p.estimate_seconds);
 
-    Ok(Json(ListAgentPlansResponse { plans, build }))
+    Ok(Json(ListAgentPlansResponse { plans, build, estimate_seconds }))
 }
 
 
@@ -878,6 +965,9 @@ pub async fn rename_session(
 #[derive(Deserialize)]
 pub struct SendMessageRequest {
     pub text: String,
+    /// Files the person sent this without (the model they chose can't read them).
+    #[serde(default)]
+    pub left_out: Vec<LeftOut>,
 }
 
 /// The most a message's text may hold, in characters (attached files are counted by name only;
@@ -903,7 +993,7 @@ pub async fn send_message(
     State(state): State<AppState>,
     AuthClaims(claims): AuthClaims,
     Path(session_id): Path<Uuid>,
-    Json(req): Json<SendMessageRequest>,
+    Json(mut req): Json<SendMessageRequest>,
 ) -> Result<(StatusCode, Json<IngestMessageResponse>), (StatusCode, &'static str)> {
     authorize_session_access(&state.pool, claims.sub, session_id).await?;
     refuse_project_viewer(&state.pool, claims.sub, session_id).await?;
@@ -934,7 +1024,8 @@ pub async fn send_message(
     // Files the message points at must be the sender's own; their tags are rewritten from our
     // records so what agents read about a file is what was really uploaded.
     let (text, attachment_ids) = crate::routes::attachments::check_message_references(&state.pool, claims.sub, &req.text).await?;
-    let req = SendMessageRequest { text };
+    let left_out = clean_left_out(std::mem::take(&mut req.left_out));
+    let req = SendMessageRequest { text, left_out: Vec::new() };
 
     // Someone working in a teammate's project chat may never have opened a chat of their own:
     // without their web identity, ingesting would file the message under a brand-new person.
@@ -944,7 +1035,8 @@ pub async fn send_message(
     })?;
 
     tracing::debug!(channel = %channel, chat_type = %chat_type, "ingesting inbound message");
-    let ingested = nomi_turn::ingest::ingest_inbound_message(
+    let left_out_json = (!left_out.is_empty()).then(|| serde_json::to_value(&left_out).unwrap_or_default());
+    let ingested = nomi_turn::ingest::ingest_inbound_message_with(
         &state.pool,
         &channel,
         &chat_type,
@@ -952,6 +1044,7 @@ pub async fn send_message(
         &claims.sub.to_string(),
         &req.text,
         Some(claims.active_org_id),
+        left_out_json.as_ref(),
     )
     .await
     .map_err(|e| {
@@ -1002,6 +1095,7 @@ pub async fn send_message(
         versions: 0,
         saved_memories: Vec::new(),
         used_memories: Vec::new(),
+        left_out,
     };
 
     Ok((StatusCode::ACCEPTED, Json(IngestMessageResponse { user_message, supervisor_reply: None })))
@@ -1011,7 +1105,7 @@ pub async fn send_message(
 /// chat's own topic, so a device with the chat open shows them (the device that sent them
 /// already has them, and ignores the copy), and every device hears the chat moved on, so its
 /// chat list does too. Best effort: a missed event is caught up the next time the chat loads.
-async fn announce_sent(pool: &sqlx::PgPool, user_id: Uuid, session_id: Uuid, title: Option<String>, message_ids: impl IntoIterator<Item = Uuid>) {
+pub(crate) async fn announce_sent(pool: &sqlx::PgPool, user_id: Uuid, session_id: Uuid, title: Option<String>, message_ids: impl IntoIterator<Item = Uuid>) {
     let Some(publisher) = crate::project_events::publisher() else { return };
     let chat_topic = format!("chat/{session_id}/stream");
     for message_id in message_ids {
@@ -1122,6 +1216,7 @@ async fn try_stop_command(
         versions: 0,
         saved_memories: Vec::new(),
         used_memories: Vec::new(),
+        left_out: Vec::new(),
     };
     // Background task cards the stop ended: every device fetches them again.
     for (session_id, message_id) in &outcome.report.updated_message_ids {
@@ -1144,6 +1239,7 @@ async fn try_stop_command(
         versions: 0,
         saved_memories: Vec::new(),
         used_memories: Vec::new(),
+        left_out: Vec::new(),
     };
     Ok(Some(IngestMessageResponse { user_message, supervisor_reply: Some(supervisor_reply) }))
 }
@@ -1341,11 +1437,68 @@ pub async fn put_message_feedback(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// What "don't ask again" asks for: `true` keeps it for the whole tool (as before), or
+/// `{ "scope": "recipient", "value": "bu.sri@example.com" }` keeps it for that recipient only.
+#[derive(Deserialize, Debug, Clone, PartialEq)]
+#[serde(untagged)]
+pub enum RememberRequest {
+    Everything(bool),
+    Scoped { scope: String, value: String },
+}
+
+impl Default for RememberRequest {
+    fn default() -> Self {
+        Self::Everything(false)
+    }
+}
+
 #[derive(Deserialize)]
 pub struct ApprovalRequest {
     pub decision: String,
     #[serde(default)]
-    pub remember: bool,
+    pub remember: RememberRequest,
+    /// The person's edits to what the tool will be run with (approve only): the whole input.
+    #[serde(default)]
+    pub input: Option<serde_json::Value>,
+}
+
+/// The input the tool's schema says is wrong, or `None` when it fits (or the tool's schema
+/// isn't known, which leaves the call to the tool itself).
+async fn edited_input_problem(
+    state: &AppState,
+    session_id: Uuid,
+    message_id: Uuid,
+    edited: &serde_json::Value,
+) -> Result<Option<String>, (StatusCode, &'static str)> {
+    let internal = |_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to check the edited input");
+    let row: Option<(String, serde_json::Value, Uuid)> = sqlx::query_as(
+        "SELECT a.agent_type, a.state, ci.user_id FROM agent_sessions a JOIN channel_identities ci ON ci.id = a.sender_channel_identity_id \
+         WHERE a.state->>'pending_approval_message_id' = $1",
+    )
+    .bind(message_id.to_string())
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(internal)?;
+    let Some((agent_type, paused, user_id)) = row else { return Ok(None) };
+
+    let pending_id = paused["pending_tool_use_id"].as_str().unwrap_or_default();
+    let blocks: Vec<nomi_llm::ContentBlock> = serde_json::from_value(paused["tool_use_blocks"].clone()).unwrap_or_default();
+    let Some(tool_name) = blocks.iter().find_map(|b| match b {
+        nomi_llm::ContentBlock::ToolUse { id, name, .. } if id == pending_id => Some(name.clone()),
+        _ => None,
+    }) else {
+        return Ok(None);
+    };
+
+    let registry = crate::build_agent_registry(&state.pool, state.project_storage.clone(), state.tool_catalog.clone());
+    let mut conn = state.pool.acquire().await.map_err(internal)?;
+    let Some(agent) = nomi_turn::resolve_agent(&mut conn, &registry, &state.tool_catalog, &agent_type).await else { return Ok(None) };
+    let mut definitions = agent.tools();
+    definitions.extend(agent.chat_tools(&mut conn, session_id, user_id, &[]).await);
+    Ok(definitions
+        .iter()
+        .find(|t| t.name == tool_name)
+        .and_then(|t| nomi_agent_core::input_check::check_input(&t.input_schema, edited).err()))
 }
 
 pub async fn resolve_approval(
@@ -1360,6 +1513,17 @@ pub async fn resolve_approval(
     if req.decision != "approve" && req.decision != "deny" {
         return Err((StatusCode::BAD_REQUEST, "decision must be 'approve' or 'deny'"));
     }
+    if let RememberRequest::Scoped { scope, value } = &req.remember {
+        if scope != nomi_agent_core::permissions::SCOPE_RECIPIENT || value.trim().is_empty() {
+            return Err((StatusCode::BAD_REQUEST, "remember.scope must be 'recipient' with a value"));
+        }
+    }
+    if req.input.is_some() && req.decision != "approve" {
+        return Err((StatusCode::BAD_REQUEST, "only an approval can carry edited input"));
+    }
+    if req.input.as_ref().is_some_and(|edited| !edited.is_object()) {
+        return Err((StatusCode::BAD_REQUEST, "input must be an object"));
+    }
 
     let pending: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM agent_sessions WHERE state->>'pending_approval_message_id' = $1 AND (state->>'paused_for_approval')::boolean = true)",
@@ -1373,11 +1537,41 @@ pub async fn resolve_approval(
         return Err((StatusCode::CONFLICT, "this action is no longer pending"));
     }
 
+    if let Some(edited) = &req.input {
+        if let Some(problem) = edited_input_problem(&state, session_id, message_id, edited).await? {
+            tracing::debug!(%problem, %message_id, "edited approval input refused");
+            return Err((StatusCode::BAD_REQUEST, "the edited input doesn't fit what this tool takes"));
+        }
+    }
+
+    let (remember, extras) = match &req.remember {
+        RememberRequest::Everything(all) => (*all, nomi_turn::approval::Extras::default()),
+        RememberRequest::Scoped { scope, value } => (
+            false,
+            nomi_turn::approval::Extras { remember_scope: Some(scope.clone()), remember_value: Some(value.trim().to_string()), ..Default::default() },
+        ),
+    };
+    let extras = nomi_turn::approval::Extras { edited_input: req.input.clone(), ..extras };
+
     let mut tx = state.pool.begin().await.map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to start transaction"))?;
-    nomi_turn::approval::enqueue(&mut tx, message_id, &req.decision, req.remember)
+    nomi_turn::approval::enqueue_with(&mut tx, message_id, &req.decision, remember, &extras)
         .await
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to queue approval decision"))?;
+    // A deny shows at once, but the turn carries on only after the undo window.
+    if req.decision == "deny" {
+        sqlx::query(
+            "UPDATE messages SET content_blocks = jsonb_set(jsonb_set(content_blocks, '{0,status}', '\"denied\"'), '{0,decided_at}', to_jsonb(now())) \
+             WHERE id = $1 AND content_blocks->0->>'status' = 'pending'",
+        )
+        .bind(message_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to record the decision"))?;
+    }
     tx.commit().await.map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to queue approval decision"))?;
+    if req.decision == "deny" {
+        crate::chat_events::message_updated(claims.sub, session_id, message_id);
+    }
 
     Ok(StatusCode::ACCEPTED)
 }
@@ -1776,5 +1970,30 @@ mod plan_item_tests {
     fn no_such_item_is_none() {
         assert_eq!(set_plan_item_done(PLAN, 4, true), None);
         assert_eq!(set_plan_item_done("no tasks", 0, true), None);
+    }
+}
+
+/// The `agent_type` a name in a chat stands for: a built-in crew name always means its crew
+/// member; any other name is the caller's visible custom agent of that name (its id), else the
+/// name's lowercase form.
+fn resolve_agent_type(dynamic: &std::collections::HashMap<String, String>, name: &str) -> String {
+    let built_in = nomi_agent_core::crew::agent_type_for_name(name);
+    if built_in != name.to_lowercase() {
+        return built_in;
+    }
+    dynamic.get(name).cloned().unwrap_or(built_in)
+}
+
+#[cfg(test)]
+mod resolve_tests {
+    use super::*;
+
+    #[test]
+    fn a_custom_agent_never_takes_a_crew_name_and_unknown_names_stay_plain() {
+        let dynamic: std::collections::HashMap<String, String> =
+            [("Koda".to_string(), "u-koda".to_string()), ("Scout".to_string(), "u-scout".to_string())].into_iter().collect();
+        assert_eq!(resolve_agent_type(&dynamic, "Koda"), nomi_agent_core::crew::CODING_AGENT_TYPE);
+        assert_eq!(resolve_agent_type(&dynamic, "Scout"), "u-scout");
+        assert_eq!(resolve_agent_type(&dynamic, "Other"), "other");
     }
 }

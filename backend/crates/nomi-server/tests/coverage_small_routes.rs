@@ -1,4 +1,5 @@
-//! Routes that had no tests of their own: the crew's project permissions, Admin → Payment, and
+//! Routes that had no tests of their own: the crew's project permissions, Admin → Payment (the
+//! default provider, Xendit and DOKU), and
 //! trying a failed run again.
 
 mod support;
@@ -63,6 +64,74 @@ async fn xendit_settings_are_admin_only_and_tested_from_what_is_saved(pool: PgPo
     assert_eq!(status, StatusCode::OK);
     assert!(tested["success"].is_boolean());
     assert!(!tested["message"].as_str().unwrap().is_empty());
+}
+
+/// Nothing listens here, so the DOKU key check fails without reaching DOKU.
+const UNREACHABLE_DOKU: &str = "http://127.0.0.1:9";
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn doku_settings_are_admin_only_keep_their_secret_and_are_checked_with_doku(pool: PgPool) {
+    let app = App::new(pool.clone());
+    let person = app.person("ana@acme.test").await;
+    let admin = app.admin("root@nomi.test").await;
+
+    assert_eq!(app.get("/api/admin/payment/doku", &person).await.0, StatusCode::FORBIDDEN);
+    assert_eq!(app.send("PUT", "/api/admin/payment/doku", &person, json!({"values": {}})).await.0, StatusCode::FORBIDDEN);
+    assert_eq!(app.call("POST", "/api/admin/payment/doku/test", Some(&person.token), None).await.0, StatusCode::FORBIDDEN);
+
+    let (status, tested) = app.call("POST", "/api/admin/payment/doku/test", Some(&admin.token), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(tested["success"], false, "{tested}");
+
+    let values = json!({"values": {"client_id": "BRN-0000-TEST", "secret_key": "SK-test-only", "base_url": UNREACHABLE_DOKU}});
+    let (status, saved) = app.send("PUT", "/api/admin/payment/doku", &admin, values).await;
+    assert_eq!(status, StatusCode::OK, "{saved}");
+    assert_eq!(saved["provider"], "doku");
+    let secret = saved["fields"].as_array().unwrap().iter().find(|f| f["name"] == "secret_key").unwrap();
+    assert_eq!(secret["set"], true);
+    assert_eq!(secret["value"], Value::Null, "a secret is never sent back");
+    assert!(!saved.to_string().contains("SK-test-only"));
+
+    // An empty secret keeps the saved one.
+    let (_, kept) = app.send("PUT", "/api/admin/payment/doku", &admin, json!({"values": {"secret_key": ""}})).await;
+    assert_eq!(kept["fields"].as_array().unwrap().iter().find(|f| f["name"] == "secret_key").unwrap()["set"], true);
+
+    let (status, tested) = app.call("POST", "/api/admin/payment/doku/test", Some(&admin.token), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(tested["success"], false, "{tested}");
+    assert!(tested["message"].as_str().unwrap().contains("DOKU"));
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn the_default_payment_provider_is_chosen_by_admins_and_shows_what_is_set_up(pool: PgPool) {
+    let app = App::new(pool.clone());
+    let person = app.person("ana@acme.test").await;
+    let admin = app.admin("root@nomi.test").await;
+
+    assert_eq!(app.get("/api/admin/payment", &person).await.0, StatusCode::FORBIDDEN);
+    assert_eq!(app.send("PUT", "/api/admin/payment", &person, json!({"provider": "doku"})).await.0, StatusCode::FORBIDDEN);
+
+    let (status, overview) = app.get("/api/admin/payment", &admin).await;
+    assert_eq!(status, StatusCode::OK, "{overview}");
+    let names: Vec<&str> = overview["providers"].as_array().unwrap().iter().map(|p| p["name"].as_str().unwrap()).collect();
+    assert_eq!(names, ["xendit", "doku"]);
+    assert_eq!(overview["can_manage"], true);
+
+    let (status, chosen) = app.send("PUT", "/api/admin/payment", &admin, json!({"provider": "doku"})).await;
+    assert_eq!(status, StatusCode::OK, "{chosen}");
+    assert_eq!(chosen["chosen"], "doku");
+    assert_eq!(chosen["source"], "saved");
+    // Chosen but not set up: new payments go nowhere until DOKU has keys.
+    assert_eq!(chosen["in_use"], Value::Null);
+
+    app.send("PUT", "/api/admin/payment/doku", &admin, json!({"values": {"client_id": "BRN-0000-TEST", "secret_key": "SK-test-only"}})).await;
+    let (_, overview) = app.get("/api/admin/payment", &admin).await;
+    assert_eq!(overview["in_use"], "doku");
+    assert_eq!(overview["providers"][1]["configured"], true);
+
+    assert_eq!(app.send("PUT", "/api/admin/payment", &admin, json!({"provider": "paypal"})).await.0, StatusCode::UNPROCESSABLE_ENTITY);
+    let (_, cleared) = app.send("PUT", "/api/admin/payment", &admin, json!({"provider": ""})).await;
+    assert_eq!(cleared["chosen"], Value::Null);
 }
 
 struct Chat {

@@ -6,7 +6,8 @@
 	// Flow / Chat — Attachments, step 11 (deDgy, "Model Fix" kthOB) and Mobile step 13 (sE5RV): the
 	// line over the composer's toolbar when the model in use can't see a picture that's attached.
 	// A warning, not an error: it says the two ways on, Switch model and Send text only. On a desktop
-	// one row, 8 apart [0,4], the label in caption; on a phone the line, then the two as pills.
+	// one row, 8 apart [0,4], the label in caption; on a phone the line, then the two as 32 pills
+	// (13, medium, [0,16]) whose 44pt target is a hit area around them, not a taller pill.
 	// `focus` puts focus on Switch model as the line appears (the contract's focus move); its ring is
 	// the standard focus ring (XHDLj).
 	type Props = {
@@ -34,8 +35,8 @@
 			<span id={labelId} class="text-caption text-text-2">{m.files_fix_phone()}</span>
 		</p>
 		<span class="flex gap-2">
-			<button bind:this={switchButton} type="button" class="inline-flex h-8 cursor-pointer items-center rounded-full border border-border-strong px-3.75 text-phone-sm text-text outline-offset-2 pointer-coarse:h-11" onclick={onswitch}>{m.files_switch_model()}</button>
-			<button type="button" class="inline-flex h-8 cursor-pointer items-center rounded-full px-4 text-phone-sm text-text-2 outline-offset-2 pointer-coarse:h-11" onclick={ontextonly}>{m.files_send_text_only()}</button>
+			<button bind:this={switchButton} type="button" class="relative inline-flex h-8 cursor-pointer items-center rounded-full border border-border-strong px-3.75 text-ui font-medium text-text outline-offset-2 pointer-coarse:after:absolute pointer-coarse:after:inset-x-0 pointer-coarse:after:-inset-y-1.5" onclick={onswitch}>{m.files_switch_model()}</button>
+			<button type="button" class="relative inline-flex h-8 cursor-pointer items-center rounded-full px-4 text-ui font-medium text-text-2 outline-offset-2 pointer-coarse:after:absolute pointer-coarse:after:inset-x-0 pointer-coarse:after:-inset-y-1.5" onclick={ontextonly}>{m.files_send_text_only()}</button>
 		</span>
 	</div>
 {:else}
