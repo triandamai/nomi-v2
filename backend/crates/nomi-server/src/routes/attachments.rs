@@ -22,10 +22,39 @@ use crate::app::AppState;
 
 type ApiError = (StatusCode, &'static str);
 
+/// An upload that failed: the status, and a body the composer reads by its `error` code.
+pub(crate) type UploadError = (StatusCode, Json<serde_json::Value>);
+
+pub(crate) fn coded(status: StatusCode, error: &str, message: &str) -> UploadError {
+    (status, Json(json!({ "error": error, "message": message })))
+}
+
+pub(crate) fn too_large(max_bytes: u64) -> UploadError {
+    (
+        StatusCode::PAYLOAD_TOO_LARGE,
+        Json(json!({ "error": "too_large", "message": "file is too big", "max_bytes": max_bytes })),
+    )
+}
+
+pub(crate) fn server_error(message: &str) -> UploadError {
+    coded(StatusCode::INTERNAL_SERVER_ERROR, "server_error", message)
+}
+
+/// The header an upload names the file it replaces in.
+const REPLACES_HEADER: &str = "x-replaces";
+
+/// The file an upload says it replaces; Err when the header isn't a file id.
+pub(crate) fn replaces_header(headers: &HeaderMap) -> Result<Option<Uuid>, ()> {
+    let Some(value) = headers.get(REPLACES_HEADER).and_then(|v| v.to_str().ok()).map(str::trim).filter(|v| !v.is_empty()) else {
+        return Ok(None);
+    };
+    Uuid::parse_str(value).map(Some).map_err(|_| ())
+}
+
 /// Bytes read before deciding what a file is.
-const SNIFF_BYTES: usize = 8 * 1024;
+pub(crate) const SNIFF_BYTES: usize = 8 * 1024;
 /// The browser's live transcript of a voice note, kept as a fallback.
-const MAX_TRANSCRIPT_CHARS: usize = 20_000;
+pub(crate) const MAX_TRANSCRIPT_CHARS: usize = 20_000;
 
 #[derive(Serialize)]
 pub struct AttachmentResponse {
@@ -38,16 +67,12 @@ pub struct AttachmentResponse {
     pub status: String,
     /// The tag a message carries to point at this file.
     pub reference: String,
+    /// The file this upload was sent to replace.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub replaces: Option<Uuid>,
 }
 
-/// What each person may keep stored, unless Admin → Configuration (or ATTACHMENT_QUOTA_MB) says.
-const DEFAULT_QUOTA_MB: u64 = 2048;
-const MB: u64 = 1024 * 1024;
-
-async fn per_person_quota_bytes() -> i64 {
-    let mb = config::current(&config::ATTACHMENTS).await.number("quota_mb").unwrap_or(DEFAULT_QUOTA_MB);
-    (mb * MB) as i64
-}
+use nomi_agent_core::made_files::per_person_quota_bytes;
 
 /// The limits now: Admin → Configuration, else the environment, else the defaults.
 pub(crate) async fn current_limits() -> Limits {
@@ -63,6 +88,15 @@ pub struct LimitsResponse {
     pub max_files: usize,
     /// The most a message's text may hold, in characters.
     pub max_message_chars: usize,
+    /// What the composer checks a file against before uploading.
+    pub accepted: Accepted,
+}
+
+#[derive(Serialize)]
+pub struct Accepted {
+    pub kinds: &'static [&'static str],
+    pub extensions: &'static [&'static str],
+    pub mimes: &'static [&'static str],
 }
 
 /// `GET /api/attachments/limits`: what the composer checks before uploading.
@@ -74,6 +108,11 @@ pub async fn limits(AuthClaims(_claims): AuthClaims) -> Json<LimitsResponse> {
         max_message_bytes: limits.max_message_bytes,
         max_files: limits.max_files,
         max_message_chars: super::sessions::MAX_MESSAGE_CHARS,
+        accepted: Accepted {
+            kinds: nomi_attachments::accepted::ACCEPTED_KINDS,
+            extensions: nomi_attachments::accepted::ACCEPTED_EXTENSIONS,
+            mimes: nomi_attachments::accepted::ACCEPTED_MIMES,
+        },
     })
 }
 
@@ -96,11 +135,11 @@ fn percent_decode(value: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-fn header_text(headers: &HeaderMap, name: &str) -> Option<String> {
+pub(crate) fn header_text(headers: &HeaderMap, name: &str) -> Option<String> {
     headers.get(name).and_then(|v| v.to_str().ok()).map(percent_decode)
 }
 
-fn clean_name(name: &str) -> String {
+pub(crate) fn clean_name(name: &str) -> String {
     let name: String = name.chars().filter(|c| !c.is_control()).collect();
     let name = name.rsplit(['/', '\\']).next().unwrap_or("").trim().to_string();
     let name: String = name.chars().take(200).collect();
@@ -112,7 +151,7 @@ fn clean_name(name: &str) -> String {
 }
 
 pub(crate) fn storage_key(user_id: Uuid, id: Uuid) -> String {
-    format!("attachments/{user_id}/{id}")
+    nomi_attachments::made::storage_key(user_id, id)
 }
 
 fn preview_key(user_id: Uuid, id: Uuid) -> String {
@@ -120,7 +159,7 @@ fn preview_key(user_id: Uuid, id: Uuid) -> String {
 }
 
 /// Removes the temp file however the upload ends.
-struct TempFile(std::path::PathBuf);
+pub(crate) struct TempFile(pub(crate) std::path::PathBuf);
 
 impl Drop for TempFile {
     fn drop(&mut self) {
@@ -128,24 +167,48 @@ impl Drop for TempFile {
     }
 }
 
+/// Refuses an upload that would take the person past their stored-bytes quota.
+pub(crate) async fn check_quota(state: &AppState, user_id: Uuid, incoming: u64) -> Result<(), UploadError> {
+    let used: i64 = sqlx::query_scalar("SELECT COALESCE(SUM(size_bytes), 0)::bigint FROM attachments WHERE user_id = $1 AND deleted_at IS NULL")
+        .bind(user_id)
+        .fetch_one(&state.pool)
+        .await
+        .map_err(|_| server_error("failed to check storage"))?;
+    if used + incoming as i64 > per_person_quota_bytes().await {
+        return Err(coded(StatusCode::INSUFFICIENT_STORAGE, "storage_full", "storage is full"));
+    }
+    Ok(())
+}
+
+/// The file an upload replaces has to be the sender's own.
+pub(crate) async fn check_replaces(state: &AppState, user_id: Uuid, replaces: Option<Uuid>) -> Result<(), UploadError> {
+    let Some(old) = replaces else { return Ok(()) };
+    let own: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM attachments WHERE id = $1 AND user_id = $2)")
+        .bind(old)
+        .bind(user_id)
+        .fetch_one(&state.pool)
+        .await
+        .map_err(|_| server_error("failed to check the file being replaced"))?;
+    if !own {
+        return Err(coded(StatusCode::NOT_FOUND, "unknown_replaces", "the file being replaced wasn't found"));
+    }
+    Ok(())
+}
+
 /// `POST /api/attachments`: the raw file as the body, its name in `X-File-Name` (%-encoded),
 /// `X-Attachment-Kind: voice` for a composer voice note, with the browser's own transcript (if it
 /// made one) in `X-Transcript`.
-pub async fn upload(State(state): State<AppState>, AuthClaims(claims): AuthClaims, headers: HeaderMap, body: Body) -> Result<(StatusCode, Json<AttachmentResponse>), ApiError> {
+pub async fn upload(State(state): State<AppState>, AuthClaims(claims): AuthClaims, headers: HeaderMap, body: Body) -> Result<(StatusCode, Json<AttachmentResponse>), UploadError> {
     let limits = current_limits().await;
     let max = limits.max_upload_bytes();
     let declared: Option<u64> = headers.get(header::CONTENT_LENGTH).and_then(|v| v.to_str().ok()).and_then(|v| v.parse().ok());
     if declared.is_some_and(|len| len > max) {
-        return Err((StatusCode::PAYLOAD_TOO_LARGE, "file is too big"));
+        return Err(too_large(max));
     }
-    let used: i64 = sqlx::query_scalar("SELECT COALESCE(SUM(size_bytes), 0)::bigint FROM attachments WHERE user_id = $1")
-        .bind(claims.sub)
-        .fetch_one(&state.pool)
-        .await
-        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to check storage"))?;
-    if used + declared.unwrap_or(0) as i64 > per_person_quota_bytes().await {
-        return Err((StatusCode::INSUFFICIENT_STORAGE, "storage is full"));
-    }
+    check_quota(&state, claims.sub, declared.unwrap_or(0)).await?;
+
+    let replaces = replaces_header(&headers).map_err(|_| coded(StatusCode::BAD_REQUEST, "invalid_replaces", "X-Replaces must be the id of a file"))?;
+    check_replaces(&state, claims.sub, replaces).await?;
 
     let name = clean_name(&header_text(&headers, "x-file-name").unwrap_or_default());
     let claimed = headers.get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
@@ -156,56 +219,82 @@ pub async fn upload(State(state): State<AppState>, AuthClaims(claims): AuthClaim
 
     // Stream to a temp file, counting as it goes, so a big upload never sits in memory.
     let dir = std::env::temp_dir().join("nomi-uploads");
-    tokio::fs::create_dir_all(&dir).await.map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to store file"))?;
+    tokio::fs::create_dir_all(&dir).await.map_err(|_| server_error("failed to store file"))?;
     let temp = TempFile(dir.join(Uuid::new_v4().to_string()));
-    let mut file = tokio::fs::File::create(&temp.0).await.map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to store file"))?;
+    let mut file = tokio::fs::File::create(&temp.0).await.map_err(|_| server_error("failed to store file"))?;
     let mut head = Vec::with_capacity(SNIFF_BYTES);
     let mut size: u64 = 0;
     let mut stream = body.into_data_stream();
     while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|_| (StatusCode::BAD_REQUEST, "upload was interrupted"))?;
+        let chunk = chunk.map_err(|_| coded(StatusCode::BAD_REQUEST, "interrupted", "upload was interrupted"))?;
         size += chunk.len() as u64;
         if size > max {
-            return Err((StatusCode::PAYLOAD_TOO_LARGE, "file is too big"));
+            return Err(too_large(max));
         }
         if head.len() < SNIFF_BYTES {
             let take = (SNIFF_BYTES - head.len()).min(chunk.len());
             head.extend_from_slice(&chunk[..take]);
         }
-        file.write_all(&chunk).await.map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to store file"))?;
+        file.write_all(&chunk).await.map_err(|_| server_error("failed to store file"))?;
     }
-    file.flush().await.map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to store file"))?;
+    file.flush().await.map_err(|_| server_error("failed to store file"))?;
     drop(file);
 
-    let sniffed = nomi_attachments::sniff(&head, &name, &claimed, voice).map_err(|refused| match refused {
-        nomi_attachments::kind::Refused::Executable => (StatusCode::UNSUPPORTED_MEDIA_TYPE, "programs can't be attached"),
-        nomi_attachments::kind::Refused::Empty => (StatusCode::BAD_REQUEST, "file is empty"),
+    let input = IngestInput { user_id: claims.sub, temp: &temp.0, size, head: &head, name, claimed, voice, transcript, replaces };
+    ingest_file(&state, input, &limits).await
+}
+
+/// A file that has arrived whole (in one request, or as the last piece of a resumable upload).
+pub(crate) struct IngestInput<'a> {
+    pub user_id: Uuid,
+    pub temp: &'a std::path::Path,
+    pub size: u64,
+    /// The file's first bytes, for telling what it is.
+    pub head: &'a [u8],
+    pub name: String,
+    pub claimed: String,
+    pub voice: bool,
+    pub transcript: Option<String>,
+    pub replaces: Option<Uuid>,
+}
+
+/// Checks what the file is against the limits, reads it, stores it and records it: the one path
+/// every upload takes, whole or in pieces.
+pub(crate) async fn ingest_file(state: &AppState, input: IngestInput<'_>, limits: &Limits) -> Result<(StatusCode, Json<AttachmentResponse>), UploadError> {
+    let IngestInput { user_id, temp, size, head, name, claimed, voice, transcript, replaces } = input;
+    let sniffed = nomi_attachments::sniff(head, &name, &claimed, voice).map_err(|refused| match refused {
+        nomi_attachments::kind::Refused::Executable => {
+            let mut refusal = coded(StatusCode::UNSUPPORTED_MEDIA_TYPE, "unsupported_type", "programs can't be attached");
+            refusal.1 .0["extension"] = json!(nomi_attachments::accepted::extension_of(&name));
+            refusal
+        }
+        nomi_attachments::kind::Refused::Empty => coded(StatusCode::BAD_REQUEST, "empty_file", "file is empty"),
     })?;
     if size > limits.max_bytes_for(sniffed.kind) {
-        return Err((StatusCode::PAYLOAD_TOO_LARGE, "file is too big"));
+        return Err(too_large(limits.max_bytes_for(sniffed.kind)));
     }
 
     // Documents, spreadsheets, slides and PDFs are read now; media is left to the files model.
     let extracted = if matches!(sniffed.kind, Kind::Audio | Kind::Voice | Kind::Video) {
         nomi_attachments::Extracted { needs_model: true, details: json!({}), ..Default::default() }
     } else {
-        let bytes = tokio::fs::read(&temp.0).await.map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to store file"))?;
+        let bytes = tokio::fs::read(temp).await.map_err(|_| server_error("failed to store file"))?;
         let sniffed = sniffed.clone();
         tokio::task::spawn_blocking(move || nomi_attachments::extract(&bytes, &sniffed))
             .await
-            .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to read file"))?
+            .map_err(|_| server_error("failed to read file"))?
     };
 
     let id = Uuid::new_v4();
     let store = nomi_storage::blob::attachment_store();
-    let key = storage_key(claims.sub, id);
-    store.put_file(&key, &temp.0, &sniffed.mime).await.map_err(|e| {
+    let key = storage_key(user_id, id);
+    store.put_file(&key, temp, &sniffed.mime).await.map_err(|e| {
         tracing::error!(error = %e, "failed to store attachment");
-        (StatusCode::INTERNAL_SERVER_ERROR, "failed to store file")
+        server_error("failed to store file")
     })?;
     let preview = match extracted.preview_jpeg {
         Some(jpeg) => {
-            let key = preview_key(claims.sub, id);
+            let key = preview_key(user_id, id);
             match store.put_bytes(&key, jpeg, "image/jpeg").await {
                 Ok(()) => Some(key),
                 Err(e) => {
@@ -225,11 +314,11 @@ pub async fn upload(State(state): State<AppState>, AuthClaims(claims): AuthClaim
     // A voice note starts with the browser's transcript until the files model's is in.
     let text = extracted.text.or(transcript);
     sqlx::query(
-        "INSERT INTO attachments (id, user_id, name, mime, kind, size_bytes, storage_key, preview_key, status, extracted_text, details) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
+        "INSERT INTO attachments (id, user_id, name, mime, kind, size_bytes, storage_key, preview_key, status, extracted_text, details, replaces_attachment_id) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
     )
     .bind(id)
-    .bind(claims.sub)
+    .bind(user_id)
     .bind(&name)
     .bind(&sniffed.mime)
     .bind(sniffed.kind.as_str())
@@ -239,11 +328,12 @@ pub async fn upload(State(state): State<AppState>, AuthClaims(claims): AuthClaim
     .bind(status)
     .bind(&text)
     .bind(&details)
+    .bind(replaces)
     .execute(&state.pool)
     .await
     .map_err(|e| {
         tracing::error!(error = %e, "failed to save attachment");
-        (StatusCode::INTERNAL_SERVER_ERROR, "failed to store file")
+        server_error("failed to store file")
     })?;
 
     let reference = Reference { id, name: name.clone(), kind: sniffed.kind, mime: sniffed.mime.clone(), size };
@@ -257,6 +347,7 @@ pub async fn upload(State(state): State<AppState>, AuthClaims(claims): AuthClaim
             size,
             status: status.to_string(),
             reference: nomi_attachments::write_reference(&reference),
+            replaces,
         }),
     ))
 }
@@ -272,11 +363,14 @@ struct StoredFile {
     status: String,
     message_id: Option<Uuid>,
     details: serde_json::Value,
+    extracted_text: Option<String>,
+    replaces_attachment_id: Option<Uuid>,
+    made_by: Option<String>,
 }
 
 async fn find_own(state: &AppState, user_id: Uuid, id: Uuid) -> Result<StoredFile, ApiError> {
     sqlx::query_as::<_, StoredFile>(
-        "SELECT name, mime, kind, size_bytes, storage_key, preview_key, status, message_id, details FROM attachments WHERE id = $1 AND user_id = $2",
+        "SELECT name, mime, kind, size_bytes, storage_key, preview_key, status, message_id, details, extracted_text, replaces_attachment_id, made_by FROM attachments WHERE id = $1 AND user_id = $2",
     )
     .bind(id)
     .bind(user_id)
@@ -289,6 +383,8 @@ async fn find_own(state: &AppState, user_id: Uuid, id: Uuid) -> Result<StoredFil
 /// `GET /api/attachments/:id`: what Nomi knows about the file, for the chat's file chips.
 pub async fn get_attachment(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(id): Path<Uuid>) -> Result<Json<serde_json::Value>, ApiError> {
     let file = find_own(&state, claims.sub, id).await?;
+    // How reading it came to: null while it is still being read.
+    let read = nomi_attachments::read_result::read_result(&file.status, file.extracted_text.as_deref(), &file.details);
     Ok(Json(json!({
         "id": id,
         "name": file.name,
@@ -298,6 +394,8 @@ pub async fn get_attachment(State(state): State<AppState>, AuthClaims(claims): A
         "status": file.status,
         "has_preview": file.preview_key.is_some(),
         "details": file.details,
+        "read": read,
+        "replaces": file.replaces_attachment_id,
     })))
 }
 
@@ -332,22 +430,27 @@ fn content_disposition(name: &str, inline: bool) -> HeaderValue {
 /// `GET /api/attachments/:id/content`: the file itself, to its owner only.
 pub async fn get_content(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(id): Path<Uuid>, headers: HeaderMap) -> Result<Response, ApiError> {
     let file = find_own(&state, claims.sub, id).await?;
+    stored_file_response(&file.name, &file.mime, &file.storage_key, &headers).await
+}
+
+/// A stored file as a response, honouring a byte range. The caller has decided who may have it.
+pub(crate) async fn stored_file_response(name: &str, mime: &str, storage_key: &str, headers: &HeaderMap) -> Result<Response, ApiError> {
     let bytes = nomi_storage::blob::attachment_store()
-        .get_bytes(&file.storage_key)
+        .get_bytes(storage_key)
         .await
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to load file"))?
         .ok_or((StatusCode::NOT_FOUND, "file not found"))?;
 
-    let inline = shown_inline(&file.mime);
-    let content_type = if inline { file.mime.as_str() } else { "application/octet-stream" };
+    let inline = shown_inline(mime);
+    let content_type = if inline { mime } else { "application/octet-stream" };
     let mut response_headers = HeaderMap::new();
     response_headers.insert(header::CONTENT_TYPE, HeaderValue::from_str(content_type).unwrap_or(HeaderValue::from_static("application/octet-stream")));
-    response_headers.insert(header::CONTENT_DISPOSITION, content_disposition(&file.name, inline));
+    response_headers.insert(header::CONTENT_DISPOSITION, content_disposition(name, inline));
     response_headers.insert(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
     response_headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("private, max-age=3600"));
     response_headers.insert(header::ACCEPT_RANGES, HeaderValue::from_static("bytes"));
 
-    if let Some((start, end)) = byte_range(&headers, bytes.len()) {
+    if let Some((start, end)) = byte_range(headers, bytes.len()) {
         let range = HeaderValue::from_str(&format!("bytes {start}-{end}/{}", bytes.len())).expect("ascii");
         response_headers.insert(header::CONTENT_RANGE, range);
         let slice = bytes[start..=end].to_vec();
@@ -372,14 +475,32 @@ pub async fn get_preview(State(state): State<AppState>, AuthClaims(claims): Auth
         .into_response())
 }
 
+/// `GET /api/attachments/:id/pages/:n`: page `n` (from 1) of a PDF or image as an image, to its
+/// owner only, so the viewer can draw citation highlights over it. 404 past the last page.
+/// Nothing in the workspace draws a PDF page without a system library (pdfium, poppler), so a
+/// page is served from the preview image ingestion stored (an image's own page 1); any other
+/// page is 501 `{"error":"page_render_unavailable"}`.
+pub async fn get_page(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path((id, n)): Path<(Uuid, i64)>) -> Response {
+    use nomi_attachments::made::{page_plan, PagePlan};
+    let file = match find_own(&state, claims.sub, id).await {
+        Ok(file) => file,
+        Err(refusal) => return refusal.into_response(),
+    };
+    match page_plan(&file.kind, &file.details, n, file.preview_key.is_some()) {
+        PagePlan::NotFound => (StatusCode::NOT_FOUND, "page not found").into_response(),
+        PagePlan::Unavailable => (StatusCode::NOT_IMPLEMENTED, Json(json!({ "error": "page_render_unavailable" }))).into_response(),
+        PagePlan::StoredPreview => get_preview(State(state), AuthClaims(claims), Path(id)).await.into_response(),
+    }
+}
+
 /// `DELETE /api/attachments/:id`: removes a file taken out of the composer before sending.
 /// Files already in a message stay, as part of the chat.
 pub async fn delete_attachment(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(id): Path<Uuid>) -> Result<StatusCode, ApiError> {
     let file = find_own(&state, claims.sub, id).await?;
-    if file.message_id.is_some() {
+    if file.message_id.is_some() || file.made_by.is_some() {
         return Err((StatusCode::CONFLICT, "file was already sent"));
     }
-    sqlx::query("DELETE FROM attachments WHERE id = $1 AND user_id = $2 AND message_id IS NULL")
+    sqlx::query("DELETE FROM attachments WHERE id = $1 AND user_id = $2 AND message_id IS NULL AND made_by IS NULL")
         .bind(id)
         .bind(claims.sub)
         .execute(&state.pool)
@@ -474,6 +595,19 @@ mod tests {
         assert_eq!(byte_range(&headers, 10), Some((7, 9)));
         headers.insert(header::RANGE, HeaderValue::from_static("bytes=12-"));
         assert_eq!(byte_range(&headers, 10), None);
+    }
+
+    #[test]
+    fn an_upload_names_the_file_it_replaces_in_a_header() {
+        let mut headers = HeaderMap::new();
+        assert_eq!(replaces_header(&headers), Ok(None));
+        let id = Uuid::new_v4();
+        headers.insert(REPLACES_HEADER, HeaderValue::from_str(&format!(" {id} ")).unwrap());
+        assert_eq!(replaces_header(&headers), Ok(Some(id)));
+        headers.insert(REPLACES_HEADER, HeaderValue::from_static("not-an-id"));
+        assert_eq!(replaces_header(&headers), Err(()));
+        headers.insert(REPLACES_HEADER, HeaderValue::from_static(""));
+        assert_eq!(replaces_header(&headers), Ok(None));
     }
 
     #[test]

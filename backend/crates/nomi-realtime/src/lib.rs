@@ -70,6 +70,45 @@ pub enum StreamEnvelope {
     AgentSessionEnded { agent_session_id: Uuid, session_id: Uuid, reason: String },
     /// The chat's turn queue changed (an ask started running or was moved to the front).
     QueueChanged,
+    /// Koda finished an ask in the preview and files changed: `files` are their paths, `tests`
+    /// what the turn's recorded test run said (null when it ran none).
+    AskBuilt { job_id: Uuid, files: Vec<String>, tests: Option<TestsOutcome> },
+    /// The crew started making a file in this chat. `step` is what it is doing now; `started_at`
+    /// is RFC 3339.
+    #[serde(rename = "file_generating")]
+    FileGenerating { file_id: Uuid, name: String, step: String, started_at: String },
+    /// A file the crew made is ready. `rows` is the row count of a CSV or spreadsheet.
+    #[serde(rename = "file_ready")]
+    FileReady {
+        file_id: Uuid,
+        name: String,
+        mime: String,
+        size: u64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        rows: Option<u64>,
+        summary: String,
+    },
+    /// Making the file didn't finish.
+    #[serde(rename = "file_failed")]
+    FileFailed { file_id: Uuid, code: FileFailCode },
+}
+
+/// Why a file the crew was making didn't get made.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FileFailCode {
+    /// It couldn't be written or stored.
+    WriteFailed,
+    /// The person stopped the crew first.
+    Stopped,
+}
+
+/// How a turn's test run ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TestsOutcome {
+    Passed,
+    Failed,
 }
 
 /// Events on `user/{id}/stream`: what a person's apps hear about that isn't tied to a chat they
@@ -122,4 +161,42 @@ pub enum UserEnvelope {
     DevicePresence { device_id: Uuid, presence: PresenceState, last_seen_at: String },
     /// One of the person's devices was signed out from another: that device signs itself out.
     DeviceSignedOut { device_id: Uuid },
+}
+
+#[cfg(test)]
+mod file_event_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn a_file_being_made_is_announced_with_its_step() {
+        let file_id = Uuid::nil();
+        let event = StreamEnvelope::FileGenerating { file_id, name: "may.csv".into(), step: "writing rows".into(), started_at: "2026-11-18T10:00:00Z".into() };
+        assert_eq!(
+            serde_json::to_value(&event).unwrap(),
+            json!({ "kind": "file_generating", "file_id": file_id, "name": "may.csv", "step": "writing rows", "started_at": "2026-11-18T10:00:00Z" })
+        );
+    }
+
+    #[test]
+    fn a_finished_file_carries_its_size_summary_and_optional_rows() {
+        let file_id = Uuid::nil();
+        let event = StreamEnvelope::FileReady { file_id, name: "may.csv".into(), mime: "text/csv".into(), size: 42, rows: Some(3), summary: "May spending".into() };
+        let value = serde_json::to_value(&event).unwrap();
+        assert_eq!(value["kind"], "file_ready");
+        assert_eq!(value["rows"], 3);
+        assert_eq!(value["size"], 42);
+        let no_rows = StreamEnvelope::FileReady { file_id, name: "a.md".into(), mime: "text/markdown".into(), size: 1, rows: None, summary: "x".into() };
+        assert!(serde_json::to_value(&no_rows).unwrap().get("rows").is_none());
+        let back: StreamEnvelope = serde_json::from_value(value).unwrap();
+        assert_eq!(back, event);
+    }
+
+    #[test]
+    fn a_failed_file_says_why_in_a_code() {
+        let file_id = Uuid::nil();
+        let event = StreamEnvelope::FileFailed { file_id, code: FileFailCode::WriteFailed };
+        assert_eq!(serde_json::to_value(&event).unwrap(), json!({ "kind": "file_failed", "file_id": file_id, "code": "write_failed" }));
+        assert_eq!(serde_json::to_value(FileFailCode::Stopped).unwrap(), json!("stopped"));
+    }
 }

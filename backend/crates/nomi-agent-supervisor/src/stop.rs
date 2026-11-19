@@ -234,11 +234,13 @@ pub async fn stop_agents(conn: &mut PgConnection, request: &StopRequest) -> Resu
 
     let locale = nomi_agent_core::user_locale(&mut *conn, request.user_id).await;
     let mut tasks: Vec<nomi_agent_core::content_block::StoppedTask> = Vec::new();
-    let task = |agent: &str, title: String, started: bool| nomi_agent_core::content_block::StoppedTask {
+    let task = |agent: &str, title: String, started: bool, delegation_id: Option<Uuid>, background_task_id: Option<Uuid>| nomi_agent_core::content_block::StoppedTask {
         agent: agent.to_string(),
         title: title.chars().take(140).collect(),
         detail: None,
         state: if started { "stopped" } else { "waiting" }.to_string(),
+        delegation_id,
+        background_task_id,
     };
 
     let mut approval_message_ids: Vec<Uuid> = Vec::new();
@@ -248,7 +250,7 @@ pub async fn stop_agents(conn: &mut PgConnection, request: &StopRequest) -> Resu
         if let Some(id) = pending_message_id.and_then(|id| id.parse().ok()) {
             approval_message_ids.push(id);
         }
-        tasks.push(task(&agent_type, locale.t("stop.task_reply"), true));
+        tasks.push(task(&agent_type, locale.t("stop.task_reply"), true, None, None));
         stopped_types.push(agent_type);
     }
 
@@ -265,9 +267,9 @@ pub async fn stop_agents(conn: &mut PgConnection, request: &StopRequest) -> Resu
     .bind(&agent_filter)
     .fetch_all(&mut *conn)
     .await?;
-    for (_, session_id, target, what, started) in &delegations {
+    for (delegation_id, session_id, target, what, started) in &delegations {
         touched_sessions.insert(*session_id);
-        tasks.push(task(target, what.clone(), *started));
+        tasks.push(task(target, what.clone(), *started, Some(*delegation_id), None));
         stopped_types.push(target.clone());
     }
 
@@ -287,7 +289,7 @@ pub async fn stop_agents(conn: &mut PgConnection, request: &StopRequest) -> Resu
     let mut updated_message_ids = Vec::new();
     for (id, session_id, agent_type, label, started) in &bg_tasks {
         touched_sessions.insert(*session_id);
-        tasks.push(task(agent_type, label.clone(), *started));
+        tasks.push(task(agent_type, label.clone(), *started, None, Some(*id)));
         stopped_types.push(agent_type.clone());
         for message_id in nomi_agent_core::background::settle_task_cards(&mut *conn, None, *session_id, *id, "cancelled").await {
             updated_message_ids.push((*session_id, message_id));
@@ -310,7 +312,7 @@ pub async fn stop_agents(conn: &mut PgConnection, request: &StopRequest) -> Resu
             let is_the_supervisor_turn = request.from_supervisor_turn && session_id == request.session_id;
             if !is_the_supervisor_turn && !sessions_with_agent.contains(&session_id) {
                 touched_sessions.insert(session_id);
-                tasks.push(task("chitchat", locale.t("stop.task_reply"), true));
+                tasks.push(task("chitchat", locale.t("stop.task_reply"), true, None, None));
                 stopped_types.push("chitchat".to_string());
             }
         }
@@ -328,7 +330,7 @@ pub async fn stop_agents(conn: &mut PgConnection, request: &StopRequest) -> Resu
         .await?;
         dropped_messages = dropped.len();
         for _ in &dropped {
-            tasks.push(task("chitchat", locale.t("stop.task_queued"), false));
+            tasks.push(task("chitchat", locale.t("stop.task_queued"), false, None, None));
         }
         touched_sessions.extend(dropped);
     }

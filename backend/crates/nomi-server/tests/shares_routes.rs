@@ -376,3 +376,141 @@ async fn anyone_may_report_a_shared_page_a_few_times_an_hour(pool: PgPool) {
     assert_eq!(reports[0]["reason"], "abuse");
     assert!(reports[0].get("reporter").is_none());
 }
+
+/// A file attached to `message_id` in the chat (the way a sent message carries one).
+async fn attach(pool: &PgPool, session_id: &str, message_id: Uuid, name: &str) -> Uuid {
+    sqlx::query_scalar(
+        "INSERT INTO attachments (user_id, session_id, message_id, name, mime, kind, size_bytes, storage_key, status, details) \
+         SELECT s.user_id, s.id, $2, $3, 'application/pdf', 'pdf', 2048, 'attachments/test/' || $3, 'ready', '{\"pages\": 12}'::jsonb FROM sessions s WHERE s.id = $1::uuid RETURNING id",
+    )
+    .bind(session_id)
+    .bind(message_id)
+    .bind(name)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn files_are_closed_by_default_and_cannot_be_open_on_a_masked_link(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let token = register_and_login(router.clone(), "files@example.com").await;
+    let session_id = start_chat(router.clone(), &token).await;
+    let shares = format!("/api/sessions/{session_id}/shares");
+
+    let (status, share) = json_request(router.clone(), "POST", &shares, json!({ "scope": "chat" }), Some(&token)).await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(share["files_open"], false);
+
+    // Masking is on unless said otherwise, so asking for open files alone is refused too.
+    let (status, body) = json_request(router.clone(), "POST", &shares, json!({ "scope": "chat", "files_open": true }), Some(&token)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"], "mask_and_files_open");
+    let (status, body) = json_request(router.clone(), "POST", &shares, json!({ "scope": "chat", "mask": true, "files_open": true }), Some(&token)).await;
+    assert_eq!((status, &body["error"]), (StatusCode::BAD_REQUEST, &json!("mask_and_files_open")));
+
+    let (status, share) = json_request(router.clone(), "POST", &shares, json!({ "scope": "chat", "mask": false, "files_open": true }), Some(&token)).await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(share["files_open"], true);
+
+    // Changing it later: open → closed, and open with a mask is refused.
+    let path = format!("{shares}/{}", share["id"].as_str().unwrap());
+    let (status, body) = json_request(router.clone(), "PUT", &path, json!({ "scope": "chat", "mask": true, "files_open": true }), Some(&token)).await;
+    assert_eq!((status, &body["error"]), (StatusCode::BAD_REQUEST, &json!("mask_and_files_open")));
+    let (status, updated) = json_request(router, "PUT", &path, json!({ "scope": "chat", "mask": false }), Some(&token)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(updated["files_open"], false);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_shared_chat_lists_its_files_and_gives_urls_only_when_files_are_open(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let token = register_and_login(router.clone(), "lister@example.com").await;
+    let session_id = start_chat(router.clone(), &token).await;
+    let answer = reply(&pool, &session_id, "Here is the report.").await;
+    let file = attach(&pool, &session_id, answer, "report.pdf").await;
+    let shares = format!("/api/sessions/{session_id}/shares");
+
+    let (_, closed) = json_request(router.clone(), "POST", &shares, json!({ "scope": "chat", "mask": false }), Some(&token)).await;
+    let (_, shared) = json_request(router.clone(), "GET", &format!("/api/shared/{}", closed["token"].as_str().unwrap()), Value::Null, None).await;
+    assert_eq!(shared["files_open"], false);
+    let files = shared["files"].as_array().unwrap();
+    assert_eq!(files.len(), 1);
+    assert_eq!((&files[0]["name"], &files[0]["kind"], &files[0]["size"], &files[0]["pages"]), (&json!("report.pdf"), &json!("pdf"), &json!(2048), &json!(12)));
+    assert_eq!((files[0]["message_index"].as_u64(), files[0]["made_by_crew"].as_bool()), (Some(1), Some(true)));
+    assert!(files[0].get("url").is_none(), "a closed link names its files but never links them");
+    let (status, _) = json_request(router.clone(), "GET", &format!("/api/shared/{}/files/{file}", closed["token"].as_str().unwrap()), Value::Null, None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let (_, open) = json_request(router.clone(), "POST", &shares, json!({ "scope": "chat", "mask": false, "files_open": true }), Some(&token)).await;
+    let open_token = open["token"].as_str().unwrap();
+    let (_, shared) = json_request(router, "GET", &format!("/api/shared/{open_token}"), Value::Null, None).await;
+    assert_eq!(shared["files_open"], true);
+    assert_eq!(shared["files"][0]["url"], format!("/api/shared/{open_token}/files/{file}"));
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn only_files_of_the_shared_messages_open_from_a_link(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let token = register_and_login(router.clone(), "scoped@example.com").await;
+    let session_id = start_chat(router.clone(), &token).await;
+    let other_chat = start_chat(router.clone(), &token).await;
+    let first = reply(&pool, &session_id, "First reply").await;
+    let second = reply(&pool, &session_id, "Second reply").await;
+    let in_first = attach(&pool, &session_id, first, "first.pdf").await;
+    let in_second = attach(&pool, &session_id, second, "second.pdf").await;
+    let elsewhere_message = reply(&pool, &other_chat, "Another chat's reply").await;
+    let elsewhere = attach(&pool, &other_chat, elsewhere_message, "elsewhere.pdf").await;
+
+    // A link to one reply lists that reply's file only.
+    let (_, share) = json_request(router.clone(), "POST", &format!("/api/sessions/{session_id}/shares"), json!({ "scope": "reply", "message_id": first, "mask": false, "files_open": true }), Some(&token)).await;
+    let link = share["token"].as_str().unwrap();
+    let (_, shared) = json_request(router.clone(), "GET", &format!("/api/shared/{link}"), Value::Null, None).await;
+    let names: Vec<&str> = shared["files"].as_array().unwrap().iter().map(|f| f["name"].as_str().unwrap()).collect();
+    assert_eq!(names, vec!["first.pdf"]);
+    assert_eq!(shared["files"][0]["message_index"], 0);
+
+    // The others — another message of the chat, another chat's file — don't open.
+    for hidden in [in_second, elsewhere] {
+        let (status, _) = json_request(router.clone(), "GET", &format!("/api/shared/{link}/files/{hidden}"), Value::Null, None).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{hidden}");
+    }
+    let _ = in_first;
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_link_for_signed_in_viewers_keeps_its_files_behind_the_sign_in(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let token = register_and_login(router.clone(), "private@example.com").await;
+    let session_id = start_chat(router.clone(), &token).await;
+    let answer = reply(&pool, &session_id, "Here it is.").await;
+    let file = attach(&pool, &session_id, answer, "secret.pdf").await;
+    let (_, share) = json_request(router.clone(), "POST", &format!("/api/sessions/{session_id}/shares"), json!({ "scope": "chat", "mask": false, "anyone": false, "files_open": true }), Some(&token)).await;
+
+    let (status, _) = json_request(router, "GET", &format!("/api/shared/{}/files/{file}", share["token"].as_str().unwrap()), Value::Null, None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_file_the_crew_made_in_the_chat_is_listed_and_opens_from_a_link(pool: PgPool) {
+    let router = build_router(test_state(pool.clone()));
+    let token = register_and_login(router.clone(), "made@example.com").await;
+    let session_id = start_chat(router.clone(), &token).await;
+    reply(&pool, &session_id, "Here is the sheet.").await;
+    // A made file belongs to the chat: it has no message.
+    let made: Uuid = sqlx::query_scalar(
+        "INSERT INTO attachments (user_id, session_id, name, mime, kind, size_bytes, storage_key, status, made_by, created_at) \
+         SELECT s.user_id, s.id, 'rows.csv', 'text/csv', 'text', 10, 'attachments/test/rows.csv', 'ready', 'files', now() + interval '2 seconds' FROM sessions s WHERE s.id = $1::uuid RETURNING id",
+    )
+    .bind(&session_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let (_, share) = json_request(router.clone(), "POST", &format!("/api/sessions/{session_id}/shares"), json!({ "scope": "chat", "mask": false, "files_open": true }), Some(&token)).await;
+    let link = share["token"].as_str().unwrap();
+    let (_, shared) = json_request(router, "GET", &format!("/api/shared/{link}"), Value::Null, None).await;
+    let files = shared["files"].as_array().unwrap();
+    assert_eq!(files.len(), 1);
+    assert_eq!((files[0]["name"].as_str(), files[0]["made_by_crew"].as_bool()), (Some("rows.csv"), Some(true)));
+    assert_eq!(files[0]["url"], format!("/api/shared/{link}/files/{made}"));
+}

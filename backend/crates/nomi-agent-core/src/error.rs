@@ -32,11 +32,34 @@ impl TurnError {
     /// What to post with the explanation: a card when the allowance ran out, otherwise an error
     /// bubble that can rerun `retry` when trying again can help.
     pub fn notice_blocks(&self, retry: Option<crate::content_block::RetryTarget>) -> serde_json::Value {
+        self.notice_blocks_for(retry, None)
+    }
+
+    /// [`TurnError::notice_blocks`] naming the `model` that was asked, when the caller knows it.
+    pub fn notice_blocks_for(&self, retry: Option<crate::content_block::RetryTarget>, model: Option<&str>) -> serde_json::Value {
         use crate::content_block::ContentBlock;
         let block = if self.is_quota_exceeded() {
             ContentBlock::QuotaNotice { reason: "used_up".to_string() }
         } else {
-            ContentBlock::RunFailed { retry: retry.filter(|_| self.is_retryable()) }
+            let (failure_kind, status, provider, provider_message) = match self {
+                TurnError::LlmCallFailed(e) => {
+                    let d = e.failure_details();
+                    (d.kind, d.status, d.provider, d.provider_message)
+                }
+                TurnError::ToolLoopExceeded => ("tool_loop", None, None, None),
+                TurnError::TimedOut(_) => ("timed_out", None, None, None),
+                TurnError::RepeatedFailure { .. } => ("repeated_failure", None, None, None),
+                TurnError::ApprovalNoLongerPending => ("approval_handled", None, None, None),
+                TurnError::Db(_) => ("internal", None, None, None),
+            };
+            ContentBlock::RunFailed {
+                retry: retry.filter(|_| self.is_retryable()),
+                failure_kind: Some(failure_kind.to_string()),
+                status,
+                provider,
+                provider_message,
+                model: model.map(str::to_string),
+            }
         };
         serde_json::json!([block])
     }
@@ -82,8 +105,25 @@ mod tests {
     fn other_failures_get_an_error_bubble_that_can_retry() {
         let turn_job_id = uuid::Uuid::nil();
         let blocks = TurnError::ToolLoopExceeded.notice_blocks(Some(RetryTarget::Turn { turn_job_id }));
-        assert_eq!(blocks, serde_json::json!([{"kind": "run_failed", "retry": {"target": "turn", "turn_job_id": turn_job_id}}]));
+        assert_eq!(blocks, serde_json::json!([{"kind": "run_failed", "failure_kind": "tool_loop", "retry": {"target": "turn", "turn_job_id": turn_job_id}}]));
         let blocks = TurnError::ApprovalNoLongerPending.notice_blocks(Some(RetryTarget::LastMessage));
-        assert_eq!(blocks, serde_json::json!([{"kind": "run_failed"}]));
+        assert_eq!(blocks, serde_json::json!([{"kind": "run_failed", "failure_kind": "approval_handled"}]));
+    }
+
+    #[test]
+    fn a_provider_failure_carries_its_status_provider_words_and_model() {
+        let err = TurnError::LlmCallFailed(nomi_llm::LlmError::ProviderError("deepseek returned 402 Payment Required: Insufficient Balance".into()));
+        let blocks = err.notice_blocks_for(Some(RetryTarget::LastMessage), Some("deepseek-chat"));
+        assert_eq!(blocks[0]["failure_kind"], "out_of_credits");
+        assert_eq!(blocks[0]["status"], 402);
+        assert_eq!(blocks[0]["provider"], "deepseek");
+        assert_eq!(blocks[0]["provider_message"], "Insufficient Balance");
+        assert_eq!(blocks[0]["model"], "deepseek-chat");
+    }
+
+    #[test]
+    fn a_filtered_reply_is_a_content_filter_failure() {
+        let err = TurnError::LlmCallFailed(nomi_llm::LlmError::ProviderError(r#"openai returned 400 Bad Request: {"error":{"code":"content_filter","message":"filtered"}}"#.into()));
+        assert_eq!(err.notice_blocks(None)[0]["failure_kind"], "content_filter");
     }
 }

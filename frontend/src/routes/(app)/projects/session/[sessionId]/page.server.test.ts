@@ -37,7 +37,7 @@ describe('project chat: load', () => {
 	it("loads the chat's Design Studio so its Design tab shows without leaving the project", async () => {
 		answer((path) => (path === '/api/sessions/s1/design' ? json({ previews: [{ version: 1 }], feedback: [], approval: null }) : undefined));
 		const data = await loadPage();
-		expect(data.design).toEqual({ previews: [{ version: 1 }], feedback: [], approval: null });
+		expect(data.design).toEqual({ directions: null, previews: [{ version: 1 }], feedback: [], approval: null });
 	});
 
 	it('has no Design Studio when it could not be loaded, and still loads the page', async () => {

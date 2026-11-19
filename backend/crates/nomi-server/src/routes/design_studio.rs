@@ -14,6 +14,7 @@ use chrono::{DateTime, Utc};
 use nomi_agent_core::crew::DESIGN_AGENT_TYPE;
 use nomi_agent_core::design_approval::{self, Approval};
 use nomi_agent_core::design_artifact::{self, Element, Page, ENTRY_PAGE, PREVIEW_TOKEN_CHARS};
+use nomi_agent_core::design_directions::{self, Direction};
 use nomi_agent_core::design_feedback::{self, Feedback, NewFeedback, MAX_OPEN_PER_CHAT};
 use nomi_auth::extractor::AuthClaims;
 use serde::Serialize;
@@ -38,6 +39,13 @@ const HTML_TYPE: &str = "text/html";
 const APPROVED_BY: &str = "chitchat";
 
 #[derive(Serialize)]
+pub struct StudioDirectionSet {
+    pub version: i32,
+    pub brief_version: Option<i32>,
+    pub directions: Vec<Direction>,
+}
+
+#[derive(Serialize)]
 pub struct StudioPreview {
     pub version: i32,
     pub direction_id: String,
@@ -53,6 +61,8 @@ pub struct StudioPreview {
 
 #[derive(Serialize)]
 pub struct StudioResponse {
+    /// The newest proposed direction set for the chat, when Sora has proposed directions.
+    pub directions: Option<StudioDirectionSet>,
     pub previews: Vec<StudioPreview>,
     /// Everything said about the chat's previews, oldest first.
     pub feedback: Vec<Feedback>,
@@ -71,10 +81,19 @@ pub async fn list(State(state): State<AppState>, AuthClaims(claims): AuthClaims,
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to load previews")
     };
     let mut conn = state.pool.acquire().await.map_err(failed)?;
+    let directions = design_directions::latest(&mut conn, session_id)
+        .await
+        .map_err(failed)?
+        .map(|(version, brief_version, set)| StudioDirectionSet {
+            version,
+            brief_version,
+            directions: set.directions,
+        });
     let previews = design_artifact::list(&mut conn, session_id).await.map_err(failed)?;
     let feedback = design_feedback::list(&mut conn, session_id).await.map_err(failed)?;
     let approval = design_approval::current(&mut conn, session_id).await.map_err(failed)?;
     Ok(Json(StudioResponse {
+        directions,
         feedback,
         approval,
         previews: previews

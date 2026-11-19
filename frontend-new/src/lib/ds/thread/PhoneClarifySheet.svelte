@@ -19,7 +19,7 @@
 </script>
 
 <script lang="ts">
-	import { ArrowRight, Info, List, Pencil } from '@lucide/svelte';
+	import { ArrowRight, Check, Info, List, ListChecks, Pencil } from '@lucide/svelte';
 	import { tick } from 'svelte';
 	import { m } from '$lib/paraglide/messages';
 	import Icon from '../foundations/Icon.svelte';
@@ -27,7 +27,6 @@
 	import BottomSheet from '../overlays/BottomSheet.svelte';
 	import PhoneOption from '../mobile/PhoneOption.svelte';
 	import PhoneButton from '../mobile/PhoneButton.svelte';
-	import Progress from '../mobile/Progress.svelte';
 	import { isAnswered } from '../chat/clarify';
 
 	// Flow / Mobile Chat — Clarify → plan (GCvfD), steps 1–5: the crew's questions before a plan, one
@@ -122,13 +121,13 @@
 	{onclose}
 >
 	<p class="sr-only" aria-live="polite">{announcement}</p>
-	<div bind:this={body} class={['flex flex-col px-4 pb-2', !reviewing && 'gap-2']}>
+	<div bind:this={body} class={['flex flex-col px-4 pb-2', !reviewing && (question.multiple ? 'gap-1.5' : 'gap-2')]}>
 		{#if reviewing}
 			{#each questions as one, index (index)}
 				{@const text = answerText(one, progress.answers[index] ?? null)}
 				<button
 					type="button"
-					aria-label={m.phone_clarify_change({ topic: one.topic, answer: text || m.phone_clarify_skipped() })}
+					aria-label={m.phone_clarify_change({ topic: one.title, answer: text || m.phone_clarify_skipped() })}
 					class="flex w-full cursor-pointer items-center gap-3 border-b border-border pt-3.5 pb-3.25 text-left -outline-offset-2"
 					onclick={() => void go(index)}
 				>
@@ -151,26 +150,42 @@
 			{/each}
 			<div class="flex gap-2 pt-2">
 				<PhoneButton variant="secondary" label={m.action_back()} onclick={() => void go(total - 1)} />
+				<!-- The pen's sparkles after "Make the plan" are left out: Nomi's UI rules ban them (AGENTS.md §9). -->
 				<PhoneButton label={m.clarify_make_plan()} onclick={() => onfinish(progress)} />
 			</div>
 		{:else}
-			<Progress current={progress.step + 1} {total} />
+			<!-- Mobile / Progress as the flow draws it: answered segments accent, the current one in text,
+			     the rest border-strong (the twin Progress has no answered state). -->
+			<div role="progressbar" aria-label={m.mobile_progress({ current: String(progress.step + 1), total: String(total) })} aria-valuemin={1} aria-valuemax={total} aria-valuenow={progress.step + 1} class="flex w-full gap-1.5">
+				{#each { length: total } as _, index (index)}
+					<span data-segment class={['h-1 flex-1 rounded-xs', index < progress.step ? 'bg-accent' : index === progress.step ? 'bg-text' : 'bg-border-strong']}></span>
+				{/each}
+			</div>
 			<div class="flex flex-col gap-1 pt-2.5 pb-1.5">
 				<h3 id="{id}-question" class="text-heading font-semibold text-text">{question.title}</h3>
 				{#if question.helper}<p class="text-phone-sm leading-cozy text-text-3">{question.helper}</p>{/if}
 			</div>
 			{#if question.multiple}
-				<div role="group" aria-labelledby="{id}-question" class="flex flex-col gap-2">
+				<!-- Many of many (U8a64): plain rows, 6 apart, each with a 22 box (r6): ticked in text with a
+				     12 check in bg, unticked surface with a border-strong stroke. Accent stays the single choice's. -->
+				<div role="group" aria-labelledby="{id}-question" class="flex flex-col gap-1.5">
 					{#each question.options as option, index (index)}
 						{@const checked = Boolean(answer && 'choices' in answer && answer.choices.includes(index))}
-						<label class={['flex w-full cursor-pointer items-center gap-3 rounded-xl border p-3.25', checked ? 'border-accent bg-accent-bg' : 'border-border-strong']}>
+						<label class="flex w-full cursor-pointer items-center gap-3 rounded-xl border border-border-strong p-3.25">
 							<span aria-hidden="true" class="inline-flex size-6.5 shrink-0 items-center justify-center rounded-full bg-surface-2 font-mono text-caption text-text-2">{index + 1}</span>
 							<span class="flex min-w-0 flex-1 flex-col gap-0.75">
 								<span class="text-phone font-medium text-text">{option.title}</span>
 								{#if option.detail}<span class="text-ui leading-snug text-text-3">{option.detail}</span>{/if}
 								{#if option.recommended}<span><Tag kind="go" label={m.choice_recommended()} /></span>{/if}
 							</span>
-							<input type="checkbox" {checked} onchange={() => toggle(index)} class="size-5.5 shrink-0 cursor-pointer rounded-xs accent-accent outline-offset-2" />
+							<input type="checkbox" {checked} onchange={() => toggle(index)} class="peer sr-only" />
+							<span
+								aria-hidden="true"
+								class={[
+									'inline-flex size-5.5 shrink-0 items-center justify-center rounded-sm peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-focus',
+									checked ? 'bg-text text-bg' : 'bg-surface outline -outline-offset-1 outline-border-strong',
+								]}>{#if checked}<Icon icon={Check} size={12} />{/if}</span
+							>
 						</label>
 					{/each}
 				</div>
@@ -226,7 +241,7 @@
 					<PhoneButton variant="secondary" label={m.action_skip()} onclick={skip} />
 				{/if}
 				{#if question.multiple}
-					<PhoneButton label={m.phone_clarify_review_count({ count: String(ticked) })} icon={ArrowRight} disabled={ticked === 0} onclick={next} />
+					<PhoneButton label={m.phone_clarify_review_count({ count: String(ticked) })} icon={ListChecks} disabled={ticked === 0} onclick={next} />
 				{:else}
 					<PhoneButton label={m.clarify_next()} icon={ArrowRight} disabled={!isAnswered(answer)} onclick={next} />
 				{/if}

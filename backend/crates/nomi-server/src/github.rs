@@ -19,6 +19,9 @@ const FILE_MODE: &str = "100644";
 /// GitHub's own limits on account and repository names.
 const MAX_OWNER_CHARS: usize = 39;
 const MAX_REPO_CHARS: usize = 100;
+/// GitHub's largest page of a repository list, and how many pages are read.
+const REPOS_PER_PAGE: usize = 100;
+const MAX_REPO_PAGES: usize = 5;
 
 fn env_or(name: &str, default: &str) -> String {
     std::env::var(name).ok().map(|v| v.trim().trim_end_matches('/').to_string()).filter(|v| !v.is_empty()).unwrap_or_else(|| default.to_string())
@@ -110,6 +113,47 @@ pub fn parse_repo(input: &str) -> Option<(String, String)> {
     (owner_ok && name_ok).then(|| (owner.to_string(), name.to_string()))
 }
 
+/// One of the person's repositories, as the import's picker lists it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct RepoSummary {
+    pub full_name: String,
+    pub private: bool,
+    pub language: Option<String>,
+    pub updated_at: String,
+    /// Whether Nomi's token can read it (a repository the person can see on GitHub but the token
+    /// can't open needs access granted).
+    pub accessible: bool,
+}
+
+/// The repositories in one page of GitHub's `/user/repos`.
+pub fn repos_from(page: &Value) -> Vec<RepoSummary> {
+    page.as_array()
+        .map(|list| {
+            list.iter()
+                .filter_map(|repo| {
+                    let full_name = repo["full_name"].as_str()?.to_string();
+                    Some(RepoSummary {
+                        full_name,
+                        private: repo["private"].as_bool().unwrap_or(false),
+                        language: repo["language"].as_str().map(str::to_string),
+                        updated_at: repo["updated_at"].as_str().unwrap_or_default().to_string(),
+                        accessible: repo["permissions"]["pull"].as_bool().unwrap_or(true) && !repo["disabled"].as_bool().unwrap_or(false),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// `repos` whose name contains `query` (any case), newest first.
+pub fn find_repos(mut repos: Vec<RepoSummary>, query: &str) -> Vec<RepoSummary> {
+    let query = query.trim().to_lowercase();
+    repos.retain(|r| r.full_name.to_lowercase().contains(&query));
+    // RFC 3339 timestamps in one offset sort as text.
+    repos.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    repos
+}
+
 /// What a push made.
 #[derive(Debug, serde::Serialize)]
 pub struct Pushed {
@@ -162,6 +206,22 @@ impl<'a> Github<'a> {
             s if s.is_server_error() => GithubError::Unreachable(message),
             _ => GithubError::Refused(message),
         })
+    }
+
+    /// The repositories the token can list (its own, collaborations and organizations'), most
+    /// recently updated first, up to [`MAX_REPO_PAGES`] pages.
+    pub async fn repos(&self) -> Result<Vec<RepoSummary>, GithubError> {
+        let mut all = Vec::new();
+        for page in 1..=MAX_REPO_PAGES {
+            let path = format!("/user/repos?sort=updated&per_page={REPOS_PER_PAGE}&affiliation=owner,collaborator,organization_member&page={page}");
+            let found = repos_from(&self.ok(Method::GET, &path, None).await?);
+            let full = found.len() >= REPOS_PER_PAGE;
+            all.extend(found);
+            if !full {
+                break;
+            }
+        }
+        Ok(all)
     }
 
     /// Whose token it is.
@@ -225,6 +285,37 @@ impl<'a> Github<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn page() -> Value {
+        json!([
+            { "full_name": "ana/old-site", "private": false, "language": "HTML", "updated_at": "2026-01-02T00:00:00Z", "permissions": { "pull": true, "push": true } },
+            { "full_name": "acme/warung-app", "private": true, "language": null, "updated_at": "2026-11-10T08:00:00Z", "permissions": { "admin": false, "pull": true } },
+            { "full_name": "acme/locked", "private": true, "language": "Go", "updated_at": "2026-06-01T00:00:00Z", "permissions": { "pull": false } },
+            { "full_name": "ana/gone", "private": false, "language": "C", "updated_at": "2026-05-01T00:00:00Z", "disabled": true },
+            { "full_name": "ana/bare", "updated_at": "2026-04-01T00:00:00Z" },
+            { "private": true }
+        ])
+    }
+
+    #[test]
+    fn a_page_of_repos_is_mapped_and_says_which_ones_nomi_can_open() {
+        let repos = repos_from(&page());
+        assert_eq!(repos.len(), 5, "an entry without a name is dropped");
+        assert_eq!(repos[1], RepoSummary { full_name: "acme/warung-app".into(), private: true, language: None, updated_at: "2026-11-10T08:00:00Z".into(), accessible: true });
+        let accessible: Vec<(&str, bool)> = repos.iter().map(|r| (r.full_name.as_str(), r.accessible)).collect();
+        assert_eq!(accessible, [("ana/old-site", true), ("acme/warung-app", true), ("acme/locked", false), ("ana/gone", false), ("ana/bare", true)]);
+        assert!(!repos[4].private);
+        assert_eq!(repos_from(&json!({ "message": "Bad credentials" })), vec![]);
+    }
+
+    #[test]
+    fn repos_are_found_by_name_and_listed_newest_first() {
+        let all = repos_from(&page());
+        let names = |repos: Vec<RepoSummary>| repos.into_iter().map(|r| r.full_name).collect::<Vec<_>>();
+        assert_eq!(names(find_repos(all.clone(), "")), ["acme/warung-app", "acme/locked", "ana/gone", "ana/bare", "ana/old-site"]);
+        assert_eq!(names(find_repos(all.clone(), " WARUNG ")), ["acme/warung-app"]);
+        assert_eq!(names(find_repos(all, "ana/")), ["ana/gone", "ana/bare", "ana/old-site"]);
+    }
 
     #[test]
     fn reads_owner_and_name_from_what_was_pasted() {

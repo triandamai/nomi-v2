@@ -12,6 +12,7 @@ import Plans from './plans/+page.svelte';
 import Support from './support/+page.svelte';
 import Usage from './usage/+page.svelte';
 import Xendit from './payment/xendit/+page.svelte';
+import Doku from './payment/doku/+page.svelte';
 import Maintenance from './maintenance/+page.svelte';
 
 const manage = { dashboard: 'manage', user: 'manage', plans: 'manage', notifications: 'manage', models: 'manage', tools: 'manage', agents: 'manage', support: 'manage', configuration: 'manage', integrations: 'manage' };
@@ -28,6 +29,9 @@ async function tryAll(root: HTMLElement) {
 	clickEverything(document.body);
 	await settle(4);
 }
+
+/** What a broken backend answers. */
+const SERVER_ERROR = 500;
 
 const action = (data: unknown) => ({ type: 'success', status: 200, data });
 
@@ -88,7 +92,7 @@ describe('admin pages', () => {
 		await tryAll(notifications);
 	});
 
-	it('support, configuration and Xendit load what they show themselves', async () => {
+	it('support, configuration and payment load what they show themselves', async () => {
 		const calls = fakeBackend(
 			[
 				['GET', /^support\/drafts/, [{ id: 'd1', question: 'How do I export?', title: 'Exporting', body: 'Use the export button', times_asked: 4, last_asked_at: '2026-11-01T00:00:00Z' }]],
@@ -98,17 +102,93 @@ describe('admin pages', () => {
 				['GET', /^configuration/, { sections: [{ name: 'attachments', fields: [{ name: 'max_file_mb', env: 'ATTACHMENT_MAX_FILE_MB', kind: 'number', value: '10', set: true, source: 'saved' }] }, { name: 'storage', fields: [{ name: 'bucket', env: 'S3_BUCKET', kind: 'text', value: null, set: false, source: 'none' }, { name: 'secret_access_key', env: 'AWS_SECRET_ACCESS_KEY', kind: 'secret', value: null, set: true, source: 'environment' }] }] }],
 				['GET', /^payment\/xendit$/, { provider: 'xendit', fields: [{ name: 'secret_key', env: 'XENDIT_SECRET_KEY', kind: 'secret', value: null, set: true, source: 'saved' }, { name: 'environment', env: null, kind: 'choice', choices: ['test', 'live'], value: 'test', set: true, source: 'saved' }], can_manage: true }],
 				['POST', /^payment\/xendit\/test/, { success: true, message: 'Xendit client initialized successfully' }],
+				['GET', /^payment$/, { chosen: null, source: 'none', in_use: 'xendit', providers: [{ name: 'xendit', configured: true }, { name: 'doku', configured: false }], can_manage: true }],
 				['*', /.*/, { ok: true }],
 			],
 			{ strip: '/admin/api/' },
 		);
-		for (const component of [Support, Configuration, Xendit, Maintenance]) {
+		for (const component of [Support, Configuration, Xendit, Doku, Maintenance]) {
 			const root = page(component, {});
 			await tryAll(root);
 			expect(root.textContent).toBeTruthy();
 		}
 		expect(calls.some((c) => c.path.startsWith('support/'))).toBe(true);
 		expect(calls.some((c) => c.path === 'configuration')).toBe(true);
+	});
+
+	it('payment: chooses the default provider and keeps each provider’s keys apart', async () => {
+		const overview = { chosen: 'doku', source: 'saved', in_use: null, providers: [{ name: 'xendit', configured: true }, { name: 'doku', configured: false }], can_manage: true };
+		const doku = {
+			provider: 'doku',
+			fields: [
+				{ name: 'client_id', env: 'DOKU_CLIENT_ID', kind: 'text', value: null, set: false, source: 'none' },
+				{ name: 'secret_key', env: 'DOKU_SECRET_KEY', kind: 'secret', value: null, set: true, source: 'saved' },
+				{ name: 'base_url', env: 'DOKU_BASE_URL', kind: 'text', value: 'https://api-sandbox.doku.com', set: true, source: 'saved' },
+				{ name: 'notification_path', env: 'DOKU_NOTIFICATION_PATH', kind: 'text', value: null, set: false, source: 'none' },
+			],
+			can_manage: true,
+		};
+		const calls = fakeBackend(
+			[
+				['GET', /^payment$/, overview],
+				['PUT', /^payment$/, { ...overview, chosen: 'xendit', in_use: 'xendit' }],
+				['GET', /^payment\/doku$/, doku],
+				['PUT', /^payment\/doku$/, doku],
+				['POST', /^payment\/doku\/test$/, { success: false, message: 'DOKU refused the client ID and secret key' }],
+			],
+			{ strip: '/admin/api/' },
+		);
+		const root = page(Doku, {});
+		await settle(6);
+		const shown = text(root);
+		expect(shown).toContain('DOKU Checkout keys');
+		expect(shown).toContain('DOKU is chosen but isn\'t set up');
+		expect(shown).toContain('Leave empty to keep the saved secret.');
+		expect(shown).toContain('Saved here.');
+		expect([...root.querySelectorAll('nav a')].map((a) => a.getAttribute('href'))).toEqual(['/admin/payment/xendit', '/admin/payment/doku']);
+		expect(root.querySelector('nav a[aria-current="page"]')?.getAttribute('href')).toBe('/admin/payment/doku');
+
+		const xenditRadio = root.querySelector<HTMLInputElement>('input[type="radio"][value="xendit"]')!;
+		xenditRadio.click();
+		await settle(2);
+		const clientId = [...root.querySelectorAll<HTMLInputElement>('input')].find((i) => i.type === 'text')!;
+		clientId.value = 'BRN-0001-TEST';
+		clientId.dispatchEvent(new Event('input', { bubbles: true }));
+		await settle(2);
+		for (const form of root.querySelectorAll('form')) form.dispatchEvent(new Event('submit', { cancelable: true }));
+		await settle(6);
+		const chose = calls.find((c) => c.method === 'PUT' && c.path === 'payment');
+		expect(chose?.body).toEqual({ provider: 'xendit' });
+		const savedKeys = calls.find((c) => c.method === 'PUT' && c.path === 'payment/doku');
+		expect(savedKeys?.body).toEqual({ values: { client_id: 'BRN-0001-TEST' } });
+
+		const test = [...root.querySelectorAll('button')].find((b) => b.textContent?.includes('Test keys'))!;
+		test.click();
+		await settle(6);
+		expect(text(root)).toContain('DOKU refused');
+		expect(calls.some((c) => c.method === 'POST' && c.path === 'payment/doku/test')).toBe(true);
+	});
+
+	it('payment: view-only admins see the choice and keys but can’t change them', async () => {
+		fakeBackend(
+			[
+				['GET', /^payment$/, { chosen: null, source: 'none', in_use: null, providers: [{ name: 'xendit', configured: false }, { name: 'doku', configured: false }], can_manage: false }],
+				['GET', /^payment\/xendit$/, { provider: 'xendit', fields: [{ name: 'secret_key', env: 'XENDIT_SECRET_KEY', kind: 'secret', value: null, set: false, source: 'none' }], can_manage: false }],
+			],
+			{ strip: '/admin/api/' },
+		);
+		const root = render(Xendit as never, { data: { access: { configuration: 'view' } } as never, params: {} as never });
+		await settle(6);
+		expect(text(root)).toContain('No provider is set up');
+		expect(text(root)).toContain('changing configuration needs manage');
+		expect([...root.querySelectorAll('input')].every((i) => i.disabled)).toBe(true);
+	});
+
+	it('payment: a failed load says why', async () => {
+		fakeBackend([['*', /.*/, () => new Response('database down', { status: SERVER_ERROR })]], { strip: '/admin/api/' });
+		const root = page(Doku, {});
+		await settle(6);
+		expect(text(root)).toContain('database down');
 	});
 
 	it('configuration: the index links to a page per section, which saves only what changed', async () => {

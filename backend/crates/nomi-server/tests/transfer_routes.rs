@@ -85,10 +85,37 @@ async fn a_transfer_is_confirmed_by_name_and_the_new_owners_hear_of_it(pool: PgP
     let org: Uuid = sqlx::query_scalar("SELECT org_id FROM projects WHERE id = $1").bind(project).fetch_one(&pool).await.unwrap();
     assert_ne!(org, beta);
 
-    let (status, _) = request(router.clone(), "POST", &uri, Some(&ana), Some(json!({ "target_org_id": beta, "confirm_name": " Habit Quest " }))).await;
-    assert_eq!(status, StatusCode::OK);
+    // Beta isn't Ana's: the move waits for its owner, and nothing moves yet.
+    let (status, waiting) = request(router.clone(), "POST", &uri, Some(&ana), Some(json!({ "target_org_id": beta, "confirm_name": " Habit Quest " }))).await;
+    assert_eq!(status, StatusCode::ACCEPTED, "{waiting}");
+    assert_eq!(waiting["status"], "pending");
+    let org: Uuid = sqlx::query_scalar("SELECT org_id FROM projects WHERE id = $1").bind(project).fetch_one(&pool).await.unwrap();
+    assert_ne!(org, beta);
+    let request_id = waiting["id"].as_str().unwrap().to_string();
+
+    // Beta's owner is told, Ana isn't; asking again while one waits is refused.
+    let (_, inbox) = request(router.clone(), "GET", "/api/notifications", Some(&bo), None).await;
+    assert!(inbox["items"].as_array().unwrap().iter().any(|n| n["title"] == "Ana wants to move Habit Quest to Beta" || n["title"].as_str().is_some_and(|t| t.contains("wants to move Habit Quest to Beta"))), "{inbox}");
+    let (status, _) = request(router.clone(), "POST", &uri, Some(&ana), Some(json!({ "target_org_id": beta, "confirm_name": "Habit Quest" }))).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+
+    // Only Beta's owner decides; Ana sees it waiting on the project.
+    let (status, _) = request(router.clone(), "POST", &format!("/api/transfer-requests/{request_id}/approve"), Some(&ana), None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (_, listed) = request(router.clone(), "GET", &format!("/api/projects/{project}/transfer/requests"), Some(&ana), None).await;
+    assert_eq!(listed[0]["status"], "pending");
+    let (_, theirs) = request(router.clone(), "GET", "/api/transfer-requests", Some(&bo), None).await;
+    assert_eq!(theirs["incoming"][0]["id"], json!(request_id));
+    assert_eq!(theirs["incoming"][0]["project_name"], "Habit Quest");
+
+    let (status, approved) = request(router.clone(), "POST", &format!("/api/transfer-requests/{request_id}/approve"), Some(&bo), None).await;
+    assert_eq!(status, StatusCode::OK, "{approved}");
+    assert_eq!(approved["status"], "approved");
     let org: Uuid = sqlx::query_scalar("SELECT org_id FROM projects WHERE id = $1").bind(project).fetch_one(&pool).await.unwrap();
     assert_eq!(org, beta);
+    // Deciding twice is refused.
+    let (status, _) = request(router.clone(), "POST", &format!("/api/transfer-requests/{request_id}/decline"), Some(&bo), None).await;
+    assert_eq!(status, StatusCode::CONFLICT);
 
     // Beta's owner has it in their inbox; whoever moved it doesn't.
     let (_, inbox) = request(router.clone(), "GET", "/api/notifications", Some(&bo), None).await;
@@ -112,6 +139,12 @@ async fn a_published_project_moves_its_shipyard_app_first(pool: PgPool) {
     let (acme, beta): (Uuid, Uuid) = sqlx::query_as("SELECT (SELECT org_id FROM projects WHERE id = $1), (SELECT id FROM organizations WHERE name = 'Beta')")
         .bind(project)
         .fetch_one(&pool)
+        .await
+        .unwrap();
+    // Ana owns Beta as well, so this move is hers to make at once.
+    sqlx::query("INSERT INTO memberships (org_id, user_id, role) SELECT $1, user_id, 'owner' FROM web_credentials WHERE email = 'ana@example.com'")
+        .bind(beta)
+        .execute(&pool)
         .await
         .unwrap();
     let uri = format!("/api/projects/{project}/transfer");
@@ -145,4 +178,40 @@ async fn a_published_project_moves_its_shipyard_app_first(pool: PgPool) {
     assert_eq!(status, StatusCode::OK);
     let (org, app): (Uuid, Option<String>) = sqlx::query_as("SELECT org_id, shipyard_app FROM projects WHERE id = $1").bind(project).fetch_one(&pool).await.unwrap();
     assert_eq!((org, app.as_deref()), (beta, Some("todo-1a2b3c")));
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_move_within_the_callers_own_workspaces_is_immediate_and_a_decline_leaves_it_be(pool: PgPool) {
+    let shipyard = MockServer::start().await;
+    let router = build_router(test_state(pool.clone(), &shipyard));
+    let ana = register(router.clone(), "ana@example.com", json!({ "mode": "create", "name": "Acme" })).await;
+    let bo = register(router.clone(), "bo@example.com", json!({ "mode": "create", "name": "Beta" })).await;
+    let project = new_project(router.clone(), &ana).await;
+    sqlx::query("UPDATE projects SET name = 'Todo' WHERE id = $1").bind(project).execute(&pool).await.unwrap();
+    let (beta, side): (Uuid, Uuid) = sqlx::query_as(
+        "SELECT (SELECT id FROM organizations WHERE name = 'Beta'), (SELECT id FROM organizations WHERE name = 'Acme')",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let uri = format!("/api/projects/{project}/transfer");
+
+    // Declined: it stays, and the person who asked is told.
+    let (_, waiting) = request(router.clone(), "POST", &uri, Some(&ana), Some(json!({ "target_org_id": beta, "confirm_name": "Todo" }))).await;
+    let request_id = waiting["id"].as_str().unwrap().to_string();
+    let (status, declined) = request(router.clone(), "POST", &format!("/api/transfer-requests/{request_id}/decline"), Some(&bo), None).await;
+    assert_eq!(status, StatusCode::OK, "{declined}");
+    assert_eq!(declined["status"], "declined");
+    let org: Uuid = sqlx::query_scalar("SELECT org_id FROM projects WHERE id = $1").bind(project).fetch_one(&pool).await.unwrap();
+    assert_eq!(org, side);
+    let (_, inbox) = request(router.clone(), "GET", "/api/notifications", Some(&ana), None).await;
+    assert!(inbox["items"].as_array().unwrap().iter().any(|n| n["title"].as_str().is_some_and(|t| t.contains("wasn't moved"))), "{inbox}");
+
+    // A new request can be taken back by the one who asked.
+    let (_, again) = request(router.clone(), "POST", &uri, Some(&ana), Some(json!({ "target_org_id": beta, "confirm_name": "Todo" }))).await;
+    let again_id = again["id"].as_str().unwrap().to_string();
+    let (status, _) = request(router.clone(), "DELETE", &format!("/api/projects/{project}/transfer/requests/{again_id}"), Some(&ana), None).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (status, _) = request(router, "POST", &format!("/api/transfer-requests/{again_id}/approve"), Some(&bo), None).await;
+    assert_eq!(status, StatusCode::CONFLICT);
 }

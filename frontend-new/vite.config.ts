@@ -29,6 +29,20 @@ export default defineConfig({
 		},
 	},
 	plugins: [
+		{
+			name: 'open-pencil-worker-fix',
+			enforce: 'pre',
+			transform(code, id) {
+				if (id.includes('@open-pencil/core') && (code.includes('export-worker.ts') || code.includes('worker.ts'))) {
+					return {
+						code: code
+							.replace(/new Worker\(new URL\(['"]\.\/export-worker\.ts['"],\s*import\.meta\.url\)[^)]*\)/g, 'null')
+							.replace(/new Worker\(new URL\(['"]\.\/worker\.ts['"],\s*import\.meta\.url\)[^)]*\)/g, 'null'),
+						map: null
+					};
+				}
+			}
+		},
 		...(galleryStatic ? [docsOnlyRoutes()] : []),
 		tailwindcss(),
 		// English and Indonesian. The person's saved language lives in the cookie; before sign-in,

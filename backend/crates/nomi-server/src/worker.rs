@@ -145,9 +145,9 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
             let provider = crate::bootstrap::build_llm_provider_in_session(&pool, user_id, session_id, &settings_key, http_client.clone(), crate::bootstrap::ModelPurpose::Chat).await;
             let embedding_provider = build_embedding_provider_from_settings_or_env(&pool, &settings_key, http_client.clone(), Some(user_id)).await;
 
-            let result = nomi_turn::resume_paused_turn(
+            let result = nomi_turn::resume_paused_turn_with(
                 &pool, &mqtt, s3.as_ref(), provider.as_ref(), embedding_provider.as_ref(), &registry, &catalog,
-                claimed.message_id, &claimed.decision, claimed.remember,
+                claimed.message_id, &claimed.decision, claimed.remember, &claimed.extras,
             )
             .await;
 
@@ -274,6 +274,7 @@ async fn run_turn_job(turns: &Turns, claimed: queue::ClaimedJob) {
                     &StreamEnvelope::TurnCompleted { turn_job_id: claimed.id, message_id: outcome.message_id.unwrap_or(Uuid::nil()) },
                 )
                 .await;
+            crate::ask_built::announce(&turns.pool, &turns.mqtt, claimed.id, claimed.session_id).await;
             if let Some(message_id) = outcome.message_id {
                 crate::user_events::announce_chat_reply(&turns.pool, &turns.mqtt, user_id, claimed.session_id, message_id, &outcome.reply);
             }

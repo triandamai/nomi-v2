@@ -14,7 +14,7 @@ describe('design studio: what there is now', () => {
 	it('gives the chat’s previews, feedback and approval, for a project page to show in place', async () => {
 		apiFetch.mockResolvedValue(json({ previews: [{ version: 1 }], feedback: [], approval: null }));
 		const response = await get();
-		expect(await response.json()).toEqual({ previews: [{ version: 1 }], feedback: [], approval: null });
+		expect(await response.json()).toEqual({ directions: null, previews: [{ version: 1 }], feedback: [], approval: null });
 		expect(apiFetch.mock.calls[0][2]).toBe('/api/sessions/s1/design');
 	});
 

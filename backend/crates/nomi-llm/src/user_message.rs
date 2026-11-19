@@ -121,10 +121,118 @@ impl LlmError {
     }
 }
 
+/// Why a call to the provider failed, as the chat's error card shows it: a kind that picks the
+/// card, the HTTP status and provider when the error names them, and the provider's own words.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FailureDetails {
+    pub kind: &'static str,
+    pub status: Option<u16>,
+    /// The provider's id as the error names it ("deepseek", "openrouter").
+    pub provider: Option<String>,
+    /// What the provider said, without the secrets the error may echo.
+    pub provider_message: Option<String>,
+}
+
+/// Words in a provider's answer that say it refused the request's content (OpenAI's
+/// `content_filter`, Azure's content management policy, Gemini's `blockReason` / SAFETY and
+/// PROHIBITED_CONTENT, Anthropic's refusals).
+const CONTENT_FILTER_MARKERS: [&str; 9] = [
+    "content_filter",
+    "content filter",
+    "content_policy",
+    "content policy",
+    "content management policy",
+    "blockreason",
+    "prohibited_content",
+    "finish_reason\":\"safety",
+    "violates our usage polic",
+];
+
+/// The longest provider message kept on the error card.
+const PROVIDER_MESSAGE_MAX_CHARS: usize = 400;
+
+/// A provider's error body is often `{"error":{"message":"…"}}`: the message is what to quote.
+fn quoted_words(body: &str) -> String {
+    let body = body.trim();
+    let from_json = serde_json::from_str::<serde_json::Value>(body).ok().and_then(|v| {
+        v.pointer("/error/message")
+            .or_else(|| v.get("message"))
+            .or_else(|| v.get("error").filter(|e| e.is_string()))
+            .and_then(|m| m.as_str().map(str::to_string))
+    });
+    let words = from_json.unwrap_or_else(|| body.to_string());
+    match words.char_indices().nth(PROVIDER_MESSAGE_MAX_CHARS) {
+        Some((at, _)) => format!("{}…", &words[..at]),
+        None => words,
+    }
+}
+
+impl LlmError {
+    /// The details of this failure for the error card (see [`FailureDetails`]).
+    pub fn failure_details(&self) -> FailureDetails {
+        let text = match self {
+            LlmError::Http(_) => return FailureDetails { kind: "unreachable", status: None, provider: None, provider_message: None },
+            LlmError::QuotaExceeded => return FailureDetails { kind: "quota_used_up", status: None, provider: None, provider_message: None },
+            LlmError::ParseError(_) => return FailureDetails { kind: "unreadable", status: None, provider: None, provider_message: None },
+            LlmError::ProviderError(text) => text,
+        };
+        let (_, status) = provider_and_status(text);
+        let lower = text.to_lowercase();
+        let provider = text.split_once(" returned ").or_else(|| text.split_once(" stream error")).map(|(name, _)| name.trim().to_string()).filter(|n| !n.is_empty() && !n.contains(' '));
+        let body = text.split_once(" returned ").and_then(|(_, rest)| rest.split_once(": ")).map(|(_, body)| body).unwrap_or(text);
+        let kind = if CONTENT_FILTER_MARKERS.iter().any(|m| lower.contains(m)) {
+            "content_filter"
+        } else if out_of_credits(status, &lower) {
+            "out_of_credits"
+        } else if key_refused(status, &lower) {
+            "bad_key"
+        } else if status == Some(429) {
+            "rate_limited"
+        } else if lower.contains("context length") || lower.contains("context_length") || lower.contains("too many tokens") || lower.contains("prompt is too long") {
+            "too_long"
+        } else if status == Some(404) && lower.contains("model") {
+            "no_model"
+        } else if status.is_some_and(|s| s >= 500) || lower.contains("overloaded") {
+            "provider_down"
+        } else {
+            "provider_error"
+        };
+        FailureDetails { kind, status, provider, provider_message: Some(quoted_words(&crate::redact::redacted(body))) }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::KeyHealth;
     use crate::LlmError;
+
+    #[test]
+    fn a_failure_says_its_kind_status_provider_and_the_providers_words() {
+        let d = provider("deepseek returned 402 Payment Required: Insufficient Balance").failure_details();
+        assert_eq!((d.kind, d.status, d.provider.as_deref(), d.provider_message.as_deref()), ("out_of_credits", Some(402), Some("deepseek"), Some("Insufficient Balance")));
+        let d = provider(r#"openrouter returned 429 Too Many Requests: {"error":{"message":"Slow down"}}"#).failure_details();
+        assert_eq!((d.kind, d.status, d.provider_message.as_deref()), ("rate_limited", Some(429), Some("Slow down")));
+        assert_eq!(provider("anthropic returned 401 Unauthorized: invalid x-api-key").failure_details().kind, "bad_key");
+        assert_eq!(provider("openai returned 503 Service Unavailable: busy").failure_details().kind, "provider_down");
+        assert_eq!(provider("openai returned 400 Bad Request: maximum context length is 8192").failure_details().kind, "too_long");
+        assert_eq!(LlmError::QuotaExceeded.failure_details().kind, "quota_used_up");
+        assert_eq!(LlmError::ParseError("x".into()).failure_details().status, None);
+    }
+
+    #[test]
+    fn a_provider_that_filtered_the_content_is_a_content_filter() {
+        let openai = provider(r#"openai returned 400 Bad Request: {"error":{"code":"content_filter","message":"The response was filtered"}}"#).failure_details();
+        assert_eq!((openai.kind, openai.status), ("content_filter", Some(400)));
+        let gemini = provider(r#"gemini returned 400 Bad Request: {"promptFeedback":{"blockReason":"PROHIBITED_CONTENT"}}"#).failure_details();
+        assert_eq!(gemini.kind, "content_filter");
+    }
+
+    #[test]
+    fn the_providers_words_are_clipped_and_secrets_stay_out() {
+        let long = "x".repeat(2000);
+        let d = provider(&format!("openai returned 500 Internal Server Error: {long}")).failure_details();
+        assert!(d.provider_message.unwrap().chars().count() <= 401);
+    }
 
     #[test]
     fn tells_an_empty_balance_from_a_refused_key() {

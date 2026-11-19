@@ -14,6 +14,8 @@ use crate::design_directions::slug;
 pub const ID_ATTRIBUTE: &str = "data-design-id";
 /// The page a preview opens on.
 pub const ENTRY_PAGE: &str = "index.html";
+/// An OpenPencil scene-graph document a preview can open on instead of HTML.
+pub const PEN_ENTRY: &str = "canvas.pen";
 /// The most files in one preview.
 pub const MAX_FILES: usize = 20;
 /// The largest one file may be, and all of them together.
@@ -27,9 +29,15 @@ pub const MAX_ELEMENTS: usize = 300;
 /// The characters in a version's preview token.
 pub const PREVIEW_TOKEN_CHARS: usize = 64;
 /// The file kinds a preview holds, each with what it is served as.
-const KINDS: [(&str, &str); 4] =
-    [("html", "text/html; charset=utf-8"), ("css", "text/css; charset=utf-8"), ("js", "text/javascript; charset=utf-8"), ("svg", "image/svg+xml")];
+const KINDS: [(&str, &str); 5] = [
+    ("html", "text/html; charset=utf-8"),
+    ("css", "text/css; charset=utf-8"),
+    ("js", "text/javascript; charset=utf-8"),
+    ("svg", "image/svg+xml"),
+    ("pen", "application/json; charset=utf-8"),
+];
 const HTML: &str = "html";
+const PEN: &str = "pen";
 
 /// What an element is, for feedback about a section, a component or one element.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -102,6 +110,10 @@ pub fn content_type_of(path: &str) -> Option<&'static str> {
 
 fn is_html(path: &str) -> bool {
     extension(path) == Some(HTML)
+}
+
+fn is_pen(path: &str) -> bool {
+    extension(path) == Some(PEN)
 }
 
 /// Whether `path` is a plain relative path: lowercase segments, none empty, hidden or `..`.
@@ -206,8 +218,92 @@ fn check_whole(files: &[ArtifactFile]) -> Result<(), String> {
     if total > MAX_TOTAL_BYTES {
         return Err(format!("the preview's files are larger than {MAX_TOTAL_BYTES} bytes together"));
     }
-    if !files.iter().any(|f| f.path == ENTRY_PAGE) {
+    if !files.iter().any(|f| f.path == ENTRY_PAGE || is_pen(&f.path)) {
         return Err(format!("a preview needs an {ENTRY_PAGE}"));
+    }
+    Ok(())
+}
+
+/// Collects descendant nodes from an OpenPencil `.pen` frame into `elements` on `page_path`.
+fn collect_pen_elements(
+    file_path: &str,
+    page_path: &str,
+    nodes: &[Value],
+    depth: usize,
+    seen_on_page: &mut Vec<String>,
+    elements: &mut Vec<Element>,
+) -> Result<(), String> {
+    for node in nodes {
+        let Some(id) = text_of(node, "id") else {
+            return Err(format!("{file_path}: every node in a .pen file needs an id"));
+        };
+        if id != slug(id) {
+            return Err(format!("{file_path}: the id \"{id}\" must be lowercase letters, digits and dashes, like \"{}\"", slug(id)));
+        }
+        if seen_on_page.iter().any(|seen| seen == id) {
+            return Err(format!("{file_path} uses the id \"{id}\" twice on {page_path}"));
+        }
+        seen_on_page.push(id.to_string());
+        let reusable = node.get("reusable").and_then(Value::as_bool).unwrap_or(false);
+        let node_type = text_of(node, "type").unwrap_or("frame");
+        let kind = if reusable || node_type == "ref" || node_type == "component" {
+            ElementKind::Component
+        } else if depth == 0 && node_type == "frame" {
+            ElementKind::Section
+        } else {
+            ElementKind::Element
+        };
+        let label: String = text_of(node, "name").unwrap_or(id).chars().take(MAX_LABEL_CHARS).collect();
+        match elements.iter_mut().find(|e| e.id == id) {
+            Some(existing) => {
+                if !existing.pages.iter().any(|p| p == page_path) {
+                    existing.pages.push(page_path.to_string());
+                }
+            }
+            None => elements.push(Element {
+                id: id.to_string(),
+                kind,
+                label,
+                pages: vec![page_path.to_string()],
+            }),
+        }
+        if let Some(children) = node.get("children").and_then(Value::as_array) {
+            collect_pen_elements(file_path, page_path, children, depth + 1, seen_on_page, elements)?;
+        }
+    }
+    Ok(())
+}
+
+/// Parses an OpenPencil `.pen` scene-graph document into top-level frame pages and element IDs.
+fn parse_pen_document(path: &str, content: &str, add_pages: bool, pages: &mut Vec<Page>, elements: &mut Vec<Element>) -> Result<(), String> {
+    let doc: Value = serde_json::from_str(content).map_err(|e| format!("{path}: invalid .pen JSON ({e})"))?;
+    let children = doc
+        .get("children")
+        .and_then(Value::as_array)
+        .filter(|list| !list.is_empty())
+        .ok_or_else(|| format!("{path}: a .pen document needs a non-empty children list of frames"))?;
+    for frame in children {
+        let frame_id = text_of(frame, "id").ok_or_else(|| format!("{path}: each top-level frame needs an id"))?;
+        if frame_id != slug(frame_id) {
+            return Err(format!("{path}: the id \"{frame_id}\" must be lowercase letters, digits and dashes, like \"{}\"", slug(frame_id)));
+        }
+        let page_path = if add_pages {
+            let p = text_of(frame, "path").unwrap_or(frame_id).to_string();
+            let title: String = text_of(frame, "name").unwrap_or(&p).chars().take(MAX_LABEL_CHARS).collect();
+            if !pages.iter().any(|existing| existing.path == p) {
+                pages.push(Page { path: p.clone(), title });
+            }
+            p
+        } else {
+            pages.first().map(|p| p.path.clone()).unwrap_or_else(|| path.to_string())
+        };
+        let mut seen = Vec::new();
+        let nested = frame.get("children").and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default();
+        if nested.is_empty() {
+            collect_pen_elements(path, &page_path, std::slice::from_ref(frame), 0, &mut seen, elements)?;
+        } else {
+            collect_pen_elements(path, &page_path, nested, 0, &mut seen, elements)?;
+        }
     }
     Ok(())
 }
@@ -258,6 +354,10 @@ impl DesignArtifact {
                 }
             }
             pages.push(Page { path: file.path.clone(), title: title_of(&file.path, &file.content) });
+        }
+        let add_pen_pages = pages.is_empty();
+        for file in files.iter().filter(|f| is_pen(&f.path)) {
+            parse_pen_document(&file.path, &file.content, add_pen_pages, &mut pages, &mut elements)?;
         }
         if elements.len() > MAX_ELEMENTS {
             return Err(format!("a preview has at most {MAX_ELEMENTS} ids"));
@@ -322,7 +422,7 @@ pub fn artifact_input_schema() -> Value {
                 "type": "array",
                 "minItems": 1,
                 "maxItems": MAX_FILES,
-                "description": "Every file of the preview, whole: index.html first, then other pages, css, js and svg. Relative lowercase paths",
+                "description": "Every file of the preview, whole: canvas.pen (OpenPencil scene graph). Relative lowercase paths",
                 "items": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}, "required": ["path", "content"]}
             },
             "elements": {
@@ -562,13 +662,64 @@ mod tests {
             ("a//b.css", "\"a//b.css\" isn't a path inside the preview"),
             (".env.js", "\".env.js\" isn't a path inside the preview"),
             ("My Page.html", "\"My Page.html\" isn't a path inside the preview"),
-            ("server.php", "\"server.php\" isn't a file a preview can hold (html, css, js, svg)"),
-            ("readme", "\"readme\" isn't a file a preview can hold (html, css, js, svg)"),
+            ("server.php", "\"server.php\" isn't a file a preview can hold (html, css, js, svg, pen)"),
+            ("readme", "\"readme\" isn't a file a preview can hold (html, css, js, svg, pen)"),
         ] {
             assert_eq!(DesignArtifact::parse(&with_file(path, "x")).unwrap_err(), error, "{path}");
         }
         assert_eq!(DesignArtifact::parse(&with_file("styles.css", "again")).unwrap_err(), "\"styles.css\" is in the files twice");
         assert!(DesignArtifact::parse(&with_file("img/logo.svg", "<svg/>")).is_ok());
+    }
+
+    #[test]
+    fn a_pen_scene_graph_preview_extracts_pages_and_node_ids() {
+        let pen = json!({
+            "version": "1.0",
+            "children": [
+                {
+                    "type": "frame",
+                    "id": "home",
+                    "name": "Roti Pagi",
+                    "width": 1280,
+                    "height": 800,
+                    "children": [
+                        {"type": "frame", "id": "site-header", "name": "Site header", "reusable": true},
+                        {"type": "frame", "id": "hero", "name": "Hero", "children": [{"type": "text", "id": "headline", "name": "Headline", "content": "Fresh at six"}]}
+                    ]
+                },
+                {
+                    "type": "frame",
+                    "id": "menu",
+                    "name": "Menu",
+                    "width": 1280,
+                    "height": 800,
+                    "children": [
+                        {"type": "ref", "id": "site-header", "name": "Site header", "ref": "site-header"},
+                        {"type": "frame", "id": "menu-list", "name": "Menu list"}
+                    ]
+                }
+            ]
+        });
+        let artifact = DesignArtifact::parse(&json!({
+            "direction_id": "editorial",
+            "title": "Editorial scene graph",
+            "files": [{"path": "canvas.pen", "content": pen.to_string()}]
+        }))
+        .unwrap();
+        assert_eq!(
+            artifact.manifest.pages,
+            [Page { path: "home".into(), title: "Roti Pagi".into() }, Page { path: "menu".into(), title: "Menu".into() }]
+        );
+        assert_eq!(
+            artifact.manifest.elements,
+            [
+                Element { id: "site-header".into(), kind: ElementKind::Component, label: "Site header".into(), pages: vec!["home".into(), "menu".into()] },
+                Element { id: "hero".into(), kind: ElementKind::Section, label: "Hero".into(), pages: vec!["home".into()] },
+                Element { id: "headline".into(), kind: ElementKind::Element, label: "Headline".into(), pages: vec!["home".into()] },
+                Element { id: "menu-list".into(), kind: ElementKind::Section, label: "Menu list".into(), pages: vec!["menu".into()] },
+            ]
+        );
+        assert_eq!(content_type_of("canvas.pen"), Some("application/json; charset=utf-8"));
     }
 
     #[test]

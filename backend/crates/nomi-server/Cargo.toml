@@ -61,6 +61,8 @@ tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 tower-http = { version = "0.7.0", features = ["trace", "request-id"] }
 rumqttc = "0.25.1"
 hickory-resolver = "0.26.1"
+web-push-native = "0.5"
+http = "1"
 
 [dev-dependencies]
 image = { version = "0.25", default-features = false, features = ["png"] }

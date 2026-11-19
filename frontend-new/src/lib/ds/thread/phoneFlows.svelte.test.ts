@@ -17,6 +17,7 @@ import PhoneCutNotice from './PhoneCutNotice.svelte';
 import PhonePendingMessage from './PhonePendingMessage.svelte';
 import PhoneSignedOutSheet from './PhoneSignedOutSheet.svelte';
 import PhoneComposer from './PhoneComposer.svelte';
+import PhoneFormCard from './PhoneFormCard.svelte';
 import { tokenBackground, tokenColor } from '../test-utils';
 
 // The phone's chat flows (Flow / Mobile Chat — Clarify → plan, Plan → approve → act, Approvals &
@@ -74,17 +75,28 @@ describe('PhoneClarifySheet', () => {
 		await sheet.getByText('Whoosh train').click();
 		await sheet.getByRole('button', { name: 'Next' }).click();
 		await sheet.getByRole('button', { name: 'Skip' }).click();
+		// Answered segments are accent, the current one text, the rest border-strong (L42Ej, U8a64).
+		const segments = [...document.querySelectorAll('[data-segment]')].map((one) => getComputedStyle(one).backgroundColor);
+		expect(segments).toEqual([tokenBackground('nm-accent'), tokenBackground('nm-accent'), tokenBackground('nm-text')]);
 		await expect.element(sheet.getByRole('button', { name: 'Review 0' })).toBeDisabled();
-		await sheet.getByRole('checkbox', { name: /Train times/ }).click();
-		await sheet.getByRole('checkbox', { name: /Food spots/ }).click();
+		// Many of many: plain rows 6 apart, a 22 box (r6) that fills with text once ticked, never accent.
+		const rows = sheet.getByRole('checkbox').elements().map((box) => box.closest('label')!);
+		expect(box(rows[1]).top - box(rows[0]).bottom).toBe(6);
+		expect(getComputedStyle(rows[0]).backgroundColor).not.toBe(tokenBackground('nm-accent-bg'));
+		// The native box is visually hidden behind the drawn one: the row (its label) is what's tapped.
+		await sheet.getByText('Train times').click();
+		await sheet.getByText('Food spots').click();
+		const ticked = rows[0].querySelector('span[aria-hidden="true"]:last-child')!;
+		expect([box(ticked).width, getComputedStyle(ticked).borderRadius, getComputedStyle(ticked).backgroundColor]).toEqual([22, '6px', tokenBackground('nm-text')]);
+		expect(getComputedStyle(rows[0]).borderColor).toBe(tokenColor('nm-border-strong'));
 		await sheet.getByRole('button', { name: 'Review 2' }).click();
 
 		const review = page.getByRole('dialog', { name: 'Your answers' });
 		await expect.element(review.getByText('Nothing runs yet')).toBeVisible();
-		await expect.element(review.getByRole('button', { name: 'Change Question 2: 1–2 Nov' })).toBeVisible();
+		await expect.element(review.getByRole('button', { name: 'Change Which weekend?: 1–2 Nov' })).toBeVisible();
 		await expect.element(review.getByText('Default', { exact: true })).toBeVisible();
 		await expect.element(review.getByText('You skipped question 2, so I picked 1–2 Nov.')).toBeVisible();
-		await review.getByRole('button', { name: 'Change Question 1: Whoosh train' }).click();
+		await review.getByRole('button', { name: 'Change How do you want to get there?: Whoosh train' }).click();
 		await expect.element(page.getByText('Bandung weekend · 1 of 3')).toBeVisible();
 		await expect.element(page.getByRole('radio', { name: /Whoosh train/ })).toBeChecked();
 		for (let step = 0; step < 3; step += 1) await page.getByRole('button', { name: /^(Next|Review 2)$/ }).click();
@@ -95,7 +107,7 @@ describe('PhoneClarifySheet', () => {
 	it('a skip with nothing recommended reads Skipped, with no note', async () => {
 		await render(PhoneClarifySheet, { open: true, chat: 'Trip', questions: [questions[0]], onfinish: () => {} });
 		await page.getByRole('button', { name: 'Skip' }).click();
-		await expect.element(page.getByRole('button', { name: 'Change Question 1: Skipped' })).toBeVisible();
+		await expect.element(page.getByRole('button', { name: 'Change How do you want to get there?: Skipped' })).toBeVisible();
 		await expect.element(page.getByText(/You skipped/)).not.toBeInTheDocument();
 	});
 });
@@ -192,6 +204,8 @@ describe('PhoneFormSheet', () => {
 		const sheet = page.getByRole('dialog', { name: 'New reminder' });
 		await expect.element(sheet.getByText('That date has passed.')).toBeVisible();
 		await expect.element(sheet.getByLabelText('Date')).toHaveAttribute('aria-invalid', 'true');
+		expect(getComputedStyle(sheet.getByLabelText('Date').element()).fontFamily).toMatch(/Geist Mono/);
+		expect(getComputedStyle(sheet.getByLabelText('What').element()).fontFamily).not.toMatch(/Mono/);
 		await expect.element(sheet.getByRole('button', { name: 'Save' })).toHaveAttribute('aria-disabled', 'true');
 		sheet.getByRole('button', { name: 'Save' }).element().dispatchEvent(new MouseEvent('click', { bubbles: true }));
 		expect(onsubmit).not.toHaveBeenCalled();
@@ -261,6 +275,9 @@ describe('the thread’s phone pieces', () => {
 		await expect.element(page.getByText('Supervisor stopped 3 tasks')).toBeVisible();
 		for (const text of ['done', 'stopped · 2 of 3', 'not started', 'Nothing sent was undone.']) await expect.element(page.getByText(text, { exact: true })).toBeVisible();
 		await expect.element(page.getByRole('button', { name: 'Discard' })).not.toBeInTheDocument();
+		// Resume keeps the pen's 30 (with a 44 target); the footer is 50 (nQiZd).
+		const resume = page.getByRole('button', { name: 'Resume' }).element();
+		expect([box(resume).height, box(resume.querySelector('span')!).height, box(resume.closest('footer')!).height]).toEqual([30, 44, 50]);
 		await page.getByRole('button', { name: 'Resume' }).click();
 		expect(onresume).toHaveBeenCalledOnce();
 	});
@@ -314,5 +331,16 @@ describe('the thread’s phone pieces', () => {
 	it('PhoneComposer: says what the next message is for over the field', async () => {
 		await render(PhoneComposer, { placeholder: 'Message Nomi', notice: 'Changing the plan · v1', onsend: () => {} });
 		await expect.element(page.getByText('Changing the plan · v1')).toBeVisible();
+	});
+});
+
+describe('PhoneFormCard', () => {
+	it('folds a form that isn’t a reminder: a neutral tile, what’s filled in mono, and “Edit {title}”', async () => {
+		const onedit = vi.fn();
+		await render(PhoneFormCard, { title: 'Dinner booking', values: '28 Nov 2026 · 4 people', owner: { agent: 'nomi', name: 'Nomi' }, onedit });
+		expect(getComputedStyle(page.getByText('28 Nov 2026 · 4 people').element()).fontFamily).toMatch(/Geist Mono/);
+		await expect.element(page.getByRole('button', { name: 'Edit reminder' })).not.toBeInTheDocument();
+		await page.getByRole('button', { name: 'Edit Dinner booking' }).click();
+		expect(onedit).toHaveBeenCalledOnce();
 	});
 });

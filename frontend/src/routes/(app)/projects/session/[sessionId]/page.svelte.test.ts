@@ -122,7 +122,7 @@ describe('project session page', () => {
 		expect(tab.getAttribute('aria-selected')).toBe('true');
 		expect(root.querySelector('.design-pane .studio')).not.toBeNull();
 		expect(root.querySelector('.design-pane .studio__back')).toBeNull();
-		expect(root.querySelector('.design-pane .studio__row[aria-current="true"]')?.textContent).toContain('Version 1');
+		expect(root.querySelector('.design-pane .studio__heading')?.textContent).toContain('Version 1');
 	});
 
 	it('shows a project that has nothing to build yet', async () => {

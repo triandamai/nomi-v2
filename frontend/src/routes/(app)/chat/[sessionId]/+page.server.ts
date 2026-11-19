@@ -62,9 +62,10 @@ export const load: PageServerLoad = async ({ params, cookies, fetch }) => {
 		loadModelOptions(fetch, cookies),
 		loadSessionModel(fetch, cookies, params.sessionId),
 	]);
-	// Whether Sora has made design previews here: the top bar then opens the Design Studio. Best-effort.
+	// Whether Sora has proposed directions or made design previews here: the top bar then opens the Design Studio. Best-effort.
 	const designResponse = await apiFetch(fetch, cookies, `/api/sessions/${params.sessionId}/design`);
-	const designVersions = designResponse.ok ? (((await designResponse.json()) as { previews?: unknown[] }).previews?.length ?? 0) : 0;
+	const designPayload = designResponse.ok ? ((await designResponse.json()) as { previews?: unknown[]; directions?: { directions?: unknown[] } | null }) : null;
+	const designVersions = (designPayload?.previews?.length ?? 0) || ((designPayload?.directions?.directions?.length ?? 0) > 0 ? 1 : 0);
 	return { messages, hasOlder, personality, chatPersonality, agentActivity, agentStatus, title, thinkingLevel, modelOptions, sessionModel, chatMenu, designVersions };
 };
 

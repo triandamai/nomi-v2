@@ -58,6 +58,7 @@
 	import { phoneView } from '$lib/phone.svelte';
 	import { Workspace } from './workspace.svelte';
 	import PhoneWorkspace from './PhoneWorkspace.svelte';
+	import DesignCanvas from '$lib/ds/design/DesignCanvas.svelte';
 
 	// A project's workspace (Flow / Build — Sign in → live URL o882RC, Building and Live; Workspace
 	// tools U16wU, Changes ready → Publish → Publish failed → Published → Deployments): the project
@@ -239,6 +240,7 @@
 			labels={{
 				views: m.workspace_views(),
 				preview: m.workspace_preview(),
+				design: m.workspace_design(),
 				code: m.workspace_code(),
 				terminal: m.workspace_terminal(),
 				device: m.workspace_device(),
@@ -248,7 +250,7 @@
 				open: m.workspace_open_tab(),
 				close: m.workspace_close_preview(),
 			}}
-			views={ws.sandboxOn ? ['preview', 'code', 'terminal'] : ['preview', 'code']}
+			views={ws.paneViews}
 			bind:view={ws.view}
 			bind:device={ws.device}
 			address={ws.sandboxOn ? (ws.frame ? { shown: m.workspace_preview_sandbox() } : undefined) : ws.frame ? { url: ws.frame, shown: ws.shownUrl, live: ws.liveUrl ? m.workspace_live() : undefined, deploy: ws.liveUrl && ws.liveNumber ? m.projects_deploy({ number: ws.liveNumber }) : undefined } : undefined}
@@ -266,7 +268,19 @@
 			{#each ws.pointers as pointer (pointer.user_id)}
 				<span class="pointer-events-none absolute z-10" style="left: {pointer.x * 100}%; top: {pointer.y * 100}%"><PeerCursor name={pointer.name} peer={pointer.peer} /></span>
 			{/each}
-			{#if ws.view === 'code'}
+			{#if ws.view === 'design' && data.design}
+				<DesignCanvas
+					sessionId={ws.project.session_id}
+					directions={data.design.directions ?? null}
+					previews={data.design.previews}
+					feedback={data.design.feedback}
+					approval={data.design.approval}
+					embedded
+					onrefresh={async () => {
+						await invalidate('app:workspace-project');
+					}}
+				/>
+			{:else if ws.view === 'code'}
 				{#if ws.project.files.length && ws.codePath}
 					<CodeView
 						tree={ws.tree}

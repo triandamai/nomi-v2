@@ -211,3 +211,105 @@ describe('designStudio compare', () => {
 		expect(compareWith([versions[0]], versions[0], null)).toBeNull();
 	});
 });
+
+import {
+	activeDirectionForPreview,
+	adjustDirectionMessage,
+	clampZoom,
+	elementPinDraft,
+	fitZoom,
+	isDesignSystemPage,
+	pickDirectionMessage,
+	splitCanvasPages,
+	zoomLabel,
+	zoomStep,
+	type StudioDirectionSet,
+} from './designStudio';
+
+const directionSet: StudioDirectionSet = {
+	version: 1,
+	brief_version: 1,
+	directions: [
+		{
+			id: 'editorial',
+			name: 'Editorial',
+			summary: 'Warm paper and serif display type.',
+			rationale: 'Matches craft bakery positioning.',
+			trade_offs: ['Needs strong photography'],
+			palette: [
+				{ name: 'Paper', hex: '#F6EFE4' },
+				{ name: 'Accent', hex: '#B5532A' },
+			],
+			typography: { heading: 'Fraunces', body: 'Inter' },
+			layout: 'Hero, daily bakes, pre-order',
+			recommended: true,
+		},
+		{
+			id: 'swiss',
+			name: 'Swiss utility',
+			summary: 'High-contrast grid with mono prices.',
+			rationale: 'Fast scanning on mobile.',
+			trade_offs: ['Less atmospheric'],
+			palette: [
+				{ name: 'Surface', hex: '#FFFFFF' },
+				{ name: 'Ink', hex: '#111111' },
+			],
+			typography: { heading: 'Space Grotesk', body: 'IBM Plex Sans' },
+			layout: 'Two-column menu table',
+		},
+	],
+};
+
+describe('designStudio spatial canvas helpers', () => {
+	it('clamps, steps, fits, and formats canvas zoom between 25% and 200%', () => {
+		expect(clampZoom(0.1)).toBe(0.25);
+		expect(clampZoom(3)).toBe(2);
+		expect(clampZoom(Number.NaN)).toBe(1);
+		expect(zoomStep(1, 'in')).toBe(1.25);
+		expect(zoomStep(1, 'out')).toBe(0.75);
+		expect(zoomLabel(0.75)).toBe('75%');
+		expect(fitZoom(1064, 2000)).toBe(0.5);
+		expect(fitZoom(0, 1000)).toBe(1);
+	});
+
+	it('splits dedicated design-system pages from app-flow pages', () => {
+		const pages = [
+			{ path: 'design-system.html', title: 'Design System & Tokens' },
+			{ path: 'index.html', title: 'Home' },
+			{ path: 'menu/index.html', title: 'Menu' },
+		];
+		expect(isDesignSystemPage(pages[0])).toBe(true);
+		expect(isDesignSystemPage(pages[1])).toBe(false);
+		expect(splitCanvasPages(pages)).toEqual({
+			systemPages: [{ path: 'design-system.html', title: 'Design System & Tokens' }],
+			flowPages: [
+				{ path: 'index.html', title: 'Home' },
+				{ path: 'menu/index.html', title: 'Menu' },
+			],
+		});
+	});
+
+	it('matches the active direction for a preview or falls back to the recommended direction', () => {
+		expect(activeDirectionForPreview(directionSet, preview({ direction_id: 'swiss' }))?.id).toBe('swiss');
+		expect(activeDirectionForPreview(directionSet, null)?.id).toBe('editorial');
+	});
+
+	it('formats Sora messages for picking or adjusting a direction and drafting a direct element pin', () => {
+		expect(pickDirectionMessage(directionSet.directions[0])).toBe(
+			'@Sora Use the "Editorial" direction (editorial) and build the design system and multi-page preview.',
+		);
+		expect(adjustDirectionMessage(directionSet.directions[0], ' Use warmer terracotta ')).toBe(
+			'@Sora On the "Editorial" direction (editorial): Use warmer terracotta',
+		);
+		expect(adjustDirectionMessage(directionSet.directions[0], '   ')).toBeNull();
+		expect(elementPinDraft(2, hero, 'Tighter padding')).toEqual({
+			version: 2,
+			level: 'section',
+			page: 'index.html',
+			element_id: 'hero',
+			body: 'Tighter padding',
+			pin: { x: 0.5, y: 0.25 },
+		});
+	});
+});
+
