@@ -3,7 +3,7 @@
 	import Icon from '../foundations/Icon.svelte';
 
 	// Mobile / Projects Header (Flow / Mobile Projects): [6,16,8,20], 6 apart. The top row, 36 tall
-	// and 8 apart: the workspace (surface-2, round, its 28 tile with the initial, the name at 14 /
+	// and 8 apart: the workspace (surface-2, round, its 28 tile with the initial at 12 / 600, the name at 14 /
 	// 500 and a chevron) opening the page's workspace sheet; then, at the end, how many people are in
 	// it (users, 18) and Invite (36, round, border-strong, user-plus). Under it the large title at 32 /
 	// 600 and New (the accent pill, 36 tall, plus and its label at 15 / 600) opening New project.
@@ -28,7 +28,7 @@
 			class="inline-flex h-9 min-w-0 cursor-pointer items-center gap-2 rounded-full bg-surface-2 pr-3 pl-1 outline-offset-2"
 			onclick={onworkspace}
 		>
-			<span aria-hidden="true" class="inline-flex size-7 shrink-0 items-center justify-center rounded-full bg-surface font-mono text-caption text-text outline -outline-offset-1 outline-border-strong">{workspace.charAt(0).toUpperCase()}</span>
+			<span aria-hidden="true" class="inline-flex size-7 shrink-0 items-center justify-center rounded-full bg-surface text-caption font-semibold text-text outline -outline-offset-1 outline-border-strong">{workspace.charAt(0).toUpperCase()}</span>
 			<span class="truncate text-phone-sm font-medium text-text">{workspace}</span>
 			<span class="inline-flex shrink-0 text-text-3"><Icon icon={ChevronDown} size={16} /></span>
 		</button>

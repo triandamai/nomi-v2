@@ -185,6 +185,25 @@ export async function retryRun(event: ApiEvent, sessionId: string, messageId: st
 	return outcome(await call(event, `/api/sessions/${sessionId}/messages/${messageId}/retry`, { method: 'POST' }), nothing);
 }
 
+/** What deleting a message takes with it (`GET …/delete`): the messages, and what their cards made. */
+export type DeletePreview = {
+	message_ids: string[];
+	transactions: { id: string; label: string }[];
+	reminders: { id: string; label: string }[];
+	plans: { id: string; label: string }[];
+	tasks: { id: string; label: string }[];
+	files: { id: string; label: string }[];
+};
+
+export async function deletePreview(event: ApiEvent, sessionId: string, messageId: string): Promise<Outcome<DeletePreview>> {
+	return outcome(await call(event, `/api/sessions/${sessionId}/messages/${messageId}/delete`), (response) => response.json() as Promise<DeletePreview>);
+}
+
+/** Deletes a message and everything `deletePreview` listed, for good. */
+export async function deleteMessage(event: ApiEvent, sessionId: string, messageId: string): Promise<Outcome<void>> {
+	return outcome(await call(event, `/api/sessions/${sessionId}/messages/${messageId}`, { method: 'DELETE' }), nothing);
+}
+
 /** The chat's thinking level; null (the picker hides) when it can't be read. */
 export async function thinkingLevel(event: ApiEvent, sessionId: string): Promise<ThinkingLevel | null> {
 	const response = await call(event, `/api/sessions/${sessionId}/thinking`);

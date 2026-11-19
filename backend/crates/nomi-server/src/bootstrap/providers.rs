@@ -496,19 +496,20 @@ pub async fn build_embedding_provider_from_settings_or_env(
     let embedding_config = match from_row {
         Some(config) => config,
         None => {
-            let provider = embedding_provider_kind_from_str(
-                &std::env::var("EMBEDDING_PROVIDER").unwrap_or_else(|_| "openai".to_string()),
-            )
-            .expect("EMBEDDING_PROVIDER env var must be a known provider");
-            let (model_id, api_key) = match provider {
-                EmbeddingProviderKind::Fake => (String::new(), String::new()),
-                _ => {
-                    let model_id = std::env::var("EMBEDDING_MODEL_ID").expect("EMBEDDING_MODEL_ID must be set");
-                    if model_id.trim().is_empty() {
-                        panic!("EMBEDDING_MODEL_ID must not be empty");
+            let provider_name = std::env::var("EMBEDDING_PROVIDER").unwrap_or_else(|_| "openai".to_string());
+            let provider = embedding_provider_kind_from_str(&provider_name).unwrap_or(EmbeddingProviderKind::Fake);
+            let (provider, model_id, api_key) = match provider {
+                EmbeddingProviderKind::Fake => (EmbeddingProviderKind::Fake, String::new(), String::new()),
+                p => {
+                    let model_id = std::env::var("EMBEDDING_MODEL_ID").ok().filter(|s| !s.trim().is_empty());
+                    let api_key = std::env::var("EMBEDDING_API_KEY").ok().filter(|s| !s.trim().is_empty());
+                    match (model_id, api_key) {
+                        (Some(m), Some(k)) => (p, m, k),
+                        _ => {
+                            tracing::warn!("EMBEDDING_MODEL_ID or EMBEDDING_API_KEY not set; falling back to fake embedding provider");
+                            (EmbeddingProviderKind::Fake, String::new(), String::new())
+                        }
                     }
-                    let api_key = std::env::var("EMBEDDING_API_KEY").expect("EMBEDDING_API_KEY must be set");
-                    (model_id, api_key)
                 }
             };
             EmbeddingConfig { provider, model_id, api_key, base_url: std::env::var("EMBEDDING_BASE_URL").ok() }

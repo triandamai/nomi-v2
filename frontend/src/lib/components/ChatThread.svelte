@@ -39,6 +39,7 @@
 	import ChatMenu from './ds/chat/ChatMenu.svelte';
 	import MoveDialog from './ds/chat/MoveDialog.svelte';
 	import Dialog from './ds/overlays/Dialog.svelte';
+	import { toasts } from './ds/overlays/toasts.svelte';
 	import DsButton from './ds/actions/Button.svelte';
 	import DsIconButton from './ds/actions/IconButton.svelte';
 	import ShareTwin from './blocks/twins/ShareTwin.svelte';
@@ -1060,6 +1061,11 @@
 				// The server posts why (out of credits, a rejected key, ...) as a message in the
 				// chat; the generic notice is only for a failure that came with no explanation.
 				turnError = !envelope.error;
+				if (envelope.error) {
+					toasts.show({ kind: 'error', title: envelope.error });
+				} else {
+					toasts.show({ kind: 'error', title: m.chat_turn_error() });
+				}
 			} else if (envelope.kind === 'QueueChanged') {
 				onqueuechange?.();
 			} else if (envelope.kind === 'SessionRenamed') {

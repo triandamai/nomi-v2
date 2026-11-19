@@ -25,6 +25,17 @@ if (typeof window !== 'undefined') {
 
 	Element.prototype.scrollIntoView ??= function () {};
 	Element.prototype.scrollTo ??= function () {} as typeof Element.prototype.scrollTo;
+	Element.prototype.animate ??= function () {
+		return {
+			onfinish: null,
+			cancel() {},
+			finish() {},
+			play() {},
+			pause() {},
+			reverse() {},
+			finished: Promise.resolve({} as Animation),
+		} as unknown as Animation;
+	};
 	window.scrollTo = (() => {}) as typeof window.scrollTo;
 
 	const dialog = globalThis.HTMLDialogElement?.prototype;
