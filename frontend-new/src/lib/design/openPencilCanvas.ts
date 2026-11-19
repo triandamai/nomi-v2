@@ -789,6 +789,19 @@ export function buildStudioPenDocument(options: {
 }
 
 /**
+ * The preview page a top-level `.pen` frame is: the one named by its id or its name, else the
+ * one in its place. A version's pages come from its frames (design_artifact::parse_pen_document).
+ */
+function pageOfFrame(
+	preview: StudioPreview | null,
+	frame: { id: string; name?: string },
+	index: number
+): StudioPreview['pages'][number] | undefined {
+	const pages = preview?.pages ?? [];
+	return pages.find((p) => p.path === frame.id) ?? pages.find((p) => !!frame.name && p.title === frame.name) ?? pages[index];
+}
+
+/**
  * Builds and lays out a complete OpenPencil `SceneGraph` + headless `Editor` + linter pass
  * from either a raw `.pen` JSON file or the current Design Studio state.
  */
@@ -828,7 +841,7 @@ export function buildStudioSceneModel(options: {
 	if (options.rawPenJson?.trim()) {
 		const topFrames = graph.getChildren(pageId);
 		topFrames.forEach((frame, idx) => {
-			const pagePath = options.preview?.pages[idx]?.path ?? frame.id;
+			const pagePath = pageOfFrame(options.preview, frame, idx)?.path ?? frame.id;
 			pageNodeIds.set(pagePath, frame.id);
 			if (!nodeTargets.has(frame.id)) {
 				nodeTargets.set(frame.id, {
@@ -868,7 +881,7 @@ export function buildStudioSceneModel(options: {
 	const frames: StudioCanvasFrame[] = topFrames.map((node, index) => {
 		const bounds = graph.getAbsoluteBounds(node.id);
 		const meta = built.frameMeta.find((m) => m.nodeId === node.id);
-		const fallbackPage = options.preview?.pages[index];
+		const fallbackPage = pageOfFrame(options.preview, node, index);
 		return {
 			id: meta?.id ?? node.id,
 			nodeId: node.id,
