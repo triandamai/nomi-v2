@@ -353,6 +353,15 @@ Found while building Invite & build together, steps 9–10 (2026-11-15).
 Found while building the phone's Chats (2026-11-16).
 
 
+### A project's workspace on a phone: the line a teammate is on, cancelling a publish, web push
+- **Needed by:** *Flow / Mobile Build* — Invite & build together (L8dgcS) step 8 (following draws a "Sari" tag on the line she's on); Workspace tools (tJh5G) steps 3–4 and Sign in → live URL (zM0xh) step 5 (a publish that's running, and a build, offer Stop); Sign in → live URL step 6 (the lock-screen notification "warung-kopi-menu is live").
+- **Why:** following on a phone (and the desktop) can go to the file a teammate has open but not the line; a publish, once started, can't be stopped; and "We'll notify you" reaches a phone's lock screen only in the native apps.
+- **What exists today:** presence (`POST/GET /api/projects/:id/presence`) carries `view` and `path`, not a line; there's no route to cancel a running publish (`project_publishes` goes from `running` to `succeeded`/`failed` only); a published app's notice goes to the Inbox and by email (`notify_admins("published")`), and pushes only to native iOS and Android devices through FCM/APNs (`push.rs`).
+- **Proposed contract:** `line: number | null` (and optionally `to`) on a person's presence; `DELETE /api/projects/:id/deploy/publishes/:id` to cancel a running publish (already proposed under "Projects: a card's progress"); Web Push as proposed under "Web Push for a phone's browser" below, also sending the published notice (`notify_admins("published")`) the native apps get.
+- **Until then:** following has no line tag; the phone's publishing pill shows the time with no Stop; the web app says "We'll notify you" (true through the Inbox and email) and draws no lock screen.
+
+Found while building the workspace on a phone (2026-11-18).
+
 ### How many messages each chat holds
 - **Needed by:** *Flow / Mobile Chat — Manage chat* (W3a8j) step 1, the chat's sheet (G8cFz: "14 messages · Dana"), opened from the Chats list's long press as well as from inside the chat.
 - **Why:** from the Chats list the sheet can't say how big the chat is, and inside a long chat (older messages not loaded yet) neither can the chat's own sheet.

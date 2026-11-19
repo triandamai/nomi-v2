@@ -178,8 +178,20 @@ export async function loadPeople(event: ApiEvent, id: string): Promise<ProjectMe
 }
 
 /** Invites an address as `build` (admin), `prompt` (member) or `view` (viewer). */
-export const invitePerson = (event: ApiEvent, id: string, email: string, role: 'build' | 'prompt' | 'view') =>
-	send(event, `${at(id)}/invites`, 'POST', { email, role });
+/** What an invite gives back: someone already in the workspace is added at once; anyone else gets a link that runs out. */
+export type InviteAnswer = { added: boolean; path: string | null; expires_at: string | null };
+export async function invitePerson(event: ApiEvent, id: string, email: string, role: 'build' | 'prompt' | 'view'): Promise<({ ok: true } & InviteAnswer) | { ok: false; status: number; message: string }> {
+	let response: Response;
+	try {
+		response = await apiFetch(event, `${at(id)}/invites`, { method: 'POST', body: JSON.stringify({ email, role }) });
+	} catch (error) {
+		if (isRedirect(error)) throw error;
+		return { ok: false, status: 503, message: '' };
+	}
+	if (!response.ok) return { ok: false, status: response.status, message: (await response.text()).trim().slice(0, 300) };
+	const body = (await response.json().catch(() => null)) as Partial<InviteAnswer> | null;
+	return { ok: true, added: body?.added ?? false, path: body?.path ?? null, expires_at: body?.expires_at ?? null };
+}
 export const setPersonRole = (event: ApiEvent, id: string, userId: string, role: 'admin' | 'member' | 'viewer') => send(event, `${at(id)}/members/${encodeURIComponent(userId)}`, 'PUT', { role });
 export const removePerson = (event: ApiEvent, id: string, userId: string) => send(event, `${at(id)}/members/${encodeURIComponent(userId)}`, 'DELETE');
 /** Opens the project to the whole workspace, or only to the people added. */
