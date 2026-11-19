@@ -26,12 +26,14 @@ Status: `gaps` · `designing` · `design-verified` · `building` · `shipped` ·
 ## Build
 | Flow | Desktop dark | Desktop light | Mobile dark | Mobile light | Status |
 |---|---|---|---|---|---|
-| Sign in → live URL | o882RC | hifej | zM0xh | cyXXE | designed |
-| Workspace tools | U16wU | omR64 | tJh5G | zdXZh | designed |
-| Landing page | WUiji | pcnAT | yY8qf | oLJ3q | designed |
-| Roll back, limits & hand-over | pwkEe | Qt5C0 | Wv14s | yYAZV | designed |
-| Code, terminal & phone preview | uR6dq | kKWtu | r3IvZk | f48QD7 | designed |
-| Invite & build together | TnwQT | O0wCuQ | L8dgcS | ZTTgV | designed |
+| Sign in → live URL | o882RC | hifej | zM0xh | cyXXE | desktop shipped · mobile **design-verified** (phone-build) |
+| Workspace tools | U16wU | omR64 | tJh5G | zdXZh | desktop shipped · mobile **design-verified** (phone-build) |
+| Landing page | WUiji | pcnAT | yY8qf | oLJ3q | desktop shipped · mobile **design-verified** (phone-build) |
+| Roll back, limits & hand-over | pwkEe | Qt5C0 | Wv14s | yYAZV | desktop shipped (roll back) · mobile **design-verified** (phone-build); allowance + schema review out (no API) |
+| Code, terminal & phone preview | uR6dq | kKWtu | r3IvZk | f48QD7 | desktop shipped · mobile **design-verified** (phone-build) |
+| Invite & build together | TnwQT | O0wCuQ | L8dgcS | ZTTgV | desktop shipped · mobile **design-verified** (phone-build) |
+
+Mobile Build: Gate 1 passed on 17 Nov 2026. See `work/phone-build/40-ux-contract.md` (P1/P2 gaps in `10-ux-review.md`).
 
 ## Projects
 | Flow | Desktop dark | Desktop light | Mobile dark | Mobile light | Status |

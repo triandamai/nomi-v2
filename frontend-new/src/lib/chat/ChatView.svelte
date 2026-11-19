@@ -116,11 +116,11 @@
 	// the nav bar (back to Chats, the title, who answers, the chat's sheet), the thread padded
 	// [16,16,20,16] with messages 24 apart, your messages in the 18-round bubble, each reply under the
 	// Mobile byline with its prose at 16 and the round action bar (More: regenerate), and the phone's
-	// composer, whose model chip and "@ Crew" open sheets. The workspace's chat pane comes with the
-	// phone's Build screens (Mobile Build).
+	// composer, whose model chip and "@ Crew" open sheets. In a project's workspace on a phone (Mobile
+	// Build) the chat is the Chat tab: the same, under the workspace's own nav, so without this one's.
 	const phoneGuess = () => Boolean(page.data.phone);
 	const phoneWidth = phoneView(phoneGuess());
-	const phone = $derived(phoneWidth.current && !pane);
+	const phone = $derived(phoneWidth.current);
 	type Sheet =
 		| { kind: 'chat' }
 		| { kind: 'rename' }
@@ -1253,7 +1253,7 @@
 
 <div class="flex h-full">
 <div class="flex h-full min-w-0 flex-1 flex-col">
-	{#if phone}<NavBar title={shownTitle ?? m.nav_new_chat()} who={answering} onback={() => void goto('/chats')} onmenu={() => (sheet = { kind: 'chat' })} />{/if}
+	{#if phone && !pane}<NavBar title={shownTitle ?? m.nav_new_chat()} who={answering} onback={() => void goto('/chats')} onmenu={() => (sheet = { kind: 'chat' })} />{/if}
 	{#if phone && (!online || backOnline || quota !== null || flows.working.length > 0)}
 		<!-- On a phone the banners stay under the nav bar, wherever the person is in the thread (UX
 		     contract S3.4, S4 5.1, 6.2): the connection or the month's credits, then who's at work
@@ -1488,12 +1488,13 @@
 			<div class="absolute -top-12 left-1/2 -translate-x-1/2"><JumpToLatest count={unseen} onclick={() => jumpToLatest(true)} /></div>
 		{/if}
 		{#if phone}
+			{#if quote}<div class="px-4 pb-2"><CodeQuote file={quote.file} range={quote.range} snippet={quote.snippet} onremove={() => onunquote?.()} /></div>{/if}
 			<PhoneChatFlows {flows} {entries} chat={shownTitle ?? m.nav_new_chat()} {language} {working} onsend={(text) => void send(text)} onfocus={() => requestAnimationFrame(() => field?.focus())} />
 			<PhoneComposer
 				notice={flows.notice ?? undefined}
 				bind:value={draft}
 				bind:field
-				placeholder={m.mobile_message()}
+				placeholder={pane ? m.workspace_chat_placeholder() : m.mobile_message()}
 				streaming={working}
 				{crew}
 				model={modelLabel}
