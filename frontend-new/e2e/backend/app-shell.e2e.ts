@@ -133,8 +133,9 @@ test('logging out ends the sign-in: it lands on sign in, and the app asks for it
 	const refreshed = await fetch(`${BACKEND_URL}/api/auth/refresh`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ refresh_token: account.tokens.refresh_token }) });
 	expect(refreshed.status).toBe(401);
 
-	const response = await page.request.get('/', { maxRedirects: 0 });
-	expect(response.headers().location).toBe('/sign-in?redirect_to=%2F');
+	// Signed out, the front door is the landing page; anywhere else asks to sign in again.
+	expect((await page.request.get('/', { maxRedirects: 0 })).headers().location).toBe('/welcome');
+	expect((await page.request.get('/chats', { maxRedirects: 0 })).headers().location).toBe('/sign-in?redirect_to=%2Fchats');
 });
 
 test('signed out from another device, this one signs out too', async ({ page, context }) => {
