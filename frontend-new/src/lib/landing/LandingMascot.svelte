@@ -1,27 +1,20 @@
 <script lang="ts" module>
-	export type LandingAgent = 'nomi' | 'sora' | 'koda' | 'iris' | 'dana' | 'kala' | 'maya' | 'tara' | 'rena' | 'raga' | 'supervisor' | 'personality';
+	import type { CrewId } from '$lib/ds/agents/crew';
 
-	const FILES = import.meta.glob<string>('./assets/mascots/*.svg', { eager: true, query: '?url', import: 'default' });
-	const src = (agent: LandingAgent) => FILES[`./assets/mascots/${agent}.svg`];
-
-	// Where each drawing sits in its square, as the design's instances place it: Nomi's mark is
-	// inset, a few bodies run a hair past the top or left edge.
-	const INSET: Partial<Record<LandingAgent, string>> = {
-		nomi: '3.33% 3.95%',
-		dana: '-0.59% 0 0 0',
-		kala: '0 0 0 -1.53%',
-		maya: '-1.56% 0 0 0',
-		tara: '0 0 0 -1.08%',
-		rena: '-0.24% 0 0 0',
-		supervisor: '-0.13% 0 0 0',
-		personality: '0 0 0 -0.41%',
-	};
+	export type LandingAgent = CrewId;
 </script>
 
 <script lang="ts">
-	// Figma, Nomi Builder → Mascot (170:250): Nomi and the crew as the landing page draws them, flat
-	// doodles at any size, from the design's own files. The app's crew wear Mascot.svelte's shapes;
-	// this page keeps its own drawings, as its design does. Decorative unless given a label.
+	import Mascot from '$lib/ds/agents/Mascot.svelte';
+
+	// The landing page's crew wear the app's own mascots (agents/Mascot.svelte: each member's agent
+	// shape, gradient and two-dot face, brought to life by open-bot-avatar, as in v2), not the Figma
+	// file's flat drawings, so the page shows the crew people meet once they're in. The page needs
+	// sizes Mascot doesn't offer (24, 44, 68, 150…), and Mascot's props stay as the old app's twin
+	// has them, so it's drawn at 96 and filled to this box: the flat SVG and the live engine both
+	// scale to their host (the engine paints a viewBox at 100% and watches its size), and the engine
+	// pauses itself offscreen. Live from 24 up; below that it stays flat, as Mascot does at 16.
+	// Decorative unless given a label.
 	type Props = {
 		agent: LandingAgent;
 		/** Its square, in px. */
@@ -42,18 +35,22 @@
 	aria-label={label}
 	aria-hidden={label ? undefined : 'true'}
 >
-	<span class="art" style:inset={INSET[agent] ?? '0'}><img src={src(agent)} alt="" draggable="false" /></span>
+	<Mascot {agent} size={96} live={size >= 24} />
 </span>
 
 <style>
 	.mascot {
 		position: relative;
-		display: inline-block;
+		display: inline-flex;
 		flex-shrink: 0;
 	}
 
-	.art {
-		position: absolute;
+	/* Mascot at 96, filled to this box: its live wrapper, the flat SVG inside it, or the SVG alone. */
+	.mascot > :global(span),
+	.mascot > :global(svg),
+	.mascot > :global(span > svg) {
+		width: 100% !important;
+		height: 100% !important;
 	}
 
 	/* lp-hop is landing.css's: two hops in the page's 6s loop. */
@@ -61,12 +58,5 @@
 		transform-origin: 50% 100%;
 		animation: lp-hop 6s infinite;
 		animation-delay: var(--lp-delay, 0s);
-	}
-
-	.art img {
-		display: block;
-		width: 100%;
-		height: 100%;
-		max-width: none;
 	}
 </style>

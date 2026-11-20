@@ -96,13 +96,25 @@ describe('LandingCrew', () => {
 });
 
 describe('LandingMascot', () => {
-	it('is decoration unless it has a name, at the size it’s given', async () => {
+	it('wears the app’s mascot, filled to the size it’s given, and is decoration unless named', async () => {
 		await render(LandingMascot, { agent: 'koda', size: 72 });
 		const plain = document.querySelector('.mascot')!;
 		expect([plain.getAttribute('aria-hidden'), Math.round(box(plain).width), Math.round(box(plain).height)]).toEqual(['true', 72, 72]);
+		// Mascot.svelte's own shape (Koda's agent shape), live, scaled from 96 to the box.
+		const live = plain.querySelector('[data-live]')!;
+		expect(live.getAttribute('data-shape')).toBeTruthy();
+		const art = plain.querySelector('svg')!;
+		expect([Math.round(box(art).width), Math.round(box(art).height)]).toEqual([72, 72]);
 		document.body.innerHTML = '';
 		await render(LandingMascot, { agent: 'koda', size: 44, label: 'Koda' });
 		await expect.element(page.getByRole('img', { name: 'Koda' })).toBeVisible();
+	});
+
+	it('stays flat below 24, as Mascot does at its smallest', async () => {
+		await render(LandingMascot, { agent: 'dana', size: 20 });
+		const root = document.querySelector('.mascot')!;
+		expect(root.querySelector('[data-live]')).toBeNull();
+		expect(Math.round(box(root.querySelector('svg')!).width)).toBe(20);
 	});
 });
 

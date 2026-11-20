@@ -54,6 +54,10 @@ their design context once it can be read. The dark and 390 frames weren't read a
 - **Composer edge.** Empty, the quiet border (as the closing call draws it); with words in it, the
   strong one (as the hero draws it).
 
+- **Mascots.** The page wears the app's own mascots (`Mascot`: agent shapes, live with
+  open-bot-avatar), not the design's flat drawings, so it shows the crew as v2 does. Asked for on
+  21 Nov 2026.
+
 ## Checked
 - 1440: nav to Own everything measure 4,079px tall in Indonesian against the design's 4,083; the whole
   page is 5,737 against 5,806 without the waitlist, the difference the footer's links left out.
