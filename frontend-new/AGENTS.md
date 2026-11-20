@@ -541,8 +541,9 @@ leaves out what v2 or the backend can't do yet, rather than draw it dead:
 - The landing page (`/welcome`, Figma: Nomi Builder → 05 Marketing → "Landing v2 · Playful (ID)" 170:2766;
   work item `docs/ux/work/landing`) is drawn in the marketing design system, not Nomi.pen: its values live
   in `src/lib/landing/landing.css` under `[data-landing]` (Figma's variables), its components in
-  `src/lib/landing/` with scoped styles, and its mascots are the design's own flat drawings
-  (`LandingMascot`), not `Mascot`'s shapes. Its body copy is Geist (the design's Inter isn't shipped) and
+  `src/lib/landing/` with scoped styles, and its mascots are the app's own (`LandingMascot`
+  hosts `Mascot`: the agent shapes, live with open-bot-avatar, drawn at 96 and filled to the page's
+  sizes), not the design's flat drawings, so the page shows the crew people meet in v2. Its body copy is Geist (the design's Inter isn't shipped) and
   its buttons keep the design's uppercase labels. Every section but the waitlist is built: the nav, the
   hero, How it works, the crew, Own everything, the FAQ, the closing call and the footer, with the
   design's motion played once (the hops and floats loop; reduced motion stops all of it). Both composers
