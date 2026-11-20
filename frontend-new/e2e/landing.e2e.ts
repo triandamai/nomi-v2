@@ -56,3 +56,9 @@ test('the footer switches the page’s language', async ({ page, context }) => {
 	await expect(page.getByRole('heading', { level: 1, name: 'You talk. Nomi’s crew gets it done.' })).toBeVisible();
 	await expect(page.getByRole('button', { name: 'English' })).toHaveAttribute('aria-pressed', 'true');
 });
+
+test('a visitor at the front door gets the landing page', async ({ page }) => {
+	await page.goto('/');
+	await expect(page).toHaveURL('http://localhost:4175/welcome');
+	await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+});
