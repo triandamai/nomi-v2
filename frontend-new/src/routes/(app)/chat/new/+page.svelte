@@ -25,7 +25,8 @@
 	const phone = phoneView(guess());
 
 	const header = chatHeader();
-	let draft = $state('');
+	const startingDraft = () => data.draft ?? '';
+	let draft = $state(startingDraft());
 	let field: HTMLTextAreaElement | undefined = $state();
 	let modelKey = $state<string | null>(null);
 	let busy = $state(false);

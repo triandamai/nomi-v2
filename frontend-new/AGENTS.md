@@ -538,6 +538,19 @@ leaves out what v2 or the backend can't do yet, rather than draw it dead:
   offline (the desktop has none either), Koda checking an app that's down from its own flow, and
   Import from GitHub (BACKEND_TODO.md). The sort isn't saved per workspace (the pen's "Saved for Trian's space"):
   nothing keeps it. The Workspaces sheet's "Join" for an invitation waits for that flow.
+- The landing page (`/welcome`, Figma: Nomi Builder → 05 Marketing → "Landing v2 · Playful (ID)" 170:2766;
+  work item `docs/ux/work/landing`) is drawn in the marketing design system, not Nomi.pen: its values live
+  in `src/lib/landing/landing.css` under `[data-landing]` (Figma's variables), its components in
+  `src/lib/landing/` with scoped styles, and its mascots are the design's own flat drawings
+  (`LandingMascot`), not `Mascot`'s shapes. Its body copy is Geist (the design's Inter isn't shipped) and
+  its buttons keep the design's uppercase labels. Built: the nav, the hero (the composer posts to sign in,
+  then a new chat with the words in it, `/chat/new?q=`), How it works, the crew and Own everything,
+  with the design's motion played once (the hops and floats loop; reduced motion stops all of it). Two
+  of Own everything's lines are changed to what Nomi does: an export holds the code and its data tables
+  (not "its change history"), and the offline line (Ollama or LM Studio) is left out (Nomi connects
+  Ollama Cloud only). The waitlist is left out (BACKEND_TODO.md); the FAQ, the closing call to action,
+  the footer, and the dark (170:3097) and 390 (170:3425) frames wait for their design to be read; until
+  then the page is light, and narrower screens reflow the desktop layout.
 - The crew column lists every agent the backend has, so eleven: Iris (the inspector), whom the pen
   doesn't draw, shows her initial in place of a mascot.
 

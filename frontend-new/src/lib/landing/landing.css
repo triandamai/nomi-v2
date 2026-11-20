@@ -1,0 +1,161 @@
+/*
+ * The landing page's own design (Figma, Nomi Builder → 05 Marketing → "Landing v2 · Playful (ID)",
+ * 170:2766). It's a marketing page drawn in its own system, not Nomi.pen's, so its values live here
+ * under `[data-landing]` instead of in the app's tokens: Figma's variables, with their names. The page sets
+ * `data-theme="light"`: the dark frame (170:3097) isn't built yet.
+ *
+ * Type: the design sets body copy in Inter. The app ships Geist only (AGENTS.md §2, two families),
+ * so the page uses Geist for both, with the design's sizes, weights, line heights and tracking.
+ */
+[data-landing] {
+	--lp-text: #1c1c1c;
+	--lp-text-2: #5c5c5c;
+	--lp-text-3: #737373;
+	--lp-text-inverse: #ffffff;
+	--lp-text-brand: #286d48;
+	--lp-bg: #ffffff;
+	--lp-bg-subtle: #f7f7f7;
+	--lp-bg-muted: #f0f0f0;
+	--lp-surface: #ffffff;
+	--lp-border-subtle: #f0f0f0;
+	--lp-border: #e4e4e4;
+	--lp-border-strong: #1c1c1c;
+	--lp-primary: #1c1c1c;
+	--lp-primary-fg: #ffffff;
+	--lp-focus: #1c1c1c;
+	--lp-green-subtle: #d7fada;
+	--lp-green-fg: #0a6116;
+	--lp-yellow-subtle: #fff7d6;
+	--lp-yellow-fg: #6e590c;
+	--lp-yellow-solid: #fdce00;
+	--lp-blue-subtle: #daf2ff;
+	--lp-warning-bg: #fffbeb;
+
+	/* crew/<member>/container and /fg */
+	--lp-crew-nomi: #e5faed;
+	--lp-crew-sora: #f5def0;
+	--lp-crew-koda: #d4f3f2;
+	--lp-crew-iris: #f1e4d9;
+	--lp-crew-dana: #fdebdc;
+	--lp-crew-kala: #fdf5dd;
+	--lp-crew-maya: #f6ede4;
+	--lp-crew-tara: #e0ecfe;
+	--lp-crew-rena: #e2e5fc;
+	--lp-crew-raga: #fce6e6;
+	--lp-crew-supervisor: #ede7fc;
+	--lp-crew-personality: #fde8f3;
+	--lp-crew-dana-fg: #915f36;
+	--lp-crew-kala-fg: #7f6b31;
+	--lp-crew-maya-fg: #7e654c;
+	--lp-crew-koda-fg: #1e7672;
+	--lp-crew-tara-fg: #44689d;
+	--lp-crew-rena-fg: #485198;
+
+	--lp-radius-sm: 8px;
+	--lp-radius-md: 12px;
+	--lp-radius-lg: 16px;
+	--lp-radius-xl: 24px;
+	--lp-radius-2xl: 32px;
+
+	/* Elevation/2 Mid and Elevation/3 High */
+	--lp-elevation-2: 0 1px 3px rgb(28 28 28 / 0.04), 0 4px 12px rgb(28 28 28 / 0.08);
+	--lp-elevation-3: 0 4px 12px rgb(28 28 28 / 0.06), 0 16px 40px rgb(28 28 28 / 0.14);
+
+	/* The overshoot the design's motion uses for things landing in place. */
+	--lp-spring: cubic-bezier(0.45, 1.45, 0.8, 1);
+
+	color-scheme: light;
+	background: var(--lp-bg);
+	color: var(--lp-text);
+	font-family: var(--nm-sans);
+	-webkit-font-smoothing: antialiased;
+}
+
+/*
+ * Motion (get_motion_context on 170:2766): one 6s timeline. The headline lines, the composer and the
+ * chips rise in once; the mascots hop twice every 6s, staggered; the crew's notes pop in, then bob.
+ * The design loops its entrance too (a prototype's loop); a page plays it once.
+ */
+@keyframes lp-rise {
+	from {
+		opacity: 0;
+		translate: 0 var(--lp-rise, 28px);
+	}
+	to {
+		opacity: 1;
+		translate: 0 0;
+	}
+}
+
+@keyframes lp-pop {
+	from {
+		opacity: 0;
+		scale: 0.85;
+		translate: 0 14px;
+	}
+	to {
+		opacity: 1;
+		scale: 1;
+		translate: 0 0;
+	}
+}
+
+@keyframes lp-bob {
+	from {
+		translate: 0 0;
+	}
+	to {
+		translate: 0 var(--lp-bob, -7px);
+	}
+}
+
+/* Two hops a cycle: squash, jump, land, a small bounce, settle (Hop/*, Mascot in the headline). */
+@keyframes lp-hop {
+	0%,
+	13%,
+	43.33%,
+	56.33%,
+	100% {
+		scale: 1 1;
+		translate: 0 0;
+	}
+	1.33%,
+	44.67% {
+		scale: 1.08 0.92;
+		translate: 0 -19%;
+	}
+	4.67%,
+	48% {
+		scale: 0.93 1.09;
+		translate: 0 0;
+	}
+	9.67%,
+	53% {
+		scale: 1.12 0.88;
+		translate: 0 -4.6%;
+	}
+	11.33%,
+	54.67% {
+		scale: 0.98 1.03;
+		translate: 0 0;
+	}
+}
+
+/* Maya in the export picture breathes: wide and short, then narrow and tall, every 0.75s. */
+@keyframes lp-squash {
+	from {
+		scale: 0.97 1.04;
+	}
+	to {
+		scale: 1.05 0.95;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	[data-landing] *,
+	[data-landing] *::before,
+	[data-landing] *::after {
+		animation: none !important;
+		transition: none !important;
+	}
+}

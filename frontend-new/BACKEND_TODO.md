@@ -504,3 +504,12 @@ Found while building the phone's chat flows (2026-11-18).
 - **Until then:** the reply shows who answered without the hand-off line, and code shows as a code block with no Apply or Reject.
 
 Found while building the rest of a chat on a phone (2026-11-19).
+
+### A public waitlist
+- **Needed by:** the landing page (Figma, Nomi Builder → "Landing v2 · Playful (ID)" 170:2766), its Waitlist CTA (170:2948): "Jadi yang pertama punya kru sendiri", an email field and "Gabung waitlist", with "Cuma 1 email pas rilis" under it.
+- **Why:** a visitor can't leave an address to hear when Nomi opens without making an account.
+- **What exists today:** `POST /api/plans/:id/waitlist` (`plan_checkout::join_waitlist`), which needs a signed-in person and a plan; nothing for someone without an account.
+- **Proposed contract:** `POST /api/waitlist` `{ email: string, locale?: 'en' | 'id' }` → `202 {}` (the same answer whether or not the address was already on it), rate-limited by address and IP, with one email sent when access opens and a way to leave the list.
+- **Until then:** the landing page leaves the waitlist section out (and its nav link); Try it free goes to register.
+
+Found while building the landing page (2026-11-21).
