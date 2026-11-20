@@ -1,8 +1,10 @@
 import { sequence } from '@sveltejs/kit/hooks';
 import { redirect, type Handle, type HandleFetch } from '@sveltejs/kit';
 import { building } from '$app/environment';
+import { env as publicEnv } from '$env/dynamic/public';
 import { paraglideMiddleware } from '$lib/paraglide/server';
 import { DEVICE_COOKIE } from '$lib/device';
+import { crossDomainRedirect, domainsFrom, onLanding } from '$lib/domains';
 import { authenticate, isApiRequest } from '$lib/server/api';
 import { clientHeaders } from '$lib/server/clientHeaders';
 import { legacyPath } from '$lib/server/compat';
@@ -19,6 +21,16 @@ const languageAndTheme: Handle = ({ event, resolve }) =>
 		});
 	});
 
+/**
+ * The landing page (PUBLIC_LANDING_HOST) and the app (PUBLIC_APP_HOST) are this one server on two
+ * domains: a page asked for on the wrong one goes to the other.
+ */
+const domains: Handle = ({ event, resolve }) => {
+	const to = building ? null : crossDomainRedirect(event.url, domainsFrom(publicEnv));
+	if (to) redirect(308, to);
+	return resolve(event);
+};
+
 /** The backend links to the old app's addresses in emails and notifications: each has a v2 page. */
 const legacyAddresses: Handle = ({ event, resolve }) => {
 	const to = legacyPath(event.url);
@@ -34,7 +46,9 @@ const device: Handle = ({ event, resolve }) => {
 
 /** The person's sign-in for this request, renewed first when it's about to expire. */
 const auth: Handle = async ({ event, resolve }) => {
-	if (!event.url.pathname.startsWith('/sign-out')) await authenticate(event);
+	// The landing domain has no sign-in: its cookies stay on the app domain.
+	const landing = !building && onLanding(event.url.hostname, domainsFrom(publicEnv));
+	if (!landing && !event.url.pathname.startsWith('/sign-out')) await authenticate(event);
 	return resolve(event);
 };
 
@@ -50,7 +64,7 @@ const noStalePages: Handle = async ({ event, resolve }) => {
 	return response;
 };
 
-export const handle = sequence(legacyAddresses, languageAndTheme, device, auth, noStalePages);
+export const handle = sequence(domains, legacyAddresses, languageAndTheme, device, auth, noStalePages);
 
 /** Every call to the backend says which version of the frontend made it, and from which browser. */
 export const handleFetch: HandleFetch = ({ event, request, fetch }) => {

@@ -10,6 +10,9 @@
 	import LandingCta from '$lib/landing/LandingCta.svelte';
 	import LandingFooter from '$lib/landing/LandingFooter.svelte';
 	import { getLocale, setLocale, type Locale } from '$lib/paraglide/runtime';
+	import type { PageProps } from './$types';
+
+	let { data }: PageProps = $props();
 
 	// The landing page (Figma, Nomi Builder → 05 Marketing → "Landing v2 · Playful (ID)", 170:2766),
 	// for people who aren't signed in: the nav, the hero, How it works, the crew, Own everything, the
@@ -113,15 +116,15 @@
 <div class="page" data-landing data-theme="light">
 	<LandingNav
 		home={m.landing_home()}
-		homeHref="/welcome"
+		homeHref={data.home}
 		label={m.landing_nav_label()}
 		links={[
 			{ href: `#${HOW}`, label: m.landing_nav_how() },
 			{ href: `#${CREW}`, label: m.landing_nav_crew() },
 			{ href: `#${FAQ}`, label: m.landing_nav_faq() },
 		]}
-		signIn={{ href: '/sign-in', label: m.landing_sign_in() }}
-		tryFree={{ href: '/register', label: m.landing_try_free() }}
+		signIn={{ href: data.signIn, label: m.landing_sign_in() }}
+		tryFree={{ href: data.register, label: m.landing_try_free() }}
 	/>
 	<main>
 		<LandingHero
@@ -165,7 +168,7 @@
 	</main>
 	<LandingFooter
 		home={m.landing_home()}
-		homeHref="/welcome"
+		homeHref={data.home}
 		navLabel={m.landing_footer_nav()}
 		tagline={m.landing_footer_tagline()}
 		columns={[
