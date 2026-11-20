@@ -21,8 +21,11 @@ async function open(page: Page, path = '/') {
 }
 
 test('someone signed out signs in first, and comes back to where they were going', async ({ request }) => {
+	// The bare front door is the landing page; anywhere in particular asks to sign in first.
+	const front = await request.get('/', { maxRedirects: 0 });
+	expect([front.status(), front.headers().location]).toEqual([303, '/welcome']);
 	for (const [path, back] of [
-		['/', '%2F'],
+		['/chats', '%2Fchats'],
 		['/?from=email', '%2F%3Ffrom%3Demail'],
 	]) {
 		const response = await request.get(path, { maxRedirects: 0 });
