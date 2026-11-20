@@ -30,6 +30,8 @@
 	import RecentsList from '$lib/ds/chrome/RecentsList.svelte';
 	import UsageCard from '$lib/ds/chrome/UsageCard.svelte';
 	import AccountMenu from '$lib/ds/chrome/AccountMenu.svelte';
+	import ThemePickerButton from '$lib/ds/chrome/ThemePickerButton.svelte';
+	import { setThemeContext } from '$lib/ds/chrome/themeContext';
 	import WorkspaceSwitcher from '$lib/ds/chrome/WorkspaceSwitcher.svelte';
 	import TopBar from '$lib/ds/chrome/TopBar.svelte';
 	import QuickSearch, { type QuickSearchRow } from '$lib/ds/chrome/QuickSearch.svelte';
@@ -120,7 +122,7 @@
 			return inThread || phoneScreenState.inside ? null : { label: m.nav_main(), tabs };
 		},
 		get ownTitle() {
-			return isChats || isHome || inThread || isProjects;
+			return isChats || inThread || isProjects;
 		},
 	});
 	// What the chat page says about itself as it changes (renamed, pinned, moved, deleted).
@@ -191,6 +193,13 @@
 		applyTheme(before);
 		toasts.show({ kind: 'error', title: m.theme_failed() });
 	}
+
+	setThemeContext({
+		get theme() {
+			return theme;
+		},
+		changeTheme,
+	});
 
 	/** Saved with the person's preferences, then the page loads again in it. */
 	async function changeLanguage(next: string) {
@@ -484,10 +493,19 @@
 	</span>
 {/snippet}
 
+{#snippet themeButton()}
+	<span class="lg:hidden">
+		<ThemePickerButton {theme} ontheme={changeTheme} />
+	</span>
+{/snippet}
+
 {#snippet topbar()}
 	{#if isHome}
 		<TopBar title={m.home_title()} meta={stamp(now, language, timeZone)}>
-			{#snippet actions()}{@render search()}{/snippet}
+			{#snippet actions()}
+				{@render search()}
+				{@render themeButton()}
+			{/snippet}
 		</TopBar>
 	{:else if isChat && chatData.chat}
 		{@const id = chatData.chat.id}
@@ -508,6 +526,7 @@
 				{#if pageTitle.csv}<Button label={m.plan_export()} variant="ghost" iconStart={Download} href={pageTitle.csv} data-sveltekit-reload />{/if}
 				{#if pageTitle.exportLink}<Button label={pageTitle.exportLink.label} variant="secondary" iconEnd={Download} href={pageTitle.exportLink.href} data-sveltekit-reload />{/if}
 				{#if pageTitle.connect}<Button label={m.models_connect()} variant="inverse" iconEnd={Plus} href={pageTitle.connect} data-sveltekit-noscroll />{/if}
+				{@render themeButton()}
 			{/snippet}
 		</SettingsTopBar>
 	{:else if isProjects}
@@ -527,14 +546,20 @@
 				<span class="max-sm:hidden"><Button label={m.inbox_mark_all_read()} variant="ghost" iconStart={CheckCheck} disabled={unread === 0} loading={markingRead} onclick={markAllRead} /></span>
 				<span class="sm:hidden"><IconButton icon={CheckCheck} label={m.inbox_mark_all_read()} variant="ghost" disabled={unread === 0 || markingRead} onclick={markAllRead} /></span>
 				<Button label={m.inbox_new_reminder()} variant="inverse" iconEnd={Plus} onclick={() => document.getElementById(QUICK_REMINDER)?.focus()} />
+				{@render themeButton()}
 			{/snippet}
 		</TopBar>
 	{:else if page.error}
-		<TopBar title={page.route.id === CHAT ? m.nav_chats() : m.error_title()} />
+		<TopBar title={page.route.id === CHAT ? m.nav_chats() : m.error_title()}>
+			{#snippet actions()}{@render themeButton()}{/snippet}
+		</TopBar>
 	{:else}
 		<!-- Other pages name themselves in their load: { title, meta }. -->
 		<TopBar title={pageTitle.title ?? ''} meta={pageTitle.meta}>
-			{#snippet actions()}{@render search()}{/snippet}
+			{#snippet actions()}
+				{@render search()}
+				{@render themeButton()}
+			{/snippet}
 		</TopBar>
 	{/if}
 {/snippet}

@@ -189,4 +189,12 @@ export default [
 		accessibility: ['The page’s name is marked as the current page; the › is hidden from screen readers.'],
 		related: ['chrome/TopBar.svelte', 'chrome/SettingsNav.svelte'],
 	},
+	{
+		file: 'chrome/ThemePickerButton.svelte',
+		summary: 'A theme picker button for mobile viewports: opens a bottom sheet with System, Light, and Dark options.',
+		use: ['Mobile top bars and headers (Home, Inbox, Settings, Chats, Projects) where the desktop sidebar is hidden.'],
+		avoid: ['Desktop layouts: AccountMenu in the sidebar footer handles theme switching.'],
+		accessibility: ['Button has aria-haspopup="dialog" and aria-expanded; sheet options are aria-pressed.'],
+		related: ['chrome/AccountMenu.svelte', 'overlays/BottomSheet.svelte', 'overlays/SheetOption.svelte'],
+	},
 ] satisfies ComponentDoc[];
