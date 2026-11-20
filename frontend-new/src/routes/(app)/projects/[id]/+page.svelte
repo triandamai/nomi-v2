@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { Activity, ArrowDownUp, ChevronLeft, ChevronRight, Coins, Cpu, Database, Download, Globe, History, Hourglass, KeyRound, Link, Lock, MemoryStick, MonitorX, Pencil, RefreshCw, Rocket, Settings, Trash2, UserMinus, Users } from '@lucide/svelte';
+	import { Activity, ArrowDownUp, ChevronLeft, ChevronRight, Coins, Cpu, Database, Download, Globe, History, Hourglass, KeyRound, Link, Lock, MemoryStick, MonitorX, Palette, Pencil, RefreshCw, Rocket, Settings, Trash2, UserMinus, Users } from '@lucide/svelte';
 	import { m } from '$lib/paraglide/messages';
 	import ChatView from '$lib/chat/ChatView.svelte';
 	import Button from '$lib/ds/actions/Button.svelte';
@@ -275,18 +275,26 @@
 			{#each ws.pointers as pointer (pointer.user_id)}
 				<span class="pointer-events-none absolute z-10" style="left: {pointer.x * 100}%; top: {pointer.y * 100}%"><PeerCursor name={pointer.name} peer={pointer.peer} /></span>
 			{/each}
-			{#if ws.view === 'design' && data.design}
-				<DesignCanvas
-					sessionId={ws.project.session_id}
-					directions={data.design.directions ?? null}
-					previews={data.design.previews}
-					feedback={data.design.feedback}
-					approval={data.design.approval}
-					embedded
-					onrefresh={async () => {
-						await invalidate('app:workspace-project');
-					}}
-				/>
+			{#if ws.view === 'design'}
+				{#if ws.hasDesign && data.design}
+					<DesignCanvas
+						sessionId={ws.project.session_id}
+						directions={data.design.directions ?? null}
+						previews={data.design.previews}
+						feedback={data.design.feedback}
+						approval={data.design.approval}
+						embedded
+						onrefresh={async () => {
+							await invalidate('app:workspace-project');
+						}}
+					/>
+				{:else}
+					<EmptyState
+						icon={Palette}
+						title={ws.buildingOrPublished ? m.workspace_no_design_artifact_title() : m.workspace_no_design_title()}
+						body={ws.buildingOrPublished ? m.workspace_no_design_artifact_body() : m.workspace_no_design_body()}
+					/>
+				{/if}
 			{:else if ws.view === 'code'}
 				{#if ws.project.files.length && ws.codePath}
 					<CodeView

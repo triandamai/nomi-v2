@@ -1,10 +1,11 @@
 <script lang="ts">
 	import { invalidate } from '$app/navigation';
 	import { untrack, tick } from 'svelte';
-	import { Activity, Code, Database, Eye, FileCode, FileText, Folder, Globe, History, KeyRound, Link, Plus, Rocket, Settings, SquareTerminal, Trash2, Undo2, Users, Download, GitBranch } from '@lucide/svelte';
+	import { Activity, Code, Database, Eye, FileCode, FileText, Folder, Globe, History, KeyRound, Link, Palette, Plus, Rocket, Settings, SquareTerminal, Trash2, Undo2, Users, Download, GitBranch } from '@lucide/svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { goto } from '$app/navigation';
 	import ChatView from '$lib/chat/ChatView.svelte';
+	import DesignCanvas from '$lib/ds/design/DesignCanvas.svelte';
 	import WorkspaceSwitch from '$lib/ds/mobile/WorkspaceSwitch.svelte';
 	import NavBar from '$lib/ds/mobile/NavBar.svelte';
 	import SheetRow from '$lib/ds/mobile/SheetRow.svelte';
@@ -63,8 +64,8 @@
 	let { ws, data }: Props = $props();
 
 	let sheet = $state<PhoneSheet | null>(null);
-	/** The pushed screens: Code's tree, a file, Terminal, a failed publish's log. */
-	let screen = $state<'code' | 'file' | 'terminal' | 'log' | null>(null);
+	/** The pushed screens: Code's tree, a file, Terminal, a failed publish's log, Design. */
+	let screen = $state<'code' | 'file' | 'terminal' | 'log' | 'design' | null>(null);
 	const FROM_SETTINGS: PhoneSheet[] = ['people', 'environment', 'transfer', 'delete', 'visibility', 'access'];
 	/** Opens a sheet in place of the one showing; the desktop's tools also tell the workspace (Monitor and Database load then). */
 	function open(next: PhoneSheet) {
@@ -149,6 +150,7 @@
 				ws.phoneFile = true;
 				screen = 'file';
 			} else if (where === 'terminal' && ws.sandboxOn) screen = 'terminal';
+			else if (where === 'design') screen = 'design';
 			else {
 				screen = null;
 				ws.workspaceView = 'pane';
@@ -157,7 +159,7 @@
 	});
 	/** Moving on your own stops following: the screen you're on is where you are. */
 	$effect(() => {
-		ws.view = screen === 'code' || screen === 'file' ? 'code' : screen === 'terminal' ? 'terminal' : 'preview';
+		ws.view = screen === 'code' || screen === 'file' ? 'code' : screen === 'terminal' ? 'terminal' : screen === 'design' ? 'design' : 'preview';
 	});
 
 	// ── `?open=` from Projects (a card's sheet) or search: the same sheet or screen, here ──────
@@ -173,6 +175,8 @@
 			else if (asked.open === 'code') {
 				if (asked.file && ws.project.files.some((one) => one.path === asked.file)) openPath(asked.file);
 				else screen = 'code';
+			} else if (asked.open === 'design') {
+				screen = 'design';
 			}
 		});
 	});
@@ -284,6 +288,29 @@
 	{:else if screen === 'log' && failure}
 		<NavBar title={m.pb_log_title()} who={{ agent: 'koda', name: failure.number > 0 ? m.projects_deploy({ number: failure.number }) : ws.project.name }} onback={() => (screen = null)} />
 		<PhoneTerminal label={m.pb_log_title()} lines={failure.tail.length ? failure.tail.map((text) => ({ kind: 'out' as const, text })) : [{ kind: 'out', text: m.sandbox_terminal_empty() }]} />
+	{:else if screen === 'design'}
+		<NavBar title={m.workspace_design()} who={{ agent: 'sora', name: m.pb_read_only() }} onback={() => (screen = null)} />
+		<div class="min-h-0 flex-1 overflow-y-auto px-4 pt-4 pb-5">
+			{#if ws.hasDesign && data.design}
+				<DesignCanvas
+					sessionId={ws.project.session_id}
+					directions={data.design.directions ?? null}
+					previews={data.design.previews}
+					feedback={data.design.feedback}
+					approval={data.design.approval}
+					embedded
+					onrefresh={async () => {
+						await invalidate('app:workspace-project');
+					}}
+				/>
+			{:else}
+				<EmptyState
+					icon={Palette}
+					title={ws.buildingOrPublished ? m.workspace_no_design_artifact_title() : m.workspace_no_design_title()}
+					body={ws.buildingOrPublished ? m.workspace_no_design_artifact_body() : m.workspace_no_design_body()}
+				/>
+			{/if}
+		</div>
 	{:else}
 		<PhoneWorkspaceNav project={ws.project.name} status={statusLine} live={Boolean(ws.liveUrl)} {pill} onback={() => void goto('/projects')} onmenu={() => open('tools')} />
 		<WorkspaceSwitch value={tab} previewCount={changes || undefined} onchange={(next) => (ws.workspaceView = next === 'chat' ? 'chat' : 'pane')} />
@@ -404,6 +431,7 @@
 		{#if ws.site && !data.database}<p class="px-5 py-2 text-ui text-text-3">{m.pb_no_database()}</p>{/if}
 		<p class="px-1 pt-1.5 pb-0.5 font-mono text-label tracking-label text-text-3 uppercase">{m.pb_under_hood()}</p>
 		<SheetRow icon={Code} label={m.workspace_code()} meta={m.pb_read_only()} more onclick={() => ((screen = 'code'), shut())} />
+		<SheetRow icon={Palette} label={m.workspace_design()} meta={m.pb_read_only()} more onclick={() => ((screen = 'design'), shut())} />
 		{#if ws.sandboxOn}<SheetRow icon={SquareTerminal} label={m.workspace_terminal()} meta={m.pb_what_koda_ran()} more onclick={() => ((screen = 'terminal'), shut())} />{/if}
 		<div class="flex gap-2 pt-2">
 			{#if ws.liveUrl}<PhoneButton variant="secondary" label={m.workspace_share()} onclick={() => open('share')} />{/if}
