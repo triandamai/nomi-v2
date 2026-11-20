@@ -6,14 +6,33 @@
 	import LandingSteps, { type StepsCopy } from '$lib/landing/LandingSteps.svelte';
 	import LandingCrew, { type CrewCard } from '$lib/landing/LandingCrew.svelte';
 	import LandingExport, { type ExportCopy } from '$lib/landing/LandingExport.svelte';
+	import LandingFaq, { type FaqItem } from '$lib/landing/LandingFaq.svelte';
+	import LandingCta from '$lib/landing/LandingCta.svelte';
+	import LandingFooter from '$lib/landing/LandingFooter.svelte';
+	import { getLocale, setLocale, type Locale } from '$lib/paraglide/runtime';
 
 	// The landing page (Figma, Nomi Builder → 05 Marketing → "Landing v2 · Playful (ID)", 170:2766),
-	// for people who aren't signed in. Built so far: the nav, the hero, How it works, the crew and
-	// Own everything. The waitlist is left out (the backend has no public waitlist: BACKEND_TODO.md);
-	// the FAQ, the closing call to action, the footer, and the dark and 390 frames wait for their
-	// design to be read (docs/ux/work/landing).
+	// for people who aren't signed in: the nav, the hero, How it works, the crew, Own everything, the
+	// FAQ, the closing call to action and the footer. The waitlist is left out (the backend has no
+	// public waitlist: BACKEND_TODO.md); the dark and 390 frames wait for their design to be read
+	// (docs/ux/work/landing).
 	const HOW = 'cara-kerja';
 	const CREW = 'kru';
+	const FAQ = 'tanya';
+
+	const faq: FaqItem[] = [
+		{ question: m.landing_faq_q1(), answer: m.landing_faq_a1() },
+		{ question: m.landing_faq_q2(), answer: m.landing_faq_a2() },
+		{ question: m.landing_faq_q3(), answer: m.landing_faq_a3() },
+		{ question: m.landing_faq_q4(), answer: m.landing_faq_a4() },
+		{ question: m.landing_faq_q5(), answer: m.landing_faq_a5() },
+		{ question: m.landing_faq_q6(), answer: m.landing_faq_a6() },
+	];
+	const locale = getLocale();
+	const languages = [
+		{ locale: 'id', label: 'Bahasa Indonesia', current: locale === 'id' },
+		{ locale: 'en', label: 'English', current: locale === 'en' },
+	];
 
 	let draft = $state(m.landing_composer_example());
 
@@ -99,6 +118,7 @@
 		links={[
 			{ href: `#${HOW}`, label: m.landing_nav_how() },
 			{ href: `#${CREW}`, label: m.landing_nav_crew() },
+			{ href: `#${FAQ}`, label: m.landing_nav_faq() },
 		]}
 		signIn={{ href: '/sign-in', label: m.landing_sign_in() }}
 		tryFree={{ href: '/register', label: m.landing_try_free() }}
@@ -125,7 +145,44 @@
 		<LandingSteps id={HOW} copy={steps} />
 		<LandingCrew id={CREW} title={m.landing_crew_title()} lead={m.landing_crew_lead()} {crew} />
 		<LandingExport copy={own} />
+		<LandingFaq
+			id={FAQ}
+			title={m.landing_faq_title()}
+			ask={{ title: m.landing_faq_ask_title(), note: m.landing_faq_ask_note(), prompt: m.landing_faq_ask_prompt(), start: m.landing_faq_ask_start() }}
+			action="?/start"
+			items={faq}
+		/>
+		<LandingCta
+			title={m.landing_cta_title()}
+			lead={m.landing_cta_lead()}
+			label={m.landing_composer_label()}
+			placeholder={m.landing_cta_placeholder()}
+			action="?/start"
+			attach={m.landing_attach()}
+			voice={m.landing_voice()}
+			send={m.landing_send()}
+		/>
 	</main>
+	<LandingFooter
+		home={m.landing_home()}
+		homeHref="/welcome"
+		navLabel={m.landing_footer_nav()}
+		tagline={m.landing_footer_tagline()}
+		columns={[
+			{
+				title: m.landing_footer_product(),
+				links: [
+					{ href: `#${HOW}`, label: m.landing_nav_how() },
+					{ href: `#${CREW}`, label: m.landing_footer_crew() },
+				],
+			},
+			{ title: m.landing_footer_help(), links: [{ href: `#${FAQ}`, label: m.landing_nav_faq() }] },
+		]}
+		legal={m.landing_footer_legal({ year: String(new Date().getFullYear()) })}
+		languageLabel={m.landing_footer_language()}
+		{languages}
+		onlanguage={(next) => setLocale(next as Locale)}
+	/>
 </div>
 
 <style>

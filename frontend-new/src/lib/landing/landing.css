@@ -30,6 +30,9 @@
 	--lp-yellow-solid: #fdce00;
 	--lp-blue-subtle: #daf2ff;
 	--lp-warning-bg: #fffbeb;
+	/* The closing panel's wash (Final CTA, 170:3054), measured off the render: its variable wasn't read. */
+	--lp-cta-from: #f6fce2;
+	--lp-cta-to: #ecfaf8;
 
 	/* crew/<member>/container and /fg */
 	--lp-crew-nomi: #e5faed;

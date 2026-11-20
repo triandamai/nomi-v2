@@ -543,14 +543,19 @@ leaves out what v2 or the backend can't do yet, rather than draw it dead:
   in `src/lib/landing/landing.css` under `[data-landing]` (Figma's variables), its components in
   `src/lib/landing/` with scoped styles, and its mascots are the design's own flat drawings
   (`LandingMascot`), not `Mascot`'s shapes. Its body copy is Geist (the design's Inter isn't shipped) and
-  its buttons keep the design's uppercase labels. Built: the nav, the hero (the composer posts to sign in,
-  then a new chat with the words in it, `/chat/new?q=`), How it works, the crew and Own everything,
-  with the design's motion played once (the hops and floats loop; reduced motion stops all of it). Two
-  of Own everything's lines are changed to what Nomi does: an export holds the code and its data tables
-  (not "its change history"), and the offline line (Ollama or LM Studio) is left out (Nomi connects
-  Ollama Cloud only). The waitlist is left out (BACKEND_TODO.md); the FAQ, the closing call to action,
-  the footer, and the dark (170:3097) and 390 (170:3425) frames wait for their design to be read; until
-  then the page is light, and narrower screens reflow the desktop layout.
+  its buttons keep the design's uppercase labels. Every section but the waitlist is built: the nav, the
+  hero, How it works, the crew, Own everything, the FAQ, the closing call and the footer, with the
+  design's motion played once (the hops and floats loop; reduced motion stops all of it). Both composers
+  and the FAQ's "Ask Nomi yourself" post to sign in, then a new chat with the words in it
+  (`/chat/new?q=`). The FAQ, the closing call and the footer are built from their layers' metadata and the
+  page's render (the Figma MCP's call limit stopped their design context), to check again when it can be
+  read. Changed to what Nomi does: an export holds the code and its data tables (not "its change
+  history"); the offline line (Ollama or LM Studio) is left out (Nomi connects Ollama Cloud only); the
+  FAQ's answers after the first, which the design doesn't write, say what the product does; the footer
+  links only what has a page (Cara kerja, Kru, Tanya-tanya: not Harga, Template, Panduan, Status or the
+  Nomi Labs column) and its languages switch the page. The waitlist is left out (BACKEND_TODO.md). The
+  dark (170:3097) and 390 (170:3425) frames wait for their design to be read; until then the page is
+  light, and narrower screens reflow the desktop layout.
 - The crew column lists every agent the backend has, so eleven: Iris (the inspector), whom the pen
   doesn't draw, shows her initial in place of a mascot.
 

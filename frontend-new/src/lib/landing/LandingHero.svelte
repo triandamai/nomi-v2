@@ -6,8 +6,7 @@
 </script>
 
 <script lang="ts">
-	import { ArrowUp, Mic, Plus } from '@lucide/svelte';
-	import Icon from '$lib/ds/foundations/Icon.svelte';
+	import LandingComposer from './LandingComposer.svelte';
 	import LandingMascot from './LandingMascot.svelte';
 
 	// Figma, Landing v2 → Hero (170:2777): the 80px grid fading out at the foot, the headline in three
@@ -34,7 +33,6 @@
 	let { title, lines, lead, label, value = $bindable(''), action, attach, voice, send, tryLabel, chips, toasts }: Props = $props();
 
 	let field: HTMLTextAreaElement | undefined = $state();
-	const ready = $derived(value.trim().length > 0);
 
 	// Where each note floats in the 1440 frame (its box), its tilt, and which way it bobs.
 	const SPOTS = [
@@ -78,29 +76,9 @@
 		</h1>
 		<p class="lead">{lead}</p>
 
-		<form class="composer rise" style:--lp-delay="0.7s" style:--lp-rise="20px" method="POST" {action}>
-			<textarea
-				bind:this={field}
-				bind:value
-				name="text"
-				rows="2"
-				aria-label={label}
-				placeholder={label}
-				onkeydown={(event) => {
-					if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
-						event.preventDefault();
-						if (ready) event.currentTarget.form?.requestSubmit();
-					}
-				}}
-			></textarea>
-			<div class="toolbar">
-				<button class="attach" type="submit" aria-label={attach}><Icon icon={Plus} size={16} /></button>
-				<span class="right">
-					<button class="voice" type="submit" aria-label={voice}><Icon icon={Mic} size={20} /></button>
-					<button class="send" type="submit" aria-label={send} disabled={!ready}><Icon icon={ArrowUp} size={20} /></button>
-				</span>
-			</div>
-		</form>
+		<div class="rise composer-wrap" style:--lp-delay="0.7s" style:--lp-rise="20px">
+			<LandingComposer bind:value bind:field {label} {action} {attach} {voice} {send} />
+		</div>
 
 		<div class="chips">
 			<span class="try">{tryLabel}</span>
@@ -232,101 +210,10 @@
 		color: var(--lp-text-2);
 	}
 
-	.composer {
+	.composer-wrap {
 		display: flex;
-		flex-direction: column;
-		gap: 16px;
-		width: min(560px, 100%);
-		padding: 16px;
-		border: 1px solid var(--lp-border-strong);
-		border-radius: var(--lp-radius-lg);
-		background: var(--lp-surface);
-		box-shadow: var(--lp-elevation-2);
-	}
-
-	.composer textarea {
-		width: 100%;
-		min-height: 48px;
-		padding: 0;
-		border: 0;
-		resize: none;
-		background: transparent;
-		font: inherit;
-		font-size: 18px;
-		line-height: 24px;
-		letter-spacing: -0.18px;
-		color: var(--lp-text);
-		outline: none;
-		field-sizing: content;
-	}
-
-	.composer textarea::placeholder {
-		color: var(--lp-text-3);
-	}
-
-	.composer:focus-within {
-		box-shadow:
-			var(--lp-elevation-2),
-			0 0 0 3px var(--lp-bg-muted);
-	}
-
-	.toolbar {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-	}
-
-	.right {
-		display: flex;
-		gap: 8px;
-		align-items: center;
-	}
-
-	.toolbar button {
-		display: inline-flex;
-		align-items: center;
 		justify-content: center;
-		border-radius: 999px;
-		cursor: pointer;
-		color: var(--lp-text);
-	}
-
-	.attach {
-		width: 32px;
-		height: 32px;
-		border: 1px solid var(--lp-border);
-		background: var(--lp-surface);
-	}
-
-	.voice {
-		width: 40px;
-		height: 40px;
-		border: 0;
-		background: transparent;
-	}
-
-	.voice:hover,
-	.attach:hover {
-		background: var(--lp-bg-muted);
-	}
-
-	.send {
-		width: 40px;
-		height: 40px;
-		border: 0;
-		background: var(--lp-primary);
-		color: var(--lp-primary-fg) !important;
-	}
-
-	.send:disabled {
-		cursor: default;
-		background: var(--lp-bg-muted);
-		color: var(--lp-text-3) !important;
-	}
-
-	button:focus-visible {
-		outline: 2px solid var(--lp-focus);
-		outline-offset: 2px;
+		width: 100%;
 	}
 
 	.chips {
@@ -363,6 +250,11 @@
 
 	.chip:hover {
 		border-color: var(--lp-border-strong);
+	}
+
+	.chip:focus-visible {
+		outline: 2px solid var(--lp-focus);
+		outline-offset: 2px;
 	}
 
 	.rise {
