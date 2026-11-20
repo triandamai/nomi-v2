@@ -600,7 +600,8 @@ export class Workspace {
 	readonly where = $derived({ preview: m.workspace_preview(), design: m.workspace_design(), code: m.workspace_code(), terminal: m.workspace_terminal() });
 	/** Sora's design pane shows once the project has previews or directions to look at. */
 	readonly hasDesign = $derived(Boolean((this.data.design?.previews?.length ?? 0) > 0 || (this.data.design?.directions?.directions?.length ?? 0) > 0));
-	readonly paneViews = $derived<PaneView[]>(['preview', ...(this.hasDesign ? (['design'] as const) : []), 'code', ...(this.sandboxOn ? (['terminal'] as const) : [])]);
+	readonly buildingOrPublished = $derived(Boolean(this.liveUrl || (this.deploy?.publishes && this.deploy.publishes.length > 0) || this.project.status === 'building' || this.sandboxPhase === 'running'));
+	readonly paneViews = $derived<PaneView[]>(['preview', 'design', 'code', ...(this.sandboxOn ? (['terminal'] as const) : [])]);
 	readonly myName = $derived(this.data.person?.name ?? '');
 	/** Faces are told apart by their initials: yours and everyone else's, made distinct together. */
 	readonly faces = $derived(distinctInitials([this.myName, ...(this.live?.people ?? []).map((person) => person.name)]));
