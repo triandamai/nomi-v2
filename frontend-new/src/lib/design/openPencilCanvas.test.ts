@@ -3,7 +3,8 @@ import {
 	buildStudioSceneModel,
 	exportStudioSceneToSVG,
 	getStudioTargetBounds,
-	hitTestStudioScene
+	hitTestStudioScene,
+	paintOpenPencilSceneCanvas
 } from './openPencilCanvas';
 import type { StudioDirection, StudioPreview } from './designStudio';
 
@@ -249,5 +250,187 @@ describe('OpenPencil Scene-Graph Canvas Engine', () => {
 		// Target bounds should reflect the spaced position
 		const menuBounds = getStudioTargetBounds(model, 'menu/index.html', 'screen-menu');
 		expect(menuBounds?.x).toBe(model.frames[1].x);
+	});
+
+	it('paints scene canvas with fills, strokes and text', () => {
+		const rawPen = JSON.stringify({
+			version: '1.0',
+			children: [
+				{
+					type: 'frame',
+					id: 'screen-home',
+					name: 'Cash Flow Dashboard',
+					width: 1280,
+					height: 800,
+					children: [
+						{
+							type: 'frame',
+							id: 'header',
+							name: 'Header',
+							width: 1200,
+							height: 60,
+							fill: '#F1ECE4',
+							stroke: { fill: '#DCD5CA', thickness: 1 },
+							children: [
+								{ type: 'text', id: 'title', content: 'Cash Flow', fill: '#1A1917' }
+							]
+						}
+					]
+				}
+			]
+		});
+
+		const model = buildStudioSceneModel({
+			directions,
+			preview,
+			activeDirection: directions[0],
+			device: 'desktop',
+			rawPenJson: rawPen
+		});
+
+		const calls: any[] = [];
+		const dummyCtx: any = {
+			measureText: (text: string) => ({ width: text.length * 8 }),
+			save: () => calls.push({ method: 'save' }),
+			restore: () => calls.push({ method: 'restore' }),
+			scale: (...args: any[]) => calls.push({ method: 'scale', args }),
+			translate: (...args: any[]) => calls.push({ method: 'translate', args }),
+			clearRect: (...args: any[]) => calls.push({ method: 'clearRect', args }),
+			beginPath: () => calls.push({ method: 'beginPath' }),
+			rect: (...args: any[]) => calls.push({ method: 'rect', args }),
+			roundRect: (...args: any[]) => calls.push({ method: 'roundRect', args }),
+			fill: () => calls.push({ method: 'fill', fillStyle: dummyCtx.fillStyle }),
+			stroke: () => calls.push({ method: 'stroke', strokeStyle: dummyCtx.strokeStyle, lineWidth: dummyCtx.lineWidth }),
+			fillText: (...args: any[]) => calls.push({ method: 'fillText', args, fillStyle: dummyCtx.fillStyle }),
+			fillRect: (...args: any[]) => calls.push({ method: 'fillRect', args }),
+			strokeRect: (...args: any[]) => calls.push({ method: 'strokeRect', args }),
+			clip: () => calls.push({ method: 'clip' })
+		};
+
+		const canvas: any = {
+			clientWidth: 1200,
+			clientHeight: 800,
+			getContext: () => dummyCtx
+		};
+
+		paintOpenPencilSceneCanvas(canvas, model, {
+			panX: 0,
+			panY: 0,
+			zoom: 1,
+			hoveredNodeId: null,
+			selectedNodeId: 'title'
+		});
+
+		// Verify fill operations
+		const fills = calls.filter((c) => c.method === 'fill');
+		expect(fills.length).toBeGreaterThan(0);
+		// Verify text drawing
+		const textCalls = calls.filter((c) => c.method === 'fillText');
+		expect(textCalls.length).toBeGreaterThan(0);
+		expect(textCalls[0].args[0]).toBe('Cash Flow');
+	});
+
+	it('normalizes author text properties (text, label, value) and card types into visible elements', () => {
+		const rawPen = JSON.stringify({
+			version: '1.0',
+			variables: {
+				'color-custom': '#123456'
+			},
+			children: [
+				{
+					type: 'frame',
+					id: 'screen-dashboard',
+					name: 'Cash Flow Dashboard',
+					width: 1280,
+					height: 800,
+					children: [
+						{
+							type: 'card',
+							id: 'summary-card',
+							name: 'Summary Card',
+							width: 400,
+							height: 120,
+							cornerRadius: 12,
+							children: [
+								{ type: 'label', id: 'lbl', text: 'Net Cash Flow', fill: '#FFFFFF' },
+								{ type: 'text', id: 'val', value: 'Rp 45.000.000' }
+							]
+						},
+						{
+							type: 'component',
+							id: 'action-btn',
+							name: 'Action Button',
+							width: 120,
+							height: 40,
+							children: [
+								{ type: 'text', id: 'btn-txt', label: 'Submit' }
+							]
+						}
+					]
+				}
+			]
+		});
+
+		const model = buildStudioSceneModel({
+			directions,
+			preview,
+			activeDirection: directions[0],
+			device: 'desktop',
+			rawPenJson: rawPen
+		});
+
+		// Check that text nodes received content
+		const lblNode = model.graph.getNode('lbl');
+		expect(lblNode).toBeDefined();
+		expect(lblNode?.text).toBe('Net Cash Flow');
+
+		const valNode = model.graph.getNode('val');
+		expect(valNode).toBeDefined();
+		expect(valNode?.text).toBe('Rp 45.000.000');
+
+		const btnNode = model.graph.getNode('action-btn');
+		expect(btnNode?.type).toBe('COMPONENT');
+
+		// Check canvas painting paints high-contrast text and card surfaces
+		const calls: any[] = [];
+		const dummyCtx: any = {
+			measureText: (text: string) => ({ width: text.length * 8 }),
+			save: () => calls.push({ method: 'save' }),
+			restore: () => calls.push({ method: 'restore' }),
+			scale: (...args: any[]) => calls.push({ method: 'scale', args }),
+			translate: (...args: any[]) => calls.push({ method: 'translate', args }),
+			clearRect: (...args: any[]) => calls.push({ method: 'clearRect', args }),
+			beginPath: () => calls.push({ method: 'beginPath' }),
+			rect: (...args: any[]) => calls.push({ method: 'rect', args }),
+			roundRect: (...args: any[]) => calls.push({ method: 'roundRect', args }),
+			fill: () => calls.push({ method: 'fill', fillStyle: dummyCtx.fillStyle }),
+			stroke: () => calls.push({ method: 'stroke', strokeStyle: dummyCtx.strokeStyle, lineWidth: dummyCtx.lineWidth }),
+			fillText: (...args: any[]) => calls.push({ method: 'fillText', args, fillStyle: dummyCtx.fillStyle }),
+			fillRect: (...args: any[]) => calls.push({ method: 'fillRect', args }),
+			strokeRect: (...args: any[]) => calls.push({ method: 'strokeRect', args }),
+			clip: () => calls.push({ method: 'clip' })
+		};
+
+		const canvas: any = {
+			clientWidth: 1280,
+			clientHeight: 800,
+			getContext: () => dummyCtx
+		};
+
+		paintOpenPencilSceneCanvas(canvas, model, {
+			panX: 0,
+			panY: 0,
+			zoom: 1,
+			hoveredNodeId: null,
+			selectedNodeId: 'lbl'
+		});
+
+		const textCalls = calls.filter((c) => c.method === 'fillText');
+		const drawnTexts = textCalls.map((c) => c.args[0]);
+		expect(drawnTexts).toContain('Net Cash Flow');
+		expect(drawnTexts).toContain('Rp 45.000.000');
+		// White text on light artboard was normalized to high-contrast ink
+		const lblCall = textCalls.find((c) => c.args[0] === 'Net Cash Flow');
+		expect(lblCall?.fillStyle).toBe('#1A1917');
 	});
 });
