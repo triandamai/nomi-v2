@@ -238,7 +238,7 @@
 
 <PhoneToastRegion />
 
-<div data-phone-workspace class="flex h-dvh flex-col bg-bg text-text">
+<div data-phone-workspace class="flex h-dvh flex-col overflow-hidden bg-bg text-text">
 	{#if ws.followed}
 		<PhoneFollowBar name={ws.followed.name} peer={ws.followed.peer} where={whereLabel(ws.followed.view, ws.followed.path, ws.where)} onstop={() => (ws.following = null)} />
 	{/if}
@@ -319,11 +319,11 @@
 		{/if}
 		<!-- The chat stays put under the preview (its live link, draft and place in the thread), so
 		     switching tabs never reconnects it; only the tab on show is visible. -->
-		<div class={['min-h-0 flex-1', tab !== 'chat' && 'hidden']}>
+		<div class={['min-h-0 flex-1 overflow-hidden', tab !== 'chat' ? 'hidden' : 'flex flex-col']}>
 			<ChatView {data} pane quote={ws.quote} onunquote={() => (ws.quote = null)} onactivity={() => void ws.loadQueue()} after={together} />
 		</div>
 		{#if tab === 'preview'}
-			<div class="relative min-h-0 flex-1">
+			<div class="relative min-h-0 flex-1 overflow-hidden">
 				{#if ws.frame}
 					<div class="flex h-full flex-col">
 						<PhonePreviewBar

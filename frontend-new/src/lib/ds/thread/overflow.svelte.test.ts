@@ -40,3 +40,39 @@ describe('a phone thread never scrolls sideways', () => {
 		expect(column.scrollWidth).toBeLessThanOrEqual(column.clientWidth);
 	});
 });
+
+describe('a phone chat scroller contains vertical scrolling', () => {
+	it('confines scrolling to the chat scroller without overflowing the parent workspace', () => {
+		const parent = document.createElement('div');
+		parent.style.height = '600px';
+		parent.style.display = 'flex';
+		parent.style.flexDirection = 'column';
+		parent.style.overflow = 'hidden';
+
+		const chatWrapper = document.createElement('div');
+		chatWrapper.style.minHeight = '0';
+		chatWrapper.style.flex = '1 1 0%';
+		chatWrapper.style.display = 'flex';
+		chatWrapper.style.flexDirection = 'column';
+		chatWrapper.style.overflow = 'hidden';
+
+		const scroller = document.createElement('div');
+		scroller.style.minHeight = '0';
+		scroller.style.flex = '1 1 0%';
+		scroller.style.overflowY = 'auto';
+		scroller.style.overscrollBehaviorY = 'contain';
+
+		const tallContent = document.createElement('div');
+		tallContent.style.height = '2000px';
+
+		scroller.appendChild(tallContent);
+		chatWrapper.appendChild(scroller);
+		parent.appendChild(chatWrapper);
+		document.body.appendChild(parent);
+
+		expect(parent.scrollHeight).toBeLessThanOrEqual(parent.clientHeight);
+		expect(scroller.scrollHeight).toBeGreaterThan(scroller.clientHeight);
+
+		document.body.removeChild(parent);
+	});
+});

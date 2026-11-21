@@ -1311,8 +1311,8 @@
 	</FileViewer>
 {/snippet}
 
-<div class="flex h-full">
-<div class="flex h-full min-w-0 flex-1 flex-col">
+<div class="flex h-full w-full min-h-0 flex-1">
+<div class="flex h-full min-h-0 min-w-0 flex-1 flex-col">
 	{#if phone && !pane}<NavBar title={shownTitle ?? m.nav_new_chat()} who={answering} onback={() => void goto('/chats')} onmenu={() => (sheet = { kind: 'chat' })} />{/if}
 	{#if phone && (!online || backOnline || quota !== null || flows.working.length > 0)}
 		<!-- On a phone the banners stay under the nav bar, wherever the person is in the thread (UX
@@ -1330,7 +1330,7 @@
 		</div>
 	{/if}
 	<!-- The thread scrolls up and down only: nothing in it may slide it sideways on a phone. -->
-	<div bind:this={scroller} {onscroll} class={['min-h-0 flex-1 overflow-x-hidden overflow-y-auto', phone ? 'px-4 pt-4' : pane ? 'px-5 pt-5' : 'px-4 pt-6 lg:px-12 lg:pt-10']}>
+	<div bind:this={scroller} {onscroll} class={['min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain', phone ? 'px-4 pt-4' : pane ? 'px-5 pt-5' : 'px-4 pt-6 lg:px-12 lg:pt-10']}>
 		<!-- On a phone a short thread sits at the bottom, over the composer, as the pen draws it. -->
 		<div class={['mx-auto flex w-full max-w-180 flex-col wrap-anywhere', phone ? 'min-h-full justify-end gap-6 pb-5' : 'gap-8 pb-8']}>
 			{#if !phone}
@@ -1551,7 +1551,7 @@
 		</div>
 	</div>
 
-	<div class={['relative', !phone && 'px-4 pb-4', !phone && !pane && 'lg:px-12 lg:pb-6']}>
+	<div class={['relative shrink-0', !phone && 'px-4 pb-4', !phone && !pane && 'lg:px-12 lg:pb-6']}>
 		{#if !atLatest && entries.length > 0}
 			<div class="absolute -top-12 left-1/2 -translate-x-1/2"><JumpToLatest count={unseen} onclick={() => jumpToLatest(true)} /></div>
 		{/if}
