@@ -127,8 +127,9 @@ pub fn proposed_message(version: i32, brief_version: Option<i32>, set: &DesignDi
     let from = brief_version.map(|v| format!(", from design brief version {v}")).unwrap_or_default();
     let names: Vec<String> = set.directions.iter().map(|d| format!("{} ({})", d.name, d.id)).collect();
     format!(
-        "Directions saved as version {version}{from}: {}. The person now sees them as a choice with each one's reason and trade-offs: \
-         say in a sentence or two how they differ and which you'd pick, then wait for their answer.",
+        "Directions saved as version {version}{from}: {}. The person now sees them as a choice card under your reply, with each one's name, look, reason, \
+         trade-offs and your pick marked: don't list or describe them again. Say in one sentence what to weigh \
+         between them, then wait for their answer.",
         names.join(", ")
     )
 }

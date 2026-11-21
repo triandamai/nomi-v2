@@ -527,7 +527,9 @@ pub(super) async fn resolve_tool_batch_in_reply(
                     && !crate::web::is_web_tool(name)
                     && !crate::records::RECORD_TOOL_NAMES.contains(&name.as_str()));
             if should_post {
-                post_activity_message(conn, mqtt.map(|(p, _)| p), session_id, agent.display_name().as_ref(), posted_text.as_deref().unwrap_or(&result_text), rich_block.as_ref()).await;
+                // A card's message says what the card shows; the result text is a note for the agent.
+                let shown = posted_text.or_else(|| rich_block.as_ref().map(card_text).filter(|text| !text.is_empty())).unwrap_or_else(|| result_text.clone());
+                post_activity_message(conn, mqtt.map(|(p, _)| p), session_id, agent.display_name().as_ref(), &shown, rich_block.as_ref()).await;
             }
 
             if name.as_str() == COMPLETE_TASK_TOOL_NAME {

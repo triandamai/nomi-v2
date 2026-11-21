@@ -36,9 +36,9 @@
 	type Found<K extends ReplyBlock['kind']> = { block: Extract<ReplyBlock, { kind: K }>; messageId: string };
 	const latest = $derived(entries.filter((entry): entry is Extract<ThreadEntry, { type: 'reply' }> => entry.type === 'reply' && entry.latest && !entry.failure));
 	function find<K extends ReplyBlock['kind']>(kind: K): Found<K> | null {
-		for (const entry of [...latest].reverse()) {
-			const block = replyBlocks(entry.message, { language }).find((one): one is Extract<ReplyBlock, { kind: K }> => one.kind === kind);
-			if (block) return { block, messageId: entry.message.id };
+		for (const message of latest.flatMap((entry) => [entry.message, ...entry.cards]).reverse()) {
+			const block = replyBlocks(message, { language }).find((one): one is Extract<ReplyBlock, { kind: K }> => one.kind === kind);
+			if (block) return { block, messageId: message.id };
 		}
 		return null;
 	}
