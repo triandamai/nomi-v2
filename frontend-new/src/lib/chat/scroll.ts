@@ -3,7 +3,7 @@
  * to the target scroller (like the chat thread), preventing the browser from scrolling
  * ancestor/parent containers or the document window.
  */
-export function forwardScrollTo(node: HTMLElement, getTarget: () => HTMLElement | null) {
+export function forwardScrollTo(node: HTMLElement, getTarget: () => HTMLElement | null | undefined) {
 	let startY = 0;
 	let startX = 0;
 	let tracking = false;
