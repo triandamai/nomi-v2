@@ -1438,7 +1438,28 @@
 									{@const view = failureActions(message, entry.failure)}
 									<FailedReply text={entry.failure.text} title={view.title} actions={view.actions} />
 								{:else}
-									<Prose {phone} html={message.content_html} />
+									{#if !entry.quiet}<Prose {phone} html={message.content_html} />{/if}
+									{#each entry.cards as card (card.id)}
+										<div data-message-id={card.id} class="contents">
+											<ReplyBlocks
+												blocks={replyBlocks(card, { language })}
+												{api}
+												messageId={card.id}
+												agentName={nameOf(card)}
+												{language}
+												timeZone={time.timeZone}
+												now={time.now}
+												{working}
+												latest={entry.latest}
+												onsend={(text) => send(text)}
+												{phone}
+												{flows}
+												onreload={() => void fetchMessage(card.id)}
+												chatId={chatId}
+												onanswer={() => field?.focus()}
+											/>
+										</div>
+									{/each}
 									<ReplyBlocks
 										blocks={replyBlocks(message, { language })}
 										{api}
