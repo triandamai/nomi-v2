@@ -450,6 +450,8 @@ export type ProjectDetail = {
 	stack: string;
 	/** Goes up on every file change. */
 	files_version: number;
+	/** The version people see (one per crew reply that changed the files). */
+	version?: number;
 	files: { path: string; content_type: string; size_bytes: number }[];
 	session_id: string;
 	org_id: string;
