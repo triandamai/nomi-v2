@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import Prose from './Prose.svelte';
 import PhoneMessageBubble from './PhoneMessageBubble.svelte';
+import { forwardScrollTo } from '$lib/chat/scroll';
 
 // A phone's thread is 358 wide (390 less its 16 sides) and scrolls up and down only: nothing in a
 // message may push it wider, or the whole thread slides sideways.
@@ -74,5 +75,67 @@ describe('a phone chat scroller contains vertical scrolling', () => {
 		expect(scroller.scrollHeight).toBeGreaterThan(scroller.clientHeight);
 
 		document.body.removeChild(parent);
+	});
+});
+
+describe('forwardScrollTo swiping from compose view', () => {
+	it('forwards vertical swipe gestures from compose view to chat scroller and prevents parent scroll', () => {
+		const composerNode = document.createElement('div');
+		const scroller = document.createElement('div');
+		scroller.style.height = '100px';
+		scroller.style.overflowY = 'auto';
+		const inner = document.createElement('div');
+		inner.style.height = '1000px';
+		scroller.appendChild(inner);
+		document.body.appendChild(scroller);
+		scroller.scrollTop = 100;
+
+		const cleanup = forwardScrollTo(composerNode, () => scroller);
+
+		const touchStart = new TouchEvent('touchstart', {
+			touches: [new Touch({ identifier: 1, target: composerNode, clientX: 50, clientY: 200 })],
+			bubbles: true,
+		});
+		composerNode.dispatchEvent(touchStart);
+
+		const touchMove = new TouchEvent('touchmove', {
+			touches: [new Touch({ identifier: 1, target: composerNode, clientX: 50, clientY: 150 })],
+			cancelable: true,
+			bubbles: true,
+		});
+		composerNode.dispatchEvent(touchMove);
+
+		expect(scroller.scrollTop).toBe(150);
+		expect(touchMove.defaultPrevented).toBe(true);
+
+		cleanup.destroy();
+		document.body.removeChild(scroller);
+	});
+
+	it('forwards wheel scroll events from compose view to chat scroller', () => {
+		const composerNode = document.createElement('div');
+		const scroller = document.createElement('div');
+		scroller.style.height = '100px';
+		scroller.style.overflowY = 'auto';
+		const inner = document.createElement('div');
+		inner.style.height = '1000px';
+		scroller.appendChild(inner);
+		document.body.appendChild(scroller);
+		scroller.scrollTop = 100;
+
+		const cleanup = forwardScrollTo(composerNode, () => scroller);
+
+		const wheel = new WheelEvent('wheel', {
+			deltaY: 40,
+			cancelable: true,
+			bubbles: true,
+		});
+		composerNode.dispatchEvent(wheel);
+
+		expect(scroller.scrollTop).toBe(140);
+		expect(wheel.defaultPrevented).toBe(true);
+
+		cleanup.destroy();
+		document.body.removeChild(scroller);
 	});
 });
