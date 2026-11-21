@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { Bell, CheckCheck, Download, Folder, House, Inbox, MessageCircle, MessageSquare, Plus, User } from '@lucide/svelte';
-	import { goto, invalidate } from '$app/navigation';
+	import { goto, invalidate, onNavigate } from '$app/navigation';
 	import { navigating, page } from '$app/state';
 	import { m } from '$lib/paraglide/messages';
 	import { getLocale } from '$lib/paraglide/runtime';
@@ -24,6 +24,8 @@
 	import { setPhoneChrome } from '$lib/ds/shells/phoneChrome';
 	import { PhoneScreen, setPhoneScreen } from '$lib/ds/shells/phoneScreen.svelte';
 	import { phoneView } from '$lib/phone.svelte';
+	import { LOADING_DELAY_MS, loadingPage, opensAnotherPage, type LoadingPage } from '$lib/navigation/loading';
+	import PageLoading from './PageLoading.svelte';
 	import Sidebar from '$lib/ds/chrome/Sidebar.svelte';
 	import NavItem from '$lib/ds/navigation/NavItem.svelte';
 	import NavGroupLabel from '$lib/ds/navigation/NavGroupLabel.svelte';
@@ -84,6 +86,45 @@
 	const isWorkspace = $derived(page.route.id === WORKSPACE && !page.error);
 	const isSettings = $derived(!!page.route.id?.startsWith('/(app)/settings') && !page.error);
 	const path = $derived(page.url.pathname);
+
+	// Another page on its way: its server load runs before anything changes, so after a moment its
+	// place shows a shimmering placeholder saying which page is coming, instead of the old page
+	// sitting still. A quick one just swaps.
+	const going = $derived(opensAnotherPage(page.url.pathname, navigating.to?.url.pathname) ? (navigating.to?.url.pathname ?? null) : null);
+	let slow = $state(false);
+	$effect(() => {
+		if (!going) {
+			slow = false;
+			return;
+		}
+		const timer = setTimeout(() => (slow = true), LOADING_DELAY_MS);
+		return () => clearTimeout(timer);
+	});
+	const LOADING_LABEL: Record<LoadingPage, () => string> = {
+		home: () => m.app_loading_page({ page: m.nav_home().toLowerCase() }),
+		chat: m.app_loading_chat,
+		chats: () => m.app_loading_page({ page: m.nav_chats().toLowerCase() }),
+		projects: () => m.app_loading_page({ page: m.nav_projects().toLowerCase() }),
+		project: m.app_loading_project,
+		inbox: () => m.app_loading_page({ page: m.nav_inbox().toLowerCase() }),
+		settings: () => m.app_loading_page({ page: m.nav_settings().toLowerCase() }),
+	};
+	const loadingLabel = $derived.by(() => {
+		const to = going && loadingPage(going);
+		return to ? LOADING_LABEL[to]() : m.app_loading();
+	});
+
+	// Moving to another page cross-fades into it where the browser can (reduced motion: at once).
+	onNavigate((navigation) => {
+		if (!document.startViewTransition || !opensAnotherPage(navigation.from?.url.pathname ?? '', navigation.to?.url.pathname)) return;
+		if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+		return new Promise((resolve) => {
+			document.startViewTransition(async () => {
+				resolve();
+				await navigation.complete;
+			});
+		});
+	});
 
 	// Home and a chat have the crew column: Home runs its top bar across it, a chat stops beside it.
 	setPanelPlacement({
@@ -568,11 +609,15 @@
 	<CrewPanel summary={data.crew.summary} members={isChat ? chatCrewRows(data.crew.rows, header.crew) : data.crew.rows} />
 {/snippet}
 
+{#snippet content()}
+	{#if going && slow}<PageLoading label={loadingLabel} />{:else}{@render children()}{/if}
+{/snippet}
+
 {#if isWorkspace}
-	{@render children()}
+	{@render content()}
 {:else}
 	<AppShell {sidebar} {topbar} panel={isHome || inThread ? crew : undefined}>
-		{@render children()}
+		{@render content()}
 	</AppShell>
 {/if}
 

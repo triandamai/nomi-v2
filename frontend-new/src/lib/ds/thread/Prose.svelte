@@ -6,11 +6,12 @@
 	// trusted only because the server sanitises it (src/lib/server/markdown.ts): never hand this
 	// anything else.
 	// `phone` is a phone's (Flow / Mobile Chat — Start & answer → Answer): 16 at 1.55, in text.
+	// A long link or word breaks anywhere, so a reply never pushes a phone's thread sideways.
 	type Props = { html: string; dimmed?: boolean; phone?: boolean };
 	let { html, dimmed = false, phone = false }: Props = $props();
 </script>
 
-<div class={['prose w-full min-w-0 transition-opacity', phone ? 'text-phone leading-phone text-text' : 'text-body leading-relaxed text-text-2', dimmed && 'opacity-40']}>
+<div class={['prose w-full min-w-0 wrap-anywhere transition-opacity', phone ? 'text-phone leading-phone text-text' : 'text-body leading-relaxed text-text-2', dimmed && 'opacity-40']}>
 	<!-- eslint-disable-next-line svelte/no-at-html-tags -- sanitised on the server -->
 	{@html html}
 </div>
@@ -68,6 +69,15 @@
 		border-radius: 4px;
 		background: var(--nm-surface-2);
 		color: var(--nm-text);
+	}
+	/* A picture never runs wider than the column. */
+	.prose :global(img) {
+		max-width: 100%;
+		height: auto;
+	}
+	/* Code keeps its lines: a long one scrolls inside its own block (above), not the thread. */
+	.prose :global(pre) {
+		overflow-wrap: normal;
 	}
 	.prose :global(pre) {
 		font-family: var(--nm-mono);
