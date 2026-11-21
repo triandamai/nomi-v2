@@ -180,3 +180,13 @@ describe('modelMenu', () => {
 		expect(modelMenu({ groups: [], current: null }, null)).toEqual([]);
 	});
 });
+
+describe('stepOwner', () => {
+	it('gives a plan step to the crew member it names, off its label (issue #334)', async () => {
+		const { stepOwner } = await import('./chat');
+		expect(stepOwner('Build admin verification dashboard (Koda)', 'Rena')).toEqual({ label: 'Build admin verification dashboard', agent: 'koda', name: 'Koda' });
+		expect(stepOwner('Design visual directions and UI components (Sora)', 'Rena')).toEqual({ label: 'Design visual directions and UI components', agent: 'sora', name: 'Sora' });
+		expect(stepOwner('Pick a date (next week)', 'Rena')).toEqual({ label: 'Pick a date (next week)', agent: 'rena', name: 'Rena' });
+		expect(stepOwner('Plan the launch', 'Rena')).toEqual({ label: 'Plan the launch', agent: 'rena', name: 'Rena' });
+	});
+});

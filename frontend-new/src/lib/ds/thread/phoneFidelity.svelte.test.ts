@@ -217,3 +217,24 @@ describe('confirming and editing on a phone', () => {
 		expect(style(cancel.closest('[data-editor]')!).borderTopLeftRadius).toBe('16px');
 	});
 });
+
+describe('PhoneComposer growing with the message', () => {
+	it('starts one line tall as a pill, then follows the text and rounds its corners less', async () => {
+		await page.viewport(390, 844);
+		await render(PhoneComposer, { placeholder: 'Message', onsend: () => {} });
+		const field = page.getByRole('textbox', { name: 'Message' });
+		const pill = field.element().parentElement!;
+		const compact = pill.getBoundingClientRect().height;
+		expect(compact).toBe(38);
+		expect(pill.dataset.lines).toBe('1');
+		await field.fill('Pesanan pertama Budi Santoso untuk potong rambut hari Sabtu jam sepuluh pagi, tolong pastikan slotnya kosong dan kirim tiket booking ke WhatsApp');
+		await expect.poll(() => Number(pill.dataset.lines)).toBeGreaterThan(2);
+		const grown = pill.getBoundingClientRect().height;
+		expect(grown).toBeGreaterThan(compact);
+		const radius = Number.parseFloat(getComputedStyle(pill).borderTopLeftRadius);
+		expect(radius).toBeLessThan(compact / 2);
+		await field.fill('');
+		await expect.poll(() => pill.getBoundingClientRect().height).toBe(compact);
+		expect(pill.dataset.lines).toBe('1');
+	});
+});

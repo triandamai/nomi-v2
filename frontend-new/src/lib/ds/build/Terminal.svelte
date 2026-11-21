@@ -14,8 +14,10 @@
 		run: string;
 		lines: Line[];
 		failure?: { title: string; detail?: string; onfix: () => void };
-	};
-	let { run, lines, failure }: Props = $props();
+			/** Fills its container's height (the workspace's pane) instead of the pen's 520, whatever it printed. */
+			fill?: boolean;
+		};
+		let { run, lines, failure, fill = false }: Props = $props();
 
 	const copier = createCopier();
 	const log = $derived(lines.map((line) => line.text ?? '').join('\n'));
@@ -39,7 +41,7 @@
 	});
 </script>
 
-<section class="flex h-130 w-full flex-col overflow-hidden rounded-sm bg-bg outline -outline-offset-1 outline-border-strong">
+<section class={['flex w-full flex-col overflow-hidden rounded-sm bg-bg outline -outline-offset-1 outline-border-strong', fill ? 'h-full min-h-75' : 'h-130']}>
 	<header class="flex h-10 shrink-0 items-center gap-2.5 border-b border-border px-4">
 		<span class="inline-flex text-text"><Icon icon={SquareTerminal} size={14} /></span>
 		<span class="truncate font-mono text-caption text-text">{run}</span>

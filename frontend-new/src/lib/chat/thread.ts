@@ -52,6 +52,7 @@ const MIN_LABELS = 2;
 const blocksOf = (message: RenderedMessage): Block[] => (message.content_blocks ?? []) as Block[];
 const isAction = (block: Block) => ACTION_KINDS.has(block.kind) || (block.kind === 'view' && ACTION_VIEWS.has(String(block.view)));
 const hasAction = (message: RenderedMessage) => blocksOf(message).some(isAction);
+const hasTodo = (message: RenderedMessage) => blocksOf(message).some((block) => block.kind === 'todo_list' && Array.isArray(block.items) && block.items.length > 0);
 const names = (value: unknown, field: string): string[] =>
 	Array.isArray(value) ? value.map((item) => (item as Record<string, unknown>)?.[field]).filter((name): name is string => typeof name === 'string' && name.trim() !== '') : [];
 
@@ -117,7 +118,8 @@ function foldCards(entries: ThreadEntry[]): ThreadEntry[] {
 		out.push(entry);
 	}
 	release();
-	for (const entry of out) if (entry.type === 'reply') entry.quiet = repeatsCard(entry.message.content, [entry.message, ...entry.cards]);
+	// A to-do list's text is only its fallback ("📋 To-do list: [~] …"): the card shows it.
+	for (const entry of out) if (entry.type === 'reply') entry.quiet = hasTodo(entry.message) || repeatsCard(entry.message.content, [entry.message, ...entry.cards]);
 	return out;
 }
 
