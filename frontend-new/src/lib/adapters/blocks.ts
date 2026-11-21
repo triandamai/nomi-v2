@@ -18,6 +18,8 @@ export type ReplyBlock =
 	| { kind: 'clarify'; key: string; agent: CrewId; title: string; questions: ClarifyQuestion[]; asked: string[] }
 	| { kind: 'approval'; key: string; id: string; agent: CrewId; title: string; tool: string; fields: { key: string; value: string }[]; status: 'pending' | 'approved' | 'rejected' | 'cancelled'; decidedAt?: string }
 	| { kind: 'plan'; key: string; planId: string; agentSessionId: string; title: string }
+	/** A crew member's to-do list for the work in hand (the backend keeps one per turn, updated in place). */
+	| { kind: 'todo'; key: string; agent: CrewId; items: { text: string; state: 'done' | 'running' | 'waiting' }[] }
 	| { kind: 'table'; key: string; title: string; columns: string[]; rows: Cell[][]; source?: string }
 	| { kind: 'decision'; key: string; question: string; options: { title: string; detail?: string; suggested?: boolean }[] }
 	| { kind: 'form'; key: string; agent: CrewId; title: string; intro?: string; fields: FormField[]; submitLabel?: string }
@@ -263,6 +265,13 @@ export function replyBlocks(message: RenderedMessage, { language }: { language: 
 			case 'plan':
 				items.push({ kind: 'plan', key, planId: String(block.plan_id), agentSessionId: String(block.agent_session_id), title: String(block.title ?? '') });
 				break;
+			case 'todo_list': {
+				const todo = list<{ text?: unknown; status?: unknown }>(block.items).flatMap((item) =>
+					str(item.text) ? [{ text: String(item.text), state: item.status === 'done' ? ('done' as const) : item.status === 'in_progress' ? ('running' as const) : ('waiting' as const) }] : [],
+				);
+				if (todo.length) items.push({ kind: 'todo', key, agent, items: todo });
+				break;
+			}
 			case 'table':
 				items.push({
 					kind: 'table',

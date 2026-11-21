@@ -169,6 +169,17 @@ describe('PhoneDraftPlan', () => {
 		await expect.element(page.getByText('01')).toBeVisible();
 	});
 
+	it('gives a long step the row’s width, its owner under it, on a phone (issue #334)', async () => {
+		await page.viewport(390, 844);
+		const label = 'Build database tables and customer booking frontend with QRIS upload';
+		await render(PhoneDraftPlan, { props: { title: 'Barberfi', intro: 'x', steps: [{ label, owner: { agent: 'koda', name: 'Koda' }, added: true }] } });
+		const text = page.getByText(label).element().getBoundingClientRect();
+		const chip = page.getByText('Koda', { exact: true }).element().getBoundingClientRect();
+		expect(chip.top).toBeGreaterThanOrEqual(text.bottom);
+		const row = page.getByRole('listitem').element().getBoundingClientRect();
+		expect(text.left - row.left).toBeGreaterThanOrEqual(8);
+	});
+
 	it('says DRAFT on the first version', async () => {
 		await render(PhoneDraftPlan, { props: { title: 'Rent', intro: 'x', steps: [{ label: 'Read transfers', owner: { agent: 'maya', name: 'Maya' } }] } });
 		await expect.element(page.getByText('Draft', { exact: true })).toBeVisible();

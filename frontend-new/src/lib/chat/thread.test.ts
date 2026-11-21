@@ -124,3 +124,13 @@ describe('action cards', () => {
 		expect(repeatsCard('Approve it?', [msg({ content_blocks: [{ kind: 'approval_request', id: 'a', status: 'pending' }] })])).toBe(false);
 	});
 });
+
+describe('a to-do list reply', () => {
+	it('draws only the card, not its fallback text (issue #335)', () => {
+		const todo = msg({ agent_display_name: 'Koda', content: '📋 To-do list:\n[~] Configure package.json\n[ ] Set up Relay schema\n', content_blocks: [{ kind: 'todo_list', items: [{ id: '1', text: 'Configure package.json', status: 'in_progress' }] }] as never });
+		const entries = threadEntries([msg({ sender: 'user', content: 'Build it' }), todo], options);
+		const reply = entries.find((entry) => entry.type === 'reply');
+		expect(reply?.type === 'reply' && reply.quiet).toBe(true);
+	});
+});
+
