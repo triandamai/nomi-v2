@@ -210,10 +210,12 @@ pub struct DeployOverview {
     pub unpublished_changes: Option<i64>,
 }
 
-/// How many of the project's files changed after its newest successful production publish.
+/// How many of the project's versions/stages finished after its newest successful production publish.
 pub async fn unpublished_changes(pool: &sqlx::PgPool, project_id: Uuid) -> Result<Option<i64>, sqlx::Error> {
     sqlx::query_scalar(
-        "SELECT (SELECT count(*) FROM project_files f WHERE f.project_id = $1 AND f.updated_at > last.created_at) \
+        "SELECT (SELECT count(*) FROM project_versions v \
+                 WHERE v.project_id = $1 AND v.created_at > last.created_at \
+                   AND NOT EXISTS (SELECT 1 FROM projects p WHERE p.id = $1 AND p.status = 'building' AND p.version = v.version)) \
          FROM (SELECT created_at FROM project_publishes WHERE project_id = $1 AND environment = $2 AND status = 'succeeded' \
                ORDER BY created_at DESC LIMIT 1) last",
     )

@@ -16,14 +16,25 @@ const elapsed = (from: string, now: Date) => {
 /** Production's publishes, newest first. */
 const production = (overview: DeployOverview) => overview.publishes.filter((one) => one.environment === 'production');
 
-/** `files` is how many files the project has, for the count before its first publish. */
-export function publishState(overview: DeployOverview, files: number, now: Date): PublishState {
+/**
+ * How many finished stages (agent turns or direct edits) wait to be published before the first publish.
+ * While Koda is actively building, the current turn is still in progress and not counted.
+ */
+export function initialStages(project: { files: { length: number }; status: string; version?: number }): number {
+	if (project.files.length === 0) return 0;
+	if (project.status === 'building') return Math.max(0, (project.version ?? 1) - 1);
+	if (project.status === 'ready') return Math.max(1, project.version ?? 1);
+	return 0;
+}
+
+/** `stages` is how many completed stages/versions wait before the first publish. */
+export function publishState(overview: DeployOverview, stages: number, now: Date): PublishState {
 	if (!overview.available) return { state: 'off' };
 	const [newest] = production(overview);
 	if (newest?.status === 'running') return { state: 'publishing', elapsed: elapsed(newest.created_at, now) };
 	if (overview.backend_setup) return { state: 'publishing', elapsed: '' };
 	if (newest?.status === 'failed') return { state: 'failed' };
-	const waiting = overview.unpublished_changes ?? (production(overview).some((one) => one.status === 'succeeded') ? 0 : files);
+	const waiting = overview.unpublished_changes ?? (production(overview).some((one) => one.status === 'succeeded') ? 0 : stages);
 	return waiting > 0 ? { state: 'ready', count: waiting } : { state: 'idle' };
 }
 

@@ -289,6 +289,8 @@ pub struct ProjectDetailResponse {
     pub stack: String,
     /// Goes up on every file change; the preview copies changes in when it moves.
     pub files_version: i64,
+    /// The version people see (one per crew reply that changed the files).
+    pub version: i64,
     pub files: Vec<ProjectFileSummary>,
     /// The project's chat.
     pub session_id: Uuid,
@@ -331,9 +333,9 @@ pub(crate) async fn load_owned_project(
     pool: &sqlx::PgPool,
     project_id: Uuid,
     user_id: Uuid,
-) -> Result<Option<(String, Option<String>, Option<String>, String, String, i64)>, sqlx::Error> {
+) -> Result<Option<(String, Option<String>, Option<String>, String, String, i64, i64)>, sqlx::Error> {
     sqlx::query_as(
-        "SELECT name, description, plan, status, stack, files_version FROM projects WHERE id = $1 AND can_open_project(id, $2)",
+        "SELECT name, description, plan, status, stack, files_version, version FROM projects WHERE id = $1 AND can_open_project(id, $2)",
     )
     .bind(project_id)
     .bind(user_id)
@@ -351,7 +353,7 @@ pub async fn get_project(
         tracing::error!(error = %e, "failed to load project");
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to load project")
     })?;
-    let (name, description, plan, status, stack, files_version) = row.ok_or((StatusCode::NOT_FOUND, "project not found"))?;
+    let (name, description, plan, status, stack, files_version, version) = row.ok_or((StatusCode::NOT_FOUND, "project not found"))?;
 
     let files: Vec<ProjectFileSummary> = sqlx::query_as(
         "SELECT path, content_type, size_bytes FROM project_files WHERE project_id = $1 ORDER BY path",
@@ -377,6 +379,7 @@ pub async fn get_project(
         status,
         stack,
         files_version,
+        version,
         files,
         session_id,
         org_id,
@@ -391,12 +394,12 @@ async fn load_owned_project_by_session(
     pool: &sqlx::PgPool,
     session_id: Uuid,
     user_id: Uuid,
-) -> Result<Option<(Uuid, String, Option<String>, Option<String>, String, String, i64)>, sqlx::Error> {
+) -> Result<Option<(Uuid, String, Option<String>, Option<String>, String, String, i64, i64)>, sqlx::Error> {
     // The project's own chat or one of its issue chats (chat_project). A chat can accumulate more
     // than one project if the user asks to build several things in it over time; the most recent
     // wins, so the workspace page always matches what the conversation last started building.
     sqlx::query_as(
-        "SELECT id, name, description, plan, status, stack, files_version FROM projects \
+        "SELECT id, name, description, plan, status, stack, files_version, version FROM projects \
          WHERE id = chat_project($1) AND can_open_project(id, $2)",
     )
     .bind(session_id)
@@ -418,7 +421,7 @@ pub async fn get_project_by_session(
         tracing::error!(error = %e, "failed to load project by session");
         (StatusCode::INTERNAL_SERVER_ERROR, "failed to load project")
     })?;
-    let (project_id, name, description, plan, status, stack, files_version) = row.ok_or((StatusCode::NOT_FOUND, "no project for this session"))?;
+    let (project_id, name, description, plan, status, stack, files_version, version) = row.ok_or((StatusCode::NOT_FOUND, "no project for this session"))?;
 
     let files: Vec<ProjectFileSummary> = sqlx::query_as(
         "SELECT path, content_type, size_bytes FROM project_files WHERE project_id = $1 ORDER BY path",
@@ -458,6 +461,7 @@ pub async fn get_project_by_session(
         status,
         stack,
         files_version,
+        version,
         files,
         session_id,
         org_id,

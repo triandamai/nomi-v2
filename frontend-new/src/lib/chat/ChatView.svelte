@@ -78,6 +78,7 @@
 	import { blockedReason, composeMessage, extensionOf, formatBytes, hiddenLine, kindLabel, progressParts, readyCount, seesImages, splitAttachments, visionSplit, type SentFile } from '$lib/chat/attachments';
 	import { ComposerUploads, type Chip } from '$lib/chat/uploads.svelte';
 	import { clearDraft, loadDraft, saveDraft } from '$lib/chat/draft';
+	import { forwardScrollTo } from '$lib/chat/scroll';
 	import ComposerFile from '$lib/ds/thread/ComposerFile.svelte';
 	import ModelFix from '$lib/ds/thread/ModelFix.svelte';
 	import VisionModelMenu, { type VisionGroup } from '$lib/ds/thread/VisionModelMenu.svelte';
@@ -1551,7 +1552,7 @@
 		</div>
 	</div>
 
-	<div class={['relative shrink-0', !phone && 'px-4 pb-4', !phone && !pane && 'lg:px-12 lg:pb-6']}>
+	<div use:forwardScrollTo={() => scroller} class={['relative shrink-0 overscroll-none', !phone && 'px-4 pb-4', !phone && !pane && 'lg:px-12 lg:pb-6']}>
 		{#if !atLatest && entries.length > 0}
 			<div class="absolute -top-12 left-1/2 -translate-x-1/2"><JumpToLatest count={unseen} onclick={() => jumpToLatest(true)} /></div>
 		{/if}

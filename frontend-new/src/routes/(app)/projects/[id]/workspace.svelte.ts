@@ -2,7 +2,7 @@ import { onMount, untrack } from 'svelte';
 import { m } from '$lib/paraglide/messages';
 import { pageAction } from '$lib/pageAction';
 import { clock as appClock } from '$lib/clock';
-import { deployRows, publishState, publishing } from '$lib/projects/deploy';
+import { deployRows, initialStages, publishState, publishing } from '$lib/projects/deploy';
 import type { DeployOverview, ExportSummary, MetricsRange, ProjectUsage } from '$lib/adapters/api';
 import { toasts } from '$lib/ds/overlays/toasts.svelte';
 import type { PaneView } from '$lib/ds/projects/PaneTabs.svelte';
@@ -168,8 +168,10 @@ export class Workspace {
 	readonly liveRow = $derived(this.deploy?.publishes.find((one) => one.is_live && one.environment === 'production'));
 	readonly liveUrl = $derived(this.deploy?.url ?? this.data.live?.url ?? null);
 	readonly liveNumber = $derived(this.liveRow?.version ?? this.data.live?.deploys ?? null);
+	/** Completed stages waiting to publish before the first publish. */
+	readonly initialStages = $derived(initialStages(this.project));
 	/** What the Publish button says. */
-	readonly button = $derived(this.deploy ? publishState(this.deploy, this.project.files.length, this.now) : ({ state: 'off' } as const));
+	readonly button = $derived(this.deploy ? publishState(this.deploy, this.initialStages, this.now) : ({ state: 'off' } as const));
 	readonly productionPublishes = $derived(this.deploy?.publishes.filter((one) => one.environment === 'production') ?? []);
 	readonly rows = $derived(this.deploy ? deployRows(this.productionPublishes, this.now, this.time.timeZone) : []);
 	readonly nextNumber = $derived((this.deploy?.publishes.reduce((top, one) => Math.max(top, one.version), 0) ?? 0) + 1);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { DeployOverview, PublishRow } from '$lib/adapters/api';
-import { deployRows, publishState, publishing } from './deploy';
+import { deployRows, initialStages, publishState, publishing } from './deploy';
 
 const now = new Date('2026-11-14T08:45:00Z');
 const row = (version: number, extra: Partial<PublishRow> = {}): PublishRow => ({
@@ -22,18 +22,40 @@ const row = (version: number, extra: Partial<PublishRow> = {}): PublishRow => ({
 });
 const overview = (extra: Partial<DeployOverview> = {}): DeployOverview => ({ available: true, role: 'owner', url: null, publishes: [], backend_setup: null, unpublished_changes: null, ...extra });
 
+describe('the initial stages before publish', () => {
+	it('does not increment on every file created while Koda is building', () => {
+		// New project before files
+		expect(initialStages({ files: [], status: 'planning', version: 0 })).toBe(0);
+		// Koda working on stage 1: creating 1 file, 2 files, 5 files
+		expect(initialStages({ files: [{ path: 'App.svelte' }], status: 'building', version: 1 })).toBe(0);
+		expect(initialStages({ files: [{ path: 'App.svelte' }, { path: 'main.ts' }], status: 'building', version: 1 })).toBe(0);
+		expect(initialStages({ files: new Array(5), status: 'building', version: 1 })).toBe(0);
+	});
+
+	it('increments once when Koda finishes a stage, and holds during the next build', () => {
+		// Koda finishes stage 1
+		expect(initialStages({ files: new Array(5), status: 'ready', version: 1 })).toBe(1);
+		// Koda starts working on stage 2: stays 1 while creating more files
+		expect(initialStages({ files: new Array(6), status: 'building', version: 2 })).toBe(1);
+		expect(initialStages({ files: new Array(8), status: 'building', version: 2 })).toBe(1);
+		// Koda finishes stage 2
+		expect(initialStages({ files: new Array(8), status: 'ready', version: 2 })).toBe(2);
+	});
+});
+
 describe('the Publish button', () => {
 	it('isn’t there where this Nomi can’t publish', () => {
 		expect(publishState(overview({ available: false }), 3, now)).toEqual({ state: 'off' });
 	});
 
-	it('is ready with the files waiting, before the first deploy too', () => {
-		expect(publishState(overview(), 4, now)).toEqual({ state: 'ready', count: 4 });
-		expect(publishState(overview({ publishes: [row(1, { is_live: true })], unpublished_changes: 2 }), 9, now)).toEqual({ state: 'ready', count: 2 });
+	it('is ready with the stages waiting, before the first deploy too', () => {
+		expect(publishState(overview(), 1, now)).toEqual({ state: 'ready', count: 1 });
+		expect(publishState(overview(), 2, now)).toEqual({ state: 'ready', count: 2 });
+		expect(publishState(overview({ publishes: [row(1, { is_live: true })], unpublished_changes: 2 }), 0, now)).toEqual({ state: 'ready', count: 2 });
 	});
 
 	it('is up to date with nothing waiting, or nothing to publish yet', () => {
-		expect(publishState(overview({ publishes: [row(1, { is_live: true })], unpublished_changes: 0 }), 9, now)).toEqual({ state: 'idle' });
+		expect(publishState(overview({ publishes: [row(1, { is_live: true })], unpublished_changes: 0 }), 0, now)).toEqual({ state: 'idle' });
 		expect(publishState(overview(), 0, now)).toEqual({ state: 'idle' });
 	});
 
