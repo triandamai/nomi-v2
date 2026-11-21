@@ -240,7 +240,7 @@
 	{/snippet}
 	{#snippet chat()}
 		<ChatPaneHeader title={m.workspace_chat()} crew={['koda', 'nomi']} />
-		<div class="min-h-0 flex-1"><ChatView {data} pane quote={ws.quote} onunquote={() => (ws.quote = null)} onactivity={() => void ws.loadQueue()} after={together} /></div>
+		<div class="flex min-h-0 flex-1 flex-col overflow-hidden"><ChatView {data} pane quote={ws.quote} onunquote={() => (ws.quote = null)} onactivity={() => void ws.loadQueue()} after={together} /></div>
 	{/snippet}
 	<div class="relative flex min-h-0 flex-1 flex-col">
 		<PaneTabs
