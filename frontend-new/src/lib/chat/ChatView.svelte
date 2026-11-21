@@ -1329,9 +1329,10 @@
 			{#if flows.working.length > 0}<PhoneCrewWorking crew={flows.working.map((name) => crewIdOf(name))} onstop={() => void stopAll()} />{/if}
 		</div>
 	{/if}
-	<div bind:this={scroller} {onscroll} class={['min-h-0 flex-1 overflow-y-auto', phone ? 'px-4 pt-4' : pane ? 'px-5 pt-5' : 'px-4 pt-6 lg:px-12 lg:pt-10']}>
+	<!-- The thread scrolls up and down only: nothing in it may slide it sideways on a phone. -->
+	<div bind:this={scroller} {onscroll} class={['min-h-0 flex-1 overflow-x-hidden overflow-y-auto', phone ? 'px-4 pt-4' : pane ? 'px-5 pt-5' : 'px-4 pt-6 lg:px-12 lg:pt-10']}>
 		<!-- On a phone a short thread sits at the bottom, over the composer, as the pen draws it. -->
-		<div class={['mx-auto flex w-full max-w-180 flex-col', phone ? 'min-h-full justify-end gap-6 pb-5' : 'gap-8 pb-8']}>
+		<div class={['mx-auto flex w-full max-w-180 flex-col wrap-anywhere', phone ? 'min-h-full justify-end gap-6 pb-5' : 'gap-8 pb-8']}>
 			{#if !phone}
 				{#if !online}
 					<Banner kind="offline" text={m.banner_offline()} action={{ label: m.banner_retry_now(), onclick: () => void flushOutbox() }} />
@@ -1425,7 +1426,7 @@
 									<!-- Thinking that never reached a reply (stopped, or still on its way). -->
 								{:else if cutOff === message.id && turn.end && phone}
 									<!-- Errors & recovery, scenario 5 step 3 (UTrnr): what was written stays, then when it was cut off. -->
-									<p class="text-phone leading-phone whitespace-pre-wrap text-text">{turn.reply.text}</p>
+									<p class="text-phone leading-phone whitespace-pre-wrap wrap-anywhere text-text">{turn.reply.text}</p>
 									<PhoneCutNotice seconds={Math.round(turn.end.elapsedMs / 1000)} oncontinue={continueReply} onrestart={entry.failure?.retry ? () => entry.failure && retryRun(message, entry.failure.text) : undefined} />
 								{:else if cutOff === message.id && turn.end}
 									<ReplyText text={turn.reply.text} status="interrupted" reason={turn.end.reason} oncontinue={continueReply} onrestart={() => entry.failure?.retry && retryRun(message, entry.failure.text)} />

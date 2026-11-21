@@ -220,7 +220,7 @@ export default [
 		file: 'projects/ProjectCardLoading.svelte',
 		summary: 'A project card’s place while the list loads: the card’s size, still blocks, a quieter stroke. On a phone (`phone`), the phone card’s shape: 194 tall with its border-strong stroke and the status box’s two bars.',
 		use: ['As many as the list will likely hold, while it loads.'],
-		donts: ['Animate it: honest states, no shimmer.'],
+		donts: ['Leave it up after the list fails: show the error.'],
 		accessibility: ['A busy status named "Loading a project".'],
 		related: ['projects/ProjectCard.svelte', 'lists/SkeletonRow.svelte'],
 	},

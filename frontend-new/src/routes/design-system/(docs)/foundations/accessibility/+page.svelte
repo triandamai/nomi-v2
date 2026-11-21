@@ -183,7 +183,7 @@
 	<DocSection title="Motion that stops when asked" lede="Nothing moves for decoration; what does move respects reduced motion.">
 		<p>
 			Spinners are the only animation in the components, and every one of them stops with <code>motion-reduce:animate-none</code>; the words
-			next to it still say what is happening. Statuses never pulse, and skeletons don't shimmer. Anything new that moves stops the same way.
+			next to it still say what is happening. Statuses never pulse, and skeletons stop shimmering. Anything new that moves stops the same way.
 		</p>
 	</DocSection>
 

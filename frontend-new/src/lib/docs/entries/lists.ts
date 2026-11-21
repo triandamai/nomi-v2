@@ -29,11 +29,11 @@ export default [
 	},
 	{
 		file: 'lists/SkeletonRow.svelte',
-		summary: 'Stands in while a list loads, and says what is loading ("loading 4 projects…"). It stays still: no shimmer, no fake progress.',
+		summary: 'Stands in while a list loads, and says what is loading ("loading 4 projects…"). Its blocks shimmer (reduced motion keeps them still); no fake progress.',
 		use: ['The first load of a list or panel.'],
 		avoid: ['Work an agent is doing: use LiveStep.', 'A list that has loaded with nothing in it: use EmptyState.'],
 		dos: ['Say what is loading, and how many when you know.'],
-		donts: ['Add a shimmer or a pulse.', 'Leave it up after the load fails: show the error.'],
+		donts: ['Add a progress bar or a percentage it can’t know.', 'Leave it up after the load fails: show the error.'],
 		content: ['Lower case, in mono, ending with an ellipsis: "loading 4 projects…".'],
 		accessibility: ['role="status" with aria-busy="true"; the grey shapes are hidden from screen readers and the label is read.'],
 		related: ['lists/EmptyState.svelte', 'lists/ProjectRow.svelte'],

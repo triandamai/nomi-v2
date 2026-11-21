@@ -3394,5 +3394,9 @@
 	"landing_footer_help": "Help",
 	"landing_footer_crew": "Crew",
 	"landing_footer_legal": "© {year} Nomi Labs · Made with patience in Indonesia",
-	"landing_footer_language": "Language"
+	"landing_footer_language": "Language",
+	"app_loading_page": "loading {page}…",
+	"app_loading_chat": "loading the chat…",
+	"app_loading_project": "loading the project…",
+	"app_loading": "loading…"
 }

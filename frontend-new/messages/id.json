@@ -3394,5 +3394,9 @@
 	"landing_footer_help": "Bantuan",
 	"landing_footer_crew": "Kru",
 	"landing_footer_legal": "© {year} Nomi Labs · Dibuat dengan sabar di Indonesia",
-	"landing_footer_language": "Bahasa"
+	"landing_footer_language": "Bahasa",
+	"app_loading_page": "memuat {page}…",
+	"app_loading_chat": "memuat chat…",
+	"app_loading_project": "memuat proyek…",
+	"app_loading": "memuat…"
 }
