@@ -1,5 +1,5 @@
 import { isRedirect } from '@sveltejs/kit';
-import type { ContainerUsage, DatabaseTable, DeployOverview, ExportSummary, ProjectShowcase, DomainAnswer, MetricsRange, ProjectDetail, ProjectDomain, ProjectList, ProjectMembers, ProjectMetrics, ProjectSecrets, QueryResult, SandboxLogs, SandboxStatus } from '$lib/adapters/api';
+import type { ContainerUsage, DatabaseTable, IssueBoard, DeployOverview, ExportSummary, ProjectShowcase, DomainAnswer, MetricsRange, ProjectDetail, ProjectDomain, ProjectList, ProjectMembers, ProjectMetrics, ProjectSecrets, QueryResult, SandboxLogs, SandboxStatus } from '$lib/adapters/api';
 import { apiFetch, type ApiEvent } from './api';
 import { readTable } from '$lib/projects/database';
 import type { OwnDomain } from '$lib/projects/domains';
@@ -354,3 +354,16 @@ export async function editRow(
 
 /** A dump of the database (a `.sql` file), as the backend streams it. */
 export const databaseDump = (event: ApiEvent, id: string, source: 'development' | 'production') => call(event, `${at(id)}/database/dump?source=${source}`);
+
+/** The project's issues as its board (the Issues sheet); null where it can't be read. */
+export async function loadBoard(event: ApiEvent, id: string): Promise<IssueBoard | null> {
+	const response = await call(event, `${at(id)}/board`);
+	return response.ok ? ((await response.json()) as IssueBoard) : null;
+}
+
+/** Moves an issue to a column at a place in it; into Ready to dev hands it to the crew. */
+export const moveIssue = (event: ApiEvent, id: string, number: number, columnId: string, index: number) =>
+	send(event, `${at(id)}/issues/${number}/move`, 'POST', { column_id: columnId, index });
+
+/** Hands an issue the crew couldn't finish back to them. */
+export const retryIssue = (event: ApiEvent, id: string, number: number) => send(event, `${at(id)}/issues/${number}/retry`, 'POST');

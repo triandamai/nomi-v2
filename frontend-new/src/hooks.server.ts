@@ -4,6 +4,7 @@ import { building } from '$app/environment';
 import { env as publicEnv } from '$env/dynamic/public';
 import { paraglideMiddleware } from '$lib/paraglide/server';
 import { DEVICE_COOKIE } from '$lib/device';
+import { wantsDevice } from '$lib/projects/device';
 import { crossDomainRedirect, domainsFrom, onLanding } from '$lib/domains';
 import { authenticate, isApiRequest } from '$lib/server/api';
 import { clientHeaders } from '$lib/server/clientHeaders';
@@ -64,7 +65,22 @@ const noStalePages: Handle = async ({ event, resolve }) => {
 	return response;
 };
 
-export const handle = sequence(domains, legacyAddresses, languageAndTheme, device, auth, noStalePages);
+/**
+ * A workspace asked to run its project on this device (`?run=device`) runs it in WebContainer,
+ * which needs the page cross-origin isolated. Only that page load gets these headers: elsewhere
+ * they'd break sign-in popups and the sandbox's own preview frame. `credentialless` still lets
+ * the page load other sites' images and fonts (without cookies).
+ */
+const deviceIsolation: Handle = async ({ event, resolve }) => {
+	const response = await resolve(event);
+	if (wantsDevice(event.url) && response.headers.get('content-type')?.startsWith('text/html')) {
+		response.headers.set('Cross-Origin-Opener-Policy', 'same-origin');
+		response.headers.set('Cross-Origin-Embedder-Policy', 'credentialless');
+	}
+	return response;
+};
+
+export const handle = sequence(domains, legacyAddresses, languageAndTheme, device, auth, noStalePages, deviceIsolation);
 
 /** Every call to the backend says which version of the frontend made it, and from which browser. */
 export const handleFetch: HandleFetch = ({ event, request, fetch }) => {
