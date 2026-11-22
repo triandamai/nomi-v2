@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
+	import { initViewport } from '$lib/viewport';
 	import '../app.css';
 	import { page } from '$app/state';
 	import { m } from '$lib/paraglide/messages';
@@ -20,6 +22,10 @@
 			locale: getLocale(),
 		}),
 	);
+
+	onMount(() => {
+		return initViewport();
+	});
 </script>
 
 <svelte:head>
