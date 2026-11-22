@@ -9,12 +9,18 @@ export const PAGE_LABELS: Record<PageKey, () => string> = {
 	usage: m.admin_page_usage,
 	users: m.admin_page_users,
 	plans: m.admin_page_plans,
+	terms: m.admin_page_terms,
+	coupons: m.admin_page_coupons,
+	payments: m.admin_page_payments,
 	notifications: m.admin_page_notifications,
 	models: m.admin_page_models,
 	providers: m.admin_page_providers,
 	embedding: m.admin_page_embedding,
 	tools: m.admin_page_tools,
+	crew: m.admin_page_crew,
 	dynamicAgents: m.admin_page_dynamic_agents,
+	projects: m.admin_page_projects,
+	sandboxes: m.admin_page_sandboxes,
 	support: m.admin_page_support,
 	maintenance: m.admin_page_maintenance,
 	integrations: m.admin_page_integrations,
@@ -24,7 +30,9 @@ export const PAGE_LABELS: Record<PageKey, () => string> = {
 export const GROUP_LABELS: Record<NavGroupKey, () => string> = {
 	dashboard: m.admin_group_dashboard,
 	people: m.admin_group_people,
+	billing: m.admin_group_billing,
 	crew: m.admin_group_crew,
+	projects: m.admin_group_projects,
 	operations: m.admin_group_operations,
 };
 

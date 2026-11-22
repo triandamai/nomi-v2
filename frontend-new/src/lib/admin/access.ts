@@ -52,19 +52,25 @@ export type PageKey =
 	| 'usage'
 	| 'users'
 	| 'plans'
+	| 'terms'
+	| 'coupons'
+	| 'payments'
 	| 'notifications'
 	| 'models'
 	| 'providers'
 	| 'embedding'
 	| 'tools'
+	| 'crew'
 	| 'dynamicAgents'
+	| 'projects'
+	| 'sandboxes'
 	| 'support'
 	| 'maintenance'
 	| 'integrations'
 	| 'configuration';
 
 export type AdminPage = { key: PageKey; href: string; area: Area };
-export type NavGroupKey = 'dashboard' | 'people' | 'crew' | 'operations';
+export type NavGroupKey = 'dashboard' | 'people' | 'billing' | 'crew' | 'projects' | 'operations';
 
 const GROUPS: { key: NavGroupKey; pages: AdminPage[] }[] = [
 	{
@@ -79,8 +85,16 @@ const GROUPS: { key: NavGroupKey; pages: AdminPage[] }[] = [
 		key: 'people',
 		pages: [
 			{ key: 'users', href: '/admin/users', area: 'user' },
-			{ key: 'plans', href: '/admin/plans', area: 'plans' },
 			{ key: 'notifications', href: '/admin/notifications', area: 'notifications' },
+		],
+	},
+	{
+		key: 'billing',
+		pages: [
+			{ key: 'plans', href: '/admin/plans', area: 'plans' },
+			{ key: 'terms', href: '/admin/billing/terms', area: 'plans' },
+			{ key: 'coupons', href: '/admin/billing/coupons', area: 'plans' },
+			{ key: 'payments', href: '/admin/billing/payments', area: 'plans' },
 		],
 	},
 	{
@@ -90,7 +104,15 @@ const GROUPS: { key: NavGroupKey; pages: AdminPage[] }[] = [
 			{ key: 'providers', href: '/admin/models/providers', area: 'models' },
 			{ key: 'embedding', href: '/admin/models/embedding', area: 'models' },
 			{ key: 'tools', href: '/admin/tools', area: 'tools' },
+			{ key: 'crew', href: '/admin/crew', area: 'agents' },
 			{ key: 'dynamicAgents', href: '/admin/dynamic-agents', area: 'agents' },
+		],
+	},
+	{
+		key: 'projects',
+		pages: [
+			{ key: 'projects', href: '/admin/projects', area: 'projects' },
+			{ key: 'sandboxes', href: '/admin/sandboxes', area: 'projects' },
 		],
 	},
 	{

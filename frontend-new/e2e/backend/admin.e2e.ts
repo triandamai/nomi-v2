@@ -43,7 +43,7 @@ test('a platform admin sees every area, and the overview of how Nomi is doing', 
 	await signInAs(context, admin);
 	await open(page, '/admin');
 
-	for (const area of ['Overview', 'Live agents', 'Usage', 'Users & access', 'Plans', 'Notifications', 'Models', 'Providers', 'Embedding', 'Tools', 'Custom agents', 'Support', 'Maintenance', 'Integrations', 'Configuration']) {
+	for (const area of ['Overview', 'Live agents', 'Usage', 'Users & access', 'Notifications', 'Plans', 'Billing terms', 'Coupons', 'Payments', 'Models', 'Providers', 'Embedding', 'Tools', 'Agent switches', 'Custom agents', 'Projects', 'Sandboxes', 'Support', 'Maintenance', 'Integrations', 'Configuration']) {
 		await expect(nav(page).getByRole('link', { name: area, exact: true })).toBeVisible();
 	}
 	await expect(page.getByRole('heading', { level: 1, name: 'Overview' })).toBeVisible();
@@ -74,6 +74,40 @@ test('usage shows a month and moves between months', async ({ page, context }) =
 	await page.getByRole('link', { name: 'Previous month' }).click();
 	await expect(page).toHaveURL(/\/admin\/usage\?month=\d{4}-\d{2}$/);
 	await expect(page.getByRole('heading', { level: 1, name: 'Usage' })).toBeVisible();
+});
+
+test('the pages carried over from the old console load: crew switches, projects, sandboxes, billing', async ({ page, context }) => {
+	const admin = await platformAdmin();
+	await signInAs(context, admin);
+
+	for (const [path, heading, failed] of [
+		['/admin/crew', 'Agent switches', 'The crew couldn’t be loaded'],
+		['/admin/projects', 'Projects', 'The projects couldn’t be loaded'],
+		['/admin/sandboxes', 'Sandboxes', 'The sandboxes couldn’t be loaded'],
+		['/admin/billing/terms', 'Billing terms', 'The terms couldn’t be loaded'],
+		['/admin/billing/coupons', 'Coupons', 'The coupons couldn’t be loaded'],
+		['/admin/billing/payments', 'Payments', 'The payments couldn’t be loaded'],
+	]) {
+		await open(page, path);
+		await expect(page.getByRole('heading', { level: 1, name: heading })).toBeVisible();
+		await expect(page.getByText(failed)).toHaveCount(0);
+	}
+});
+
+test('a platform admin adds a billing term and deletes it again', async ({ page, context }) => {
+	const admin = await platformAdmin();
+	await signInAs(context, admin);
+	const months = String(30 + Math.floor(Math.random() * 60));
+	await open(page, '/admin/billing/terms/new');
+	await page.getByLabel('Months').fill(months);
+	await page.getByLabel('Discount (%)').fill('15');
+	await page.getByRole('button', { name: 'Add term' }).click();
+	await expect(page).toHaveURL(/\/admin\/billing\/terms$/);
+	await page.getByRole('link', { name: `${months} months`, exact: true }).click();
+	await page.getByRole('button', { name: 'Delete term' }).click();
+	await page.getByRole('dialog').getByRole('button', { name: 'Delete term' }).click();
+	await expect(page).toHaveURL(/\/admin\/billing\/terms$/);
+	await expect(page.getByRole('link', { name: `${months} months`, exact: true })).toHaveCount(0);
 });
 
 test.describe('users & access', () => {

@@ -13,5 +13,5 @@ export function sectionLabel(section: string): { title: string; description: str
 
 export const fieldLabel = (section: string, field: string): string => messages[`admin_cfg_${section}_${field}`]?.() ?? humanize(field);
 
-/** The sections that can be tested: storage with what's typed, Xendit with what's saved. */
-export const TESTABLE = ['storage', 'xendit'];
+/** The sections that can be tested: storage with what's typed, Xendit and DOKU with what's saved. */
+export const TESTABLE = ['storage', 'xendit', 'doku'];

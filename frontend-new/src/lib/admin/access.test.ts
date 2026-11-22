@@ -64,14 +64,14 @@ describe('pages and areas', () => {
 
 	it('lists only the pages someone can see, in groups, leaving out empty groups', () => {
 		const groups = navGroups({ plans: 'view', tools: 'write' });
-		expect(groups.map((group) => group.key)).toEqual(['people', 'crew']);
-		expect(groups.flatMap((group) => group.pages.map((page) => page.href))).toEqual(['/admin/plans', '/admin/tools']);
+		expect(groups.map((group) => group.key)).toEqual(['billing', 'crew']);
+		expect(groups.flatMap((group) => group.pages.map((page) => page.href))).toEqual(['/admin/plans', '/admin/billing/terms', '/admin/billing/coupons', '/admin/billing/payments', '/admin/tools']);
 		expect(navGroups({}).length).toBe(0);
 		expect(
-			navGroups({ dashboard: 'view', user: 'view', plans: 'view', notifications: 'view', models: 'view', tools: 'view', agents: 'view', support: 'view', maintenance: 'view', integrations: 'view', configuration: 'view' }).flatMap(
+			navGroups({ dashboard: 'view', user: 'view', plans: 'view', notifications: 'view', models: 'view', tools: 'view', agents: 'view', support: 'view', maintenance: 'view', integrations: 'view', configuration: 'view', projects: 'view' }).flatMap(
 				(group) => group.pages.map((page) => page.area),
 			),
-		).toEqual(['dashboard', 'dashboard', 'dashboard', 'user', 'plans', 'notifications', 'models', 'models', 'models', 'tools', 'agents', 'support', 'maintenance', 'integrations', 'configuration']);
+		).toEqual(['dashboard', 'dashboard', 'dashboard', 'user', 'notifications', 'plans', 'plans', 'plans', 'plans', 'models', 'models', 'models', 'tools', 'agents', 'agents', 'projects', 'projects', 'support', 'maintenance', 'integrations', 'configuration']);
 	});
 });
 
