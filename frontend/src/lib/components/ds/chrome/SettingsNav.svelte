@@ -18,9 +18,10 @@
 		user: { name: string; detail?: string; avatar?: string };
 		version?: string;
 		query?: string;
+		onwhatsnew?: () => void;
 		onlogout?: () => void;
 	};
-	let { backHref, groups, active, user, version, query = $bindable(''), onlogout }: Props = $props();
+	let { backHref, groups, active, user, version, query = $bindable(''), onwhatsnew, onlogout }: Props = $props();
 
 	setRowStyle({ dense: true, icon: 'text-3' });
 </script>
