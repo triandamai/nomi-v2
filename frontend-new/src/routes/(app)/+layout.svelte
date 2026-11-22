@@ -17,7 +17,7 @@
 	import { settledRefresh } from '$lib/live/settle';
 	import { SHORTCUT_KEYS, isTyping, shortcutFor } from '$lib/shortcuts';
 	import { APP_VERSION, VERSION_LABEL } from '$lib/version';
-	import { markSeen, shouldShow } from '$lib/releaseNotes';
+	import { markSeen } from '$lib/releaseNotes';
 	import type { Theme } from '$lib/theme';
 	import AppShell from '$lib/ds/shells/AppShell.svelte';
 	import { setPanelPlacement } from '$lib/ds/shells/panelPlacement';
@@ -194,8 +194,8 @@
 	let unread = $derived(data.unread);
 	let shortcutsOpen = $state(false);
 
-	// This version's release notes (baked into the build for its own environment): they open on their
-	// own the first time this browser loads the version, and again from the account menu's What's new.
+	// This version's release notes (baked into the build for its own environment): they open
+	// when the person clicks the version or What's new.
 	let releaseNotesOpen = $state(false);
 	const releaseDate = new Intl.DateTimeFormat(getLocale(), { day: 'numeric', month: 'short', year: 'numeric' });
 	const releaseNotes = $derived(data.releaseNotes.map((release) => ({ version: release.version, url: release.url || undefined, html: release.html, date: release.publishedAt ? releaseDate.format(new Date(release.publishedAt)) : '' })));
@@ -206,9 +206,6 @@
 			return undefined;
 		}
 	};
-	onMount(() => {
-		if (shouldShow(data.releaseNotes, APP_VERSION, storage())) releaseNotesOpen = true;
-	});
 	$effect(() => {
 		// Seen once it's been opened, however it's closed.
 		if (releaseNotesOpen) markSeen(APP_VERSION, storage());
@@ -501,6 +498,7 @@
 			user={{ name: data.person.name, detail: data.usage?.account, avatar: data.person.avatar ?? undefined }}
 			version={VERSION_LABEL}
 			bind:query={settingsQuery}
+			onwhatsnew={releaseNotes.length > 0 ? () => (releaseNotesOpen = true) : undefined}
 			onlogout={() => logout?.requestSubmit()}
 		/>
 	{:else}

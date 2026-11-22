@@ -22,7 +22,7 @@
 	setRowStyle({ dense: true, icon: 'text-2' });
 </script>
 
-<nav aria-label={m.nav_main()} class="flex h-full w-62 shrink-0 flex-col gap-5 border-r border-border bg-bg py-4 pr-2.75 pl-3">
+<nav aria-label={m.nav_main()} class="flex h-full w-62 max-w-full shrink-0 flex-col gap-5 border-r border-border bg-bg py-4 pr-2.75 pl-3">
 	<div class="flex items-center justify-between px-2 py-1">
 		<span class="inline-flex items-center gap-2">
 			<Mascot agent="nomi" size={20} live />
