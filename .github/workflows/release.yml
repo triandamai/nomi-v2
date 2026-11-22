@@ -31,6 +31,27 @@ jobs:
     name: Frontend (new)
     uses: ./.github/workflows/frontend-new.yml
 
+  # The tag's GitHub release (made with generated notes when it has none: release-notes.sh), and
+  # the production release notes frontend-new's image carries, so its What's new needs no call to
+  # GitHub. It never fails the deploy: without notes the app shows none.
+  release-notes:
+    name: Release notes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      notes: ${{ steps.notes.outputs.notes }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          sparse-checkout: .github/scripts
+
+      - name: Create or update the release, and read the production notes
+        id: notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .github/scripts/release-notes.sh "${{ github.ref_name }}" production
+
   build-and-push-backend:
     name: Build and push backend image
     needs: backend
@@ -94,7 +115,7 @@ jobs:
 
   build-and-push-frontend-new:
     name: Build and push frontend-new image
-    needs: frontend-new
+    needs: [frontend-new, release-notes]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -116,8 +137,10 @@ jobs:
           context: frontend-new
           push: true
           # The tag (e.g. v1.2.3) becomes the version the app shows and sends to the backend.
+          # RELEASE_NOTES: this environment's release notes (base64 JSON), for What's new.
           build-args: |
             APP_VERSION=${{ github.ref_name }}
+            RELEASE_NOTES=${{ needs.release-notes.outputs.notes }}
           tags: |
             ${{ secrets.SHIPYARD_REGISTRY_HOST }}/${{ secrets.SHIPYARD_IMAGE_PREFIX }}/ui-new:${{ github.ref_name }}
             ${{ secrets.SHIPYARD_REGISTRY_HOST }}/${{ secrets.SHIPYARD_IMAGE_PREFIX }}/ui-new:latest

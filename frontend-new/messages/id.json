@@ -3651,5 +3651,10 @@
 	"admin_payments_empty_body": "Pembayaran muncul di sini begitu seseorang membayar paket.",
 	"admin_payments_none_title": "Tidak ada pembayaran dengan status ini",
 	"admin_payments_none_body": "Pilih Semua untuk melihat setiap pembayaran.",
-	"admin_payments_failed": "Pembayaran tidak bisa dimuat"
+	"admin_payments_failed": "Pembayaran tidak bisa dimuat",
+	"release_notes_title": "Yang baru di {version}",
+	"release_notes_body": "Apa saja yang berubah di versi Nomi ini.",
+	"release_notes_earlier": "Versi sebelumnya",
+	"release_notes_on_github": "Lihat di GitHub",
+	"release_notes_done": "Oke"
 }

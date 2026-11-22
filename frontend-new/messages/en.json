@@ -3651,5 +3651,10 @@
 	"admin_payments_empty_body": "Payments show here once someone pays for a plan.",
 	"admin_payments_none_title": "No payments in this state",
 	"admin_payments_none_body": "Choose All to see every payment.",
-	"admin_payments_failed": "The payments couldn’t be loaded"
+	"admin_payments_failed": "The payments couldn’t be loaded",
+	"release_notes_title": "What’s new in {version}",
+	"release_notes_body": "What changed in this version of Nomi.",
+	"release_notes_earlier": "Earlier versions",
+	"release_notes_on_github": "View on GitHub",
+	"release_notes_done": "Got it"
 }

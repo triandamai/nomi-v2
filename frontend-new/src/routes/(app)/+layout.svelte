@@ -16,7 +16,8 @@
 	import { signedOutTarget } from '$lib/live/leaving';
 	import { settledRefresh } from '$lib/live/settle';
 	import { SHORTCUT_KEYS, isTyping, shortcutFor } from '$lib/shortcuts';
-	import { VERSION_LABEL } from '$lib/version';
+	import { APP_VERSION, VERSION_LABEL } from '$lib/version';
+	import { markSeen, shouldShow } from '$lib/releaseNotes';
 	import type { Theme } from '$lib/theme';
 	import AppShell from '$lib/ds/shells/AppShell.svelte';
 	import { setPanelPlacement } from '$lib/ds/shells/panelPlacement';
@@ -45,6 +46,7 @@
 	import AutosaveNote from '$lib/ds/settings/AutosaveNote.svelte';
 	import CrewPanel from '$lib/ds/chrome/CrewPanel.svelte';
 	import ShortcutsDialog from '$lib/ds/chrome/ShortcutsDialog.svelte';
+	import ReleaseNotesDialog from '$lib/ds/chrome/ReleaseNotesDialog.svelte';
 	import SessionExpired from '$lib/ds/chat/SessionExpired.svelte';
 	import PhoneSignedOutSheet from '$lib/ds/thread/PhoneSignedOutSheet.svelte';
 	import NeedsYouToast from '$lib/chat/NeedsYouToast.svelte';
@@ -187,6 +189,26 @@
 	let theme = $derived<Theme>(data.theme);
 	let unread = $derived(data.unread);
 	let shortcutsOpen = $state(false);
+
+	// This version's release notes (baked into the build for its own environment): they open on their
+	// own the first time this browser loads the version, and again from the account menu's What's new.
+	let releaseNotesOpen = $state(false);
+	const releaseDate = new Intl.DateTimeFormat(getLocale(), { day: 'numeric', month: 'short', year: 'numeric' });
+	const releaseNotes = $derived(data.releaseNotes.map((release) => ({ version: release.version, url: release.url || undefined, html: release.html, date: release.publishedAt ? releaseDate.format(new Date(release.publishedAt)) : '' })));
+	const storage = () => {
+		try {
+			return window.localStorage;
+		} catch {
+			return undefined;
+		}
+	};
+	onMount(() => {
+		if (shouldShow(data.releaseNotes, APP_VERSION, storage())) releaseNotesOpen = true;
+	});
+	$effect(() => {
+		// Seen once it's been opened, however it's closed.
+		if (releaseNotesOpen) markSeen(APP_VERSION, storage());
+	});
 	let sessionOver = $state(false);
 	let logout: HTMLFormElement | undefined = $state();
 
@@ -510,6 +532,7 @@
 					onlanguage={changeLanguage}
 					version={VERSION_LABEL}
 					onshortcuts={() => (shortcutsOpen = true)}
+					onwhatsnew={releaseNotes.length > 0 ? () => (releaseNotesOpen = true) : undefined}
 					onlogout={() => logout?.requestSubmit()}
 				/>
 			{/snippet}
@@ -624,6 +647,7 @@
 <form bind:this={logout} method="POST" action="/sign-out" hidden></form>
 
 <ShortcutsDialog bind:open={shortcutsOpen} {shortcuts} />
+<ReleaseNotesDialog bind:open={releaseNotesOpen} releases={releaseNotes} />
 
 <Dialog bind:open={creating} title={m.workspace_create_title()} description={m.workspace_create_body()}>
 	<form
