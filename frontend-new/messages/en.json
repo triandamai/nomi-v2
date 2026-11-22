@@ -3658,6 +3658,7 @@
 	"error_500_text": "The crew is on it. Try again in a moment; if it keeps happening, let us know.",
 	"error_home": "Back to Nomi",
 	"error_retry": "Try again",
+	"meta_image_alt": "Nomi’s green shape and the rest of the crew, beside the words: You talk. Nomi’s crew gets it done."
 	"release_notes_title": "What’s new in {version}",
 	"release_notes_body": "What changed in this version of Nomi.",
 	"release_notes_earlier": "Earlier versions",

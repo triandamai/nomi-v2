@@ -110,7 +110,6 @@
 
 <svelte:head>
 	<title>{m.landing_title()}</title>
-	<meta name="description" content={m.landing_description()} />
 </svelte:head>
 
 <div class="page" data-landing data-theme="light">
