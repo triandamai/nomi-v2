@@ -380,7 +380,10 @@ leaves out what v2 or the backend can't do yet, rather than draw it dead:
   of the bar.
 - The sidebar's collapse button: the shell has no collapsed layout yet.
 - The account menu's "Help & docs" (Nomi has no help site to open) and What's new's "new" dot
-  (there are no release notes to be new); What's new shows the version, as drawn.
+  (the notes open on their own once per version instead); What's new shows the version, as drawn,
+  and opens the running version's release notes (`ReleaseNotesDialog`, which the pen doesn't draw):
+  the GitHub releases of the build's own environment (a `-staging` tag is staging's), which
+  `release.yml` and `staging.yml` read and bake into the image as `RELEASE_NOTES`.
 - The workspace switcher's invited workspace with "Join" (the API doesn't list a person's pending
   invites) and its PERSONAL tag (the API doesn't say which workspace is personal; web sign-ups
   make a named one): both in BACKEND_TODO.md. The tiles take the pen's plain, teal and amber in

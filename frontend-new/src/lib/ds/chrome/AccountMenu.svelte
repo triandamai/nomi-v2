@@ -20,7 +20,8 @@
 	// new with the version; Log out. Keyboard like the platform's menus: arrows, Home and End move,
 	// Enter picks, Escape closes (or goes back from the language list), Tab or a click away closes.
 	// Left out on purpose: "Help & docs" (Nomi has no help site to open yet), and What's new's "new"
-	// dot (there are no release notes to be new); the row shows the version, as the pen does.
+	// dot (the notes open on their own once per version instead); the row shows the version, as the
+	// pen does, and opens the release notes when the build has them (`onwhatsnew`).
 	// Its button is the user row (UserRow's look, drawn here: the gear only shows that it opens), and
 	// its links are Menu Items as links; UserRow and MenuRow keep the old app's twins' props.
 	// `inline` shows the panel open in place (the gallery); `view` opens it on the language list.
@@ -43,11 +44,13 @@
 		version: string;
 		/** Opens the shortcuts dialog; without it the row isn't shown. */
 		onshortcuts?: () => void;
+		/** Opens this version's release notes; without it the row only shows the version. */
+		onwhatsnew?: () => void;
 		onlogout: () => void;
 		inline?: boolean;
 		view?: 'main' | 'language';
 	};
-	let { name, avatar, plan, upgradeHref, settingsHref, profileHref, planHref, theme, ontheme, language, languages, onlanguage, version, onshortcuts, onlogout, inline = false, view: initialView = 'main' }: Props = $props();
+	let { name, avatar, plan, upgradeHref, settingsHref, profileHref, planHref, theme, ontheme, language, languages, onlanguage, version, onshortcuts, onwhatsnew, onlogout, inline = false, view: initialView = 'main' }: Props = $props();
 
 	const id = $props.id();
 	const startView = () => initialView;
@@ -218,11 +221,15 @@
 			</button>
 			{@render divider()}
 			{#if onshortcuts}<MenuRow item={{ label: m.account_shortcuts(), icon: Keyboard, shortcut: '?', onselect: onshortcuts }} onpick={pick} />{/if}
-			<div role="none" class="flex h-7.5 items-center gap-2 px-2">
-				<span class="inline-flex text-text-2"><Icon icon={Sparkle} size={14} /></span>
-				<span class="flex-1 text-ui whitespace-nowrap text-text">{m.account_whats_new()}</span>
-				<span class="min-w-0 truncate font-mono text-label text-text-3">{version}</span>
-			</div>
+			{#if onwhatsnew}
+				<MenuRow item={{ label: m.account_whats_new(), icon: Sparkle, meta: version, onselect: onwhatsnew }} onpick={pick} />
+			{:else}
+				<div role="none" class="flex h-7.5 items-center gap-2 px-2">
+					<span class="inline-flex text-text-2"><Icon icon={Sparkle} size={14} /></span>
+					<span class="flex-1 text-ui whitespace-nowrap text-text">{m.account_whats_new()}</span>
+					<span class="min-w-0 truncate font-mono text-label text-text-3">{version}</span>
+				</div>
+			{/if}
 			{@render divider()}
 			<MenuRow item={{ label: m.settings_logout(), icon: LogOut, onselect: onlogout }} onpick={pick} />
 		{:else}
