@@ -57,6 +57,20 @@ describe('AppShell', () => {
 		await expect.element(drawer).toBeVisible();
 		await expect.element(drawer).toHaveTextContent('Sidebar content');
 	});
+
+	it('leaves the drawer to the tab bar on a phone’s tab screen', async () => {
+		await page.viewport(390, 844);
+		await render(AppShellFixture, { phoneTabs: true });
+		await expect.element(page.getByRole('link', { name: 'Home' })).toBeVisible();
+		expect(page.getByRole('button', { name: 'Open navigation' }).elements()).toHaveLength(0);
+	});
+
+	it('keeps the drawer on a phone’s tab screen with more inside it (You: Settings and Log out)', async () => {
+		await page.viewport(390, 844);
+		await render(AppShellFixture, { phoneTabs: true, drawer: true });
+		await page.getByRole('button', { name: 'Open navigation' }).click();
+		await expect.element(page.getByRole('dialog', { name: 'Navigation' })).toHaveTextContent('Sidebar content');
+	});
 });
 
 describe('WorkspaceShell', () => {

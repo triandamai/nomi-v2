@@ -398,7 +398,7 @@ leaves out what v2 or the backend can't do yet, rather than draw it dead:
   (BACKEND_TODO.md), so a row's line also has no "Tara:" before it. The pen's sheet for a chat comes
   from a long press (or More, for the keyboard) with Pin to top and Delete chat, the two things the
   desktop row does; its subtitle is when the chat last moved, not the pen's "14 messages · Dana"
-  (the list says neither how many messages nor who answered: BACKEND_TODO.md). You is Settings.
+  (the list says neither how many messages nor who answered: BACKEND_TODO.md). You is Settings, and keeps the menu button: the pen draws no phone Settings, so its pages and Log out are the settings nav in the drawer.
   The pen draws no phone Home, Projects, Inbox or Settings yet: they keep their own layout under
   the tab bar, and Home leaves out its empty top bar.
 - A chat on a phone (Mobile Chat — Start & answer, steps 2–7) is the pen's: the nav bar

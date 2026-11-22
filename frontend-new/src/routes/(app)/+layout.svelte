@@ -167,6 +167,10 @@
 		get ownTitle() {
 			return isChats || inThread || isProjects;
 		},
+		// You (Settings) has its pages and Log out in the settings nav, which only the drawer reaches.
+		get drawer() {
+			return isSettings;
+		},
 	});
 	// What the chat page says about itself as it changes (renamed, pinned, moved, deleted).
 	const header = new ChatHeader();

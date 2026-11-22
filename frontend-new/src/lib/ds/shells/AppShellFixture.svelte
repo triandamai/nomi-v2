@@ -1,9 +1,12 @@
 <script lang="ts">
+	import { House } from '@lucide/svelte';
 	import AppShell from './AppShell.svelte';
 	import { setPanelPlacement } from './panelPlacement';
 	import { setMainLayout } from './mainLayout';
+	import { setPhoneChrome } from './phoneChrome';
 
-	let { panelUnderTopbar = false, bleed = false }: { panelUnderTopbar?: boolean; bleed?: boolean } = $props();
+	type Props = { panelUnderTopbar?: boolean; bleed?: boolean; phoneTabs?: boolean; drawer?: boolean };
+	let { panelUnderTopbar = false, bleed = false, phoneTabs = false, drawer = false }: Props = $props();
 	setPanelPlacement({
 		get underTopbar() {
 			return panelUnderTopbar;
@@ -12,6 +15,18 @@
 	setMainLayout({
 		get bleed() {
 			return bleed;
+		},
+	});
+	setPhoneChrome({
+		get phone() {
+			return phoneTabs;
+		},
+		get tabs() {
+			return phoneTabs ? { label: 'Main', tabs: [{ href: '/', label: 'Home', icon: House, current: true }] } : null;
+		},
+		ownTitle: false,
+		get drawer() {
+			return drawer;
 		},
 	});
 </script>
