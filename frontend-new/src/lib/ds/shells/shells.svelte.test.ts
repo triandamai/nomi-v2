@@ -71,6 +71,16 @@ describe('AppShell', () => {
 		await page.getByRole('button', { name: 'Open navigation' }).click();
 		await expect.element(page.getByRole('dialog', { name: 'Navigation' })).toHaveTextContent('Sidebar content');
 	});
+
+	it('dismisses the drawer when clicking outside', async () => {
+		await page.viewport(390, 844);
+		await render(AppShellFixture);
+		await page.getByRole('button', { name: 'Open navigation' }).click();
+		const drawer = page.getByRole('dialog', { name: 'Navigation' });
+		await expect.element(drawer).toBeVisible();
+		await drawer.click({ position: { x: 350, y: 100 } });
+		await expect.element(drawer).not.toBeInTheDocument();
+	});
 });
 
 describe('WorkspaceShell', () => {

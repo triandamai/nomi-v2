@@ -27,10 +27,31 @@
 
 	function drawer(dialog: HTMLDialogElement) {
 		dialog.showModal();
-		// Following a link inside closes the drawer.
-		const leave = (event: MouseEvent) => (event.target as Element).closest('a') && (drawerOpen = false);
-		dialog.addEventListener('click', leave);
-		return { destroy: () => dialog.removeEventListener('click', leave) };
+		const onclick = (event: MouseEvent) => {
+			const target = event.target as Element | null;
+			if (!target) return;
+			// Following a link inside closes the drawer.
+			if (target.closest('a')) {
+				drawerOpen = false;
+				return;
+			}
+			// Clicking on the backdrop (the dialog itself) or outside the dialog's bounding box closes the drawer.
+			if (target === dialog) {
+				drawerOpen = false;
+				return;
+			}
+			const rect = dialog.getBoundingClientRect();
+			if (
+				event.clientX < rect.left ||
+				event.clientX > rect.right ||
+				event.clientY < rect.top ||
+				event.clientY > rect.bottom
+			) {
+				drawerOpen = false;
+			}
+		};
+		dialog.addEventListener('click', onclick);
+		return { destroy: () => dialog.removeEventListener('click', onclick) };
 	}
 </script>
 
@@ -59,7 +80,8 @@
 		use:drawer
 		aria-label={m.shell_nav_drawer()}
 		onclose={() => (drawerOpen = false)}
-		class="m-0 h-dvh max-h-none w-auto bg-bg p-0 text-text backdrop:bg-overlay"
+		class="fixed inset-y-0 left-0 m-0 h-dvh max-h-none w-auto border-r border-border bg-bg p-0 text-text outline-none overscroll-contain backdrop:bg-overlay pb-safe"
+		style="height: var(--viewport-height, 100dvh); max-width: 85vw; padding-top: env(safe-area-inset-top, 0px);"
 	>
 		{@render sidebar()}
 	</dialog>

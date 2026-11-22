@@ -69,4 +69,17 @@ describe('SettingsNav', () => {
 		await page.getByRole('button', { name: 'Log out' }).click();
 		expect(onlogout).toHaveBeenCalledOnce();
 	});
+
+	it('opens release notes when clicking version', async () => {
+		const onwhatsnew = vi.fn();
+		await render(SettingsNav, {
+			backHref: '/',
+			groups: [],
+			user: { name: 'Mario Prasetyo' },
+			version: 'v0.0.75',
+			onwhatsnew,
+		});
+		await page.getByRole('button', { name: 'What’s new' }).click();
+		expect(onwhatsnew).toHaveBeenCalledOnce();
+	});
 });
