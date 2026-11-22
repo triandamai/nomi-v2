@@ -3651,5 +3651,11 @@
 	"admin_payments_empty_body": "Payments show here once someone pays for a plan.",
 	"admin_payments_none_title": "No payments in this state",
 	"admin_payments_none_body": "Choose All to see every payment.",
-	"admin_payments_failed": "The payments couldn’t be loaded"
+	"admin_payments_failed": "The payments couldn’t be loaded",
+	"error_404_title": "This page wandered off",
+	"error_404_text": "The crew looked everywhere and couldn’t find it. It may have moved, or the link is off.",
+	"error_500_title": "Something broke on our side",
+	"error_500_text": "The crew is on it. Try again in a moment; if it keeps happening, let us know.",
+	"error_home": "Back to Nomi",
+	"error_retry": "Try again"
 }
