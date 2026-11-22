@@ -37,7 +37,7 @@
 	<div class="h-full w-80 shrink-0 overflow-y-auto border-l border-border max-xl:hidden">{@render panel?.()}</div>
 {/snippet}
 
-<div class="flex h-dvh w-full overflow-hidden bg-bg text-text">
+<div class="flex h-dvh w-full overflow-hidden bg-bg text-text" style="height: var(--viewport-height, 100dvh);">
 	<div class="h-full max-lg:hidden">{@render sidebar()}</div>
 	<div class="flex min-w-0 flex-1 flex-col">
 		<header class={['flex h-13 shrink-0 items-center gap-3 border-b border-border px-4 lg:px-6', phone.phone && phone.ownTitle && 'hidden']}>

@@ -156,7 +156,12 @@
 					{onkeydown}
 					oninput={findMention}
 					onclick={findMention}
-					onfocus={() => (focused = true)}
+					onfocus={() => {
+						focused = true;
+						if (typeof window !== 'undefined') {
+							requestAnimationFrame(() => window.scrollTo(0, 0));
+						}
+					}}
 					onblur={() => {
 						focused = false;
 						mention = null;
