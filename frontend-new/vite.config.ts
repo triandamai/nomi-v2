@@ -9,6 +9,7 @@ import { devWsProxy } from './vite-plugins/dev-ws-proxy.ts';
 import { docsOnlyRoutes } from './vite-plugins/docs-only-routes.ts';
 import { dsApi } from './src/lib/docs/api/plugin.ts';
 import { appVersion } from './app-version.js';
+import { releaseNotes } from './release-notes.js';
 
 const version = appVersion();
 // `npm run build:gallery` (DS_STATIC=1): the design-system gallery alone, prerendered into static
@@ -17,7 +18,9 @@ const galleryStatic = process.env.DS_STATIC === '1';
 
 export default defineConfig({
 	// Shown in the app (see $lib/version) and sent to the backend with every call.
-	define: { __APP_VERSION__: JSON.stringify(version), __DS_STATIC__: JSON.stringify(galleryStatic) },
+	// The release notes CI read from GitHub for this build's environment (release-notes.js): the
+	// app shows them without calling GitHub.
+	define: { __APP_VERSION__: JSON.stringify(version), __DS_STATIC__: JSON.stringify(galleryStatic), __RELEASE_NOTES__: JSON.stringify(releaseNotes()) },
 	// Rolldown's plugin-timing report prints as a warning on every build; it's a profiling aid, not
 	// a problem with the build.
 	// The static copy is served from any path: an image imported in code is found next to the code

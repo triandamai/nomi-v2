@@ -3657,5 +3657,10 @@
 	"error_500_title": "Something broke on our side",
 	"error_500_text": "The crew is on it. Try again in a moment; if it keeps happening, let us know.",
 	"error_home": "Back to Nomi",
-	"error_retry": "Try again"
+	"error_retry": "Try again",
+	"release_notes_title": "What’s new in {version}",
+	"release_notes_body": "What changed in this version of Nomi.",
+	"release_notes_earlier": "Earlier versions",
+	"release_notes_on_github": "View on GitHub",
+	"release_notes_done": "Got it"
 }
