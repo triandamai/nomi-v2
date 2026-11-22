@@ -3789,5 +3789,9 @@
 	"studio_inspector_checks": "Checks ({count})",
 	"studio_inspector_no_tokens": "This design has no tokens yet.",
 	"studio_inspector_no_issues": "Nothing to fix.",
-	"studio_openpencil_copy_svg": "Copy as SVG"
+	"studio_openpencil_copy_svg": "Copy as SVG",
+	"code_line_menu": "Actions for L{n}",
+	"code_line_ask": "Ask {name} about this line",
+	"code_line_copy": "Copy line",
+	"code_line_select": "Select line"
 }

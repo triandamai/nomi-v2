@@ -3,7 +3,8 @@ import { m } from '$lib/paraglide/messages';
 import { pageAction } from '$lib/pageAction';
 import { clock as appClock } from '$lib/clock';
 import { deployRows, initialStages, publishState, publishing } from '$lib/projects/deploy';
-import type { DeployOverview, ExportSummary, MetricsRange, ProjectUsage } from '$lib/adapters/api';
+import type { BoardColumn, DeployOverview, ExportSummary, IssueBoard, MetricsRange, ProjectUsage } from '$lib/adapters/api';
+import { moveOnBoard } from '$lib/projects/issues';
 import { toasts } from '$lib/ds/overlays/toasts.svelte';
 import type { PaneView } from '$lib/ds/projects/PaneTabs.svelte';
 import type { SubdomainCheck } from '$lib/ds/projects/SubdomainField.svelte';
@@ -14,6 +15,8 @@ import { getLocale } from '$lib/paraglide/runtime';
 import type { CodeLine } from '$lib/ds/chat/code';
 import { fileTree, firstFile, quoteLines } from '$lib/projects/code';
 import { SandboxRuntime } from '$lib/projects/sandbox.svelte';
+import { DeviceRuntime } from '$lib/projects/device.svelte';
+import { deviceHref } from '$lib/projects/device';
 import { ProjectLive } from '$lib/projects/live.svelte';
 import { distinctInitials, peerFor, pointersIn } from '$lib/projects/peers';
 import { answeredRequests, askLine, movableAsk, myOpenRequest, openRequests, type PublishRequestRow, type QueuedAsk } from '$lib/projects/asks';
@@ -22,7 +25,9 @@ import { page } from '$app/state';
 import type { PageData } from './$types';
 
 /** The desktop's tool sheets (the phone opens the same ones as bottom sheets). */
-export type ToolSheet = 'deployments' | 'domain' | 'monitor' | 'usage' | 'database' | 'settings' | 'people' | 'environment';
+export type ToolSheet = 'deployments' | 'issues' | 'domain' | 'monitor' | 'usage' | 'database' | 'settings' | 'people' | 'environment';
+/** How often an open Issues sheet reads the board again. */
+const BOARD_POLL_MS = 15_000;
 /** A `?open=` link, read once when the workspace opens (each layout opens it its own way). */
 export type OpenRequest = { open: string; file: string | null };
 /** What a new person's invite gave back (People, G10): the link to copy and when it runs out. */
@@ -55,7 +60,7 @@ export class Workspace {
 		// The sandbox runs while the workspace is open.
 		$effect(() => {
 			if (!this.sandboxOn) return;
-			const one = new SandboxRuntime(this.projectId);
+			const one = this.onDevice ? new DeviceRuntime(this.projectId) : new SandboxRuntime(this.projectId);
 			this.runtime = one;
 			void one.start();
 			return () => {
@@ -86,8 +91,15 @@ export class Workspace {
 			const timer = setInterval(() => !document.hidden && void this.loadMonitoring(asked), 30_000);
 			return () => clearInterval(timer);
 		});
+		// The Issues sheet reads the board when it opens, and again while it's open (the crew moves cards too).
 		$effect(() => {
-			// Another project opened in this page starts again from its own month.
+			if (this.sheet !== 'issues' || !this.project.id) return;
+			untrack(() => void this.loadBoard());
+			const timer = setInterval(() => !document.hidden && void this.loadBoard(), BOARD_POLL_MS);
+			return () => clearInterval(timer);
+		});
+		$effect(() => {
+		// Another project opened in this page starts again from its own month.
 			if (this.sheet !== 'usage' || !this.project.id) return;
 			untrack(() => void this.loadUsage(null));
 		});
@@ -256,11 +268,25 @@ export class Workspace {
 	}
 
 	// ── The sandbox ───────────────────────────────────────────────────────────────────────────
-	readonly sandboxOn = $derived(this.data.sandbox);
+	/** The project runs on this device (WebContainer) instead of the sandbox: the person chose "Use your device instead". */
+	readonly onDevice = $derived(Boolean(this.data.deviceRun));
+	/** A runtime serves the preview and the terminal: the backend's sandbox, or this device. */
+	readonly sandboxOn = $derived(this.data.sandbox || this.onDevice);
 	readonly projectId = $derived(this.project.id);
-	runtime = $state<SandboxRuntime | null>(null);
+	runtime = $state<SandboxRuntime | DeviceRuntime | null>(null);
 	readonly sandboxPhase = $derived(this.runtime?.phase ?? 'loading');
 	readonly frame = $derived(this.sandboxOn ? (this.runtime?.previewUrl ?? null) : (this.liveUrl ?? this.staticPreview));
+	/**
+	 * Where "Use your device instead" goes, offered when the sandbox is off or can't be used (it
+	 * failed or stopped): the workspace again, isolated so WebContainer can run (a full load).
+	 */
+	readonly deviceLink = $derived(
+		this.onDevice ? null : !this.data.sandbox ? (this.frame ? null : deviceHref(this.projectId)) : this.sandboxPhase === 'failed' || this.sandboxPhase === 'stopped' ? deviceHref(this.projectId) : null,
+	);
+	/** Leaving the sandbox for the device stops it, so it doesn't keep running (and billing) beside it; best effort. */
+	useDevice = () => {
+		if (this.data.sandbox) void fetch(`/projects/${encodeURIComponent(this.projectId)}/sandbox/stop`, { method: 'POST' }).catch(() => undefined);
+	};
 	/** Ask Koda to fix: the sandbox's error quoted above the composer, on the chat. */
 	askToFix = () => {
 		const error = this.runtime?.error || m.sandbox_failed_body();
@@ -324,6 +350,37 @@ export class Workspace {
 		await invalidate('app:workspace-project');
 		return true;
 	}
+
+	// ── Issues ────────────────────────────────────────────────────────────────────────────────
+	/** The board as the server last had it (a move shows at once, then the server's board replaces it). */
+	board = $state<BoardColumn[] | null>(null);
+	boardFailed = $state(false);
+	async loadBoard() {
+		const response = await fetch(`/projects/${encodeURIComponent(this.project.id)}/issues`).catch(() => null);
+		if (!response?.ok) {
+			this.boardFailed = !this.board;
+			return;
+		}
+		this.board = ((await response.json()) as IssueBoard).columns;
+		this.boardFailed = false;
+	}
+	async #issueAction(body: Record<string, unknown>): Promise<boolean> {
+		const response = await fetch(`/projects/${encodeURIComponent(this.project.id)}/issues`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null);
+		if (response?.ok) return true;
+		toasts.show({ kind: 'error', title: m.board_err(), ...(response && { detail: (await response.text().catch(() => '')) || undefined }) });
+		return false;
+	}
+	moveIssue = async (number: number, columnId: string, index: number) => {
+		const issue = this.board?.flatMap((column) => column.issues).find((one) => one.number === number);
+		if (!this.board || !issue) return;
+		const before = this.board;
+		this.board = moveOnBoard(before, issue, columnId, index);
+		if (!(await this.#issueAction({ action: 'move', number, column: columnId, index }))) this.board = before;
+		await this.loadBoard();
+	};
+	retryIssue = async (number: number) => {
+		if (await this.#issueAction({ action: 'retry', number })) await this.loadBoard();
+	};
 
 	// ── Monitor ───────────────────────────────────────────────────────────────────────────────
 	range = $state<MetricsRange>('24h');
@@ -585,6 +642,11 @@ export class Workspace {
 		this.codeText = file && !file.binary ? (file.content ?? '') : null;
 		this.codeLines = file?.lines ?? null;
 	}
+	/** A whole file quoted above the composer (its own Ask, or dropped on the chat from the tree), on the chat. */
+	quoteFile = (path: string) => {
+		this.quote = { file: path, range: m.code_whole_file(), snippet: '', text: m.code_about_file({ file: path }) };
+		this.workspaceView = 'chat';
+	};
 	askAbout = (from: number, to: number) => {
 		if (!this.codePath || this.codeText === null) return;
 		this.quote = quoteLines(this.codePath, this.codeText.split('\n'), from, to);

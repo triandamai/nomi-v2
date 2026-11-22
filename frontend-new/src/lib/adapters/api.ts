@@ -561,3 +561,29 @@ export type ProjectSecrets = { secrets: { name: string; updated_at: string; upda
 export type ExportSummary = { name: string; files: number; bytes: number; database: 'postgres' | 'sqlite' | 'none' | string; env: string[] };
 /** `GET /api/projects/:id/showcase`: whether the live app is on show in the community. */
 export type ProjectShowcase = { showcase: boolean; blurb: string | null; url: string | null; can_edit: boolean };
+
+// ── Issues (`GET /api/projects/:id/board`, the old app's IssueBoard) ─────────────────────────────
+export type IssueKind = 'task' | 'enhancement' | 'bug';
+export type IssueSeverity = 'low' | 'medium' | 'high' | 'critical';
+export type ProjectIssue = {
+	number: number;
+	title: string;
+	kind: IssueKind;
+	severity: IssueSeverity;
+	status: 'open' | 'closed';
+	column_id: string | null;
+	position: number;
+	/** Dates as YYYY-MM-DD. */
+	due_on: string | null;
+	points: number | null;
+	/** The crew member's agent type ("coding") working it, or who will once it's picked up. */
+	crew_agent: string;
+	assigned_by_agent: string | null;
+	/** What the crew is doing with it; null until it reaches Ready to dev. */
+	crew_state: 'queued' | 'working' | 'done' | 'failed' | null;
+	/** The issue's own chat, once the crew picked it up. */
+	session_id: string | null;
+};
+/** Backlog, Ready to dev, Done and Closed every project has (fixed); the rest are the project's own. */
+export type BoardColumn = { id: string; name: string; position: number; fixed: 'backlog' | 'ready' | 'done' | 'closed' | null; issues: ProjectIssue[] };
+export type IssueBoard = { columns: BoardColumn[] };

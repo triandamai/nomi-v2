@@ -3789,5 +3789,9 @@
 	"studio_inspector_checks": "Pemeriksaan ({count})",
 	"studio_inspector_no_tokens": "Desain ini belum punya token.",
 	"studio_inspector_no_issues": "Tidak ada yang perlu diperbaiki.",
-	"studio_openpencil_copy_svg": "Salin sebagai SVG"
+	"studio_openpencil_copy_svg": "Salin sebagai SVG",
+	"code_line_menu": "Aksi untuk L{n}",
+	"code_line_ask": "Tanya {name} soal baris ini",
+	"code_line_copy": "Salin baris",
+	"code_line_select": "Pilih baris"
 }

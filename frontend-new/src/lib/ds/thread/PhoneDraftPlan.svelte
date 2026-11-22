@@ -13,6 +13,9 @@
 	// the numbered steps, each with its owner (no reorder, reassign or remove: the person tells Nomi
 	// what to change, UX contract G3); a step a revision added marked "+" on accent-bg; and the
 	// estimate in the foot only when there is one.
+	// On purpose, for a phone's width (issue #334): each step's text has the row to itself and its
+	// owner sits under it, so a long step doesn't squeeze into a column beside the chip; an added
+	// step's tint has room around it (8 in, 2 apart) instead of running into its neighbours.
 	type Step = { label: string; owner: { agent: CrewId; name: string }; added?: boolean };
 	type Props = { title: string; version?: number; intro: string; steps: Step[]; estimate?: string };
 	let { title, version, intro, steps, estimate }: Props = $props();
@@ -25,18 +28,20 @@
 		<Tag kind="neutral" label={version && version > 1 ? m.phone_plan_version({ version: String(version) }) : m.draft_tag()} />
 	</header>
 	<p class="px-3.5 pt-3 pb-1 text-ui leading-normal text-text-2">{intro}</p>
-	<ol class="flex flex-col px-3.5 py-1">
+	<ol class="flex flex-col gap-0.5 px-3.5 py-1">
 		{#each steps as step, index (index)}
-			<li class={['flex items-center gap-2.5 py-2', step.added && 'rounded-sm bg-accent-bg']} aria-label={m.phone_plan_step({ n: String(index + 1), owner: step.owner.name })}>
+			<li class={['flex items-start gap-2.5 py-2', step.added && '-mx-2 rounded-sm bg-accent-bg px-2']} aria-label={m.phone_plan_step({ n: String(index + 1), owner: step.owner.name })}>
 				{#if step.added}
-					<span class="font-mono text-label text-accent">+<span class="sr-only">{m.phone_plan_added()}</span></span>
+					<span class="w-4 shrink-0 pt-0.5 font-mono text-label text-accent">+<span class="sr-only">{m.phone_plan_added()}</span></span>
 				{:else}
-					<span class="font-mono text-label text-text-3">{stepNumber(index)}</span>
+					<span class="w-4 shrink-0 pt-0.5 font-mono text-label text-text-3">{stepNumber(index)}</span>
 				{/if}
-				<span class="min-w-0 flex-1 text-ui text-text">{step.label}</span>
-				<span class="inline-flex h-6.5 shrink-0 items-center gap-1.5 rounded-sm pr-2 pl-1 outline -outline-offset-1 outline-border-strong">
-					<Mascot agent={step.owner.agent} size={20} />
-					<span class="text-caption text-text-2">{step.owner.name}</span>
+				<span class="flex min-w-0 flex-1 flex-col items-start gap-1.5">
+					<span class="text-ui wrap-anywhere text-text">{step.label}</span>
+					<span class="inline-flex h-6.5 max-w-full items-center gap-1.5 rounded-sm pr-2 pl-1 outline -outline-offset-1 outline-border-strong">
+						<Mascot agent={step.owner.agent} size={20} />
+						<span class="truncate text-caption text-text-2">{step.owner.name}</span>
+					</span>
 				</span>
 			</li>
 		{/each}

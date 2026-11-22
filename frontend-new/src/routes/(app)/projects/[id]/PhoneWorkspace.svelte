@@ -48,6 +48,7 @@
 	import { requestMeta } from '$lib/projects/asks';
 	import { ago } from '$lib/adapters/time';
 	import SandboxWait from '$lib/projects/SandboxWait.svelte';
+	import UseDevice from '$lib/projects/UseDevice.svelte';
 	import { failedPublish, phoneTree, publishPill, settledLive, type PhoneSheet } from './phone';
 	import type { ToolSheet, Workspace } from './workspace.svelte';
 	import type { PageData } from './$types';
@@ -362,10 +363,13 @@
 					<div class="h-full overflow-y-auto px-4 pt-6 pb-24">
 						{#if ws.sandboxOn}
 							<div aria-live="polite">
-								<SandboxWait phase={ws.sandboxPhase} log={ws.runtime?.log ?? ''} error={ws.runtime?.error ?? null} onretry={() => void ws.runtime?.retry()} />
+								<SandboxWait phase={ws.sandboxPhase} log={ws.runtime?.log ?? ''} error={ws.runtime?.error ?? null} onretry={() => void ws.runtime?.retry()} device={ws.deviceLink ? { href: ws.deviceLink, onclick: ws.useDevice } : undefined} />
 							</div>
 						{:else}
-							<EmptyState icon={Eye} title={m.workspace_nothing_title()} body={ws.project.status === 'building' ? m.workspace_nothing_building() : m.workspace_nothing_body()} />
+							<div class="flex flex-col items-start gap-3">
+								<EmptyState icon={Eye} title={m.workspace_nothing_title()} body={ws.project.status === 'building' ? m.workspace_nothing_building() : m.workspace_nothing_body()} />
+								{#if ws.deviceLink}<UseDevice href={ws.deviceLink} onclick={ws.useDevice} />{/if}
+							</div>
 						{/if}
 					</div>
 				{/if}

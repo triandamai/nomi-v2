@@ -4,6 +4,7 @@
 	import { CREW } from '$lib/ds/agents/crew';
 	import { crewOf } from '$lib/adapters/shell';
 	import PhoneToast from '$lib/ds/mobile/PhoneToast.svelte';
+	import { topLayer } from '$lib/ds/overlays/topLayer';
 	import { newNeedsYou, type NeedsYou } from './needsYou';
 
 	// On a phone, when a crew member in another chat stops for the person's OK while they're elsewhere
@@ -46,19 +47,21 @@
 
 {#if shown}
 	{@const item = shown}
-	<div class="fixed inset-x-2 top-2 z-50" onfocusin={() => (focused = true)} onfocusout={() => (focused = false)}>
-		<PhoneToast
-			kind="info"
-			title={m.phone_notify_toast({ chat: titleOf(item.sessionId), agent: agentName(item.agent) })}
-			action={{
-				label: m.notification_open(),
-				onclick: () => {
-					// Read before clearing: `item` follows `shown`, and is gone once it's null.
-					const sessionId = item.sessionId;
-					shown = null;
-					onopen(sessionId);
-				},
-			}}
-		/>
+	<div class="contents">
+		<div {@attach topLayer} popover="manual" class="fixed inset-x-2 top-2 bottom-auto m-0 w-auto overflow-visible border-0 bg-transparent p-0" onfocusin={() => (focused = true)} onfocusout={() => (focused = false)}>
+			<PhoneToast
+				kind="info"
+				title={m.phone_notify_toast({ chat: titleOf(item.sessionId), agent: agentName(item.agent) })}
+				action={{
+					label: m.notification_open(),
+					onclick: () => {
+						// Read before clearing: `item` follows `shown`, and is gone once it's null.
+						const sessionId = item.sessionId;
+						shown = null;
+						onopen(sessionId);
+					},
+				}}
+			/>
+		</div>
 	</div>
 {/if}
