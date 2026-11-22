@@ -6,7 +6,7 @@ import * as tools from '$lib/server/workspace';
 import { changeDomain, loadDeploy, loadDomain, loadProject, publish, rollBack, takeDown, transfer } from '$lib/server/workspace';
 import { deleteProject, renameProject } from '$lib/server/projects';
 import { usesSandbox } from '$lib/projects/sandbox';
-import { wantsDevice } from '$lib/projects/device';
+import { DEVICE_PARAM, DEVICE_VALUE } from '$lib/projects/device';
 import { sealPreview } from '$lib/server/previewGrant';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -36,7 +36,8 @@ export const load: PageServerLoad = async (event) => {
 	// A static site shows its own files, sandboxed, through a grant made for this page (previewGrant.ts).
 	const token = event.locals.accessToken;
 	const preview = loaded.project.stack === 'static' && loaded.project.files.some((file) => file.path === 'index.html') && token ? `/projects/${id}/preview/~${sealPreview(id, token)}/` : null;
-	return { ...chat, preview, title: loaded.project.name, project: loaded.project, live: loaded.live, domain: loaded.domain, deploy, address, people, secrets, showcase, sandbox: usesSandbox(sandbox), deviceRun: wantsDevice(event.url), database, ownDomains, design: designLoaded.studio };
+	// Only `run` is read from the address (not the path): reading more would run this whole load again on every `?open=` tidy.
+	return { ...chat, preview, title: loaded.project.name, project: loaded.project, live: loaded.live, domain: loaded.domain, deploy, address, people, secrets, showcase, sandbox: usesSandbox(sandbox), deviceRun: event.url.searchParams.get(DEVICE_PARAM) === DEVICE_VALUE, database, ownDomains, design: designLoaded.studio };
 };
 
 const refused = (sent: { status: number; message: string }) => fail(sent.status, { message: sent.message || m.action_failed() });

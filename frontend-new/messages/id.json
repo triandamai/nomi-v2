@@ -3408,7 +3408,7 @@
 	"device_load_failed": "Tidak bisa memuat file proyek ({status}).",
 	"device_install_failed": "npm install gagal. Lihat terminal.",
 	"device_dev_stopped": "Server dev berhenti (kode keluar {code}). Lihat terminal.",
-	"code_line_menu": "Aksi untuk baris {n}",
+	"code_line_menu": "Aksi untuk L{n}",
 	"code_line_ask": "Tanya {name} soal baris ini",
 	"code_line_copy": "Salin baris",
 	"code_line_select": "Pilih baris",

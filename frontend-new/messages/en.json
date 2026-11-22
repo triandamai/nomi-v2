@@ -3408,7 +3408,7 @@
 	"device_load_failed": "Couldn’t load the project’s files ({status}).",
 	"device_install_failed": "npm install failed. See the terminal.",
 	"device_dev_stopped": "The dev server stopped (exit code {code}). See the terminal.",
-	"code_line_menu": "Actions for line {n}",
+	"code_line_menu": "Actions for L{n}",
 	"code_line_ask": "Ask {name} about this line",
 	"code_line_copy": "Copy line",
 	"code_line_select": "Select line",

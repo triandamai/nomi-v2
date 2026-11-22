@@ -176,7 +176,7 @@ describe('CodeView folders, line menu and drag', () => {
 	it('opens a line’s menu from its gutter “+” and asks Koda about the line', async () => {
 		const onasklines = vi.fn();
 		await render(CodeView, { tree, path: 'a.svelte', lines, onask: () => {}, onasklines });
-		const plus = page.getByRole('button', { name: 'Actions for line 2' });
+		const plus = page.getByRole('button', { name: 'Actions for L2' });
 		expect(getComputedStyle(plus.element()).opacity).toBe('0');
 		await page.getByRole('button', { name: 'Line 2', exact: true }).hover();
 		await expect.poll(() => getComputedStyle(plus.element()).opacity).toBe('1');
@@ -190,10 +190,10 @@ describe('CodeView folders, line menu and drag', () => {
 
 	it('closes the line menu with Escape, focus back on its “+”', async () => {
 		await render(CodeView, { tree, path: 'a.svelte', lines, onask: () => {}, onasklines: () => {} });
-		await page.getByRole('button', { name: 'Actions for line 3' }).click();
+		await page.getByRole('button', { name: 'Actions for L3' }).click();
 		await userEvent.keyboard('{Escape}');
 		await expect.element(page.getByRole('menu')).not.toBeInTheDocument();
-		expect(document.activeElement?.getAttribute('aria-label')).toBe('Actions for line 3');
+		expect(document.activeElement?.getAttribute('aria-label')).toBe('Actions for L3');
 	});
 });
 
