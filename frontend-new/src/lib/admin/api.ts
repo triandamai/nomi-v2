@@ -368,3 +368,89 @@ export type ReceivedEvent = {
 };
 
 export type EventFeed = { events: ReceivedEvent[]; page: number; pages: number; total: number; types: unknown };
+
+// Built-in crew, projects, sandboxes and billing (admin_crew.rs, admin_projects.rs, admin_billing.rs) --
+
+/** A built-in crew member, switched on or off for everyone. Nomi is `locked` (always on). */
+export type AdminCrewMember = { agent_type: string; name: string; role: string; enabled: boolean; locked: boolean };
+
+export type SandboxPhase = 'running' | 'waking' | 'stopping' | 'stopped' | 'idle' | 'error';
+
+export type AdminProject = {
+	id: string;
+	name: string;
+	owner_email: string | null;
+	workspace: string | null;
+	runtime: string;
+	created_at: string;
+	sandbox_phase: SandboxPhase | null;
+	sandbox_records: number;
+	open_issues: number;
+	issues: number;
+};
+
+export type AdminSandbox = {
+	id: string;
+	project_id: string;
+	project_name: string;
+	provider: string;
+	sandbox_id: string;
+	state: string;
+	phase: SandboxPhase;
+	current: boolean;
+	created_at: string;
+	updated_at: string;
+	ended_at: string | null;
+};
+
+export type AdminIssue = {
+	number: number;
+	title: string;
+	kind: string;
+	severity: string;
+	status: 'open' | 'closed';
+	column_name: string | null;
+	created_at: string;
+	updated_at: string;
+	closed_at: string | null;
+};
+
+export type AdminProjectIssues = { project: { id: string; name: string }; issues: AdminIssue[] };
+
+/** A length of time a plan can be paid for, and what it takes off. */
+export type BillingTerm = { id: string; months: number; discount_percent: number; label: string; is_active: boolean; sort_order: number };
+
+export type AdminCoupon = {
+	id: string;
+	code: string;
+	description: string | null;
+	discount_kind: 'percent' | 'amount';
+	discount_value: number;
+	max_redemptions: number | null;
+	per_user_limit: number;
+	starts_at: string | null;
+	ends_at: string | null;
+	/** Empty: any plan. */
+	plan_ids: string[];
+	min_months: number;
+	first_payment_only: boolean;
+	is_active: boolean;
+	redemptions: number;
+};
+
+export type PaymentStatus = 'pending' | 'paid' | 'expired' | 'failed' | 'cancelled';
+
+export type AdminPayment = {
+	id: string;
+	plan_name: string;
+	term_months: number;
+	amount: number;
+	currency: string;
+	status: PaymentStatus;
+	paid_at: string | null;
+	payment_method: string | null;
+	created_at: string;
+	user_email: string | null;
+};
+
+export type AdminPaymentPage = { items: AdminPayment[]; total: number; page: number; page_size: number };

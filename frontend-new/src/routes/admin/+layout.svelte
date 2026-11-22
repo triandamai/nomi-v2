@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Component } from 'svelte';
-	import { Activity, Bell, Bot, Brain, ChartColumn, Construction, Cpu, CreditCard, LayoutDashboard, LifeBuoy, Plug, Ship, SlidersHorizontal, Users, Wrench, type LucideProps } from '@lucide/svelte';
+	import { Activity, Bell, Bot, Box, Brain, CalendarRange, ChartColumn, Construction, Cpu, CreditCard, FolderKanban, LayoutDashboard, LifeBuoy, Plug, Receipt, Ship, SlidersHorizontal, Ticket, ToggleRight, Users, Wrench, type LucideProps } from '@lucide/svelte';
 	import { navigating, page } from '$app/state';
 	import { m } from '$lib/paraglide/messages';
 	import { getLocale } from '$lib/paraglide/runtime';
@@ -30,12 +30,18 @@
 		usage: ChartColumn,
 		users: Users,
 		plans: CreditCard,
+		terms: CalendarRange,
+		coupons: Ticket,
+		payments: Receipt,
 		notifications: Bell,
 		models: Cpu,
 		providers: Plug,
 		embedding: Brain,
 		tools: Wrench,
+		crew: ToggleRight,
 		dynamicAgents: Bot,
+		projects: FolderKanban,
+		sandboxes: Box,
 		support: LifeBuoy,
 		maintenance: Construction,
 		integrations: Ship,
