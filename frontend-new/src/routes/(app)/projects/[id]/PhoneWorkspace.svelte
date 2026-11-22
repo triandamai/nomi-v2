@@ -239,7 +239,7 @@
 
 <PhoneToastRegion />
 
-<div data-phone-workspace class="flex h-dvh flex-col overflow-hidden overscroll-none bg-bg text-text">
+<div data-phone-workspace class="fixed inset-x-0 flex flex-col overflow-hidden overscroll-none bg-bg text-text" style="top: var(--viewport-top, 0px); height: var(--viewport-height, 100dvh);">
 	{#if ws.followed}
 		<PhoneFollowBar name={ws.followed.name} peer={ws.followed.peer} where={whereLabel(ws.followed.view, ws.followed.path, ws.where)} onstop={() => (ws.following = null)} />
 	{/if}
