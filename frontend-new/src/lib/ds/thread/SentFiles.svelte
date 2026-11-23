@@ -24,6 +24,9 @@
 	// a column, 6 apart, of 240 cards [10,12] with the 14 corners and a 32 tile.
 	type Props = { files: SentFileItem[]; phone?: boolean };
 	let { files, phone = false }: Props = $props();
+
+	const grid = $derived(files.length > 1);
+	const allImages = $derived(files.length > 0 && files.every((file) => Boolean(file.image) && !file.locked));
 </script>
 
 {#snippet card(file: SentFileItem)}
@@ -36,23 +39,49 @@
 	</span>
 {/snippet}
 
-<ul aria-label={m.files_sent_files()} class={['flex', phone ? 'flex-col items-end gap-1.5' : 'flex-wrap items-end justify-end gap-2']}>
+<ul
+	aria-label={m.files_sent_files()}
+	class={[
+		grid ? 'grid grid-cols-2' : 'flex',
+		grid ? (phone ? 'w-full max-w-72 gap-1.5' : 'w-102 max-w-full gap-2') : phone ? 'flex-col items-end gap-1.5' : 'flex-wrap items-end justify-end gap-2',
+	]}
+>
 	{#each files as file, index (index)}
-		<li class="flex max-w-full">
+		{@const spanFull = grid && files.length % 2 === 1 && index === files.length - 1}
+		<li class={['flex min-w-0 max-w-full', spanFull && 'col-span-2']}>
 			{#if file.image && !file.locked}
+				{@const imgClass = [
+					'rounded-sm bg-surface-2 object-cover outline -outline-offset-1 outline-border',
+					grid ? (allImages ? (phone ? 'h-32 w-full' : 'h-36 w-full') : 'h-full min-h-13 w-full') : 'h-13 w-22',
+				]}
 				{#if file.onopen}
-					<button type="button" aria-label={m.files_open_name({ name: file.name })} class="inline-flex cursor-pointer rounded-sm outline-offset-2" onclick={file.onopen}>
-						<img src={file.image} alt={file.name} class="h-13 w-22 rounded-sm bg-surface-2 object-cover outline -outline-offset-1 outline-border" />
+					<button type="button" aria-label={m.files_open_name({ name: file.name })} class={['inline-flex cursor-pointer rounded-sm outline-offset-2', grid && 'w-full']} onclick={file.onopen}>
+						<img src={file.image} alt={file.name} class={imgClass} />
 					</button>
 				{:else}
-					<img src={file.image} alt={file.name} class="h-13 w-22 rounded-sm bg-surface-2 object-cover outline -outline-offset-1 outline-border" />
+					<img src={file.image} alt={file.name} class={imgClass} />
 				{/if}
 			{:else if file.onopen}
-				<button type="button" aria-label={m.files_open_name({ name: file.name })} class={['flex max-w-full cursor-pointer items-center gap-2.5 bg-surface outline -outline-offset-1 outline-border hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus', phone ? 'w-60 rounded-xl px-3 py-2.5' : 'w-50 rounded-sm px-2.5 py-2']} onclick={file.onopen}>
+				<button
+					type="button"
+					aria-label={m.files_open_name({ name: file.name })}
+					class={[
+						'flex max-w-full cursor-pointer items-center gap-2.5 bg-surface outline -outline-offset-1 outline-border hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus',
+						grid ? 'w-full' : phone ? 'w-60' : 'w-50',
+						phone ? 'rounded-xl px-3 py-2.5' : 'rounded-sm px-2.5 py-2',
+					]}
+					onclick={file.onopen}
+				>
 					{@render card(file)}
 				</button>
 			{:else}
-				<span class={['flex max-w-full items-center gap-2.5 bg-surface outline -outline-offset-1 outline-border', phone ? 'w-60 rounded-xl px-3 py-2.5' : 'w-50 rounded-sm px-2.5 py-2']}>{@render card(file)}</span>
+				<span
+					class={[
+						'flex max-w-full items-center gap-2.5 bg-surface outline -outline-offset-1 outline-border',
+						grid ? 'w-full' : phone ? 'w-60' : 'w-50',
+						phone ? 'rounded-xl px-3 py-2.5' : 'rounded-sm px-2.5 py-2',
+					]}>{@render card(file)}</span
+				>
 			{/if}
 		</li>
 	{/each}
