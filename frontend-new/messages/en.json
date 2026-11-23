@@ -3672,5 +3672,8 @@
 	"release_notes_body": "What changed in this version of Nomi.",
 	"release_notes_earlier": "Earlier versions",
 	"release_notes_on_github": "View on GitHub",
-	"release_notes_done": "Got it"
+	"release_notes_done": "Got it",
+	"phone_general_off": "Off",
+	"phone_general_quiet_sub": "Reminders wait until they end",
+	"phone_general_keep": "Keep my account"
 }

@@ -3672,5 +3672,8 @@
 	"release_notes_body": "Apa saja yang berubah di versi Nomi ini.",
 	"release_notes_earlier": "Versi sebelumnya",
 	"release_notes_on_github": "Lihat di GitHub",
-	"release_notes_done": "Oke"
+	"release_notes_done": "Oke",
+	"phone_general_off": "Mati",
+	"phone_general_quiet_sub": "Pengingat menunggu sampai selesai",
+	"phone_general_keep": "Tetap simpan akunku"
 }

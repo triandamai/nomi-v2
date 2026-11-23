@@ -77,7 +77,8 @@ test('You holds the settings pages and Log out: a page opened from it goes back 
 	await page.getByRole('region', { name: 'Account' }).getByRole('link', { name: /General/ }).click();
 	await expect(page).toHaveURL(/\/settings\/general$/);
 
-	await page.getByRole('link', { name: 'Back to You' }).click();
+	// General is its own phone screen: its back bar names You.
+	await page.getByRole('main').getByRole('link', { name: 'You' }).click();
 	await page.getByRole('button', { name: 'Log out' }).click();
 	await expect(page).toHaveURL(/\/sign-in$/);
 	expect((await context.cookies()).map((cookie) => cookie.name)).not.toContain('refresh_token');

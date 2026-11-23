@@ -90,6 +90,10 @@
 	const isSettings = $derived(!!page.route.id?.startsWith('/(app)/settings') && !page.error);
 	// Settings' own index is the You tab on a phone, with its large title.
 	const isYou = $derived(page.route.id === '/(app)/settings' && !page.error);
+	// Settings pages that are their own phone screens (Flow / Mobile — You & Settings): they draw the
+	// back bar to You and their title; the rest keep the settings top bar with its back link.
+	const PHONE_SETTINGS = new Set(['/(app)/settings/general']);
+	const ownSettingsTop = $derived(!page.error && PHONE_SETTINGS.has(page.route.id ?? ''));
 	const path = $derived(page.url.pathname);
 
 	// Another page on its way: its server load runs before anything changes, so after a moment its
@@ -171,7 +175,7 @@
 			// Home, the Inbox and You draw their own large titles (Flow / Mobile — Home, Inbox & You);
 			// You holds Settings' pages and Log out, so it needs no drawer: a settings page has a back link
 			// to it instead.
-			return isChats || isHome || inThread || isProjects || isInbox || isYou;
+			return isChats || isHome || inThread || isProjects || isInbox || isYou || ownSettingsTop;
 		},
 	});
 	// What the chat page says about itself as it changes (renamed, pinned, moved, deleted).

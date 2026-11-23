@@ -32,7 +32,7 @@
 		{
 			label: m.settings_ai(),
 			rows: [
-				{ href: '/settings/crew', icon: Users, label: m.settings_crew(), meta: data.crew.rows.length ? String(data.crew.rows.length) : undefined },
+				{ href: '/settings/crew', icon: Users, label: m.settings_crew(), meta: data.crew.rows.length ? String(data.crew.rows.length) : undefined, mono: true },
 				{ href: '/settings/models', icon: Cpu, label: m.settings_models() },
 				{ href: '/settings/memory', icon: Brain, label: m.settings_memory() },
 			],
@@ -40,7 +40,7 @@
 		{
 			label: m.settings_workspace(),
 			rows: [
-				{ href: '/settings/workspaces', icon: Building2, label: m.settings_workspaces(), meta: data.workspaces.length ? String(data.workspaces.length) : undefined },
+				{ href: '/settings/workspaces', icon: Building2, label: m.settings_workspaces(), meta: data.workspaces.length ? String(data.workspaces.length) : undefined, mono: true },
 				{ href: '/settings/connections', icon: Plug, label: m.settings_connections() },
 			],
 		},
