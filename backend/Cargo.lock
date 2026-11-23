@@ -3424,6 +3424,7 @@ dependencies = [
  "nomi-agent-core",
  "nomi-llm",
  "nomi-test-support",
+ "nomi-tools-money",
  "serde_json",
  "sqlx",
  "tokio",
@@ -3473,6 +3474,7 @@ dependencies = [
  "nomi-agent-core",
  "nomi-llm",
  "nomi-test-support",
+ "nomi-tools-reminders",
  "serde",
  "serde_json",
  "sqlx",
@@ -3831,6 +3833,39 @@ dependencies = [
  "sqlx",
  "tokio",
  "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "nomi-tools-money"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "chrono-tz",
+ "nomi-llm",
+ "nomi-test-support",
+ "nomi-tool",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "nomi-tools-reminders"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "chrono-tz",
+ "nomi-llm",
+ "nomi-test-support",
+ "nomi-tool",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
  "uuid",
 ]
 
