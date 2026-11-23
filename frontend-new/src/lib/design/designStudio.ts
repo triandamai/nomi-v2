@@ -116,13 +116,16 @@ export function penUrl(preview: StudioPreview, path: string): string {
 }
 
 /**
- * One `.pen` document from a version's `.pen` files: their frames side by side and their
- * variables together. Null when none of them reads as a document with frames.
+ * One `.pen` document from a version's `.pen` files: their frames side by side, their
+ * variables together and their themes joined (an axis several files declare keeps each value
+ * once, in the order first seen; a variable's per-theme values only resolve when the document
+ * declares its themes). Null when none of them reads as a document with frames.
  */
 export function mergePenDocuments(contents: string[]): string | null {
 	const children: unknown[] = [];
 	let variables: Record<string, unknown> | unknown[] | null = null;
 	let version = '1.0';
+	const themes: Record<string, string[]> = {};
 	for (const content of contents) {
 		let doc: unknown;
 		try {
@@ -131,15 +134,27 @@ export function mergePenDocuments(contents: string[]): string | null {
 			continue;
 		}
 		if (typeof doc !== 'object' || doc === null) continue;
-		const pen = doc as { version?: unknown; children?: unknown; variables?: unknown };
+		const pen = doc as { version?: unknown; children?: unknown; variables?: unknown; themes?: unknown };
 		if (!Array.isArray(pen.children) || pen.children.length === 0) continue;
 		if (typeof pen.version === 'string') version = pen.version;
 		children.push(...pen.children);
 		if (Array.isArray(pen.variables)) variables = [...(Array.isArray(variables) ? variables : []), ...pen.variables];
 		else if (pen.variables && typeof pen.variables === 'object') variables = { ...(variables && !Array.isArray(variables) ? variables : {}), ...(pen.variables as Record<string, unknown>) };
+		if (pen.themes && typeof pen.themes === 'object' && !Array.isArray(pen.themes)) {
+			for (const [axis, values] of Object.entries(pen.themes as Record<string, unknown>)) {
+				if (!Array.isArray(values)) continue;
+				const known = (themes[axis] ??= []);
+				for (const value of values) if (typeof value === 'string' && !known.includes(value)) known.push(value);
+			}
+		}
 	}
 	if (children.length === 0) return null;
-	return JSON.stringify(variables ? { version, variables, children } : { version, children });
+	return JSON.stringify({
+		version,
+		...(Object.keys(themes).length > 0 ? { themes } : {}),
+		...(variables ? { variables } : {}),
+		children
+	});
 }
 
 /** Whether a version is drawn from `.pen` files rather than shown as HTML pages. */

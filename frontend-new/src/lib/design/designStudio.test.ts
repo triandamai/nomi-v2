@@ -221,6 +221,20 @@ describe('the .pen canvas', () => {
 		expect(mergePenDocuments(['', '{}'])).toBeNull();
 	});
 
+	it('keeps the themes of the .pen files, joining the values of an axis several files declare', () => {
+		const themed = (id: string, themes: Record<string, string[]>) =>
+			JSON.stringify({ version: '1.0', themes, children: [{ id, type: 'frame' }] });
+		const merged = JSON.parse(
+			mergePenDocuments([
+				themed('home', { theme: ['light', 'dark'] }),
+				pen('plain'),
+				themed('menu', { theme: ['dark', 'contrast'], density: ['compact', 'comfy'] })
+			]) as string
+		);
+		expect(merged.themes).toEqual({ theme: ['light', 'dark', 'contrast'], density: ['compact', 'comfy'] });
+		expect(JSON.parse(mergePenDocuments([pen('home')]) as string).themes).toBeUndefined();
+	});
+
 	it('draws a version on the canvas unless it is made of HTML pages', () => {
 		expect(isPenPreview({ ...base, pages: [{ path: 'design-system', title: 'System' }] })).toBe(true);
 		expect(isPenPreview({ ...base, pages: [{ path: 'index.html', title: 'Home' }], pen_files: ['canvas.pen'] })).toBe(true);
