@@ -1,4 +1,4 @@
-import { expect, test } from './support/test';
+import { expect, test } from '@playwright/test';
 
 // The static gallery (`npm run build:gallery`) works from any path on any static host: the pages
 // render with their styles and fonts, hydrate, switch theme and move between the sheets.

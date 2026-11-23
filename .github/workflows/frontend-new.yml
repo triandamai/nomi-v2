@@ -252,14 +252,14 @@ jobs:
         run: npm ci
 
       - name: Download unit + smoke coverage
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v6
         continue-on-error: true
         with:
           name: frontend-new-coverage-unit-smoke
           path: frontend-new/coverage-parts
 
       - name: Download backend E2E coverage
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v6
         continue-on-error: true
         with:
           name: frontend-new-coverage-e2e-backend
