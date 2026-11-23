@@ -5,6 +5,8 @@
 	export type SettingsRow = {
 		/** Where the row goes (a page); without it, `onclick` makes it a button (a sheet, a screen). */
 		href?: string;
+		/** The link is a file to save (a CSV), not a page. */
+		download?: boolean;
 		onclick?: () => void;
 		icon?: Component<LucideProps>;
 		/** Leads the row in place of the icon (a crew member's mascot). */
@@ -83,7 +85,7 @@
 						<span class="inline-flex shrink-0 pointer-coarse:p-2"><Toggle label={row.label} checked={row.toggle.checked} disabled={row.toggle.disabled} onchange={row.toggle.onchange} /></span>
 					</div>
 				{:else if row.href}
-					<a href={row.href} class={['flex w-full items-center gap-3 px-3.5 outline-offset-2 focus-visible:outline-2 focus-visible:outline-focus', row.sub ? 'py-3' : 'h-13']}>{@render body()}</a>
+					<a href={row.href} download={row.download ? '' : undefined} class={['flex w-full items-center gap-3 px-3.5 outline-offset-2 focus-visible:outline-2 focus-visible:outline-focus', row.sub ? 'py-3' : 'h-13']}>{@render body()}</a>
 				{:else if row.onclick}
 					<button type="button" aria-pressed={row.chosen === undefined ? undefined : row.chosen} disabled={row.busy} class={['flex w-full cursor-pointer items-center gap-3 px-3.5 outline-offset-2 focus-visible:outline-2 focus-visible:outline-focus disabled:cursor-default disabled:opacity-60', row.sub ? 'py-3' : 'h-13']} onclick={row.onclick}>{@render body()}</button>
 				{:else}

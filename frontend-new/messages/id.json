@@ -3681,5 +3681,8 @@
 	"phone_profile_busiest": "Paling aktif {day}",
 	"phone_profile_name_sub": "Cara namamu tampil di Nomi.",
 	"phone_profile_photo": "Foto",
-	"phone_profile_more": "Lainnya untuk profilmu"
+	"phone_profile_more": "Lainnya untuk profilmu",
+	"phone_plan_month": "Bulan ini",
+	"phone_plan_months": "Bulan lain",
+	"phone_plan_allowance": "{allowance} token sebulan"
 }

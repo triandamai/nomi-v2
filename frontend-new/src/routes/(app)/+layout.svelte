@@ -92,7 +92,7 @@
 	const isYou = $derived(page.route.id === '/(app)/settings' && !page.error);
 	// Settings pages that are their own phone screens (Flow / Mobile — You & Settings): they draw the
 	// back bar to You and their title; the rest keep the settings top bar with its back link.
-	const PHONE_SETTINGS = new Set(['/(app)/settings/general', '/(app)/settings/profile']);
+	const PHONE_SETTINGS = new Set(['/(app)/settings/general', '/(app)/settings/profile', '/(app)/settings/plan']);
 	const ownSettingsTop = $derived(!page.error && PHONE_SETTINGS.has(page.route.id ?? ''));
 	const path = $derived(page.url.pathname);
 

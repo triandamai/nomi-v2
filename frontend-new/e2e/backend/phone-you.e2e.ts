@@ -2,6 +2,8 @@ import { expect, test } from '@playwright/test';
 import { BACKEND_URL } from './support/env';
 import { api, createAccount, signInAs, type Account } from './support/accounts';
 import { codeFor } from './support/mailpit';
+import { seedUsage } from './support/seed';
+import { readFile } from 'node:fs/promises';
 
 // The You flow on a phone against the real backend (Flow / Mobile — You & Settings, EtSi2): each
 // settings page is its own screen pushed from You, its rows show what's set, picking opens a sheet,
@@ -183,4 +185,54 @@ test('Profile on a phone: the photo is changed from the header and removed from 
 	await page.getByRole('dialog', { name: 'Photo' }).getByRole('button', { name: 'Remove' }).click();
 	await expect(page.getByText('Photo removed')).toBeVisible();
 	await expect.poll(async () => (await profileOf(account)).avatar_url).toBeNull();
+});
+
+test('Plan & usage on a phone: the plan first, Compare plans in a sheet, the month below, other months off ⋯', async ({ page, context }) => {
+	const account = await createAccount();
+	await seedUsage(account.email, { model: 'deepseek-flash', input: 3_000, output: 500, costUsd: 0.05 });
+	await seedUsage(account.email, { model: 'gemini-flash', input: 1_000, output: 200, costUsd: 0.01 });
+	await signInAs(context, account);
+	await page.goto('/settings', { waitUntil: 'networkidle' });
+	await page.getByRole('link', { name: 'Plan & usage' }).click();
+	await expect(page).toHaveURL(/\/settings\/plan$/);
+	await expect(page.getByRole('heading', { level: 1, name: 'Plan & usage' })).toBeVisible();
+	await expect(page.getByRole('banner')).toBeHidden();
+	await expect(page.getByRole('meter', { name: /^4\.7K \/ .+ tokens · \d+% used$/ })).toBeVisible();
+	await expect(page.getByText(/^resets /)).toBeVisible();
+
+	// The month: its figures, a bar a day, and by model.
+	await expect(page.getByRole('definition').filter({ hasText: '$0.06' })).toBeVisible();
+	await expect(page.getByRole('definition').filter({ hasText: 'across 2 models' })).toBeVisible();
+	await expect(page.getByRole('list', { name: /^Each day of / })).toBeVisible();
+	await expect(page.getByRole('region', { name: 'By model' }).getByText('deepseek-flash')).toBeVisible();
+	await expect(page.getByRole('region', { name: 'By model' }).getByText('3.5K')).toBeVisible();
+
+	// Compare plans: a sheet; Free is theirs, Pro has its waitlist, and joining it stays joined.
+	await page.getByRole('button', { name: 'Compare plans' }).click();
+	const plans = page.getByRole('dialog', { name: 'Compare plans' });
+	await expect(plans.getByRole('article', { name: 'Free' }).getByText('Your plan')).toBeVisible();
+	const pro = plans.getByRole('article', { name: 'Pro' });
+	await expect(pro.getByText('Coming soon')).toBeVisible();
+	await pro.getByRole('button', { name: 'Join the waitlist' }).click();
+	await expect(pro.getByText('You’re on the waitlist')).toBeVisible();
+	await page.keyboard.press('Escape');
+	await expect(plans).toBeHidden();
+
+	// Other months: picked from a sheet; the month before has nothing used.
+	await page.getByRole('button', { name: 'Other months' }).click();
+	const months = page.getByRole('dialog', { name: 'Other months' });
+	await expect(months.locator('button[aria-pressed="true"]')).toHaveCount(1);
+	await months.locator('button[aria-pressed="false"]').first().click();
+	await expect(page).toHaveURL(/\?month=\d{4}-\d{2}$/);
+	await expect(page.getByRole('heading', { level: 2, name: /^Usage in / })).toBeVisible();
+	await expect(page.getByText('nothing used yet')).toBeVisible();
+
+	// Export CSV is a row, and saves the month shown.
+	await page.getByRole('button', { name: 'Other months' }).click();
+	await page.getByRole('dialog', { name: 'Other months' }).locator('button[aria-pressed]').first().click();
+	await expect(page.getByRole('heading', { level: 2, name: 'This month' })).toBeVisible();
+	const download = page.waitForEvent('download');
+	await page.getByRole('link', { name: 'Export usage CSV' }).click();
+	const csv = await readFile((await (await download).path())!, 'utf8');
+	expect(csv).toContain('deepseek-flash,nomi,3500,1,0.05');
 });

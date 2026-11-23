@@ -3681,5 +3681,8 @@
 	"phone_profile_busiest": "Most active {day}",
 	"phone_profile_name_sub": "How your name shows across Nomi.",
 	"phone_profile_photo": "Photo",
-	"phone_profile_more": "More for your profile"
+	"phone_profile_more": "More for your profile",
+	"phone_plan_month": "This month",
+	"phone_plan_months": "Other months",
+	"phone_plan_allowance": "{allowance} tokens a month"
 }
