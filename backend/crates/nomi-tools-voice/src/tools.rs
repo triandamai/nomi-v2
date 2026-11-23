@@ -29,6 +29,9 @@ impl Tool for Speak {
     fn definition(&self) -> ToolDefinition {
         crate::speak_tool_definition(self.copy.description)
     }
+    fn keywords(&self) -> &'static [&'static str] {
+        &["voice", "audio", "aloud", "say", "recording"]
+    }
     fn group(&self) -> &'static str {
         GROUP
     }

@@ -23,6 +23,14 @@ impl Tool for RecordTool {
     fn group(&self) -> &'static str {
         crate::GROUP
     }
+    fn keywords(&self) -> &'static [&'static str] {
+        match self.definition.name.as_str() {
+            crate::SAVE_RECORD_TOOL_NAME => &["store", "remember", "note", "collection", "keep"],
+            crate::LIST_RECORDS_TOOL_NAME => &["records", "notes", "collection", "saved", "lookup"],
+            crate::UPDATE_RECORD_TOOL_NAME => &["edit", "change", "record", "collection"],
+            _ => &["remove", "forget", "record", "collection"],
+        }
+    }
     fn approval(&self) -> Approval {
         Approval::Never
     }

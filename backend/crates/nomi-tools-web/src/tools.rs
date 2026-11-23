@@ -28,6 +28,9 @@ impl Tool for WebSearch {
     fn definition(&self) -> ToolDefinition {
         crate::web_search_tool_definition()
     }
+    fn keywords(&self) -> &'static [&'static str] {
+        &["internet", "search", "lookup", "news", "google"]
+    }
     fn group(&self) -> &'static str {
         GROUP
     }
@@ -54,6 +57,9 @@ pub struct ReadWebPage;
 impl Tool for ReadWebPage {
     fn definition(&self) -> ToolDefinition {
         crate::read_web_page_tool_definition()
+    }
+    fn keywords(&self) -> &'static [&'static str] {
+        &["url", "website", "link", "browse", "fetch"]
     }
     fn group(&self) -> &'static str {
         GROUP

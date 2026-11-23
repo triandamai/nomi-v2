@@ -414,7 +414,7 @@ pub(super) async fn resolve_tool_batch_in_reply(
             } else if let Some(tool) = registry
                 .tool_catalog()
                 .and_then(|c| c.get(name))
-                .filter(|t| t.approval() == Approval::Never && auto_offered_to(*t, agent))
+                .filter(|t| t.approval() == Approval::Never && offered_to(*t, agent))
             {
                 // A generic tool this agent is offered (web, records, reminders, background
                 // tasks, speaking, attached files) runs straight away.

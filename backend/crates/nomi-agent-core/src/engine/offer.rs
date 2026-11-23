@@ -50,6 +50,11 @@ pub fn auto_offered_to(tool: &dyn Tool, agent: &dyn SubAgent) -> bool {
     }
 }
 
+/// Whether `agent` gets `tool`: automatically, or because it was granted the tool.
+pub fn offered_to(tool: &dyn Tool, agent: &dyn SubAgent) -> bool {
+    auto_offered_to(tool, agent) || agent.granted_tools().iter().any(|g| *g == tool.definition().name)
+}
+
 /// The agents a reminder can be handed to. Sora takes no reminders while she is off for this person.
 fn reminder_targets(registry: &AgentRegistry, off: &HashSet<String>) -> Vec<String> {
     let mut targets = registry.reminder_target_agent_types();
@@ -57,13 +62,14 @@ fn reminder_targets(registry: &AgentRegistry, off: &HashSet<String>) -> Vec<Stri
     targets
 }
 
-/// The catalog tools `agent` gets automatically this turn, in catalog order, kept to those
-/// `keep` picks: switched on, ready, and offered by the tool for this conversation.
+/// The generic catalog tools `agent` gets this turn (automatically or by grant), in catalog
+/// order, kept to those `keep` picks: switched on, ready, and offered by the tool for this
+/// conversation. Granted area tools come with the agent's own tools instead.
 fn catalog_offer(agent: &dyn SubAgent, registry: &AgentRegistry, inputs: &OfferInputs, offer: &OfferContext<'_>, keep: impl Fn(&dyn Tool) -> bool) -> Vec<ToolDefinition> {
     let Some(catalog) = registry.tool_catalog() else { return Vec::new() };
     catalog
         .in_registration_order()
-        .filter(|t| keep(*t) && auto_offered_to(*t, agent))
+        .filter(|t| t.auto_offer() != AutoOffer::GrantOnly && keep(*t) && offered_to(*t, agent))
         .filter(|t| {
             let name = t.definition().name;
             inputs.switches.allows(&name) && !inputs.not_ready.contains(&name)

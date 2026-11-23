@@ -42,6 +42,9 @@ impl Tool for RunBackgroundTask {
     fn definition(&self) -> ToolDefinition {
         crate::run_background_task_tool_definition()
     }
+    fn keywords(&self) -> &'static [&'static str] {
+        &["long", "command", "job", "async", "wait"]
+    }
     background_properties!();
     async fn execute(&self, conn: &mut PoolConnection<Postgres>, ctx: &ToolContext<'_>, input: Value) -> Result<ToolOutcome, String> {
         let (display_text, card) = crate::start_background_task(conn, ctx.mqtt, ctx.session_id, ctx.user_id, ctx.agent_type, &input).await?;
@@ -54,6 +57,9 @@ impl Tool for ListBackgroundTasks {
     fn definition(&self) -> ToolDefinition {
         crate::list_background_tasks_tool_definition()
     }
+    fn keywords(&self) -> &'static [&'static str] {
+        &["status", "jobs", "running", "progress"]
+    }
     background_properties!();
     async fn execute(&self, conn: &mut PoolConnection<Postgres>, ctx: &ToolContext<'_>, _input: Value) -> Result<ToolOutcome, String> {
         crate::list_background_tasks(conn, ctx.session_id, ctx.user_id).await.map(ToolOutcome::text)
@@ -64,6 +70,9 @@ impl Tool for ListBackgroundTasks {
 impl Tool for CancelBackgroundTask {
     fn definition(&self) -> ToolDefinition {
         crate::cancel_background_task_tool_definition()
+    }
+    fn keywords(&self) -> &'static [&'static str] {
+        &["stop", "abort", "kill", "job"]
     }
     background_properties!();
     async fn execute(&self, conn: &mut PoolConnection<Postgres>, ctx: &ToolContext<'_>, input: Value) -> Result<ToolOutcome, String> {

@@ -210,6 +210,13 @@ pub trait SubAgent: Send + Sync {
         false
     }
 
+    /// Catalog tools granted to this agent on top of what it gets automatically: a custom
+    /// agent's `granted_tools`. A granted generic tool (e.g. `create_reminder`) is offered even
+    /// where its own rule wouldn't offer it. Built-in agents have none.
+    fn granted_tools(&self) -> Vec<String> {
+        Vec::new()
+    }
+
     /// Gives the agent private record storage (save/list/update/delete_record; see
     /// `crate::records`): for agents without tables of their own. Every dynamic agent has it.
     fn uses_records(&self) -> bool {

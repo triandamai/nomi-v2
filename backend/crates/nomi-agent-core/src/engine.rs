@@ -252,7 +252,7 @@ async fn run_agent_turn_in_reply(
     // Catalog tools that aren't set up yet (no search provider, no voice key) aren't offered.
     let mut not_ready = std::collections::HashSet::new();
     if let Some(catalog) = registry.tool_catalog() {
-        for tool in catalog.in_registration_order().filter(|t| auto_offered_to(*t, agent)) {
+        for tool in catalog.in_registration_order().filter(|t| offered_to(*t, agent)) {
             let name = tool.definition().name;
             if switches.allows(&name) && !tool.ready(&mut **conn).await {
                 not_ready.insert(name);

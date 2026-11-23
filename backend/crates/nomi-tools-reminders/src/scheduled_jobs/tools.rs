@@ -42,6 +42,9 @@ impl Tool for CreateReminder {
     fn definition(&self) -> ToolDefinition {
         super::create_reminder_tool_definition(&[])
     }
+    fn keywords(&self) -> &'static [&'static str] {
+        &["schedule", "later", "remind", "recurring", "timer"]
+    }
     fn offer(&self, ctx: &OfferContext<'_>) -> Option<ToolDefinition> {
         Some(super::create_reminder_tool_definition(ctx.reminder_targets))
     }
@@ -58,6 +61,9 @@ impl Tool for ListReminders {
     fn definition(&self) -> ToolDefinition {
         super::list_reminders_tool_definition()
     }
+    fn keywords(&self) -> &'static [&'static str] {
+        &["scheduled", "upcoming", "jobs", "reminders"]
+    }
     reminder_properties!();
     async fn execute(&self, conn: &mut PoolConnection<Postgres>, ctx: &ToolContext<'_>, _input: Value) -> Result<ToolOutcome, String> {
         super::list_reminders(conn, ctx.user_id).await.map(ToolOutcome::text)
@@ -70,6 +76,9 @@ pub struct CancelReminder;
 impl Tool for CancelReminder {
     fn definition(&self) -> ToolDefinition {
         super::cancel_reminder_tool_definition()
+    }
+    fn keywords(&self) -> &'static [&'static str] {
+        &["unschedule", "stop", "remove", "reminder"]
     }
     reminder_properties!();
     async fn execute(&self, conn: &mut PoolConnection<Postgres>, ctx: &ToolContext<'_>, input: Value) -> Result<ToolOutcome, String> {

@@ -20,6 +20,9 @@ impl Tool for ReadAttachment {
     fn definition(&self) -> ToolDefinition {
         crate::read_attachment_tool_definition()
     }
+    fn keywords(&self) -> &'static [&'static str] {
+        &["file", "upload", "document", "pdf", "spreadsheet"]
+    }
     fn group(&self) -> &'static str {
         GROUP
     }
