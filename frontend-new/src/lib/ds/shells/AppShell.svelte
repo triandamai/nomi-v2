@@ -80,9 +80,17 @@
 		use:drawer
 		aria-label={m.shell_nav_drawer()}
 		onclose={() => (drawerOpen = false)}
-		class="fixed inset-y-0 left-0 m-0 h-dvh max-h-none w-auto border-r border-border bg-bg p-0 text-text outline-none overscroll-contain backdrop:bg-overlay pb-safe"
-		style="height: var(--viewport-height, 100dvh); max-width: 85vw; padding-top: env(safe-area-inset-top, 0px);"
+		class="fixed inset-y-0 left-0 right-auto m-0 h-dvh max-h-none border-r border-border bg-bg p-0 text-text outline-none overscroll-contain backdrop:bg-overlay pb-safe"
+		style="height: var(--viewport-height, 100dvh); width: min(20rem, 85vw); max-width: 85vw; padding-top: env(safe-area-inset-top, 0px);"
 	>
 		{@render sidebar()}
 	</dialog>
 {/if}
+
+<style>
+	dialog > :global(nav) {
+		width: 100% !important;
+		max-width: 100% !important;
+		border-right-width: 0 !important;
+	}
+</style>

@@ -81,6 +81,16 @@ describe('AppShell', () => {
 		await drawer.click({ position: { x: 350, y: 100 } });
 		await expect.element(drawer).not.toBeInTheDocument();
 	});
+
+	it('stretches the sidebar content to fill the drawer container on mobile', async () => {
+		await page.viewport(390, 844);
+		await render(AppShellFixture);
+		await page.getByRole('button', { name: 'Open navigation' }).click();
+		const drawer = page.getByRole('dialog', { name: 'Navigation' });
+		const nav = drawer.getByRole('navigation', { name: 'Main' });
+		const navBox = nav.element().getBoundingClientRect();
+		expect(navBox.width).toBe(drawer.element().clientWidth);
+	});
 });
 
 describe('WorkspaceShell', () => {
