@@ -137,3 +137,21 @@ impl SubAgent for HealthAgent {
         self.run(conn, user_id, name, input).await
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Any 32 bytes: nothing here decrypts a key.
+    const KEY: [u8; 32] = [7; 32];
+
+    #[test]
+    fn the_agent_runs_every_tool_through_its_one_client() {
+        let agent = HealthAgent::new(reqwest::Client::new(), KEY);
+        let through_deref: &HealthClient = &agent;
+        assert!(std::ptr::eq(agent.client(), through_deref));
+        let catalog: Vec<String> = catalog_tools(&agent).iter().map(|t| t.definition().name).collect();
+        let own: Vec<String> = agent.tools().into_iter().map(|t| t.name).collect();
+        assert_eq!(catalog, own, "custom agents are granted the same tools the health agent runs");
+    }
+}
