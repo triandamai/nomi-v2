@@ -895,24 +895,13 @@ function normalizeRawPenDocument(
 			}
 		}
 
-		// 4. Default visual styling for top-level artboards and child sections/cards
+		// 4. A top-level artboard without a fill gets the page background, so the screen reads as
+		// a page on the canvas. Nested frames are drawn exactly as Sora designed them: one without
+		// a fill or stroke stays transparent (no card or button styling guessed from its name or
+		// corner radius).
 		if (isTopLevel && (node.type === 'frame' || node.type === 'COMPONENT')) {
 			if (!node.fill) {
 				node.fill = '$color-bg';
-			}
-		} else if (!isTopLevel && node.type === 'frame') {
-			const nodeName = typeof node.name === 'string' ? node.name.toLowerCase() : '';
-			const isCardOrPanel =
-				/card|panel|surface|box|tile|summary|metric|table|modal|dialog/i.test(nodeName) ||
-				(typeof node.cornerRadius === 'number' && node.cornerRadius > 0);
-			const isButtonOrCta = /button|btn|cta|action/i.test(nodeName);
-			if (!node.fill && !node.stroke) {
-				if (isButtonOrCta) {
-					node.fill = '$color-accent';
-				} else if (isCardOrPanel) {
-					node.fill = '$color-surface';
-					node.stroke = { align: 'inside', thickness: 1, fill: '$color-border' };
-				}
 			}
 		}
 

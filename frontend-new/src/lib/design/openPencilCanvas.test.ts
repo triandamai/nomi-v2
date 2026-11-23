@@ -391,7 +391,7 @@ describe('OpenPencil Scene-Graph Canvas Engine', () => {
 		const btnNode = model.graph.getNode('action-btn');
 		expect(btnNode?.type).toBe('COMPONENT');
 
-		// Check canvas painting paints high-contrast text and card surfaces
+		// Check canvas painting paints high-contrast text
 		const calls: any[] = [];
 		const dummyCtx: any = {
 			measureText: (text: string) => ({ width: text.length * 8 }),
@@ -432,5 +432,136 @@ describe('OpenPencil Scene-Graph Canvas Engine', () => {
 		// White text on light artboard was normalized to high-contrast ink
 		const lblCall = textCalls.find((c) => c.args[0] === 'Net Cash Flow');
 		expect(lblCall?.fillStyle).toBe('#1A1917');
+	});
+
+	describe("draws Sora's frames as designed", () => {
+		function soraScreen(children: Array<Record<string, unknown>>, screen: Record<string, unknown> = {}) {
+			return JSON.stringify({
+				version: '1.0',
+				children: [
+					{
+						type: 'frame',
+						id: 'screen-checkout',
+						name: 'Checkout',
+						width: 1280,
+						height: 800,
+						layout: 'vertical',
+						...screen,
+						children
+					}
+				]
+			});
+		}
+
+		function modelFor(rawPenJson: string) {
+			return buildStudioSceneModel({
+				directions,
+				preview,
+				activeDirection: directions[0],
+				device: 'desktop',
+				rawPenJson
+			});
+		}
+
+		function normalisedNode(model: ReturnType<typeof modelFor>, id: string): Record<string, unknown> | undefined {
+			const walk = (nodes: unknown): Record<string, unknown> | undefined => {
+				if (!Array.isArray(nodes)) return undefined;
+				for (const node of nodes as Array<Record<string, unknown>>) {
+					if (node.id === id) return node;
+					const found = walk(node.children);
+					if (found) return found;
+				}
+				return undefined;
+			};
+			return walk((model.penDocument as unknown as { children: unknown }).children);
+		}
+
+		it('leaves a rounded nested frame named like a card or summary without a fill or a stroke', () => {
+			const model = modelFor(
+				soraScreen([
+					{
+						type: 'frame',
+						id: 'order-summary',
+						name: 'Order summary',
+						width: 400,
+						height: 200,
+						cornerRadius: 12,
+						layout: 'vertical',
+						children: [{ type: 'text', id: 'total', content: 'Total Rp 120.000' }]
+					},
+					{ type: 'frame', id: 'plain-card', name: 'card', width: 300, height: 120, cornerRadius: 8 },
+					{ type: 'frame', id: 'rounded-wrapper', name: 'Content', width: 300, height: 120, cornerRadius: 16 }
+				])
+			);
+
+			for (const id of ['order-summary', 'plain-card', 'rounded-wrapper']) {
+				const raw = normalisedNode(model, id);
+				expect(raw?.fill, `${id} fill`).toBeUndefined();
+				expect(raw?.stroke, `${id} stroke`).toBeUndefined();
+				const node = model.graph.getNode(id);
+				expect(node, id).toBeDefined();
+				expect(node?.fills, `${id} fills`).toEqual([]);
+				expect(node?.strokes, `${id} strokes`).toEqual([]);
+			}
+		});
+
+		it('gives a nested frame named like a button no invented accent fill', () => {
+			const model = modelFor(
+				soraScreen([
+					{
+						type: 'frame',
+						id: 'pay-button',
+						name: 'Pay button',
+						width: 160,
+						height: 44,
+						cornerRadius: 8,
+						children: [{ type: 'text', id: 'pay-label', content: 'Pay now' }]
+					},
+					{ type: 'frame', id: 'actions-row', name: 'Actions', width: 400, height: 44, layout: 'horizontal' }
+				])
+			);
+
+			for (const id of ['pay-button', 'actions-row']) {
+				const raw = normalisedNode(model, id);
+				expect(raw?.fill, `${id} fill`).toBeUndefined();
+				expect(raw?.stroke, `${id} stroke`).toBeUndefined();
+				expect(model.graph.getNode(id)?.fills, `${id} fills`).toEqual([]);
+			}
+		});
+
+		it('keeps the fills and strokes Sora did set, including background aliases', () => {
+			const model = modelFor(
+				soraScreen([
+					{
+						type: 'frame',
+						id: 'pay-cta',
+						name: 'Pay button',
+						width: 160,
+						height: 44,
+						background: '#C85A32'
+					},
+					{
+						type: 'frame',
+						id: 'outlined-panel',
+						name: 'Panel',
+						width: 300,
+						height: 120,
+						cornerRadius: 8,
+						stroke: { align: 'inside', thickness: 1, fill: '#DCD5CA' }
+					}
+				])
+			);
+
+			expect(normalisedNode(model, 'pay-cta')?.fill).toBe('#C85A32');
+			expect(model.graph.getNode('pay-cta')?.fills).toHaveLength(1);
+			expect(normalisedNode(model, 'outlined-panel')?.fill).toBeUndefined();
+			expect(model.graph.getNode('outlined-panel')?.fills).toEqual([]);
+			expect(model.graph.getNode('outlined-panel')?.strokes).toHaveLength(1);
+		});
+
+		it('still gives a top-level artboard without a fill the page background', () => {
+			const model = modelFor(soraScreen([]));
+			expect(normalisedNode(model, 'screen-checkout')?.fill).toBe('$color-bg');
+		});
 	});
 });
