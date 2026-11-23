@@ -414,75 +414,82 @@
 	{@render phoneDetail(selected)}
 	{@render phoneSheets()}
 {:else if phone.current}
-	<div class="h-full overflow-y-auto pb-6">
-		<PhoneProjectsHeader
-			title={m.nav_projects()}
-			workspace={workspaceName}
-			members={(page.data.members as unknown[] | undefined)?.length}
-			labels={{ workspace: m.projects_phone_workspace({ name: workspaceName }), members: m.projects_phone_people(), invite: m.projects_phone_invite(), new: m.projects_phone_new() }}
-			onworkspace={workspaces.length ? () => (phoneSheet = { kind: 'workspace' }) : undefined}
-			oninvite={workspaceHref ? () => goto(workspaceHref!) : undefined}
-			onnew={orgId ? () => (phoneSheet = { kind: 'new' }) : undefined}
-		/>
-		{#if !orgId}
-			<div class="px-4">
-				<ProjectEmpty
-					icon={Building2}
-					title={m.projects_no_workspace_title()}
-					body={m.projects_no_workspace_body()}
-					action={{ label: m.projects_choose_workspace(), onclick: () => goto('/settings/workspaces') }}
-				/>
-			</div>
-		{:else if retrying || !data.list}
-			<!-- Loading and couldn't load keep the search and filters, waiting (Mobile Projects — Loading, offline & errors). -->
-			<PhoneProjectSearch placeholder={m.projects_search()} sortLabel={m.projects_phone_sort()} bind:value={query} />
-			<PhoneFilters label={m.projects_filter()} options={filterOptions.map(({ count: _, ...option }) => option)} value={filter} onchange={(value) => (filter = value as ProjectFilter)} />
-			{#if retrying}
-				<ul class="flex flex-col gap-3 px-4">
-					{#each { length: 3 }, index (index)}<li><ProjectCardLoading phone /></li>{/each}
-				</ul>
-			{:else}
-				<div class="px-4"><LoadError phone reason={m.projects_load_failed_reason({ status: data.failure?.status ?? 503, time: failedAt })} onretry={retry} /></div>
+	<div class="flex h-full flex-col overflow-hidden">
+		<div class="shrink-0 bg-bg">
+			<PhoneProjectsHeader
+				title={m.nav_projects()}
+				workspace={workspaceName}
+				members={(page.data.members as unknown[] | undefined)?.length}
+				labels={{ workspace: m.projects_phone_workspace({ name: workspaceName }), members: m.projects_phone_people(), invite: m.projects_phone_invite(), new: m.projects_phone_new() }}
+				onworkspace={workspaces.length ? () => (phoneSheet = { kind: 'workspace' }) : undefined}
+				oninvite={workspaceHref ? () => goto(workspaceHref!) : undefined}
+				onnew={orgId ? () => (phoneSheet = { kind: 'new' }) : undefined}
+			/>
+			{#if orgId && (retrying || !data.list)}
+				<!-- Loading and couldn't load keep the search and filters, waiting (Mobile Projects — Loading, offline & errors). -->
+				<PhoneProjectSearch placeholder={m.projects_search()} sortLabel={m.projects_phone_sort()} bind:value={query} />
+				<PhoneFilters label={m.projects_filter()} options={filterOptions.map(({ count: _, ...option }) => option)} value={filter} onchange={(value) => (filter = value as ProjectFilter)} />
+			{:else if orgId && cards.length}
+				<PhoneProjectSearch placeholder={m.projects_search()} sortLabel={m.projects_phone_sort()} bind:value={query} onsort={() => (phoneSheet = { kind: 'sort' })} />
+				<PhoneFilters label={m.projects_filter()} options={filterOptions} value={filter} onchange={(value) => (filter = value as ProjectFilter)} />
 			{/if}
-		{:else if cards.length}
-			<PhoneProjectSearch placeholder={m.projects_search()} sortLabel={m.projects_phone_sort()} bind:value={query} onsort={() => (phoneSheet = { kind: 'sort' })} />
-			<PhoneFilters label={m.projects_filter()} options={filterOptions} value={filter} onchange={(value) => (filter = value as ProjectFilter)} />
-			{#if shown.length}
-				<ul class="flex flex-col gap-3 px-4">
-					{#each shown as card (card.id)}
-						<li data-project={card.id}>
-							<ProjectCard
-								phone
-								name={card.name}
-								description={card.description}
-								tone={card.tone}
-								status={card.status}
-								statusLabel={card.statusLabel}
-								meta={card.meta}
-								detail={card.detail}
-								url={card.url}
-								footer={card.footer}
-								href={card.href}
-								questions={card.questions}
-								onaction={action(card)}
-								renaming={renamingId === card.id}
-								onrename={(name) => void rename(card, name)}
-								oncancelrename={() => (renamingId = null)}
-								onmore={() => openCardSheet(card)}
-								selected={card.id === selectedId}
-								onselect={() => select(card)}
-							/>
-						</li>
-					{/each}
-				</ul>
+		</div>
+		<div class="min-h-0 flex-1 overflow-y-auto pb-6">
+			{#if !orgId}
+				<div class="px-4">
+					<ProjectEmpty
+						icon={Building2}
+						title={m.projects_no_workspace_title()}
+						body={m.projects_no_workspace_body()}
+						action={{ label: m.projects_choose_workspace(), onclick: () => goto('/settings/workspaces') }}
+					/>
+				</div>
+			{:else if retrying || !data.list}
+				{#if retrying}
+					<ul class="flex flex-col gap-3 px-4">
+						{#each { length: 3 }, index (index)}<li><ProjectCardLoading phone /></li>{/each}
+					</ul>
+				{:else}
+					<div class="px-4"><LoadError phone reason={m.projects_load_failed_reason({ status: data.failure?.status ?? 503, time: failedAt })} onretry={retry} /></div>
+				{/if}
+			{:else if cards.length}
+				{#if shown.length}
+					<ul class="flex flex-col gap-3 px-4">
+						{#each shown as card (card.id)}
+							<li data-project={card.id}>
+								<ProjectCard
+									phone
+									name={card.name}
+									description={card.description}
+									tone={card.tone}
+									status={card.status}
+									statusLabel={card.statusLabel}
+									meta={card.meta}
+									detail={card.detail}
+									url={card.url}
+									footer={card.footer}
+									href={card.href}
+									questions={card.questions}
+									onaction={action(card)}
+									renaming={renamingId === card.id}
+									onrename={(name) => void rename(card, name)}
+									oncancelrename={() => (renamingId = null)}
+									onmore={() => openCardSheet(card)}
+									selected={card.id === selectedId}
+									onselect={() => select(card)}
+								/>
+							</li>
+						{/each}
+					</ul>
+				{:else}
+					<div class="px-4">{@render phoneEmpty()}</div>
+				{/if}
 			{:else}
-				<div class="px-4">{@render phoneEmpty()}</div>
+				<div class="px-4 pt-2">
+					<ProjectEmpty icon={FolderPlus} title={m.projects_phone_first_title()} body={m.projects_phone_first_body()} action={{ label: m.projects_phone_new_title(), onclick: () => (phoneSheet = { kind: 'new' }) }} />
+				</div>
 			{/if}
-		{:else}
-			<div class="px-4 pt-2">
-				<ProjectEmpty icon={FolderPlus} title={m.projects_phone_first_title()} body={m.projects_phone_first_body()} action={{ label: m.projects_phone_new_title(), onclick: () => (phoneSheet = { kind: 'new' }) }} />
-			</div>
-		{/if}
+		</div>
 	</div>
 	{@render phoneSheets()}
 {:else}
