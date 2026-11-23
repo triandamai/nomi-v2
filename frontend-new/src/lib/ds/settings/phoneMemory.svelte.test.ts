@@ -3,6 +3,7 @@ import { render } from 'vitest-browser-svelte';
 import { page } from 'vitest/browser';
 import PhoneMemoryProfile from './PhoneMemoryProfile.svelte';
 import PhoneMemoryCard from './PhoneMemoryCard.svelte';
+import PhoneLoadError from './PhoneLoadError.svelte';
 
 // Flow / Mobile — You & Settings, steps 16 and 17 (Memory & context, a kind of memory).
 
@@ -47,5 +48,15 @@ describe('PhoneMemoryCard', () => {
 	it('asks when the crew isn’t sure', async () => {
 		await render(PhoneMemoryCard, { content: 'Gym at 06:30', strength: { level: 1, name: 'faint' }, meta: 'not used yet', check: 'Is this still right?', more: 'More', onmore: () => {} });
 		await expect.element(page.getByText('Is this still right?')).toBeVisible();
+	});
+});
+
+describe('PhoneLoadError', () => {
+	it('says what couldn’t load as an alert, and tries again', async () => {
+		const onretry = vi.fn();
+		await render(PhoneLoadError, { title: 'Your memory couldn’t load', body: 'Nothing you saved is lost.', retry: 'Try again', onretry });
+		await expect.element(page.getByRole('alert')).toHaveTextContent(/Your memory couldn’t load.*Nothing you saved is lost/);
+		await page.getByRole('button', { name: 'Try again' }).click();
+		expect(onretry).toHaveBeenCalledOnce();
 	});
 });

@@ -3708,5 +3708,6 @@
 	"phone_connections_connect": "Sambungkan",
 	"phone_connections_add_key": "Tambah key",
 	"phone_connections_update": "Perbarui akses di Google",
-	"phone_connections_apps": "Aplikasi"
+	"phone_connections_apps": "Aplikasi",
+	"phone_error_body": "Server Nomi tidak menjawab ({status}). Yang sudah kamu simpan tetap aman."
 }

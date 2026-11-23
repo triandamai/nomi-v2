@@ -54,3 +54,24 @@ Build exactly this. Frame ids are in Nomi.pen; the light twins mirror the dark o
   for now; the Google access switches are what Tara may use; delete asks for the password or a code.
 - D5 Copy is the app's own messages where they exist; the pen's sample data (Kopi Kita, Siti) is
   replaced by the person's real data.
+
+## Built (phone), and where the build differs from the pen
+Every settings page has its phone screen, wired to the backend's own loads and actions, each
+covered by `frontend-new/e2e/backend/phone-you.e2e.ts` against the real backend.
+- D6 Profile shows the last 13 weeks, not a year: a year's cells at 390 are too small to read
+  or tap. The busiest day under them is counted over the same 13 weeks.
+- D7 Plans that can't be bought yet say Coming soon in the price's place (the desktop's "10×"
+  room note stays on the desktop). Other months come off the back bar's ⋯ as a sheet of the
+  last six; Export CSV is a row that saves the month shown.
+- D8 Models' key screen opens "Get a key" in a new tab, so a half-typed key isn't lost.
+  Connect a provider is a sheet with search; the key screen is `?connect=<id>` (Back is Back).
+- D9 Memory's budgets are picked from a sheet of sizes (the shared text field has no number
+  keyboard, and its props are frozen); Forget hides the memory at once and sends it after
+  6 seconds unless Undo is tapped.
+- D10 Google's access switches pick what to ask for; Google must confirm a change, so a changed
+  selection shows Update access on Google (the backend can't change scopes without consent).
+  GitHub's and Hevy's Manage show the account, what it may do, and Disconnect.
+- D11 A settings page that couldn't load keeps its back bar and title, says why with the
+  status, and offers Try again (step 23). Toasts sit at the top on every phone screen.
+- D12 Setting rows wrap a long label to two lines and cap a value at 40% of the row, rather
+  than cutting the label ("New chats start with").

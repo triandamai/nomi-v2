@@ -809,7 +809,7 @@
 		<button type="submit" hidden aria-hidden="true" tabindex="-1"></button>
 	</form>
 	{#snippet actions()}
-		<Button variant="secondary" label={m.action_cancel()} onclick={() => (deleteOpen = false)} />
+		<Button variant="secondary" label={m.phone_general_keep()} onclick={() => (deleteOpen = false)} />
 		{#if deleteWith === 'code' && (!deleteSent || deleteProblem?.ended)}
 			<Button variant="inverse" label={m.general_email_send()} loading={deleteBusy} onclick={sendDeleteCode} />
 		{:else}

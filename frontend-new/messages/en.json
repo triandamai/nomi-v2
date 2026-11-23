@@ -3708,5 +3708,6 @@
 	"phone_connections_connect": "Connect",
 	"phone_connections_add_key": "Add key",
 	"phone_connections_update": "Update access on Google",
-	"phone_connections_apps": "Apps"
+	"phone_connections_apps": "Apps",
+	"phone_error_body": "Nomi’s server didn’t answer ({status}). Nothing you saved is lost."
 }

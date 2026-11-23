@@ -53,6 +53,7 @@
 	import Dialog from '$lib/ds/overlays/Dialog.svelte';
 	import Modal from '$lib/ds/overlays/Modal.svelte';
 	import ToastRegion from '$lib/ds/overlays/ToastRegion.svelte';
+	import PhoneToastRegion from '$lib/ds/overlays/PhoneToastRegion.svelte';
 	import { toasts } from '$lib/ds/overlays/toasts.svelte';
 	import Button from '$lib/ds/actions/Button.svelte';
 	import IconButton from '$lib/ds/actions/IconButton.svelte';
@@ -93,7 +94,8 @@
 	// Settings pages that are their own phone screens (Flow / Mobile — You & Settings): they draw the
 	// back bar to You and their title; the rest keep the settings top bar with its back link.
 	const PHONE_SETTINGS = new Set(['/(app)/settings/general', '/(app)/settings/profile', '/(app)/settings/plan', '/(app)/settings/crew', '/(app)/settings/models', '/(app)/settings/memory', '/(app)/settings/workspaces', '/(app)/settings/workspaces/[id]', '/(app)/settings/connections']);
-	const ownSettingsTop = $derived(!page.error && PHONE_SETTINGS.has(page.route.id ?? ''));
+	// A settings page that couldn't load draws its own way back too (+error.svelte); a 404 keeps the shell's.
+	const ownSettingsTop = $derived(PHONE_SETTINGS.has(page.route.id ?? '') && !(page.error && page.status === 404));
 	const path = $derived(page.url.pathname);
 
 	// Another page on its way: its server load runs before anything changes, so after a moment its
@@ -696,5 +698,6 @@
 </Modal>
 {/if}
 
-<!-- A project's workspace on a phone shows the toasts at the top of its screen itself (PhoneToastRegion). -->
-{#if !(isWorkspace && phone.current)}<ToastRegion />{/if}
+<!-- On a phone the toasts come at the top of the screen (Flow / Mobile — You & Settings, step 23),
+     clear of the tab bar and the thumb; a project's workspace shows its own region. -->
+{#if !phone.current}<ToastRegion />{:else if !isWorkspace}<PhoneToastRegion />{/if}

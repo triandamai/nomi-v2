@@ -427,4 +427,13 @@ export default [
 		accessibility: ['An article named by the memory; the ⋯ is a 44 button named for it.'],
 		related: ['settings/MemoryEntry.svelte', 'settings/StrengthBars.svelte', 'overlays/ActionSheet.svelte'],
 	},
+	{
+		file: 'settings/PhoneLoadError.svelte',
+		summary: 'A phone page that couldn’t load: what couldn’t, why (and that nothing saved is lost), and Try again, under the page’s own title and back bar.',
+		use: ['A settings page on a phone whose data didn’t come (the backend down, a timeout).'],
+		avoid: ['A page that isn’t there (404): say it’s gone and lead back instead.', 'A desktop page: StatusPage.'],
+		dos: ['Keep the back bar and the tab bar: the rest of the app is still reachable.', 'Give the status code, so support can tell what happened.'],
+		accessibility: ['An alert, so a screen reader hears it as the page opens.'],
+		related: ['chrome/PhoneBackBar.svelte', 'mobile/PhoneButton.svelte'],
+	},
 ] satisfies ComponentDoc[];
