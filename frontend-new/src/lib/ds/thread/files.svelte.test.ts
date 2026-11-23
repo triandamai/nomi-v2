@@ -73,6 +73,22 @@ describe('ComposerFile', () => {
 		await expect.element(page.getByRole('progressbar', { name: 'bca-oct-2026.pdf' })).toHaveAttribute('aria-valuenow', '0');
 		await expect.element(page.getByText('Uploading again · 0% · 0 of 5 MB')).toBeVisible();
 	});
+
+	it('clicking a previewable image or file chip opens its preview without removing it', async () => {
+		const onpreviewImage = vi.fn();
+		const onremoveImage = vi.fn();
+		await render(ComposerFile, { name: 'struk.jpg', status: 'ready', detail: 'JPG · 70 B', thumb: PIXEL, onpreview: onpreviewImage, onremove: onremoveImage });
+		await page.getByRole('button', { name: 'Open struk.jpg' }).click();
+		expect(onpreviewImage).toHaveBeenCalledOnce();
+		expect(onremoveImage).not.toHaveBeenCalled();
+
+		const onpreviewPdf = vi.fn();
+		const onremovePdf = vi.fn();
+		await render(ComposerFile, { name: 'bca-sep-2026.pdf', status: 'ready', detail: 'PDF · 4,2 MB', onpreview: onpreviewPdf, onremove: onremovePdf });
+		await page.getByRole('button', { name: 'Open bca-sep-2026.pdf' }).click();
+		expect(onpreviewPdf).toHaveBeenCalledOnce();
+		expect(onremovePdf).not.toHaveBeenCalled();
+	});
 });
 
 describe('ModelFix', () => {
@@ -159,6 +175,41 @@ describe('SentFiles', () => {
 		await render(SentFiles, { files: [{ name: 'bca-sep-2026.pdf', meta: 'PDF · private', locked: true }] });
 		await expect.element(page.getByText('PDF · private')).toBeVisible();
 		await expect.element(page.getByRole('button')).not.toBeInTheDocument();
+	});
+
+	it('renders 2 images in a 2-column grid with equal width and height', async () => {
+		await render(SentFiles, {
+			phone: true,
+			files: [
+				{ name: 'a.jpg', meta: 'JPG · 10 KB', image: PIXEL, onopen: () => {} },
+				{ name: 'b.jpg', meta: 'JPG · 10 KB', image: PIXEL, onopen: () => {} },
+			],
+		});
+		const list = page.getByRole('list', { name: 'Files sent with this message' }).element();
+		expect(getComputedStyle(list).display).toBe('grid');
+		const first = page.getByRole('button', { name: 'Open a.jpg' }).element().getBoundingClientRect();
+		const second = page.getByRole('button', { name: 'Open b.jpg' }).element().getBoundingClientRect();
+		expect(Math.round(first.width)).toBe(Math.round(second.width));
+		expect(Math.round(first.height)).toBe(Math.round(second.height));
+		expect(Math.round(first.top)).toBe(Math.round(second.top));
+	});
+
+	it('renders 3 images with 2 equal columns on row 1 and full width on row 2', async () => {
+		await render(SentFiles, {
+			phone: true,
+			files: [
+				{ name: 'a.jpg', meta: 'JPG · 10 KB', image: PIXEL, onopen: () => {} },
+				{ name: 'b.jpg', meta: 'JPG · 10 KB', image: PIXEL, onopen: () => {} },
+				{ name: 'c.jpg', meta: 'JPG · 10 KB', image: PIXEL, onopen: () => {} },
+			],
+		});
+		const list = page.getByRole('list', { name: 'Files sent with this message' }).element().getBoundingClientRect();
+		const first = page.getByRole('button', { name: 'Open a.jpg' }).element().getBoundingClientRect();
+		const second = page.getByRole('button', { name: 'Open b.jpg' }).element().getBoundingClientRect();
+		const third = page.getByRole('button', { name: 'Open c.jpg' }).element().getBoundingClientRect();
+		expect(Math.round(first.width)).toBe(Math.round(second.width));
+		expect(Math.round(third.width)).toBe(Math.round(list.width));
+		expect(Math.round(third.height)).toBe(Math.round(first.height));
 	});
 });
 
