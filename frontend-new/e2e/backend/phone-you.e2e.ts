@@ -281,3 +281,62 @@ test('Crew on a phone: the roster as rows, a member on their own screen, their m
 	await page.getByRole('main').getByRole('link', { name: 'You', exact: true }).click();
 	await expect(page).toHaveURL(/\/settings$/);
 });
+
+test('Models & providers on a phone: defaults from sheets, a provider’s switches, Connect as a sheet, the key on its own screen', async ({ page, context }) => {
+	const account = await createAccount();
+	await seedNomiModel(account.email);
+	await signInAs(context, account);
+	await page.goto('/settings', { waitUntil: 'networkidle' });
+	await page.getByRole('main').getByRole('link', { name: /^Models & providers/ }).click();
+	await expect(page).toHaveURL(/\/settings\/models$/);
+	await expect(page.getByRole('heading', { level: 1, name: 'Models & providers' })).toBeVisible();
+	await expect(page.getByRole('banner')).toBeHidden();
+
+	// Koda's model: a sheet, kept.
+	await page.getByRole('button', { name: /^Koda builds with/ }).click();
+	await page.getByRole('dialog', { name: 'Koda builds with' }).getByRole('button', { name: 'Same as new chats' }).click();
+	type Models = { coding: { kind: string } };
+	await expect.poll(async () => ((await (await api(account, '/api/llm/models')).json()) as Models).coding.kind).toBe('same_as_chat');
+	await expect(page.getByRole('button', { name: /^Koda builds with Same as new chats/ })).toBeVisible();
+
+	// Nomi's own models: their screen, a switch each, saved as it flips.
+	await page.getByRole('region', { name: 'Your providers' }).getByRole('link').first().click();
+	await expect(page).toHaveURL(/\?provider=/);
+	const model = page.getByRole('switch', { name: 'E2E default (fake)' });
+	await expect(model).toHaveAttribute('aria-checked', 'true');
+	await model.click();
+	await expect(model).toHaveAttribute('aria-checked', 'false');
+	await page.reload({ waitUntil: 'networkidle' });
+	await expect(page.getByRole('switch', { name: 'E2E default (fake)' })).toHaveAttribute('aria-checked', 'false');
+	await page.getByRole('switch', { name: 'E2E default (fake)' }).click();
+	await expect(page.getByRole('switch', { name: 'E2E default (fake)' })).toHaveAttribute('aria-checked', 'true');
+	// Nomi's own can't be disconnected.
+	await expect(page.getByRole('button', { name: /^Disconnect/ })).toHaveCount(0);
+	await page.getByRole('main').getByRole('link', { name: 'Models', exact: true }).click();
+	await expect(page).toHaveURL(/\/settings\/models$/);
+
+	// Connect a provider: a sheet with search; a provider opens its key screen, without the tab bar.
+	await page.getByRole('link', { name: /^Connect a provider/ }).click();
+	await expect(page).toHaveURL(/\?connect$/);
+	const sheet = page.getByRole('dialog', { name: 'Connect a provider' });
+	await sheet.getByRole('searchbox', { name: 'Search providers' }).fill('anthro');
+	await sheet.getByRole('button', { name: /^Anthropic/ }).first().click();
+	await expect(page).toHaveURL(/\?connect=anthropic$/);
+	await expect(page.getByRole('heading', { level: 1, name: 'Anthropic' })).toBeVisible();
+	await expect(page.getByLabel('API key')).toHaveAttribute('type', 'password');
+	await expect(page.getByRole('navigation', { name: 'Main' })).toBeHidden();
+	await expect(page.getByRole('button', { name: 'Check and connect' })).toBeDisabled();
+	await page.getByRole('button', { name: 'Models', exact: true }).click();
+	await expect(page).toHaveURL(/\/settings\/models$/);
+
+	// A custom endpoint nobody answers at: turned away with the reason, and nothing kept.
+	await page.getByRole('link', { name: /^Connect a provider/ }).click();
+	await page.getByRole('dialog', { name: 'Connect a provider' }).getByRole('button', { name: /^Custom endpoint/ }).click();
+	await page.getByLabel('Address').fill('https://127.0.0.1:9/v1');
+	await page.getByLabel('Address').press('Enter');
+	await expect(page.getByLabel('Address')).toHaveAttribute('aria-invalid', 'true', { timeout: 30_000 });
+	await page.getByRole('button', { name: 'Models', exact: true }).click();
+	await expect(page).toHaveURL(/\/settings\/models$/);
+	const { connections } = (await (await api(account, '/api/llm/connections')).json()) as { connections: unknown[] };
+	expect(connections).toEqual([]);
+});

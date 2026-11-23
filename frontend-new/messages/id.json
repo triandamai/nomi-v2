@@ -3684,5 +3684,12 @@
 	"phone_profile_more": "Lainnya untuk profilmu",
 	"phone_plan_month": "Bulan ini",
 	"phone_plan_months": "Bulan lain",
-	"phone_plan_allowance": "{allowance} token sebulan"
+	"phone_plan_allowance": "{allowance} token sebulan",
+	"phone_models_back": "Model",
+	"phone_models_month": "{tokens} token bulan ini",
+	"phone_models_month_none": "Belum ada token bulan ini",
+	"phone_models_key_sub": "Tempel API key dari {name}. Key dicek dulu dengan {name} sebelum disimpan.",
+	"phone_models_address_sub": "Alamat server yang memakai API OpenAI. Dicek dulu sebelum disimpan.",
+	"phone_models_disconnect": "Putuskan {name}",
+	"phone_models_disconnect_body": "Modelnya hilang dari pilihan. Kamu bisa menyambungkannya lagi dengan key."
 }

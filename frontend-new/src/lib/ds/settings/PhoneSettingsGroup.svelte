@@ -73,11 +73,11 @@
 						<span class={['inline-flex shrink-0', row.danger ? 'text-danger' : 'text-text-2']}><Icon icon={row.icon} size={18} /></span>
 					{/if}
 					<span class="flex min-w-0 flex-1 flex-col gap-0.5 text-left">
-						<span class={['truncate text-phone', row.danger ? 'text-danger' : 'text-text']}>{row.label}</span>
+						<span class={['line-clamp-2 text-phone', row.danger ? 'text-danger' : 'text-text']}>{row.label}</span>
 						{#if row.sub}<span class="line-clamp-2 text-phone-sm text-text-3">{row.sub}</span>{/if}
 					</span>
 					{#if row.meta}
-						<span class={['max-w-1/2 shrink-0 truncate', row.mono ? 'font-mono text-label' : 'text-phone-sm', row.tone === 'accent' ? 'text-accent' : row.tone === 'warning' ? 'text-warning' : 'text-text-3']}>{row.meta}</span>
+						<span class={['max-w-2/5 shrink-0 truncate', row.mono ? 'font-mono text-label' : 'text-phone-sm', row.tone === 'accent' ? 'text-accent' : row.tone === 'warning' ? 'text-warning' : 'text-text-3']}>{row.meta}</span>
 					{/if}
 					{#if row.chosen}
 						<span class="inline-flex shrink-0 text-accent"><Icon icon={Check} size={18} /></span>

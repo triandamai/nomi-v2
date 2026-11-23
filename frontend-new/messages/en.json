@@ -3684,5 +3684,12 @@
 	"phone_profile_more": "More for your profile",
 	"phone_plan_month": "This month",
 	"phone_plan_months": "Other months",
-	"phone_plan_allowance": "{allowance} tokens a month"
+	"phone_plan_allowance": "{allowance} tokens a month",
+	"phone_models_back": "Models",
+	"phone_models_month": "{tokens} tokens this month",
+	"phone_models_month_none": "No tokens this month",
+	"phone_models_key_sub": "Paste an API key from {name}. It’s checked with {name} before it’s saved.",
+	"phone_models_address_sub": "The address of a server that speaks OpenAI’s API. It’s checked before it’s saved.",
+	"phone_models_disconnect": "Disconnect {name}",
+	"phone_models_disconnect_body": "Its models leave the picker. You can connect it again with a key."
 }
