@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { BACKEND_URL } from './support/env';
 import { api, createAccount, newEmail, signInAs, type Account } from './support/accounts';
 import { codeFor } from './support/mailpit';
-import { seedMemory, seedNomiModel, seedPersonality, seedUsage } from './support/seed';
+import { seedHevy, seedMemory, seedNomiModel, seedPersonality, seedUsage } from './support/seed';
 import { readFile } from 'node:fs/promises';
 
 // The You flow on a phone against the real backend (Flow / Mobile — You & Settings, EtSi2): each
@@ -490,4 +490,52 @@ test('a member leaves a workspace on a phone, after it asks', async ({ page, con
 	await expect(page).toHaveURL(/\/settings\/workspaces$/);
 	await expect(page.getByText(`You left ${kopi.name}`)).toBeVisible();
 	expect((await orgsOf(budi)).orgs.map((org) => org.id)).not.toContain(kopi.id);
+});
+
+test('Connections on a phone: the apps as rows with who they’re for, a key on its own screen, refused with the reason', async ({ page, context }) => {
+	const account = await createAccount();
+	await signInAs(context, account);
+	await page.goto('/settings', { waitUntil: 'networkidle' });
+	await page.getByRole('main').getByRole('link', { name: /^Connections/ }).click();
+	await expect(page).toHaveURL(/\/settings\/connections$/);
+	await expect(page.getByRole('heading', { level: 1, name: 'Connections' })).toBeVisible();
+	await expect(page.getByRole('main').getByText('0 connected')).toBeVisible();
+	const apps = page.getByRole('region', { name: 'Apps' });
+	for (const name of ['Google Workspace', 'GitHub', 'Hevy']) await expect(apps.getByText(name, { exact: true })).toBeVisible();
+	await expect(apps.getByText(/^Raga · /)).toBeVisible();
+
+	// Hevy: the key on its own screen, checked with Hevy as it connects.
+	await apps.getByRole('button', { name: /^Hevy/ }).click();
+	await expect(page.getByRole('heading', { level: 1, name: 'Hevy' })).toBeVisible();
+	await expect(page.getByRole('navigation', { name: 'Main' })).toBeHidden();
+	await expect(page.getByLabel('API key')).toHaveAttribute('type', 'password');
+	await page.getByLabel('API key').fill('not-a-real-key');
+	await page.getByRole('button', { name: 'Check and connect' }).click();
+	await expect(page.getByText(/^Hevy (didn’t accept that key|couldn’t be reached)/)).toBeVisible({ timeout: 20_000 });
+	await page.getByRole('button', { name: 'Connections', exact: true }).click();
+	await expect(page.getByRole('navigation', { name: 'Main' })).toBeVisible();
+
+	// GitHub: a token, refused with GitHub's reason.
+	await apps.getByRole('button', { name: /^GitHub/ }).click();
+	await page.getByLabel('Personal access token').fill('ghp_notarealtoken');
+	await page.getByLabel('Personal access token').press('Enter');
+	await expect(page.getByText(/^GitHub (didn't accept the token|couldn't be reached)/)).toBeVisible({ timeout: 30_000 });
+	await page.getByRole('button', { name: 'Connections', exact: true }).click();
+	await page.reload({ waitUntil: 'networkidle' });
+	await expect(page.getByRole('main').getByText('0 connected')).toBeVisible();
+});
+
+test('a connected app on a phone: Manage is a sheet with the account, what it may do, and Disconnect', async ({ page, context }) => {
+	const account = await createAccount();
+	await seedHevy(account.email, 'siti-lifts');
+	await signInAs(context, account);
+	await page.goto('/settings/connections', { waitUntil: 'networkidle' });
+	await expect(page.getByRole('main').getByText('1 connected')).toBeVisible();
+	await page.getByRole('region', { name: 'Apps' }).getByRole('button', { name: /^Hevy .*Connected/ }).click();
+	const sheet = page.getByRole('dialog', { name: 'Hevy' });
+	await expect(sheet.getByText(/^siti-lifts · for Raga$/)).toBeVisible();
+	await expect(sheet.getByText('Workouts · read')).toBeVisible();
+	await sheet.getByRole('button', { name: 'Disconnect Hevy' }).click();
+	await expect(page.getByText('Hevy disconnected')).toBeVisible();
+	await expect(page.getByRole('main').getByText('0 connected')).toBeVisible();
 });

@@ -3704,5 +3704,9 @@
 	"phone_workspace_invite_to": "Undang ke {name}",
 	"phone_workspace_more": "Lainnya untuk {name}",
 	"phone_workspace_role_sub": "Yang bisa dilakukan {name} di sini",
-	"phone_workspace_create_sub": "Untuk tim, klien, atau usaha sampingan. Chat, memori, dan inbox-mu tetap pribadi."
+	"phone_workspace_create_sub": "Untuk tim, klien, atau usaha sampingan. Chat, memori, dan inbox-mu tetap pribadi.",
+	"phone_connections_connect": "Sambungkan",
+	"phone_connections_add_key": "Tambah key",
+	"phone_connections_update": "Perbarui akses di Google",
+	"phone_connections_apps": "Aplikasi"
 }

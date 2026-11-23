@@ -3704,5 +3704,9 @@
 	"phone_workspace_invite_to": "Invite to {name}",
 	"phone_workspace_more": "More for {name}",
 	"phone_workspace_role_sub": "What {name} can do here",
-	"phone_workspace_create_sub": "For a team, a client or a side business. Your own chats, memory and inbox stay personal."
+	"phone_workspace_create_sub": "For a team, a client or a side business. Your own chats, memory and inbox stay personal.",
+	"phone_connections_connect": "Connect",
+	"phone_connections_add_key": "Add key",
+	"phone_connections_update": "Update access on Google",
+	"phone_connections_apps": "Apps"
 }

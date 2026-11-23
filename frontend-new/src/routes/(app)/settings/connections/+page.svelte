@@ -15,6 +15,15 @@
 	import TextField from '$lib/ds/inputs/TextField.svelte';
 	import ConnectionCard from '$lib/ds/settings/ConnectionCard.svelte';
 	import AppCard from '$lib/ds/settings/AppCard.svelte';
+	import { Calendar, FileSpreadsheet, FileText, HardDrive, Unplug } from '@lucide/svelte';
+	import { phoneView } from '$lib/phone.svelte';
+	import { phoneScreen } from '$lib/ds/shells/phoneScreen.svelte';
+	import PhoneBackBar from '$lib/ds/chrome/PhoneBackBar.svelte';
+	import LargeTitle from '$lib/ds/chrome/LargeTitle.svelte';
+	import PhoneSettingsGroup, { type SettingsRow } from '$lib/ds/settings/PhoneSettingsGroup.svelte';
+	import PhoneFormScreen from '$lib/ds/settings/PhoneFormScreen.svelte';
+	import PhoneButton from '$lib/ds/mobile/PhoneButton.svelte';
+	import BottomSheet from '$lib/ds/overlays/BottomSheet.svelte';
 
 	// Settings › Connections (App / Settings / Connections OBmgS): the apps the crew works in, as the
 	// backend connects them. Connected cards (what each holds and may do, who uses it, Manage to
@@ -81,9 +90,148 @@
 		if (error) toasts.show({ kind: 'error', title: error === 'declined' ? m.connections_declined() : m.connections_failed() });
 		void goto(PATH, { replaceState: true, noScroll: true, keepFocus: true });
 	});
+
+	// On a phone (Flow / Mobile — You & Settings, steps 21 and 22): the three apps as rows, each with
+	// the crew member it's for and whether it's connected. A connected one opens Manage (a sheet:
+	// the account, what it may do, Disconnect last); the rest start their sign-in (Google: a sheet
+	// with what Tara may use) or open their key screen (GitHub, Hevy). Google's access switches pick
+	// what to ask for; Google confirms a change, so Update access goes there (the backend can't
+	// change it without Google's consent).
+	const guess = () => data.phone;
+	const phone = phoneView(guess());
+	const screen = phoneScreen();
+	$effect(() => {
+		screen.inside = phone.current && (dialogOpen('add', 'github') || dialogOpen('add', 'hevy'));
+		return () => (screen.inside = false);
+	});
+	const SERVICE_ICONS: Record<string, Component<LucideProps>> = { gmail: Mail, docs: FileText, sheets: FileSpreadsheet, drive: HardDrive, calendar: Calendar };
+	const ORDER: AppId[] = ['google', 'github', 'hevy'];
+	let googleForm: HTMLFormElement | undefined = $state();
+	let githubForm: HTMLFormElement | undefined = $state();
+	const googleNow = $derived(data.overview?.google.services ?? []);
+	const googleChanged = $derived(services.length > 0 && (services.length !== googleNow.length || services.some((one) => !googleNow.includes(one))));
+	const appRows = $derived<SettingsRow[]>(
+		ORDER.flatMap((id): SettingsRow[] => {
+			const on = connected.find((app) => app.id === id);
+			if (on)
+				return [
+					{
+						key: id,
+						crew: { agent: on.usedBy[0]?.agent, initial: NAMES[id]().charAt(0) },
+						label: NAMES[id](),
+						// "Tara · Gmail, Calendar · si•••@gmail.com": who, Google's services, the account.
+						sub: [on.usedBy.map((one) => one.name).join(', '), id === 'google' ? on.caption : null, on.account].filter(Boolean).join(' · '),
+						meta: m.connections_connected(),
+						tone: 'accent',
+						onclick: () => {
+							if (id === 'google') services = [...googleNow];
+							open = { kind: 'manage', app: id };
+						},
+					},
+				];
+			const off = toAdd.find((app) => app.id === id);
+			if (!off) return [];
+			return [
+				{
+					key: id,
+					crew: { agent: off.for.agent, initial: NAMES[id]().charAt(0) },
+					label: NAMES[id](),
+					sub: `${off.for.name} · ${off.caption}`,
+					meta: !off.available ? m.connections_not_set_up() : id === 'hevy' ? m.phone_connections_add_key() : m.phone_connections_connect(),
+					onclick: off.available ? () => add(id) : undefined,
+				},
+			];
+		}),
+	);
+	const managed = $derived(open?.kind === 'manage' ? connected.find((app) => app.id === open?.app) : undefined);
 </script>
 
 <svelte:head><title>{m.settings_connections()} · {m.app_name()}</title></svelte:head>
+
+{#if phone.current}
+	<div class="h-full overflow-y-auto">
+		{#if dialogOpen('add', 'github') || dialogOpen('add', 'hevy')}
+			{@const app = open?.app === 'github' ? 'github' : 'hevy'}
+			<PhoneFormScreen
+				backLabel={m.settings_connections()}
+				onback={close}
+				title={NAMES[app]()}
+				sub={app === 'github' ? m.connections_github_body() : m.connections_hevy_body()}
+				onsubmit={() => void connectWith(app)}
+			>
+				{#if app === 'github'}
+					<TextField label={m.connections_github_token_label()} type="password" mono autocomplete="off" bind:value={token} error={failed} />
+				{:else}
+					<TextField label={m.connections_hevy_key_label()} type="password" mono autocomplete="off" bind:value={key} error={failed} />
+				{/if}
+				{#snippet action()}
+					<PhoneButton
+						label={app === 'github' ? m.connections_github_token_go() : m.connections_check_connect()}
+						disabled={busy || !(app === 'github' ? token : key).trim()}
+						onclick={() => void connectWith(app)}
+					/>
+					{#if app === 'github' && data.github?.oauth}
+						<PhoneButton label={m.connections_github_go()} variant="secondary" icon={GithubMark} onclick={() => githubForm?.requestSubmit()} />
+					{/if}
+				{/snippet}
+			</PhoneFormScreen>
+		{:else}
+			<PhoneBackBar label={m.nav_you()} href="/settings" />
+			<LargeTitle title={m.settings_connections()} />
+			<p class="-mt-1 px-5 pb-3.5 text-phone-sm text-text-3">{data.meta}</p>
+			<div class="flex flex-col gap-2 px-4 pb-8">
+				<PhoneSettingsGroup label={m.phone_connections_apps()} rows={appRows} />
+				<p class="px-1 text-phone-sm leading-firm text-text-3">{m.connections_intro()}</p>
+			</div>
+		{/if}
+	</div>
+
+	<form bind:this={googleForm} method="POST" action="?/google" hidden>
+		<input type="hidden" name="resume" value={data.resume ?? ''} />
+		{#each services as service (service)}<input type="hidden" name="service" value={service} />{/each}
+	</form>
+	<form bind:this={githubForm} method="POST" action="?/github" hidden>
+		<input type="hidden" name="resume" value={data.resume ?? ''} />
+	</form>
+
+	<!-- Google: adding it, or a connected one's Manage; its switches pick what Tara may use. -->
+	<BottomSheet
+		open={dialogOpen('add', 'google') || managed?.id === 'google'}
+		title={NAMES.google()}
+		subtitle={managed ? `${managed.account} · ${m.connections_for({ name: 'Tara' })}` : m.connections_google_body()}
+		onclose={close}
+	>
+		<div class="flex flex-col gap-3 px-4 pb-2">
+			<PhoneSettingsGroup
+				label={m.connections_google_services()}
+				rows={GOOGLE_SERVICES.map((service) => ({
+					key: service,
+					icon: SERVICE_ICONS[service],
+					label: serviceName(service),
+					toggle: { checked: services.includes(service), onchange: (on) => (services = on ? [...services, service] : services.filter((one) => one !== service)) },
+				}))}
+			/>
+			{#if !managed}
+				<PhoneButton label={m.connections_google_go()} disabled={!services.length} onclick={() => googleForm?.requestSubmit()} />
+			{:else}
+				{#if googleChanged}<PhoneButton label={m.phone_connections_update()} onclick={() => googleForm?.requestSubmit()} />{/if}
+				<PhoneButton label={m.phone_models_disconnect({ name: 'Google' })} variant="danger" icon={Unplug} disabled={busy} onclick={() => void disconnect('google')} />
+			{/if}
+		</div>
+	</BottomSheet>
+
+	<!-- GitHub's and Hevy's Manage: the account, what it may do, Disconnect. -->
+	<BottomSheet open={!!managed && managed.id !== 'google'} title={managed ? NAMES[managed.id]() : ''} subtitle={managed ? `${managed.account} · ${m.connections_for({ name: managed.usedBy.map((one) => one.name).join(', ') })}` : undefined} onclose={close}>
+		{#if managed && managed.id !== 'google'}
+			{@const app = managed}
+			<div class="flex flex-col gap-3 px-4 pb-2">
+				<PhoneSettingsGroup label={m.connections_can_do()} rows={app.can.map((thing) => ({ key: thing, label: thing }))} />
+				<p class="px-1 text-phone-sm leading-firm text-text-3">{app.caption}</p>
+				<PhoneButton label={m.phone_models_disconnect({ name: NAMES[app.id]() })} variant="danger" icon={Unplug} disabled={busy} onclick={() => void disconnect(app.id)} />
+			</div>
+		{/if}
+	</BottomSheet>
+{:else}
 
 <div class="h-full overflow-y-auto">
 	<div class="flex max-w-316 flex-col gap-8 px-4 pt-7 pb-10 lg:px-10">
@@ -215,3 +363,4 @@
 		{/snippet}
 	</Dialog>
 {/each}
+{/if}
