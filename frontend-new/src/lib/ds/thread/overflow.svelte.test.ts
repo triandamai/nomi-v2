@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import Prose from './Prose.svelte';
 import PhoneMessageBubble from './PhoneMessageBubble.svelte';
+import SharedPage from '../../../routes/shared/[token]/+page.svelte';
 import { forwardScrollTo } from '$lib/chat/scroll';
 
 // A phone's thread is 358 wide (390 less its 16 sides) and scrolls up and down only: nothing in a
@@ -137,5 +138,26 @@ describe('forwardScrollTo swiping from compose view', () => {
 
 		cleanup.destroy();
 		document.body.removeChild(scroller);
+	});
+});
+
+describe('shared chat page mobile scrolling', () => {
+	it('renders a root scroll container bounded to viewport with overflow-y-auto', async () => {
+		const { container } = await render(SharedPage, {
+			data: {
+				state: 'open',
+				chat: {
+					title: 'Belanja',
+					messages: [
+						{ sender: 'user', files: [], html: '<p>Berapa?</p>' },
+						{ sender: 'assistant', by: 'Dana', at: '2026-11-11T05:00:02Z', html: '<p>Rp 100.000</p>' }
+					]
+				}
+			} as never
+		});
+		const root = container.firstElementChild as HTMLElement;
+		expect(root.classList.contains('overflow-y-auto')).toBe(true);
+		expect(root.classList.contains('h-dvh')).toBe(true);
+		expect(root.style.height).toBe('var(--viewport-height, 100dvh)');
 	});
 });

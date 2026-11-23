@@ -59,7 +59,7 @@ describe('initViewport browser', () => {
 		expect(mockVV.removeEventListener).toHaveBeenCalledWith('scroll', expect.any(Function));
 	});
 
-	it('resets window scroll if scrollY > 0', () => {
+	it('resets window scroll on editable focusin when visualViewport is shrunken', () => {
 		const scrollToSpy = vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
 
 		Object.defineProperty(window, 'scrollY', {
@@ -67,11 +67,43 @@ describe('initViewport browser', () => {
 			configurable: true,
 			writable: true
 		});
+		Object.defineProperty(window, 'innerHeight', {
+			value: 800,
+			configurable: true,
+			writable: true
+		});
+		Object.defineProperty(window, 'visualViewport', {
+			value: { height: 450, offsetTop: 0, addEventListener: vi.fn(), removeEventListener: vi.fn() },
+			configurable: true,
+			writable: true
+		});
+
+		Object.defineProperty(document.documentElement, 'scrollHeight', {
+			value: 600,
+			configurable: true,
+			writable: true
+		});
 
 		const cleanup = initViewport();
 
+		const input = document.createElement('input');
+		document.body.appendChild(input);
+
+		input.dispatchEvent(new Event('focusin', { bubbles: true }));
+
 		expect(scrollToSpy).toHaveBeenCalledWith(0, 0);
 
+		scrollToSpy.mockClear();
+
+		const button = document.createElement('button');
+		document.body.appendChild(button);
+
+		button.dispatchEvent(new Event('focusin', { bubbles: true }));
+
+		expect(scrollToSpy).not.toHaveBeenCalled();
+
+		document.body.removeChild(input);
+		document.body.removeChild(button);
 		cleanup();
 		scrollToSpy.mockRestore();
 	});

@@ -61,13 +61,13 @@
 
 <div class="flex h-dvh w-full overflow-hidden bg-bg text-text" style="height: var(--viewport-height, 100dvh);">
 	<div class="h-full max-lg:hidden">{@render sidebar()}</div>
-	<div class="flex min-w-0 flex-1 flex-col">
+	<div class="flex min-h-0 min-w-0 flex-1 flex-col">
 		<header class={['flex h-13 shrink-0 items-center gap-3 border-b border-border px-4 lg:px-6', phone.phone && phone.ownTitle && 'hidden']}>
 			<span class={['lg:hidden', phone.phone && phone.tabs && !phone.drawer && 'hidden']}><IconButton icon={Menu} label={m.shell_open_nav()} variant="ghost" onclick={() => (drawerOpen = true)} /></span>
 			<div class="min-w-0 flex-1">{@render topbar?.()}</div>
 		</header>
 		<div class="flex min-h-0 flex-1">
-			<main class={['min-h-0 min-w-0 flex-1', layout.bleed ? 'overflow-hidden' : 'overflow-y-auto px-4 py-6 lg:px-14 lg:py-8']}>{@render children()}</main>
+			<main class={['min-h-0 min-w-0 flex-1', layout.bleed ? 'overflow-hidden flex flex-col' : 'overflow-y-auto px-4 py-6 lg:px-14 lg:py-8']}>{@render children()}</main>
 			{#if panel && placement.underTopbar}{@render side()}{/if}
 		</div>
 		{#if phone.phone && phone.tabs}<TabBar label={phone.tabs.label} tabs={phone.tabs.tabs} />{/if}

@@ -28,6 +28,7 @@ test('the plan, this month’s usage and the month before, and the export', asyn
 	await expect(page.getByText(/^3\.5K tok · 74% · Nomi’s allowance$/)).toBeVisible();
 	await expect(page.getByText('today', { exact: true })).toBeVisible();
 	await page.getByRole('radio', { name: 'Spend' }).click();
+	await expect(page.getByRole('radio', { name: 'Spend' })).toHaveAttribute('aria-checked', 'true');
 	await expect(page.getByText(/^peak \$0\.06 · /)).toBeVisible();
 
 	// The month before: nothing used, and no projection.
