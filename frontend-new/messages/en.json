@@ -3699,5 +3699,10 @@
 	"phone_memory_profile_sub": "Every crew member reads this before they answer. Write it in your own words.",
 	"phone_memory_correct_sub": "Write it the way the crew should remember it.",
 	"phone_memory_export": "Export memory",
-	"phone_memory_budget_sub": "Loaded into every reply. More remembers more, and costs more tokens."
+	"phone_memory_budget_sub": "Loaded into every reply. More remembers more, and costs more tokens.",
+	"phone_workspace_invite_sub": "By email, as member or admin",
+	"phone_workspace_invite_to": "Invite to {name}",
+	"phone_workspace_more": "More for {name}",
+	"phone_workspace_role_sub": "What {name} can do here",
+	"phone_workspace_create_sub": "For a team, a client or a side business. Your own chats, memory and inbox stay personal."
 }

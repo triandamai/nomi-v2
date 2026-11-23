@@ -14,6 +14,16 @@
 	import SettingRow from '$lib/ds/settings/SettingRow.svelte';
 	import WorkspaceCard from '$lib/ds/settings/WorkspaceCard.svelte';
 	import CreateWorkspaceCard from '$lib/ds/settings/CreateWorkspaceCard.svelte';
+	import { Building2, FolderInput, Plus } from '@lucide/svelte';
+	import { phoneView } from '$lib/phone.svelte';
+	import { phoneScreen } from '$lib/ds/shells/phoneScreen.svelte';
+	import PhoneBackBar from '$lib/ds/chrome/PhoneBackBar.svelte';
+	import LargeTitle from '$lib/ds/chrome/LargeTitle.svelte';
+	import PhoneSettingsGroup from '$lib/ds/settings/PhoneSettingsGroup.svelte';
+	import PhoneFormScreen from '$lib/ds/settings/PhoneFormScreen.svelte';
+	import PhoneButton from '$lib/ds/mobile/PhoneButton.svelte';
+	import BottomSheet from '$lib/ds/overlays/BottomSheet.svelte';
+	import SheetOption from '$lib/ds/overlays/SheetOption.svelte';
 
 	// Settings › Workspaces (App / Settings / Workspaces l222Mz): a card per workspace (its role,
 	// people and projects, where projects come from or the button to choose it, and its Settings),
@@ -65,9 +75,67 @@
 		await invalidate('app:workspaces');
 		await invalidate('app:shell');
 	}
+
+	// On a phone (Flow / Mobile — You & Settings, step 18): each workspace a row with the person's
+	// role and its people, the one projects come from said so; Create is a row that opens its own
+	// screen; where new projects go is a row that opens a sheet.
+	const guess = () => data.phone;
+	const phone = phoneView(guess());
+	const screen = phoneScreen();
+	let projectsSheet = $state(false);
+	$effect(() => {
+		screen.inside = phone.current && creating;
+		return () => (screen.inside = false);
+	});
 </script>
 
 <svelte:head><title>{m.settings_workspaces()} · {m.app_name()}</title></svelte:head>
+
+{#if phone.current}
+	<div class="h-full overflow-y-auto">
+		{#if creating}
+			<PhoneFormScreen backLabel={m.workspace_switcher()} onback={() => (creating = false)} title={m.workspace_create_title()} sub={m.phone_workspace_create_sub()} onsubmit={create}>
+				<TextField label={m.workspace_name()} name="name" bind:value={name} error={nameError} required />
+				{#snippet action()}<PhoneButton label={m.workspace_create_action()} disabled={saving || !name.trim()} onclick={create} />{/snippet}
+			</PhoneFormScreen>
+		{:else}
+			<PhoneBackBar label={m.nav_you()} href="/settings" />
+			<LargeTitle title={m.settings_workspaces()} />
+			<div class="flex flex-col gap-5 px-4 pt-1 pb-8">
+				{#if cards.length}
+					<PhoneSettingsGroup
+						label={m.workspaces_yours()}
+						note={String(cards.length)}
+						rows={cards.map((card) => ({ key: card.id, icon: Building2, label: card.name, sub: card.current ? `${card.meta} · ${m.workspaces_current_note().toLowerCase()}` : card.meta, href: card.href }))}
+					/>
+				{:else}
+					<p class="px-1 text-phone-sm leading-firm text-text-3">{m.workspaces_none()}</p>
+				{/if}
+				<PhoneSettingsGroup rows={[{ key: 'create', icon: Plus, label: m.workspace_create_title(), onclick: startCreating }]} />
+				{#if cards.length}
+					<PhoneSettingsGroup
+						label={m.workspaces_defaults()}
+						rows={[
+							{
+								key: 'projects',
+								icon: FolderInput,
+								label: m.workspaces_new_projects(),
+								meta: cards.find((card) => card.current)?.name,
+								busy: using !== undefined,
+								onclick: () => (projectsSheet = true),
+							},
+						]}
+					/>
+				{/if}
+			</div>
+		{/if}
+	</div>
+	<BottomSheet open={projectsSheet} title={m.workspaces_new_projects()} subtitle={m.workspaces_new_projects_body()} onclose={() => (projectsSheet = false)}>
+		{#each cards as card (card.id)}
+			<SheetOption label={card.name} detail={card.meta} chosen={card.current} onclick={() => ((projectsSheet = false), !card.current && void use(card.id, card.name))} />
+		{/each}
+	</BottomSheet>
+{:else}
 
 <div class="h-full overflow-y-auto">
 	<div class="flex max-w-316 flex-col gap-8 px-4 pt-8 pb-12 lg:px-12">
@@ -143,3 +211,4 @@
 		<Button variant="inverse" label={m.workspace_create_action()} loading={saving} onclick={create} />
 	{/snippet}
 </Dialog>
+{/if}

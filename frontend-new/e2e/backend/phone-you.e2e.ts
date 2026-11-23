@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { BACKEND_URL } from './support/env';
-import { api, createAccount, signInAs, type Account } from './support/accounts';
+import { api, createAccount, newEmail, signInAs, type Account } from './support/accounts';
 import { codeFor } from './support/mailpit';
 import { seedMemory, seedNomiModel, seedPersonality, seedUsage } from './support/seed';
 import { readFile } from 'node:fs/promises';
@@ -399,4 +399,95 @@ test('Memory on a phone: the profile on its own screen, a kind’s memories, cor
 	const before = (await settings()).search_past_chats;
 	await search.click();
 	await expect.poll(async () => (await settings()).search_past_chats).toBe(!before);
+});
+
+type Orgs = { orgs: { id: string; name: string }[]; project_org_id: string | null };
+type OrgDetail = { name: string; members: { user_id: string; name: string; role: string }[]; invites: { code: string; email: string }[] };
+const orgsOf = async (account: Account) => (await (await api(account, '/api/orgs')).json()) as Orgs;
+const orgOf = async (account: Account, id: string) => (await (await api(account, `/api/orgs/${id}`)).json()) as OrgDetail;
+
+test('Workspaces on a phone: create on its own screen, where projects go from a sheet, invite from a sheet, roles and Remove', async ({ page, context }) => {
+	const owner = await createAccount();
+	const siti = await createAccount();
+	await signInAs(context, owner);
+	await page.goto('/settings', { waitUntil: 'networkidle' });
+	await page.getByRole('main').getByRole('link', { name: /^Workspaces/ }).click();
+	await expect(page).toHaveURL(/\/settings\/workspaces$/);
+	await expect(page.getByRole('heading', { level: 1, name: 'Workspaces' })).toBeVisible();
+
+	// Create: its own screen, without the tab bar.
+	await page.getByRole('button', { name: 'Create a workspace' }).click();
+	await expect(page.getByRole('navigation', { name: 'Main' })).toBeHidden();
+	await page.getByRole('textbox', { name: 'Name' }).fill('Warung Dua');
+	await page.getByRole('textbox', { name: 'Name' }).press('Enter');
+	await expect(page.getByText('Created Warung Dua')).toBeVisible();
+	await expect(page.getByRole('link', { name: /^Warung Dua/ })).toBeVisible();
+	const made = (await orgsOf(owner)).orgs.find((org) => org.name === 'Warung Dua')!;
+
+	// Where new projects go: a sheet.
+	await page.getByRole('button', { name: /^New projects go to/ }).click();
+	await page.getByRole('dialog', { name: 'New projects go to' }).getByRole('button', { name: /^Warung Dua/ }).click();
+	await expect.poll(async () => (await orgsOf(owner)).project_org_id).toBe(made.id);
+
+	// The first workspace: invite Siti as an admin from the sheet.
+	const kopi = (await orgsOf(owner)).orgs.find((org) => org.id !== made.id)!;
+	await page.goto(`/settings/workspaces/${kopi.id}`, { waitUntil: 'networkidle' });
+	await expect(page.getByRole('heading', { level: 1, name: kopi.name })).toBeVisible();
+	await expect(page.getByRole('main').getByRole('link', { name: 'Workspaces', exact: true })).toHaveAttribute('href', '/settings/workspaces');
+	await page.getByRole('button', { name: /^Invite people/ }).click();
+	const sheet = page.getByRole('dialog', { name: `Invite to ${kopi.name}` });
+	await sheet.getByRole('textbox', { name: 'Email addresses' }).fill(siti.email);
+	await sheet.getByRole('button', { name: /^Admin/ }).click();
+	await sheet.getByRole('button', { name: 'Send invite' }).click();
+	await expect(page.getByText('Invite sent')).toBeVisible();
+	await expect(sheet).toBeHidden();
+
+	// An open invite: Copy link or Revoke. A stranger's goes.
+	const stranger = newEmail();
+	await api(owner, `/api/orgs/${kopi.id}/invites`, { method: 'POST', body: JSON.stringify({ email: stranger, role: 'member' }) });
+	await page.reload({ waitUntil: 'networkidle' });
+	await page.getByRole('button', { name: new RegExp(`^${stranger.replace(/[.+]/g, '\\$&')}`) }).click();
+	await page.getByRole('dialog', { name: stranger }).getByRole('button', { name: 'Revoke' }).click();
+	await expect.poll(async () => (await orgOf(owner, kopi.id)).invites.map((one) => one.email)).not.toContain(stranger);
+
+	// Siti joins; her role from a sheet, then Remove, which asks first.
+	const code = (await orgOf(owner, kopi.id)).invites.find((one) => one.email === siti.email)!.code;
+	expect((await api(siti, `/api/invites/${code}/accept`, { method: 'POST' })).ok).toBe(true);
+	await page.reload({ waitUntil: 'networkidle' });
+	const sitiName = (await orgOf(owner, kopi.id)).members.find((one) => one.role === 'admin')!.name;
+	await page.getByRole('button', { name: new RegExp(`^${sitiName} Admin`) }).click();
+	await page.getByRole('dialog', { name: sitiName }).getByRole('button', { name: 'Member' }).click();
+	await expect.poll(async () => (await orgOf(owner, kopi.id)).members.find((one) => one.name === sitiName)?.role).toBe('member');
+	await page.getByRole('button', { name: new RegExp(`^${sitiName} Member`) }).click();
+	await page.getByRole('dialog', { name: sitiName }).getByRole('button', { name: `Remove ${sitiName}` }).click();
+	await page.getByRole('dialog', { name: `Remove ${sitiName}?` }).getByRole('button', { name: 'Remove', exact: true }).click();
+	await expect.poll(async () => (await orgOf(owner, kopi.id)).members.length).toBe(1);
+
+	// The only owner can't leave: the row says why and does nothing.
+	await expect(page.getByText('You’re its only owner: make someone else an owner first.')).toBeVisible();
+
+	// Rename, off ⋯, on its own screen.
+	await page.getByRole('button', { name: `More for ${kopi.name}` }).click();
+	await page.getByRole('dialog').getByRole('button', { name: 'Rename' }).click();
+	await page.getByRole('textbox', { name: 'Name' }).fill('Kopi Kita');
+	await page.getByRole('button', { name: 'Save' }).click();
+	await expect(page.getByRole('heading', { level: 1, name: 'Kopi Kita' })).toBeVisible();
+	await expect.poll(async () => (await orgOf(owner, kopi.id)).name).toBe('Kopi Kita');
+});
+
+test('a member leaves a workspace on a phone, after it asks', async ({ page, context }) => {
+	const owner = await createAccount();
+	const budi = await createAccount();
+	const kopi = (await orgsOf(owner)).orgs[0];
+	const invited = (await (await api(owner, `/api/orgs/${kopi.id}/invites`, { method: 'POST', body: JSON.stringify({ email: budi.email, role: 'member' }) })).json()) as { code: string };
+	expect((await api(budi, `/api/invites/${invited.code}/accept`, { method: 'POST' })).ok).toBe(true);
+	await signInAs(context, budi);
+	await page.goto(`/settings/workspaces/${kopi.id}`, { waitUntil: 'networkidle' });
+	await expect(page.getByRole('button', { name: /^Invite people/ })).toHaveCount(0);
+	await expect(page.getByRole('button', { name: `More for ${kopi.name}` })).toHaveCount(0);
+	await page.getByRole('button', { name: `Leave ${kopi.name}` }).click();
+	await page.getByRole('dialog', { name: `Leave ${kopi.name}` }).getByRole('button', { name: 'Leave' }).click();
+	await expect(page).toHaveURL(/\/settings\/workspaces$/);
+	await expect(page.getByText(`You left ${kopi.name}`)).toBeVisible();
+	expect((await orgsOf(budi)).orgs.map((org) => org.id)).not.toContain(kopi.id);
 });

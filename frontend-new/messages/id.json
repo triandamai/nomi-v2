@@ -3699,5 +3699,10 @@
 	"phone_memory_profile_sub": "Setiap anggota kru membaca ini sebelum menjawab. Tulis dengan kata-katamu sendiri.",
 	"phone_memory_correct_sub": "Tulis seperti yang perlu diingat kru.",
 	"phone_memory_export": "Ekspor memori",
-	"phone_memory_budget_sub": "Dimuat di setiap balasan. Makin besar makin banyak yang diingat, dan makin banyak token."
+	"phone_memory_budget_sub": "Dimuat di setiap balasan. Makin besar makin banyak yang diingat, dan makin banyak token.",
+	"phone_workspace_invite_sub": "Lewat email, sebagai member atau admin",
+	"phone_workspace_invite_to": "Undang ke {name}",
+	"phone_workspace_more": "Lainnya untuk {name}",
+	"phone_workspace_role_sub": "Yang bisa dilakukan {name} di sini",
+	"phone_workspace_create_sub": "Untuk tim, klien, atau usaha sampingan. Chat, memori, dan inbox-mu tetap pribadi."
 }
