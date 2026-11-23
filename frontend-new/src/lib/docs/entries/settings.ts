@@ -409,4 +409,22 @@ export default [
 		accessibility: ['The name is the screen’s level-1 heading; the mascot is decorative.'],
 		related: ['settings/CrewMemberHeader.svelte', 'agents/Mascot.svelte', 'settings/PhoneSettingsGroup.svelte'],
 	},
+	{
+		file: 'settings/PhoneMemoryProfile.svelte',
+		summary: 'The profile every crew member reads, as a card on a phone: the text, when it was updated, and Edit.',
+		use: ['Memory & context on a phone, under You.'],
+		avoid: ['A desktop page: use MemoryProfile, which edits in place.'],
+		dos: ['Say what fills it when it’s empty (Nomi writes it, or the person can).', 'Edit opens its own screen: typing gets one on a phone.'],
+		accessibility: ['Edit is a 44 target, named for what it edits.'],
+		related: ['settings/MemoryProfile.svelte', 'settings/PhoneFormScreen.svelte'],
+	},
+	{
+		file: 'settings/PhoneMemoryCard.svelte',
+		summary: 'One memory on a phone: what the crew remembers, how strong it is, who learned it when, and a ⋯ for Correct, Still right and Forget.',
+		use: ['A kind of memory’s own screen in Memory & context.'],
+		avoid: ['A desktop page: use MemoryEntry inside MemoryTopicRow.'],
+		dos: ['Ask “Is this still right?” when the crew isn’t sure of it.', 'Offer Undo after Forget, before it’s sent.'],
+		accessibility: ['An article named by the memory; the ⋯ is a 44 button named for it.'],
+		related: ['settings/MemoryEntry.svelte', 'settings/StrengthBars.svelte', 'overlays/ActionSheet.svelte'],
+	},
 ] satisfies ComponentDoc[];

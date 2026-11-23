@@ -40,7 +40,8 @@
 
 <style>
 	/* 16pt on a phone so iOS doesn't zoom into a field as it's focused. */
-	.form :global(input) {
+	.form :global(input),
+	.form :global(textarea) {
 		font-size: var(--text-phone);
 	}
 </style>

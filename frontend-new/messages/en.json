@@ -3691,5 +3691,13 @@
 	"phone_models_key_sub": "Paste an API key from {name}. It’s checked with {name} before it’s saved.",
 	"phone_models_address_sub": "The address of a server that speaks OpenAI’s API. It’s checked before it’s saved.",
 	"phone_models_disconnect": "Disconnect {name}",
-	"phone_models_disconnect_body": "Its models leave the picker. You can connect it again with a key."
+	"phone_models_disconnect_body": "Its models leave the picker. You can connect it again with a key.",
+	"phone_memory_back": "Memory",
+	"phone_memory_more": "More for this memory",
+	"phone_memory_learned": "What the crew learned",
+	"phone_memory_edit": "Edit",
+	"phone_memory_profile_sub": "Every crew member reads this before they answer. Write it in your own words.",
+	"phone_memory_correct_sub": "Write it the way the crew should remember it.",
+	"phone_memory_export": "Export memory",
+	"phone_memory_budget_sub": "Loaded into every reply. More remembers more, and costs more tokens."
 }

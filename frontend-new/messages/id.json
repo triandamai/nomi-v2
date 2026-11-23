@@ -3691,5 +3691,13 @@
 	"phone_models_key_sub": "Tempel API key dari {name}. Key dicek dulu dengan {name} sebelum disimpan.",
 	"phone_models_address_sub": "Alamat server yang memakai API OpenAI. Dicek dulu sebelum disimpan.",
 	"phone_models_disconnect": "Putuskan {name}",
-	"phone_models_disconnect_body": "Modelnya hilang dari pilihan. Kamu bisa menyambungkannya lagi dengan key."
+	"phone_models_disconnect_body": "Modelnya hilang dari pilihan. Kamu bisa menyambungkannya lagi dengan key.",
+	"phone_memory_back": "Memori",
+	"phone_memory_more": "Lainnya untuk memori ini",
+	"phone_memory_learned": "Yang dipelajari kru",
+	"phone_memory_edit": "Ubah",
+	"phone_memory_profile_sub": "Setiap anggota kru membaca ini sebelum menjawab. Tulis dengan kata-katamu sendiri.",
+	"phone_memory_correct_sub": "Tulis seperti yang perlu diingat kru.",
+	"phone_memory_export": "Ekspor memori",
+	"phone_memory_budget_sub": "Dimuat di setiap balasan. Makin besar makin banyak yang diingat, dan makin banyak token."
 }

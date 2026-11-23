@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { BACKEND_URL } from './support/env';
 import { api, createAccount, signInAs, type Account } from './support/accounts';
 import { codeFor } from './support/mailpit';
-import { seedNomiModel, seedPersonality, seedUsage } from './support/seed';
+import { seedMemory, seedNomiModel, seedPersonality, seedUsage } from './support/seed';
 import { readFile } from 'node:fs/promises';
 
 // The You flow on a phone against the real backend (Flow / Mobile — You & Settings, EtSi2): each
@@ -339,4 +339,64 @@ test('Models & providers on a phone: defaults from sheets, a provider’s switch
 	await expect(page).toHaveURL(/\/settings\/models$/);
 	const { connections } = (await (await api(account, '/api/llm/connections')).json()) as { connections: unknown[] };
 	expect(connections).toEqual([]);
+});
+
+test('Memory on a phone: the profile on its own screen, a kind’s memories, correct and forget with Undo, budgets from a sheet', async ({ page, context }) => {
+	const account = await createAccount();
+	await seedMemory(account.email, { content: 'Short, direct answers', kind: 'preference', weight: 4 });
+	await seedMemory(account.email, { content: 'Siti is my sister in Bandung', kind: 'person' });
+	await seedMemory(account.email, { content: 'Pak Budi supplies the beans', kind: 'person' });
+	type Memory = { id: string; content: string };
+	const memories = async () => ((await (await api(account, '/api/memory')).json()) as { memories: Memory[] }).memories;
+	await signInAs(context, account);
+	await page.goto('/settings', { waitUntil: 'networkidle' });
+	await page.getByRole('main').getByRole('link', { name: /^Memory/ }).click();
+	await expect(page).toHaveURL(/\/settings\/memory$/);
+	await expect(page.getByRole('heading', { level: 1, name: 'Memory & context' })).toBeVisible();
+	await expect(page.getByRole('link', { name: /^People 2/ })).toBeVisible();
+
+	// The profile: its own screen, saved, back with it shown.
+	await page.getByRole('button', { name: 'Edit the profile' }).click();
+	await expect(page.getByRole('navigation', { name: 'Main' })).toBeHidden();
+	await page.getByRole('textbox', { name: 'Your profile' }).fill('Runs a coffee stall in Bandung.');
+	await page.getByRole('button', { name: 'Save' }).click();
+	await expect(page.getByText('Profile saved. The crew reads it from the next reply.')).toBeVisible();
+	await expect(page.getByText('Runs a coffee stall in Bandung.')).toBeVisible();
+	await expect.poll(async () => ((await (await api(account, '/api/memory/profile')).json()) as { text: string }).text).toBe('Runs a coffee stall in Bandung.');
+
+	// People: each memory a card; correct one on its own screen.
+	await page.getByRole('link', { name: /^People/ }).click();
+	await expect(page).toHaveURL(/\?topic=person$/);
+	await expect(page.getByRole('heading', { level: 1, name: 'People' })).toBeVisible();
+	await page.getByRole('article', { name: 'Siti is my sister in Bandung' }).getByRole('button', { name: 'More for this memory' }).click();
+	await page.getByRole('dialog').getByRole('button', { name: 'Correct it' }).click();
+	await page.getByRole('textbox', { name: 'What Nomi should remember' }).fill('Siti is my sister in Jakarta');
+	await page.getByRole('button', { name: 'Save' }).click();
+	await expect(page.getByRole('article', { name: 'Siti is my sister in Jakarta' })).toBeVisible();
+	await expect.poll(async () => (await memories()).map((one) => one.content)).toContain('Siti is my sister in Jakarta');
+
+	// Forget offers Undo: undone, it stays; forgotten, it goes.
+	const beans = page.getByRole('article', { name: 'Pak Budi supplies the beans' });
+	await beans.getByRole('button', { name: 'More for this memory' }).click();
+	await page.getByRole('dialog').getByRole('button', { name: 'Forget it' }).click();
+	await expect(beans).toBeHidden();
+	await page.getByRole('button', { name: 'Undo' }).click();
+	await expect(beans).toBeVisible();
+	await page.waitForTimeout(6_500);
+	expect((await memories()).map((one) => one.content)).toContain('Pak Budi supplies the beans');
+	await beans.getByRole('button', { name: 'More for this memory' }).click();
+	await page.getByRole('dialog').getByRole('button', { name: 'Forget it' }).click();
+	await expect(beans).toBeHidden();
+	await expect.poll(async () => (await memories()).map((one) => one.content), { timeout: 15_000 }).not.toContain('Pak Budi supplies the beans');
+
+	// Back to Memory: a budget from a sheet, a learning switch saved as it flips.
+	await page.getByRole('main').getByRole('link', { name: 'Memory', exact: true }).click();
+	await page.getByRole('button', { name: /^Profile .* tok$/ }).click();
+	await page.getByRole('dialog', { name: 'Profile' }).getByRole('button', { name: '2,000 tok' }).click();
+	const settings = async () => (await (await api(account, '/api/memory/settings')).json()) as { search_past_chats: boolean; profile_budget: number };
+	await expect.poll(async () => (await settings()).profile_budget).toBe(2000);
+	const search = page.getByRole('switch', { name: 'Search past chats' });
+	const before = (await settings()).search_past_chats;
+	await search.click();
+	await expect.poll(async () => (await settings()).search_past_chats).toBe(!before);
 });
