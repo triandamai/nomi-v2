@@ -1,7 +1,7 @@
 import { readdirSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { expect, test } from '@playwright/test';
+import { expect, test } from './support/test';
 
 // The design-system docs, as the team gets them: the static copy (`npm run build:gallery`) served
 // from a nested path by e2e/static-gallery-server.mjs. Pages link to each other, search finds any

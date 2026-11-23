@@ -20,3 +20,10 @@ attachWsProxy(server);
 server.listen(port, host, () => {
 	console.log(`listening on http://${host}:${port}`);
 });
+
+for (const signal of ['SIGTERM', 'SIGINT']) {
+	process.on(signal, () => {
+		server.closeAllConnections?.();
+		process.exit(0);
+	});
+}

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './support/test';
 
 // The landing page (/welcome, Figma 170:2766) from the production server: what a visitor sees, and
 // the hero's composer carrying what they typed through sign in to a new chat.

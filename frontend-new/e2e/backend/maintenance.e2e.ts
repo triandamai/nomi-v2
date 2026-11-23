@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from '../support/test';
 import { api, createAccount, signInAgain, signInAs } from './support/accounts';
 import { makePlatformAdmin } from './support/db';
 

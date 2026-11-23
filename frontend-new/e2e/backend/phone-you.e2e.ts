@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from '../support/test';
 import { BACKEND_URL } from './support/env';
 import { api, createAccount, newEmail, signInAs, type Account } from './support/accounts';
 import { codeFor } from './support/mailpit';
