@@ -21,6 +21,7 @@ use nomi_agent_core::design_directions::{self, DesignDirections};
 use nomi_agent_core::{ContentBlock, Tool, ToolOutcome, View};
 use nomi_llm::ToolDefinition;
 
+pub const READ_DESIGN_SKILL: &str = "read_design_skill";
 pub const PROPOSE_DIRECTIONS: &str = "propose_directions";
 pub const SAVE_PREVIEW: &str = "save_preview";
 pub const READ_PREVIEW: &str = "read_preview";
@@ -52,6 +53,41 @@ pub async fn use_connected(mcp: &dyn McpOps, user_id: Uuid, input: &Value) -> Re
         Some(_) => return Err("arguments must be an object".to_string()),
     };
     mcp.call(user_id, server, tool, arguments).await.map_err(|why| format!("{tool} on {server} didn't work: {why}. {CARRY_ON}"))
+}
+
+/// `read_design_skill`: one skill from Sora's design library (`crate::library`).
+pub struct ReadDesignSkill;
+
+#[async_trait]
+impl Tool for ReadDesignSkill {
+    fn definition(&self) -> ToolDefinition {
+        ToolDefinition {
+            name: READ_DESIGN_SKILL.to_string(),
+            description: format!(
+                "Read one skill from your design library, whole: what you know about design (Taste Skill is your rulebook), \
+                 the canvas format, styles to offer as directions, the components Koda builds from and reference patterns. \
+                 Read what the step needs before you do it, and read it again when an older read was trimmed. The skills:\n{}",
+                crate::library::index()
+            ),
+            input_schema: json!({
+                "type": "object",
+                "properties": {"topic": {"type": "string", "description": "The skill's topic, as listed"}},
+                "required": ["topic"]
+            }),
+        }
+    }
+
+    fn group(&self) -> &'static str {
+        GROUP
+    }
+
+    fn keywords(&self) -> &'static [&'static str] {
+        &["design", "taste", "library", "skill"]
+    }
+
+    async fn execute(&self, _conn: &mut PoolConnection<Postgres>, _session_id: Uuid, _agent_session_id: Uuid, _user_id: Uuid, input: Value) -> Result<ToolOutcome, String> {
+        crate::library::read_design_skill(&input).map(ToolOutcome::text)
+    }
 }
 
 /// `list_connected_tools`.
@@ -624,6 +660,7 @@ impl Tool for ReviewBuild {
 /// Sora's own tools.
 pub fn own_tools(mcp: &SharedMcpOps, publisher: &SharedStaticPublisher, source: &SharedProjectSource) -> Vec<Box<dyn Tool>> {
     vec![
+        Box::new(ReadDesignSkill),
         Box::new(ProposeDirections),
         Box::new(SavePreview { publisher: publisher.clone() }),
         Box::new(ReadPreview),
