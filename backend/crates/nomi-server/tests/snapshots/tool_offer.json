@@ -82,7 +82,8 @@
           "read_attachment"
         ]
       },
-      "own": []
+      "own": [],
+      "own_needs_approval": {}
     },
     "coding": {
       "engine": {
@@ -170,7 +171,20 @@
         "delete_file",
         "run_command",
         "publish_project"
-      ]
+      ],
+      "own_needs_approval": {
+        "add_attachment": false,
+        "delete_file": false,
+        "edit_file": false,
+        "list_files": false,
+        "publish_project": true,
+        "read_file": false,
+        "read_guide": false,
+        "run_command": false,
+        "search_files": false,
+        "write_file": false,
+        "write_files": false
+      }
     },
     "design": {
       "engine": {
@@ -255,7 +269,17 @@
         "review_build",
         "list_connected_tools",
         "use_connected_tool"
-      ]
+      ],
+      "own_needs_approval": {
+        "approve_version": false,
+        "create_handoff": false,
+        "list_connected_tools": false,
+        "propose_directions": false,
+        "read_preview": false,
+        "review_build": false,
+        "save_preview": false,
+        "use_connected_tool": true
+      }
     },
     "files": {
       "engine": {
@@ -329,7 +353,10 @@
       },
       "own": [
         "make_file"
-      ]
+      ],
+      "own_needs_approval": {
+        "make_file": true
+      }
     },
     "health": {
       "engine": {
@@ -411,7 +438,26 @@
         "hevy_exercise_history",
         "hevy_body_measurements",
         "hevy_log_body_measurement"
-      ]
+      ],
+      "own_needs_approval": {
+        "hevy_body_measurements": false,
+        "hevy_create_exercise": false,
+        "hevy_create_routine": false,
+        "hevy_create_routine_folder": false,
+        "hevy_exercise_history": false,
+        "hevy_find_exercises": false,
+        "hevy_log_body_measurement": false,
+        "hevy_log_workout": false,
+        "hevy_routine": false,
+        "hevy_routine_folders": false,
+        "hevy_routines": false,
+        "hevy_update_routine": false,
+        "hevy_update_workout": false,
+        "hevy_workout": false,
+        "hevy_workout_changes": false,
+        "hevy_workout_count": false,
+        "hevy_workouts": false
+      }
     },
     "inspector": {
       "engine": {
@@ -485,7 +531,14 @@
         "list_tables",
         "query_database",
         "request_access"
-      ]
+      ],
+      "own_needs_approval": {
+        "app_status": false,
+        "list_tables": false,
+        "query_database": false,
+        "read_logs": false,
+        "request_access": true
+      }
     },
     "money": {
       "engine": {
@@ -556,7 +609,15 @@
         "set_budget",
         "list_budgets",
         "set_month_start"
-      ]
+      ],
+      "own_needs_approval": {
+        "list_budgets": true,
+        "list_transactions": true,
+        "log_transaction": true,
+        "set_budget": true,
+        "set_month_start": true,
+        "summarize_budget": true
+      }
     },
     "personality": {
       "engine": {
@@ -625,7 +686,13 @@
         "reset_chat_personality",
         "list_personality_versions",
         "rollback_personality"
-      ]
+      ],
+      "own_needs_approval": {
+        "list_personality_versions": true,
+        "reset_chat_personality": true,
+        "rollback_personality": true,
+        "set_personality": true
+      }
     },
     "planning": {
       "engine": {
@@ -705,7 +772,12 @@
         "create_project",
         "rename_project",
         "publish_project"
-      ]
+      ],
+      "own_needs_approval": {
+        "create_project": false,
+        "publish_project": true,
+        "rename_project": false
+      }
     },
     "reminders": {
       "engine": {
@@ -775,7 +847,14 @@
         "edit_reminder",
         "complete_reminder",
         "remove_reminder"
-      ]
+      ],
+      "own_needs_approval": {
+        "add_reminder": false,
+        "complete_reminder": false,
+        "edit_reminder": false,
+        "remove_reminder": false,
+        "show_reminders": false
+      }
     },
     "supervisor": {
       "engine": {
@@ -846,7 +925,11 @@
       "own": [
         "list_recent_agent_activity",
         "stop_agents"
-      ]
+      ],
+      "own_needs_approval": {
+        "list_recent_agent_activity": true,
+        "stop_agents": true
+      }
     },
     "workspace": {
       "engine": {
@@ -929,7 +1012,23 @@
         "drive_search",
         "calendar_events",
         "calendar_add_event"
-      ]
+      ],
+      "own_needs_approval": {
+        "calendar_add_event": true,
+        "calendar_events": false,
+        "docs_append": false,
+        "docs_create": false,
+        "docs_read": false,
+        "drive_search": false,
+        "gmail_draft": false,
+        "gmail_read": false,
+        "gmail_search": false,
+        "gmail_send": true,
+        "sheets_append": false,
+        "sheets_create": false,
+        "sheets_read": false,
+        "sheets_update": false
+      }
     }
   },
   "catalog": {
@@ -992,6 +1091,2971 @@
     "summarize_budget": "money",
     "write_file": "coding",
     "write_files": "coding"
+  },
+  "definitions": {
+    "add_attachment": {
+      "description": "Copy a file the person attached in the chat into the project, byte for byte: any kind (a logo as PNG, JPG or SVG, a photo, an icon, a font, a PDF, data as CSV or JSON), up to 10 MB. Use its id from its <attachment id=\"…\"> tag, and a path where the stack serves files from, keeping the file's extension, such as 'static/logo.png' (SvelteKit) or 'public/logo.png' (Vite, React, Vue, Astro), then reference it from the code by that served path.",
+      "input_schema": {
+        "properties": {
+          "attachment_id": {
+            "description": "The attachment's id.",
+            "type": "string"
+          },
+          "path": {
+            "description": "Where it goes in the project, e.g. 'static/logo.png'",
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "attachment_id",
+          "path"
+        ],
+        "type": "object"
+      }
+    },
+    "add_reminder": {
+      "description": "Set a reminder for the user.",
+      "input_schema": {
+        "properties": {
+          "due_at": {
+            "description": "ISO 8601 date and time with the user's offset",
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "recurrence": {
+            "description": "Omit for a one-off",
+            "enum": [
+              "daily",
+              "weekly",
+              "monthly"
+            ],
+            "type": "string"
+          },
+          "title": {
+            "description": "What to remind them of, short",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "due_at"
+        ],
+        "type": "object"
+      }
+    },
+    "app_status": {
+      "description": "Whether the published app is running, at which address, and how its latest publishes went.",
+      "input_schema": {
+        "properties": {
+          "environment": {
+            "description": "production unless the person named another.",
+            "type": "string"
+          },
+          "project_id": {
+            "description": "The project's id.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id"
+        ],
+        "type": "object"
+      }
+    },
+    "approve_version": {
+      "description": "Record that the person approved a preview version, when they said so in this chat. Quote their latest message's words exactly in quote; it is refused when their latest message doesn't contain them. Never call it on your own judgement or on an unclear reply: ask instead.",
+      "input_schema": {
+        "properties": {
+          "note": {
+            "description": "Anything they asked for with the approval, in a sentence",
+            "type": "string"
+          },
+          "quote": {
+            "description": "The words of their latest message that approve it, exactly as they wrote them",
+            "type": "string"
+          },
+          "version": {
+            "description": "The preview version they approved; the newest when they didn't name one",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "quote"
+        ],
+        "type": "object"
+      }
+    },
+    "ask_agent": {
+      "description": "Ask another crew member a question when you're working on the same thing and need to make sure, instead of guessing: e.g. ask planning what was agreed with the person, coding what it built, money what was logged. They answer from this chat and their own work, and the exchange shows in the chat. Ask the person (ask_user) for what only they can decide.",
+      "input_schema": {
+        "properties": {
+          "agent": {
+            "description": "Who to ask",
+            "enum": [
+              "chitchat",
+              "money",
+              "reminders",
+              "workspace",
+              "health",
+              "personality",
+              "planning",
+              "coding",
+              "inspector",
+              "design"
+            ],
+            "type": "string"
+          },
+          "question": {
+            "description": "One clear question, with what they need to answer it",
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent",
+          "question"
+        ],
+        "type": "object"
+      }
+    },
+    "ask_user": {
+      "description": "Ask the person something you need to know before you act, as a card in the chat with answers they can tap (and room for their own). Use it whenever the request is missing a detail you can't sensibly assume (when, how much, which one, one-time or repeating), instead of guessing. Put everything you need to know into this one call, the most important question first: the card shows the questions one at a time with Next, and the person sends all the answers together. Never ask again in a later turn for something you could have asked here; only a question that depends on these answers waits for them. Each question has 2-5 short options (add a one-line detail where a label alone isn't clear, e.g. what a design direction looks like). Skip what they already told you, and never ask the same thing twice. Your turn ends here; their answers arrive as their next message. Call it on its own, not alongside other tools, and don't repeat the questions in your reply. Mark the one option you would pick yourself with recommended: true, at most one per question and only where you have a real reason; if the person skips, that answer is used. Add a short helper line under a question where it needs context (who it is for, what you already know).",
+      "input_schema": {
+        "properties": {
+          "intro": {
+            "description": "One short line before the questions, optional",
+            "type": "string"
+          },
+          "questions": {
+            "description": "Every question you need answered now, the most important first",
+            "items": {
+              "properties": {
+                "helper": {
+                  "description": "One short line under the question giving it context, optional",
+                  "type": "string"
+                },
+                "multiple": {
+                  "description": "true when several options can be picked",
+                  "type": "boolean"
+                },
+                "options": {
+                  "items": {
+                    "properties": {
+                      "detail": {
+                        "type": "string"
+                      },
+                      "label": {
+                        "type": "string"
+                      },
+                      "recommended": {
+                        "description": "true on the one option you suggest; at most one per question",
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "label"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 5,
+                  "type": "array"
+                },
+                "question": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "question",
+                "options"
+              ],
+              "type": "object"
+            },
+            "maxItems": 5,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "questions"
+        ],
+        "type": "object"
+      }
+    },
+    "calendar_add_event": {
+      "description": "Add an event to the user's primary Google Calendar. Times are RFC 3339 with the user's offset. Attendees get an invitation. The user approves it first.",
+      "input_schema": {
+        "properties": {
+          "attendees": {
+            "description": "Email addresses to invite.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "description": {
+            "type": "string"
+          },
+          "end": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "start": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "summary",
+          "start",
+          "end"
+        ],
+        "type": "object"
+      }
+    },
+    "calendar_events": {
+      "description": "List events on the user's primary Google Calendar between two times (RFC 3339).",
+      "input_schema": {
+        "properties": {
+          "max_results": {
+            "type": "integer"
+          },
+          "time_max": {
+            "type": "string"
+          },
+          "time_min": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "time_min"
+        ],
+        "type": "object"
+      }
+    },
+    "cancel_background_task": {
+      "description": "Cancel a pending or running background task by its task_id.",
+      "input_schema": {
+        "properties": {
+          "task_id": {
+            "description": "The UUID of the background task to cancel",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id"
+        ],
+        "type": "object"
+      }
+    },
+    "cancel_reminder": {
+      "description": "Cancel an active reminder by id. Call list_reminders first if you don't already know the id.",
+      "input_schema": {
+        "properties": {
+          "reminder_id": {
+            "description": "The reminder's id, from a prior list_reminders call",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reminder_id"
+        ],
+        "type": "object"
+      }
+    },
+    "complete_reminder": {
+      "description": "Tick a reminder off as done.",
+      "input_schema": {
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    "complete_task": {
+      "description": "Call this when you are done helping with this task, whether it succeeded or the user wants to stop.",
+      "input_schema": {
+        "properties": {
+          "status": {
+            "enum": [
+              "completed",
+              "cancelled"
+            ],
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "summary"
+        ],
+        "type": "object"
+      }
+    },
+    "create_agent": {
+      "description": "Add a new member to the person's own crew, for a task they want an agent for. Call find_tools first and pass the names of the tools that fit. The member is theirs alone; their plan may limit how many they can have.",
+      "input_schema": {
+        "properties": {
+          "name": {
+            "description": "A short name, unlike any crew member's (at most 40 characters)",
+            "type": "string"
+          },
+          "role": {
+            "description": "Its job in one sentence (at most 200 characters)",
+            "type": "string"
+          },
+          "soul": {
+            "description": "Optional soul.md: who it is and how it works, in markdown",
+            "type": "string"
+          },
+          "tools": {
+            "description": "Tool names from find_tools; may be empty",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "role",
+          "tools"
+        ],
+        "type": "object"
+      }
+    },
+    "create_handoff": {
+      "description": "Write the handoff for the version the person approved, so Koda can build it without guessing: the design system, sitemap, user flows, every page and component (by their data-design-id), interactions, responsive rules, accessibility, assets and the decisions made. The brief, the feedback's outcome and the approved preview's version and address are added for you. It only works once the person has approved a version.",
+      "input_schema": {
+        "properties": {
+          "accessibility": {
+            "description": "Contrast, focus order, labels, motion and touch target rules",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "assets": {
+            "description": "Images, icons and fonts: the name, the kind and where each comes from",
+            "items": {
+              "properties": {
+                "kind": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "source": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "kind",
+                "source"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "components": {
+            "description": "Each reusable component: its data-design-id in the preview, name, what it is, and its states (hover, empty, error, loading)",
+            "items": {
+              "properties": {
+                "description": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "states": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "description"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "decisions": {
+            "description": "The design decisions that were made and why",
+            "items": {
+              "properties": {
+                "decision": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "decision",
+                "reason"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "design_system": {
+            "properties": {
+              "colors": {
+                "description": "Every colour: its name, its value (hex) and what it is used for",
+                "items": {
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "usage": {
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "spacing": {
+                "description": "Spacing, radius and grid rules",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "typography": {
+                "description": "Every text style: its role, font, size/line height and weight",
+                "items": {
+                  "properties": {
+                    "font": {
+                      "type": "string"
+                    },
+                    "role": {
+                      "type": "string"
+                    },
+                    "size": {
+                      "type": "string"
+                    },
+                    "weight": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "role",
+                    "font"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "colors",
+              "typography"
+            ],
+            "type": "object"
+          },
+          "interactions": {
+            "description": "What happens when something is used: its target, the trigger and the result",
+            "items": {
+              "properties": {
+                "result": {
+                  "type": "string"
+                },
+                "target": {
+                  "type": "string"
+                },
+                "trigger": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "target",
+                "trigger",
+                "result"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "pages": {
+            "description": "Every page of the approved preview: its path, purpose, and the data-design-id of each section top to bottom",
+            "items": {
+              "properties": {
+                "notes": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "purpose": {
+                  "type": "string"
+                },
+                "sections": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "path",
+                "purpose",
+                "sections"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "responsive": {
+            "description": "How the layout changes from a phone to a desktop, with the widths",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "sitemap": {
+            "description": "Every page: its path in the preview, its title and what it is for",
+            "items": {
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "purpose": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path",
+                "title",
+                "purpose"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "user_flows": {
+            "description": "What people do, step by step",
+            "items": {
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "steps": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "name",
+                "steps"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "design_system",
+          "sitemap",
+          "user_flows",
+          "pages",
+          "components",
+          "responsive",
+          "accessibility",
+          "decisions"
+        ],
+        "type": "object"
+      }
+    },
+    "create_project": {
+      "description": "Create a new project for the app the user wants built. Call this once, before writing a plan.",
+      "input_schema": {
+        "properties": {
+          "backend": {
+            "description": "relay for anything that keeps data on a server, signs people in, stores files or calls paid APIs (Nomi Relay gives it a database, sign-in, storage and functions); drizzle only for an app that brings its own database code. Leave it out for browser-only apps.",
+            "enum": [
+              "relay",
+              "drizzle"
+            ],
+            "type": "string"
+          },
+          "description": {
+            "description": "One-sentence description of what it does",
+            "type": "string"
+          },
+          "name": {
+            "description": "Short project name",
+            "type": "string"
+          },
+          "stack": {
+            "description": "sveltekit (default: anything with pages and a server or database), react or vue (browser-only apps, when the user asks), astro (content sites), static (a single plain HTML page)",
+            "enum": [
+              "sveltekit",
+              "react",
+              "vue",
+              "astro",
+              "static"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "description"
+        ],
+        "type": "object"
+      }
+    },
+    "create_reminder": {
+      "description": "Schedule a reminder to fire at a specific future time. Resolve any relative time the user gives (\"tomorrow\", \"in an hour\") to an absolute ISO 8601 datetime yourself, using the current date/time and the user's timezone given in your system prompt. Before you set it, make sure you know what it's for, when, and whether it's one-time or repeating (and how often): ask with ask_user for whatever they didn't say, all of it in one card.",
+      "input_schema": {
+        "properties": {
+          "label": {
+            "description": "Short human label, e.g. \"take a bath\"",
+            "type": "string"
+          },
+          "prompt": {
+            "description": "The instruction the target agent will act on when this fires",
+            "type": "string"
+          },
+          "recurrence": {
+            "description": "Omit for a one-time reminder",
+            "enum": [
+              "daily",
+              "weekly",
+              "monthly"
+            ],
+            "type": "string"
+          },
+          "recurrence_day_of_month": {
+            "description": "Required when recurrence is monthly",
+            "maximum": 31,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "recurrence_weekday": {
+            "description": "Required when recurrence is weekly (0 = Sunday)",
+            "maximum": 6,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "run_at": {
+            "description": "Absolute ISO 8601 datetime, e.g. 2026-09-21T11:00:00-04:00",
+            "type": "string"
+          },
+          "target_agent": {
+            "description": "Which agent takes this job when it fires",
+            "enum": [
+              "chitchat",
+              "money",
+              "reminders",
+              "workspace",
+              "health",
+              "personality",
+              "planning",
+              "coding",
+              "inspector",
+              "design"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_at",
+          "label",
+          "prompt",
+          "target_agent"
+        ],
+        "type": "object"
+      }
+    },
+    "delegate_to_agent": {
+      "description": "Hand the user's request to a specialist. The specialist sees this conversation, takes it over right away and answers the user itself, so don't write a reply of your own when you hand off. Use this only when the request genuinely needs a specialist; answer anything else yourself. Available specialists: money, reminders, workspace, health, personality, planning, coding, inspector, design.",
+      "input_schema": {
+        "properties": {
+          "target_agent": {
+            "description": "Which specialist to delegate to",
+            "enum": [
+              "money",
+              "reminders",
+              "workspace",
+              "health",
+              "personality",
+              "planning",
+              "coding",
+              "inspector",
+              "design"
+            ],
+            "type": "string"
+          },
+          "task": {
+            "description": "What the user wants from the specialist, with any details from this conversation it needs",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_agent",
+          "task"
+        ],
+        "type": "object"
+      }
+    },
+    "delete_file": {
+      "description": "Delete a file from the project.",
+      "input_schema": {
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "path"
+        ],
+        "type": "object"
+      }
+    },
+    "delete_record": {
+      "description": "Delete one of your records.",
+      "input_schema": {
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    "docs_append": {
+      "description": "Add text to the end of a Google Doc.",
+      "input_schema": {
+        "properties": {
+          "document_id": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "document_id",
+          "text"
+        ],
+        "type": "object"
+      }
+    },
+    "docs_create": {
+      "description": "Create a new Google Doc, optionally with text.",
+      "input_schema": {
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "type": "object"
+      }
+    },
+    "docs_read": {
+      "description": "Read a Google Doc's text.",
+      "input_schema": {
+        "properties": {
+          "document_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "document_id"
+        ],
+        "type": "object"
+      }
+    },
+    "drive_search": {
+      "description": "Find files in the user's Google Drive by name. Returns id, name, type and link. Use it to get the id of a Sheet or Doc.",
+      "input_schema": {
+        "properties": {
+          "max_results": {
+            "type": "integer"
+          },
+          "query": {
+            "description": "Part of the file name.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      }
+    },
+    "edit_file": {
+      "description": "Change part of a file: replace old_string (copied exactly from the file, with enough lines around it to be unique) with new_string. Set replace_all to change every occurrence.",
+      "input_schema": {
+        "properties": {
+          "new_string": {
+            "type": "string"
+          },
+          "old_string": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "replace_all": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "project_id",
+          "path",
+          "old_string",
+          "new_string"
+        ],
+        "type": "object"
+      }
+    },
+    "edit_reminder": {
+      "description": "Change a reminder's title, time, repeat or notes.",
+      "input_schema": {
+        "properties": {
+          "due_at": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "recurrence": {
+            "enum": [
+              "none",
+              "daily",
+              "weekly",
+              "monthly"
+            ],
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    "find_tools": {
+      "description": "Search every tool the crew can be given, by what a task needs (e.g. \"track my spending\", \"send an email\"). Returns the best matches with what each does, whether you have it (granted), and which crew members have it (carried_by). It only informs: you can still call only the tools you were given.",
+      "input_schema": {
+        "properties": {
+          "limit": {
+            "description": "How many tools at most (default 8, up to 20)",
+            "type": "integer"
+          },
+          "query": {
+            "description": "A few words about the task or the tool you're looking for",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      }
+    },
+    "gmail_draft": {
+      "description": "Save an email as a Gmail draft (not sent). The default for writing email.",
+      "input_schema": {
+        "properties": {
+          "body": {
+            "description": "Plain-text email body.",
+            "type": "string"
+          },
+          "reply_to_message_id": {
+            "description": "Gmail message id to reply to (threads the email).",
+            "type": "string"
+          },
+          "subject": {
+            "description": "Leave empty when replying to keep the thread's subject.",
+            "type": "string"
+          },
+          "to": {
+            "description": "Recipient email address(es), comma-separated.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "to",
+          "body"
+        ],
+        "type": "object"
+      }
+    },
+    "gmail_read": {
+      "description": "Read one Gmail message in full (headers and plain-text body).",
+      "input_schema": {
+        "properties": {
+          "message_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "message_id"
+        ],
+        "type": "object"
+      }
+    },
+    "gmail_search": {
+      "description": "Search the user's Gmail with Gmail search syntax (from:, subject:, newer_than:7d, has:attachment, ...). Returns id, from, subject, date and a snippet for each.",
+      "input_schema": {
+        "properties": {
+          "max_results": {
+            "description": "1-25, default 10",
+            "type": "integer"
+          },
+          "query": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      }
+    },
+    "gmail_send": {
+      "description": "Send an email from the user's Gmail. Only when they clearly asked to send; they approve it in chat first.",
+      "input_schema": {
+        "properties": {
+          "body": {
+            "description": "Plain-text email body.",
+            "type": "string"
+          },
+          "reply_to_message_id": {
+            "description": "Gmail message id to reply to (threads the email).",
+            "type": "string"
+          },
+          "subject": {
+            "description": "Leave empty when replying to keep the thread's subject.",
+            "type": "string"
+          },
+          "to": {
+            "description": "Recipient email address(es), comma-separated.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "to",
+          "body"
+        ],
+        "type": "object"
+      }
+    },
+    "hevy_body_measurements": {
+      "description": "The person's body measurements in Hevy (weight, body fat, sizes), newest first, 10 a page.",
+      "input_schema": {
+        "properties": {
+          "page": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "hevy_create_exercise": {
+      "description": "Create a custom exercise in Hevy.",
+      "input_schema": {
+        "properties": {
+          "equipment_category": {
+            "enum": [
+              "none",
+              "barbell",
+              "dumbbell",
+              "kettlebell",
+              "machine",
+              "plate",
+              "resistance_band",
+              "suspension",
+              "other"
+            ],
+            "type": "string"
+          },
+          "exercise_type": {
+            "enum": [
+              "weight_reps",
+              "reps_only",
+              "bodyweight_reps",
+              "bodyweight_assisted_reps",
+              "duration",
+              "weight_duration",
+              "distance_duration",
+              "short_distance_weight"
+            ],
+            "type": "string"
+          },
+          "muscle_group": {
+            "enum": [
+              "abdominals",
+              "shoulders",
+              "biceps",
+              "triceps",
+              "forearms",
+              "quadriceps",
+              "hamstrings",
+              "calves",
+              "glutes",
+              "abductors",
+              "adductors",
+              "lats",
+              "upper_back",
+              "traps",
+              "lower_back",
+              "chest",
+              "cardio",
+              "neck",
+              "full_body",
+              "other"
+            ],
+            "type": "string"
+          },
+          "other_muscles": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "exercise_type",
+          "equipment_category",
+          "muscle_group"
+        ],
+        "type": "object"
+      }
+    },
+    "hevy_create_routine": {
+      "description": "Create a routine (a workout plan) in Hevy.",
+      "input_schema": {
+        "properties": {
+          "exercises": {
+            "items": {
+              "properties": {
+                "exercise_template_id": {
+                  "description": "From hevy_find_exercises.",
+                  "type": "string"
+                },
+                "notes": {
+                  "nullable": true,
+                  "type": "string"
+                },
+                "rest_seconds": {
+                  "nullable": true,
+                  "type": "integer"
+                },
+                "sets": {
+                  "items": {
+                    "properties": {
+                      "custom_metric": {
+                        "nullable": true,
+                        "type": "number"
+                      },
+                      "distance_meters": {
+                        "nullable": true,
+                        "type": "integer"
+                      },
+                      "duration_seconds": {
+                        "nullable": true,
+                        "type": "integer"
+                      },
+                      "rep_range": {
+                        "description": "A target range like 8-12 instead of fixed reps.",
+                        "nullable": true,
+                        "properties": {
+                          "end": {
+                            "type": "number"
+                          },
+                          "start": {
+                            "type": "number"
+                          }
+                        },
+                        "type": "object"
+                      },
+                      "reps": {
+                        "nullable": true,
+                        "type": "integer"
+                      },
+                      "type": {
+                        "enum": [
+                          "warmup",
+                          "normal",
+                          "failure",
+                          "dropset"
+                        ],
+                        "type": "string"
+                      },
+                      "weight_kg": {
+                        "nullable": true,
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "type"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "superset_id": {
+                  "nullable": true,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "exercise_template_id",
+                "sets"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "folder_id": {
+            "description": "From hevy_routine_folders; empty puts it in My Routines.",
+            "nullable": true,
+            "type": "integer"
+          },
+          "notes": {
+            "nullable": true,
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "exercises"
+        ],
+        "type": "object"
+      }
+    },
+    "hevy_create_routine_folder": {
+      "description": "Create a routine folder in Hevy.",
+      "input_schema": {
+        "properties": {
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "type": "object"
+      }
+    },
+    "hevy_exercise_history": {
+      "description": "Every logged set of one exercise (for progress), optionally between two dates (ISO 8601).",
+      "input_schema": {
+        "properties": {
+          "end_date": {
+            "type": "string"
+          },
+          "exercise_template_id": {
+            "type": "string"
+          },
+          "start_date": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "exercise_template_id"
+        ],
+        "type": "object"
+      }
+    },
+    "hevy_find_exercises": {
+      "description": "Find exercises (Hevy exercise templates, built-in and custom) by name and/or muscle group. Returns their ids.",
+      "input_schema": {
+        "properties": {
+          "custom_only": {
+            "type": "boolean"
+          },
+          "muscle_group": {
+            "description": "e.g. chest, quadriceps, lats, shoulders, biceps, hamstrings, glutes, abdominals, cardio.",
+            "type": "string"
+          },
+          "query": {
+            "description": "Part of the name, e.g. \"bench\" or \"squat\".",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "hevy_log_body_measurement": {
+      "description": "Log body measurements for a day in Hevy (an existing day is updated, keeping what isn't given).",
+      "input_schema": {
+        "properties": {
+          "abdomen": {
+            "type": "number"
+          },
+          "chest_cm": {
+            "type": "number"
+          },
+          "date": {
+            "description": "YYYY-MM-DD",
+            "type": "string"
+          },
+          "fat_percent": {
+            "type": "number"
+          },
+          "hips": {
+            "type": "number"
+          },
+          "lean_mass_kg": {
+            "type": "number"
+          },
+          "left_bicep_cm": {
+            "type": "number"
+          },
+          "left_calf": {
+            "type": "number"
+          },
+          "left_forearm_cm": {
+            "type": "number"
+          },
+          "left_thigh": {
+            "type": "number"
+          },
+          "neck_cm": {
+            "type": "number"
+          },
+          "right_bicep_cm": {
+            "type": "number"
+          },
+          "right_calf": {
+            "type": "number"
+          },
+          "right_forearm_cm": {
+            "type": "number"
+          },
+          "right_thigh": {
+            "type": "number"
+          },
+          "shoulder_cm": {
+            "type": "number"
+          },
+          "waist": {
+            "type": "number"
+          },
+          "weight_kg": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "date"
+        ],
+        "type": "object"
+      }
+    },
+    "hevy_log_workout": {
+      "description": "Log a finished workout in Hevy.",
+      "input_schema": {
+        "properties": {
+          "description": {
+            "nullable": true,
+            "type": "string"
+          },
+          "end_time": {
+            "type": "string"
+          },
+          "exercises": {
+            "items": {
+              "properties": {
+                "exercise_template_id": {
+                  "description": "From hevy_find_exercises.",
+                  "type": "string"
+                },
+                "notes": {
+                  "nullable": true,
+                  "type": "string"
+                },
+                "sets": {
+                  "items": {
+                    "properties": {
+                      "custom_metric": {
+                        "nullable": true,
+                        "type": "number"
+                      },
+                      "distance_meters": {
+                        "nullable": true,
+                        "type": "integer"
+                      },
+                      "duration_seconds": {
+                        "nullable": true,
+                        "type": "integer"
+                      },
+                      "reps": {
+                        "nullable": true,
+                        "type": "integer"
+                      },
+                      "rpe": {
+                        "description": "Rate of perceived exertion from 6 to 10 (e.g. 7.5, 8, 8.5, 9).",
+                        "nullable": true,
+                        "type": "number"
+                      },
+                      "type": {
+                        "enum": [
+                          "warmup",
+                          "normal",
+                          "failure",
+                          "dropset"
+                        ],
+                        "type": "string"
+                      },
+                      "weight_kg": {
+                        "nullable": true,
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "type"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "superset_id": {
+                  "nullable": true,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "exercise_template_id",
+                "sets"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "is_private": {
+            "type": "boolean"
+          },
+          "start_time": {
+            "description": "ISO 8601, e.g. 2026-10-12T07:30:00+07:00",
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "start_time",
+          "end_time",
+          "exercises"
+        ],
+        "type": "object"
+      }
+    },
+    "hevy_routine": {
+      "description": "One Hevy routine in full.",
+      "input_schema": {
+        "properties": {
+          "routine_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "routine_id"
+        ],
+        "type": "object"
+      }
+    },
+    "hevy_routine_folders": {
+      "description": "The person's Hevy routine folders.",
+      "input_schema": {
+        "properties": {
+          "page": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "hevy_routines": {
+      "description": "The person's Hevy routines (workout plans), 10 a page.",
+      "input_schema": {
+        "properties": {
+          "page": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "hevy_update_routine": {
+      "description": "Replace a Hevy routine with this version (read it first and send it back whole).",
+      "input_schema": {
+        "properties": {
+          "exercises": {
+            "items": {
+              "properties": {
+                "exercise_template_id": {
+                  "description": "From hevy_find_exercises.",
+                  "type": "string"
+                },
+                "notes": {
+                  "nullable": true,
+                  "type": "string"
+                },
+                "rest_seconds": {
+                  "nullable": true,
+                  "type": "integer"
+                },
+                "sets": {
+                  "items": {
+                    "properties": {
+                      "custom_metric": {
+                        "nullable": true,
+                        "type": "number"
+                      },
+                      "distance_meters": {
+                        "nullable": true,
+                        "type": "integer"
+                      },
+                      "duration_seconds": {
+                        "nullable": true,
+                        "type": "integer"
+                      },
+                      "rep_range": {
+                        "description": "A target range like 8-12 instead of fixed reps.",
+                        "nullable": true,
+                        "properties": {
+                          "end": {
+                            "type": "number"
+                          },
+                          "start": {
+                            "type": "number"
+                          }
+                        },
+                        "type": "object"
+                      },
+                      "reps": {
+                        "nullable": true,
+                        "type": "integer"
+                      },
+                      "type": {
+                        "enum": [
+                          "warmup",
+                          "normal",
+                          "failure",
+                          "dropset"
+                        ],
+                        "type": "string"
+                      },
+                      "weight_kg": {
+                        "nullable": true,
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "type"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "superset_id": {
+                  "nullable": true,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "exercise_template_id",
+                "sets"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "notes": {
+            "nullable": true,
+            "type": "string"
+          },
+          "routine_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "routine_id",
+          "title",
+          "exercises"
+        ],
+        "type": "object"
+      }
+    },
+    "hevy_update_workout": {
+      "description": "Replace a Hevy workout with this version (read it first and send it back whole).",
+      "input_schema": {
+        "properties": {
+          "description": {
+            "nullable": true,
+            "type": "string"
+          },
+          "end_time": {
+            "type": "string"
+          },
+          "exercises": {
+            "items": {
+              "properties": {
+                "exercise_template_id": {
+                  "description": "From hevy_find_exercises.",
+                  "type": "string"
+                },
+                "notes": {
+                  "nullable": true,
+                  "type": "string"
+                },
+                "sets": {
+                  "items": {
+                    "properties": {
+                      "custom_metric": {
+                        "nullable": true,
+                        "type": "number"
+                      },
+                      "distance_meters": {
+                        "nullable": true,
+                        "type": "integer"
+                      },
+                      "duration_seconds": {
+                        "nullable": true,
+                        "type": "integer"
+                      },
+                      "reps": {
+                        "nullable": true,
+                        "type": "integer"
+                      },
+                      "rpe": {
+                        "description": "Rate of perceived exertion from 6 to 10 (e.g. 7.5, 8, 8.5, 9).",
+                        "nullable": true,
+                        "type": "number"
+                      },
+                      "type": {
+                        "enum": [
+                          "warmup",
+                          "normal",
+                          "failure",
+                          "dropset"
+                        ],
+                        "type": "string"
+                      },
+                      "weight_kg": {
+                        "nullable": true,
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "type"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "superset_id": {
+                  "nullable": true,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "exercise_template_id",
+                "sets"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "is_private": {
+            "type": "boolean"
+          },
+          "start_time": {
+            "description": "ISO 8601, e.g. 2026-10-12T07:30:00+07:00",
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "workout_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "workout_id",
+          "title",
+          "start_time",
+          "end_time",
+          "exercises"
+        ],
+        "type": "object"
+      }
+    },
+    "hevy_workout": {
+      "description": "One Hevy workout in full.",
+      "input_schema": {
+        "properties": {
+          "workout_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "workout_id"
+        ],
+        "type": "object"
+      }
+    },
+    "hevy_workout_changes": {
+      "description": "Workouts added, changed or deleted in Hevy since a time (ISO 8601).",
+      "input_schema": {
+        "properties": {
+          "page": {
+            "type": "integer"
+          },
+          "since": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "since"
+        ],
+        "type": "object"
+      }
+    },
+    "hevy_workout_count": {
+      "description": "How many workouts the person has logged in Hevy.",
+      "input_schema": {
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "hevy_workouts": {
+      "description": "The person's Hevy workouts, newest first, 10 a page, with exercises and sets.",
+      "input_schema": {
+        "properties": {
+          "page": {
+            "description": "1 for the newest.",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "list_background_tasks": {
+      "description": "List active and recent background tasks in this chat session, with their status and output.",
+      "input_schema": {
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "list_budgets": {
+      "description": "List the user's monthly budgets with how much of each is spent this month.",
+      "input_schema": {
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "list_connected_tools": {
+      "description": "List the tools on the MCP servers the person connected (visual references, moodboards, their own design tools), each with its server and inputs. Call it before use_connected_tool.",
+      "input_schema": {
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "list_files": {
+      "description": "List the project's stack and every file in it, with sizes.",
+      "input_schema": {
+        "properties": {
+          "project_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id"
+        ],
+        "type": "object"
+      }
+    },
+    "list_personality_versions": {
+      "description": "List your past personality descriptions, most recent first, so you can decide what to roll back to.",
+      "input_schema": {
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "list_recent_agent_activity": {
+      "description": "List recent and currently active background delegations for this chat session.",
+      "input_schema": {
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "list_records": {
+      "description": "List the records you saved in one collection, newest first.",
+      "input_schema": {
+        "properties": {
+          "collection": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "collection"
+        ],
+        "type": "object"
+      }
+    },
+    "list_reminders": {
+      "description": "List your active reminders.",
+      "input_schema": {
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "list_tables": {
+      "description": "List the tables in the app's database, with roughly how many rows each has.",
+      "input_schema": {
+        "properties": {
+          "project_id": {
+            "description": "The project's id.",
+            "type": "string"
+          },
+          "source": {
+            "description": "Which database: the published app's (production, the default) or the development one.",
+            "enum": [
+              "production",
+              "development"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id"
+        ],
+        "type": "object"
+      }
+    },
+    "list_transactions": {
+      "description": "List the user's most recent transactions, optionally filtered by category.",
+      "input_schema": {
+        "properties": {
+          "category": {
+            "description": "Optional category filter",
+            "type": "string"
+          },
+          "limit": {
+            "description": "Max number of transactions to return",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "limit"
+        ],
+        "type": "object"
+      }
+    },
+    "log_transaction": {
+      "description": "Record money the user spent or received (e.g. \"I spent 45,000 on lunch\", \"got my salary, 8 million\", or a receipt). For a receipt or a purchase of several things, put each line in `items`. Records only; it never moves money.",
+      "input_schema": {
+        "properties": {
+          "amount": {
+            "description": "The total, as a positive number (what the receipt says, tax and discounts included). Omit to use the sum of the items.",
+            "type": "number"
+          },
+          "category": {
+            "description": "Lowercase category, e.g. food, transport, groceries, salary",
+            "type": "string"
+          },
+          "description": {
+            "description": "What it was, e.g. the shop or the source of the income",
+            "type": "string"
+          },
+          "items": {
+            "description": "The lines of a receipt or purchase",
+            "items": {
+              "properties": {
+                "amount": {
+                  "description": "The line's total; defaults to quantity × unit_amount",
+                  "type": "number"
+                },
+                "category": {
+                  "description": "Only when this line belongs to another category than the transaction",
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "quantity": {
+                  "description": "Defaults to 1",
+                  "type": "number"
+                },
+                "unit_amount": {
+                  "description": "Price of one",
+                  "type": "number"
+                }
+              },
+              "required": [
+                "name"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "kind": {
+            "description": "expense (default) or income",
+            "enum": [
+              "expense",
+              "income"
+            ],
+            "type": "string"
+          },
+          "occurred_at": {
+            "description": "ISO 8601 date or time; omit for now",
+            "type": "string"
+          }
+        },
+        "required": [
+          "category",
+          "description"
+        ],
+        "type": "object"
+      }
+    },
+    "make_file": {
+      "description": "Make a file for the person and put it in the chat: a CSV or spreadsheet from rows, or a text, Markdown or JSON file from text. Use it when they ask for a file, an export or a download (\"put this in a spreadsheet\", \"make me a CSV of May's spending\"). Give it a short name with the right extension, a one-line summary of what's in it, and the ids of the attachments it was made from. It tells the person the file is being made and shows it when it's ready.",
+      "input_schema": {
+        "properties": {
+          "content": {
+            "description": "For txt, md and json: the file's text.",
+            "type": "string"
+          },
+          "format": {
+            "enum": [
+              "csv",
+              "xlsx",
+              "txt",
+              "md",
+              "json"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "description": "The file's name with its extension, e.g. spending-may.csv.",
+            "type": "string"
+          },
+          "replaces": {
+            "description": "The id of an earlier file this one is made again to replace.",
+            "type": "string"
+          },
+          "rows": {
+            "description": "For csv and xlsx: the table, header row first; each row is a list of cells.",
+            "items": {
+              "items": {},
+              "type": "array"
+            },
+            "type": "array"
+          },
+          "sources": {
+            "description": "Ids of the attachments it was made from.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "summary": {
+            "description": "One line on what's in the file.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "format",
+          "summary"
+        ],
+        "type": "object"
+      }
+    },
+    "post_crew_note": {
+      "description": "Pin a short note to this chat's crew notes, which every crew member working here reads: a fact or decision the others should keep to (\"Budget is 5 million rupiah\", \"They want the site in Indonesian\", \"Logged the receipt, don't log it again\"). One fact per note; not for chatting with the person.",
+      "input_schema": {
+        "properties": {
+          "note": {
+            "maxLength": 500,
+            "type": "string"
+          }
+        },
+        "required": [
+          "note"
+        ],
+        "type": "object"
+      }
+    },
+    "propose_directions": {
+      "description": "Propose two to four clearly different design directions for the person to choose from, each with what it looks like, why it fits the brief, its trade-offs, colours, fonts and layout. It saves them as a new version and shows the person the choice. Call it again with the whole set (same ids for the directions you keep) when they ask for changes.",
+      "input_schema": {
+        "properties": {
+          "directions": {
+            "description": "Clearly different directions: different colours, fonts and layout, not variations of one",
+            "items": {
+              "properties": {
+                "id": {
+                  "description": "A short stable slug, lowercase with dashes; keep it when you refine the direction",
+                  "type": "string"
+                },
+                "imagery": {
+                  "description": "Photos, illustration or none, and their style",
+                  "type": "string"
+                },
+                "layout": {
+                  "description": "How the pages are arranged",
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "palette": {
+                  "items": {
+                    "properties": {
+                      "hex": {
+                        "description": "#RRGGBB",
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "hex"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 8,
+                  "minItems": 2,
+                  "type": "array"
+                },
+                "rationale": {
+                  "description": "Why it fits this brief",
+                  "type": "string"
+                },
+                "recommended": {
+                  "description": "true on the one you would pick",
+                  "type": "boolean"
+                },
+                "summary": {
+                  "description": "What it looks like, in a sentence or two",
+                  "type": "string"
+                },
+                "trade_offs": {
+                  "description": "What it costs or risks",
+                  "items": {
+                    "type": "string"
+                  },
+                  "maxItems": 6,
+                  "minItems": 1,
+                  "type": "array"
+                },
+                "typography": {
+                  "properties": {
+                    "body": {
+                      "type": "string"
+                    },
+                    "heading": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "heading",
+                    "body"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "summary",
+                "rationale",
+                "trade_offs",
+                "palette",
+                "typography",
+                "layout"
+              ],
+              "type": "object"
+            },
+            "maxItems": 4,
+            "minItems": 2,
+            "type": "array"
+          }
+        },
+        "required": [
+          "directions"
+        ],
+        "type": "object"
+      }
+    },
+    "publish_project": {
+      "description": "Publish the project so it's live on the web (or update the live app with the latest changes). Only when the person asked to publish, deploy, go live or update the live app, or tapped a button saying so: the person approves it first. Publishing takes a few minutes; tell them it started and where it will be.",
+      "input_schema": {
+        "properties": {
+          "environment": {
+            "description": "Where to publish: production unless the person named another (a-z, 0-9, -).",
+            "type": "string"
+          },
+          "project_id": {
+            "description": "The project's id.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id"
+        ],
+        "type": "object"
+      }
+    },
+    "query_database": {
+      "description": "Run one read-only SQL statement (SELECT, WITH, TABLE or VALUES) on the app's database. Without read_data access you get the columns, the row count and how many values each column has; the person sees the rows.",
+      "input_schema": {
+        "properties": {
+          "project_id": {
+            "description": "The project's id.",
+            "type": "string"
+          },
+          "source": {
+            "description": "Which database: the published app's (production, the default) or the development one.",
+            "enum": [
+              "production",
+              "development"
+            ],
+            "type": "string"
+          },
+          "sql": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "sql"
+        ],
+        "type": "object"
+      }
+    },
+    "read_attachment": {
+      "description": "Read the text of a file the user attached (a document, spreadsheet, slides, PDF, or the transcript or description Nomi made of an image, audio or video). Use it when the file's text in the conversation was cut short, or to read a file from earlier in the chat. Read on from where the last part ended with `offset`.",
+      "input_schema": {
+        "properties": {
+          "id": {
+            "description": "The attachment id from its <attachment id=\"…\"> tag.",
+            "type": "string"
+          },
+          "offset": {
+            "description": "Character to start from (0 for the beginning).",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    "read_file": {
+      "description": "Read the current content of a file in the project.",
+      "input_schema": {
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "path"
+        ],
+        "type": "object"
+      }
+    },
+    "read_guide": {
+      "description": "Read one of your coding guides: exact package versions, config files and conventions that are known to work in Nomi. Read the stack's guide before writing a project's first files, the design guide before writing any UI, and the database guide before adding a database. Guides: sveltekit: SvelteKit 3 + Svelte 5: full-stack apps (the default); design: How every project should look: a deliberate modern style, and the generic AI look to avoid; database: Drizzle with Postgres or SQLite, and how the preview runs them (projects not on Relay); relay: Nomi Relay: migrations with row-level security, the nomi-relay client, sign-in, files, live changes and hosted functions (projects on Relay); preview: How Nomi runs the project in the browser, and what can't run there; sandbox: How it differs when the project runs in a sandbox on Nomi's servers; react: React 19 + Vite single-page apps; vue: Vue 3 + Vite single-page apps; astro: Astro 7 content sites with Svelte islands.",
+      "input_schema": {
+        "properties": {
+          "topic": {
+            "enum": [
+              "sveltekit",
+              "design",
+              "database",
+              "relay",
+              "preview",
+              "sandbox",
+              "react",
+              "vue",
+              "astro"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "topic"
+        ],
+        "type": "object"
+      }
+    },
+    "read_logs": {
+      "description": "Read what the running app printed (newest last). Without read_logs access you get counts only (lines, errors, warnings); the person sees the lines.",
+      "input_schema": {
+        "properties": {
+          "environment": {
+            "description": "production unless the person named another.",
+            "type": "string"
+          },
+          "lines": {
+            "description": "How many of the newest lines (default 200).",
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "project_id": {
+            "description": "The project's id.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id"
+        ],
+        "type": "object"
+      }
+    },
+    "read_plan": {
+      "description": "Read the latest plan drafted in this chat: what was agreed with the person, including their answers on design, pages and data. Read it before you start building and whenever you're unsure what was asked for.",
+      "input_schema": {
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "read_preview": {
+      "description": "Read the files of a preview you built in this chat, as they were saved: the newest version unless you name one, every file unless you name a path. Call it before changing a preview, so you change from what is there instead of writing it again from memory.",
+      "input_schema": {
+        "properties": {
+          "path": {
+            "description": "One file's path; every file when left out",
+            "type": "string"
+          },
+          "version": {
+            "description": "The preview version; the newest when left out",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "read_web_page": {
+      "description": "Read a public web page as plain text, e.g. a link from web_search or one the user shared.",
+      "input_schema": {
+        "properties": {
+          "url": {
+            "description": "The page's full http(s) address",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "type": "object"
+      }
+    },
+    "remove_reminder": {
+      "description": "Cancel a reminder.",
+      "input_schema": {
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    "rename_chat": {
+      "description": "Rename this chat. Use it when the person asks you to name or rename the chat; pick a short title (a few words) in their language if they don't give one.",
+      "input_schema": {
+        "properties": {
+          "title": {
+            "description": "The chat's new name, a few words.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "type": "object"
+      }
+    },
+    "rename_project": {
+      "description": "Rename the current project or change its title and description. Call this when the user wants to rename or change the title of their company, app, or project.",
+      "input_schema": {
+        "properties": {
+          "description": {
+            "description": "Optional updated one-sentence description of what it does",
+            "type": "string"
+          },
+          "name": {
+            "description": "The new project or company name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      }
+    },
+    "request_access": {
+      "description": "Ask to see inside the app: read_logs (what log lines say) or read_data (the values queries return). The person approves; it lasts for this project until an admin turns it off.",
+      "input_schema": {
+        "properties": {
+          "permission": {
+            "enum": [
+              "read_logs",
+              "read_data"
+            ],
+            "type": "string"
+          },
+          "project_id": {
+            "description": "The project's id.",
+            "type": "string"
+          },
+          "reason": {
+            "description": "One sentence on why you need it.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "permission",
+          "reason"
+        ],
+        "type": "object"
+      }
+    },
+    "reset_chat_personality": {
+      "description": "Take this chat back to the person's default personality (drops the one set for this chat only).",
+      "input_schema": {
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "review_build": {
+      "description": "Check what Koda built against the design that was handed over: it looks for the handoff's colours, fonts and element ids in the project's files and says which are there and which aren't. It can't judge spacing or feel. Checks this chat's project unless you name another.",
+      "input_schema": {
+        "properties": {
+          "project_id": {
+            "description": "The project to check; this chat's project when left out",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "rollback_personality": {
+      "description": "Roll back to a previous personality version. This creates a new version with that version's description rather than deleting anything.",
+      "input_schema": {
+        "properties": {
+          "version": {
+            "description": "The version number to restore, from list_personality_versions.",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "type": "object"
+      }
+    },
+    "run_background_task": {
+      "description": "Execute a command or operation in the background without blocking this turn. Returns a task_id immediately so you can either start working on another task right now while waiting, or finish your turn and wait while Nomi remains free to work on other tasks. When the background task finishes, it automatically spawns Nomi with the output to review and follow up.",
+      "input_schema": {
+        "properties": {
+          "command": {
+            "description": "The command to execute in the background",
+            "type": "string"
+          },
+          "label": {
+            "description": "Short human-readable description of what this background task is doing",
+            "type": "string"
+          },
+          "project_id": {
+            "description": "Optional project UUID when the command is for a specific project",
+            "type": "string"
+          },
+          "timeout_seconds": {
+            "description": "Maximum seconds the background command may run (default 180, max 600)",
+            "maximum": 600,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "label",
+          "command"
+        ],
+        "type": "object"
+      }
+    },
+    "run_command": {
+      "description": "Run one command in the project's preview (Node, in the user's browser or the project's server sandbox) and get its output: 'npm install', 'npm install zod', 'npm run db:generate', 'npx ...', 'node ...'. One command at a time, no shell operators. Don't start the dev server; Nomi runs it. Do not run 'npm run build' during development.",
+      "input_schema": {
+        "properties": {
+          "command": {
+            "description": "e.g. 'npm run check'",
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "timeout_seconds": {
+            "description": "Default 180, at most 600",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "project_id",
+          "command"
+        ],
+        "type": "object"
+      }
+    },
+    "save_preview": {
+      "description": "Build a preview of one proposed direction as an OpenPencil scene graph (canvas.pen): do not build raw HTML pages. Include design variables ($color-*, typography, spacing), a design system frame (colours, type scale, buttons, form fields, components), and app flow screen frames, with a data-design-id / id slug on each frame, section and component (a lowercase slug, unique in its screen/frame, the same across screens that share the element). A preview can be sent in pieces if large: send calls with finished false, and the last call with finished true, which saves the preview as a new version (describe elements on that last call; what you said about an element before carries over). To change a preview, send the updated canvas.pen (the rest stay as they were, with the same ids; drop a file with remove), and name in resolves the open feedback the new version dealt with.",
+      "input_schema": {
+        "properties": {
+          "direction_id": {
+            "description": "The id of the direction this is a preview of",
+            "type": "string"
+          },
+          "elements": {
+            "description": "What the ids in the pages are, for the ones worth naming",
+            "items": {
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "section",
+                    "component",
+                    "element"
+                  ],
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "files": {
+            "description": "Every file of the preview, whole: canvas.pen (OpenPencil scene graph). Relative lowercase paths",
+            "items": {
+              "properties": {
+                "content": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path",
+                "content"
+              ],
+              "type": "object"
+            },
+            "maxItems": 20,
+            "minItems": 1,
+            "type": "array"
+          },
+          "finished": {
+            "description": "false keeps these files in a draft the person doesn't see yet, to send the rest in later calls; true (the default) saves the version from the last version of this direction, the draft and these files",
+            "type": "boolean"
+          },
+          "remove": {
+            "description": "Paths to drop from the last version when this call finishes it",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "resolves": {
+            "description": "The open feedback this version dealt with: each one's number and, in a sentence, what you changed for it. Leave out feedback you didn't act on",
+            "items": {
+              "properties": {
+                "feedback": {
+                  "description": "The feedback's number",
+                  "type": "integer"
+                },
+                "note": {
+                  "maxLength": 500,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "feedback",
+                "note"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "title": {
+            "description": "What this version is, in a few words",
+            "type": "string"
+          }
+        },
+        "required": [
+          "direction_id",
+          "title",
+          "files"
+        ],
+        "type": "object"
+      }
+    },
+    "save_record": {
+      "description": "Save a record in your own private storage for this user, in a named collection (e.g. \"trips\", \"contacts\"). Use it for anything you'll need again later.",
+      "input_schema": {
+        "properties": {
+          "collection": {
+            "description": "Short lowercase name, e.g. trips",
+            "type": "string"
+          },
+          "data": {
+            "description": "The record's fields",
+            "type": "object"
+          }
+        },
+        "required": [
+          "collection",
+          "data"
+        ],
+        "type": "object"
+      }
+    },
+    "search_files": {
+      "description": "Find text in the project's files (case-insensitive). Returns path:line: text for each match.",
+      "input_schema": {
+        "properties": {
+          "path_prefix": {
+            "description": "Only search under this folder, e.g. 'src/lib'",
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "query": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "query"
+        ],
+        "type": "object"
+      }
+    },
+    "set_budget": {
+      "description": "Set (or change) the user's monthly spending limit for one category.",
+      "input_schema": {
+        "properties": {
+          "category": {
+            "type": "string"
+          },
+          "monthly_limit": {
+            "description": "Positive amount per month",
+            "type": "number"
+          }
+        },
+        "required": [
+          "category",
+          "monthly_limit"
+        ],
+        "type": "object"
+      }
+    },
+    "set_month_start": {
+      "description": "Set the day the user's money month starts (1–28), e.g. 25 when they're paid on the 25th. Totals and budgets then run from that day to the day before it next month. 1 is the calendar month.",
+      "input_schema": {
+        "properties": {
+          "day": {
+            "maximum": 28,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "day"
+        ],
+        "type": "object"
+      }
+    },
+    "set_personality": {
+      "description": "Set how nomi talks and behaves. By default only in this chat; other chats keep theirs. Use scope \"all_chats\" only when the person asks for it everywhere (\"in all chats\", \"from now on\", \"always\", \"as my default\"): it becomes their default and replaces every chat's own personality.",
+      "input_schema": {
+        "properties": {
+          "description": {
+            "description": "A concise instruction describing the personality, e.g. 'Be sarcastic and blunt.'",
+            "type": "string"
+          },
+          "scope": {
+            "description": "\"chat\" (default): only this chat. \"all_chats\": the person's default, in every chat.",
+            "enum": [
+              "chat",
+              "all_chats"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "description"
+        ],
+        "type": "object"
+      }
+    },
+    "sheets_append": {
+      "description": "Add rows after the last row of a table in a Google Sheet (e.g. range 'Stays!A:F').",
+      "input_schema": {
+        "properties": {
+          "range": {
+            "type": "string"
+          },
+          "rows": {
+            "description": "Rows of cell values, e.g. [[\"2026-03-12\", \"Ubud Villas\", 2850000]].",
+            "items": {
+              "items": {},
+              "type": "array"
+            },
+            "type": "array"
+          },
+          "spreadsheet_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "spreadsheet_id",
+          "range",
+          "rows"
+        ],
+        "type": "object"
+      }
+    },
+    "sheets_create": {
+      "description": "Create a new Google Sheet, optionally with a header row.",
+      "input_schema": {
+        "properties": {
+          "header": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "type": "object"
+      }
+    },
+    "sheets_read": {
+      "description": "Read a Google Sheet. Without a range: its title and tab names. With a range in A1 notation (e.g. 'Stays!A1:F50'): the cell values.",
+      "input_schema": {
+        "properties": {
+          "range": {
+            "type": "string"
+          },
+          "spreadsheet_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "spreadsheet_id"
+        ],
+        "type": "object"
+      }
+    },
+    "sheets_update": {
+      "description": "Overwrite cells in a Google Sheet range with the given rows.",
+      "input_schema": {
+        "properties": {
+          "range": {
+            "type": "string"
+          },
+          "rows": {
+            "description": "Rows of cell values, e.g. [[\"2026-03-12\", \"Ubud Villas\", 2850000]].",
+            "items": {
+              "items": {},
+              "type": "array"
+            },
+            "type": "array"
+          },
+          "spreadsheet_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "spreadsheet_id",
+          "range",
+          "rows"
+        ],
+        "type": "object"
+      }
+    },
+    "show": {
+      "description": "Show something in the chat as a view instead of plain text, when its shape helps: items, records, steps, times, numbers, choices. Plain text stays best for explanations and short answers; don't use a view for a sentence or two. Don't repeat what the view shows in your reply; add only what it doesn't say: a view can be the whole reply, or come with a line of text before or after it. Views that ask (suggestions, decision, form, card actions) send the person's answer as their next message. `format` is one of text|number|money|percent|date|date_time (money in whole units, dates in ISO 8601); `tone` is neutral|positive|negative|warning. Views and their fields (? = optional):\n- list: several items of the same kind. title?, style?: bullet|numbered|check, items: [{title, detail?, meta?, format?, done?, url?}]\n- table: records with several fields each. title?, columns: [{key, label, format?}], rows: [{<key>: value}]\n- comparison: a few options side by side across criteria. title?, options: [name], rows: [{label, values: [one per option]}], recommended?: option index, verdict?\n- stepper: steps of a process and where it stands. title?, steps: [{title, detail?, status?: done|current|upcoming|failed|skipped}]\n- timeline: things in time order (a schedule, a history, an itinerary). title?, events: [{at: ISO date/time or label, title, detail?}]\n- card: one thing with its key facts. eyebrow?, title, subtitle?, highlight?: {label, value, format?}, fields?: [{label, value, format?}], body?, link?: {label, url (or an app page like /money)}, actions?: [{label, message}], tone?\n- chart: numbers to see at a glance: trends, shares, sizes. title?, chart?: bar|line|donut, labels: [..], series: [{name, values: [one number per label]}], format?\n- answer: one result to stand out (a total, a yes/no, a date). label?, value, format?, detail?, tone?\n- suggestions: next things the person might ask, to tap. title?, items: [message in their voice] (1-6)\n- decision: a choice for the person between 2-5 options. question, options: [{label, detail?, pros?, cons?, recommended?}]\n- form: several details to collect at once. title?, intro?, fields: [{key, label, type?: text|textarea|number|date|time|select|multiselect|checkbox, required?, options?, placeholder?, default?}], submit_label?\n- link: a page worth opening, as a preview. url, title?, description?, image?, site? (left-out details are read from the page)\n- task: work going on in the background. title, status?: queued|running|done|failed, detail?, progress?: 0-1, agent?, eta? (your rough estimate, e.g. \"10 min\")\n- shell: a command and what it printed. command, output?, exit_code?, cwd?\n- code: code to read or copy (a snippet, a query, a config). code, language?, file?\n- diff: a change to one file, line by line. path, before, after (the whole text before and after the change)\n- sources: what an answer leaned on, numbered like the [1] [2] citations in your text. items: [{title, url?, detail?, kind?: web|file}]; a file source may add file_id (the attachment id), pages?: [3, 8] (from 1) and spans?: [{page, label, rects?, total_idr?}] where you know the page you read it on; leave rects out unless you know the box\n- selection: several of many for the person to tick (subscriptions to track, items to keep). question, items: [{name, detail?, amount?, selected?}], confirm_label?, per? (what the total is per, e.g. month)\n- boundary: something you won't or can't do: say why plainly and offer what you can do instead. title, reason, alternatives?: [{title, detail?, agent?, message? (sent when picked), url?}] (0-4)\n- quick_replies: short answers to the question you just asked, one tap each. replies: [answer in their voice] (2-6, a few words each)\n- cart: a basket at a store, only with prices you actually read from the store; the person checks out there. title, store, items: [{name, detail?, quantity?, price?, available?, swap?}], delivery?, checkout_url, note? (where and when the prices were read)",
+      "input_schema": {
+        "properties": {
+          "spec": {
+            "description": "The view's fields, as listed for that view",
+            "type": "object"
+          },
+          "view": {
+            "enum": [
+              "list",
+              "table",
+              "comparison",
+              "stepper",
+              "timeline",
+              "card",
+              "chart",
+              "answer",
+              "suggestions",
+              "decision",
+              "form",
+              "link",
+              "task",
+              "shell",
+              "code",
+              "diff",
+              "sources",
+              "selection",
+              "boundary",
+              "quick_replies",
+              "cart"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "view",
+          "spec"
+        ],
+        "type": "object"
+      }
+    },
+    "show_reminders": {
+      "description": "List the user's upcoming reminders (with ids).",
+      "input_schema": {
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "speak": {
+      "description": "Say something out loud in Nomi's voice: posts a recording the person can play. Use it when they ask to hear something or to be answered by voice (\"read it to me\", \"say it\", \"reply with voice\", \"send a voice note\"), not for ordinary replies. Pass exactly the words to say, written for listening: no markdown, lists or links. The recording is your reply: after it, write nothing, unless something really has to be in writing too (a link, code, an address or numbers to keep), and then write only that.",
+      "input_schema": {
+        "properties": {
+          "text": {
+            "description": "The words to say, as they should be spoken.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "type": "object"
+      }
+    },
+    "stop_agents": {
+      "description": "Stop agents that are working, at the user's request. Cancels their running and queued work and any approvals they are waiting on. Use scope \"this_chat\" for \"stop\" or \"cancel that\", \"everything\" for every agent in every chat, or \"agent\" with the agent's name or type (e.g. \"money\", \"coding\", \"planning\") to stop one agent.",
+      "input_schema": {
+        "properties": {
+          "agent": {
+            "description": "Required when scope is \"agent\".",
+            "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "this_chat",
+              "everything",
+              "agent"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "scope"
+        ],
+        "type": "object"
+      }
+    },
+    "summarize_budget": {
+      "description": "Summarize the user's spending (not income) grouped by category, optionally since a given date.",
+      "input_schema": {
+        "properties": {
+          "since": {
+            "description": "ISO 8601 date; omit for all-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "update_record": {
+      "description": "Change fields of one of your records (the given fields replace those keys).",
+      "input_schema": {
+        "properties": {
+          "data": {
+            "type": "object"
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "data"
+        ],
+        "type": "object"
+      }
+    },
+    "update_todos": {
+      "description": "Set or replace your current multi-step task checklist, shown live to the user. Call this again with the full updated list whenever a step's status changes.",
+      "input_schema": {
+        "properties": {
+          "items": {
+            "items": {
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "status": {
+                  "enum": [
+                    "pending",
+                    "in_progress",
+                    "done"
+                  ],
+                  "type": "string"
+                },
+                "text": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "text",
+                "status"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      }
+    },
+    "use_connected_tool": {
+      "description": "Call one tool from list_connected_tools: its server and tool exactly as listed, and arguments that fit its inputs. The person approves it first. If it fails, carry on without it.",
+      "input_schema": {
+        "properties": {
+          "arguments": {
+            "description": "The tool's inputs",
+            "type": "object"
+          },
+          "server": {
+            "description": "The server's name, as listed",
+            "type": "string"
+          },
+          "tool": {
+            "description": "The tool's name, as listed",
+            "type": "string"
+          }
+        },
+        "required": [
+          "server",
+          "tool"
+        ],
+        "type": "object"
+      }
+    },
+    "web_search": {
+      "description": "Search the internet for current or factual information you don't already know (news, prices, schedules, facts to check). Returns titles, links and snippets; use read_web_page on a link for the full text. Cite the links you use right after the claim they back, as numbered markdown links ([1](https://…), [2](https://…)), numbered in the order you first cite them; they show as citations with the sources listed under the reply.",
+      "input_schema": {
+        "properties": {
+          "query": {
+            "description": "What to search for, as you'd type it into a search engine",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      }
+    },
+    "write_file": {
+      "description": "Create or overwrite one file in the project. To change part of an existing file, use edit_file instead.",
+      "input_schema": {
+        "properties": {
+          "content": {
+            "description": "The whole file",
+            "type": "string"
+          },
+          "path": {
+            "description": "Relative path, e.g. 'src/routes/+page.svelte'",
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "path",
+          "content"
+        ],
+        "type": "object"
+      }
+    },
+    "write_files": {
+      "description": "Create or overwrite several files at once (up to 40). Use it to set a project up or add a feature that spans files.",
+      "input_schema": {
+        "properties": {
+          "files": {
+            "items": {
+              "properties": {
+                "content": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path",
+                "content"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "project_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "files"
+        ],
+        "type": "object"
+      }
+    },
+    "write_plan": {
+      "description": "Write a new version of your plan for this task, before or during a multi-step build. Call this again whenever the plan changes significantly — each call is a new, separately viewable version, not an edit to the last one.",
+      "input_schema": {
+        "properties": {
+          "content": {
+            "description": "The plan, in markdown",
+            "type": "string"
+          },
+          "title": {
+            "description": "Short label for this plan version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "content"
+        ],
+        "type": "object"
+      }
+    }
   },
   "tools": {
     "add_attachment": {
