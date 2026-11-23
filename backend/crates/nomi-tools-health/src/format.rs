@@ -130,8 +130,8 @@ const CARD_EXERCISES: usize = 12;
 
 /// A card of a workout or routine just saved: its title, when and how long (a workout), and
 /// each exercise with its number of sets.
-pub fn card(x: &Value, eyebrow: String, locale: nomi_agent_core::Locale) -> nomi_agent_core::View {
-    use nomi_agent_core::views::{CardView, Field, Format, Scalar, View};
+pub fn card(x: &Value, eyebrow: String, locale: nomi_tool::locale::Locale) -> nomi_tool::views::View {
+    use nomi_tool::views::{CardView, Field, Format, Scalar, View};
     let mut fields = Vec::new();
     let (start, end) = (s(x, "start_time"), s(x, "end_time"));
     if !start.is_empty() {
