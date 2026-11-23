@@ -37,7 +37,7 @@ pub mod project_ops;
 pub mod mcp_ops;
 pub mod static_publish;
 pub mod prompts;
-pub mod records;
+pub use nomi_tools_records as records;
 pub mod issue_chat;
 pub mod recent_activity;
 pub mod relay_ops;
@@ -52,8 +52,8 @@ pub use nomi_tool::catalog as tool_catalog;
 pub mod tool_finder;
 pub use nomi_tool::tools;
 pub use nomi_tool::views;
-pub mod voice;
-pub mod web;
+pub use nomi_tools_voice as voice;
+pub use nomi_tools_web as web;
 pub mod working_memory;
 
 pub use background::{

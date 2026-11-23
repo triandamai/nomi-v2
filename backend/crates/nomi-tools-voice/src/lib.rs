@@ -6,6 +6,11 @@
 //! similarity, style, speaker boost, speed) and the audio format. Recordings are kept where chat
 //! files go (`voice/<user>/<file>`) and served by Nomi at `/voice/<user>/<file>`.
 
+mod tools;
+pub use tools::tools;
+pub use tools::SpeakCopy;
+
+
 use std::collections::HashMap;
 use std::sync::OnceLock;
 use std::time::Duration;
@@ -15,8 +20,8 @@ use serde_json::{json, Value};
 use sqlx::PgConnection;
 use uuid::Uuid;
 
-use crate::content_block::ContentBlock;
-use crate::tools;
+use nomi_tool::content_block::ContentBlock;
+use nomi_tool::tools as tool_settings;
 
 pub const SPEAK_TOOL_NAME: &str = "speak";
 pub const ENV_API_KEY: &str = "ELEVENLABS_API_KEY";
@@ -133,15 +138,15 @@ pub fn secret_name() -> &'static str {
 }
 
 pub async fn voice_settings(conn: &mut PgConnection) -> (VoiceSettings, HashMap<String, String>) {
-    let row = tools::load_row(conn, SPEAK_TOOL_NAME).await.unwrap_or_default();
+    let row = tool_settings::load_row(conn, SPEAK_TOOL_NAME).await.unwrap_or_default();
     let settings: VoiceSettings = serde_json::from_value(row.config).unwrap_or_default();
-    (settings.clamped(), tools::decrypt_secrets(row.secrets_encrypted.as_deref()))
+    (settings.clamped(), tool_settings::decrypt_secrets(row.secrets_encrypted.as_deref()))
 }
 
 pub async fn voice_settings_with(conn: &mut PgConnection, key: &[u8; 32]) -> Result<(VoiceSettings, HashMap<String, String>), sqlx::Error> {
-    let row = tools::load_row(conn, SPEAK_TOOL_NAME).await?;
+    let row = tool_settings::load_row(conn, SPEAK_TOOL_NAME).await?;
     let settings: VoiceSettings = serde_json::from_value(row.config).unwrap_or_default();
-    Ok((settings.clamped(), tools::decrypt_secrets_with(key, row.secrets_encrypted.as_deref())))
+    Ok((settings.clamped(), tool_settings::decrypt_secrets_with(key, row.secrets_encrypted.as_deref())))
 }
 
 /// Whether `speak` can work: it has a key.
@@ -150,10 +155,11 @@ pub async fn is_ready(conn: &mut PgConnection) -> bool {
     api_key(&secrets).is_some()
 }
 
-pub fn speak_tool_definition() -> nomi_llm::ToolDefinition {
+/// `description` is the tool's prompt text, which lives with the other prompts in core.
+pub fn speak_tool_definition(description: &str) -> nomi_llm::ToolDefinition {
     nomi_llm::ToolDefinition {
         name: SPEAK_TOOL_NAME.to_string(),
-        description: crate::prompts::SPEAK_TOOL_DESCRIPTION.to_string(),
+        description: description.to_string(),
         input_schema: json!({
             "type": "object",
             "properties": {
@@ -309,8 +315,9 @@ pub fn voice_key(user_id: Uuid, file: &str) -> String {
     format!("voice/{user_id}/{file}")
 }
 
-/// `speak`: says `input.text` and returns the tool's result and the card to post.
-pub async fn speak(conn: &mut PgConnection, user_id: Uuid, input: &Value) -> Result<(String, ContentBlock), String> {
+/// `speak`: says `input.text` and returns the tool's result and the card to post. `done` opens the
+/// result the model reads (core's prompt text).
+pub async fn speak(conn: &mut PgConnection, user_id: Uuid, input: &Value, done: &str) -> Result<(String, ContentBlock), String> {
     let text = input.get("text").and_then(|v| v.as_str()).map(str::trim).filter(|t| !t.is_empty()).ok_or("text is required")?;
     let (settings, secrets) = voice_settings(conn).await;
     let key = api_key(&secrets).ok_or("speaking isn't set up: no ElevenLabs API key")?;
@@ -324,7 +331,7 @@ pub async fn speak(conn: &mut PgConnection, user_id: Uuid, input: &Value) -> Res
         .await
         .map_err(|e| format!("couldn't keep the recording: {e}"))?;
     let block = ContentBlock::Voice { url: voice_url(user_id, &file), text: text.to_string(), voice: settings.voice_name.clone() };
-    Ok((format!("{} Words: {text}", crate::prompts::SPEAK_TOOL_DONE), block))
+    Ok((format!("{done} Words: {text}"), block))
 }
 
 /// A voice in the admin's ElevenLabs account.

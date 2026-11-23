@@ -16,6 +16,10 @@ nomi-realtime = { path = "../nomi-realtime" }
 nomi-auth = { path = "../nomi-auth" }
 nomi-settings = { path = "../nomi-settings" }
 nomi-agent-core = { path = "../nomi-agent-core" }
+nomi-tools-records = { path = "../nomi-tools-records" }
+nomi-tools-web = { path = "../nomi-tools-web" }
+nomi-tools-attachments = { path = "../nomi-tools-attachments" }
+nomi-tools-voice = { path = "../nomi-tools-voice" }
 nomi-agent-money = { path = "../nomi-agent-money" }
 nomi-agent-reminders = { path = "../nomi-agent-reminders" }
 nomi-agent-files = { path = "../nomi-agent-files" }

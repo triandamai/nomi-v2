@@ -309,7 +309,7 @@ pub fn crew_tool_definitions(registry: &AgentRegistry) -> Vec<ToolDefinition> {
     tools.push(cancel_reminder_tool_definition());
     tools.push(crate::web::web_search_tool_definition());
     tools.push(crate::web::read_web_page_tool_definition());
-    tools.push(crate::voice::speak_tool_definition());
+    tools.push(crate::voice::speak_tool_definition(crate::prompts::SPEAK_TOOL_DESCRIPTION));
     tools.push(crate::attachments::read_attachment_tool_definition());
     tools.push(find_tools_tool_definition());
     tools.push(create_agent_tool_definition());

@@ -458,7 +458,7 @@ pub(super) async fn resolve_tool_batch_in_reply(
                     Err(err) => (err, true, None),
                 }
             } else if name.as_str() == crate::voice::SPEAK_TOOL_NAME {
-                match crate::voice::speak(conn, user_id, input).await {
+                match crate::voice::speak(conn, user_id, input, crate::prompts::SPEAK_TOOL_DONE).await {
                     Ok((text, block)) => (text, false, Some(block)),
                     Err(err) => (err, true, None),
                 }

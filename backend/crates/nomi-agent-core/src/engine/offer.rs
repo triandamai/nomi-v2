@@ -84,7 +84,7 @@ pub fn engine_tools_for(agent: &dyn SubAgent, registry: &AgentRegistry, inputs: 
     }
     // Saying things aloud, while it's on and has its ElevenLabs key.
     if switches.allows(crate::voice::SPEAK_TOOL_NAME) && inputs.voice_ready {
-        tools.push(crate::voice::speak_tool_definition());
+        tools.push(crate::voice::speak_tool_definition(crate::prompts::SPEAK_TOOL_DESCRIPTION));
     }
     // Reading on in a file the user attached, whenever the conversation holds one.
     if inputs.mentions_files {

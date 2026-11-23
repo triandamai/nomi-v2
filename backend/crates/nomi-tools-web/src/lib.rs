@@ -2,6 +2,10 @@
 //! self-hosted SearXNG instead) and `read_web_page`. Both are engine tools any agent gets while
 //! they're on in Admin → Tools.
 
+mod tools;
+pub use tools::tools;
+
+
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::OnceLock;
@@ -12,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sqlx::PgConnection;
 
-use crate::tools;
+use nomi_tool::tools as tool_settings;
 
 pub const WEB_SEARCH_TOOL_NAME: &str = "web_search";
 pub const READ_WEB_PAGE_TOOL_NAME: &str = "read_web_page";
@@ -131,16 +135,16 @@ pub enum KeySource {
 
 /// The saved settings and secrets, and whether each provider has its key (or address).
 pub async fn search_settings(conn: &mut PgConnection) -> (WebSearchSettings, HashMap<String, String>) {
-    let row = tools::load_row(conn, WEB_SEARCH_TOOL_NAME).await.unwrap_or_default();
+    let row = tool_settings::load_row(conn, WEB_SEARCH_TOOL_NAME).await.unwrap_or_default();
     let settings: WebSearchSettings = serde_json::from_value(row.config).unwrap_or_default();
-    (settings, tools::decrypt_secrets(row.secrets_encrypted.as_deref()))
+    (settings, tool_settings::decrypt_secrets(row.secrets_encrypted.as_deref()))
 }
 
 /// Same as `search_settings`, decrypting with `key` (the server's settings key).
 pub async fn search_settings_with(conn: &mut PgConnection, key: &[u8; 32]) -> Result<(WebSearchSettings, HashMap<String, String>), sqlx::Error> {
-    let row = tools::load_row(conn, WEB_SEARCH_TOOL_NAME).await?;
+    let row = tool_settings::load_row(conn, WEB_SEARCH_TOOL_NAME).await?;
     let settings: WebSearchSettings = serde_json::from_value(row.config).unwrap_or_default();
-    Ok((settings, tools::decrypt_secrets_with(key, row.secrets_encrypted.as_deref())))
+    Ok((settings, tool_settings::decrypt_secrets_with(key, row.secrets_encrypted.as_deref())))
 }
 
 /// Where `provider`'s key comes from.
@@ -334,7 +338,7 @@ pub async fn execute(conn: &mut PgConnection, name: &str, input: &Value) -> Opti
             if url.trim().is_empty() {
                 return Some(Err("url is required".to_string()));
             }
-            let row = tools::load_row(conn, READ_WEB_PAGE_TOOL_NAME).await.unwrap_or_default();
+            let row = tool_settings::load_row(conn, READ_WEB_PAGE_TOOL_NAME).await.unwrap_or_default();
             let settings: ReadPageSettings = serde_json::from_value(row.config).unwrap_or_default();
             Some(read_page(&url, settings.max_chars).await)
         }
@@ -458,8 +462,8 @@ fn preview_from_html(url: &str, html: &str) -> PagePreview {
 
 /// A link view the agent left details out of gets them from the page itself. Best effort: a page
 /// that can't be read leaves the view as it was (it still shows the address).
-pub async fn fill_link_preview(view: crate::views::View) -> crate::views::View {
-    let crate::views::View::Link(mut link) = view else { return view };
+pub async fn fill_link_preview(view: nomi_tool::views::View) -> nomi_tool::views::View {
+    let nomi_tool::views::View::Link(mut link) = view else { return view };
     if link.title.is_none() || link.description.is_none() || link.image.is_none() {
         let preview = if cfg!(test) { Err(String::new()) } else { page_preview(&link.url).await };
         if let Ok(preview) = preview {
@@ -469,7 +473,7 @@ pub async fn fill_link_preview(view: crate::views::View) -> crate::views::View {
             link.site = link.site.or(preview.site);
         }
     }
-    crate::views::View::Link(link)
+    nomi_tool::views::View::Link(link)
 }
 
 /// Pages on the server's own network (localhost, private ranges, cloud metadata) are off-limits:

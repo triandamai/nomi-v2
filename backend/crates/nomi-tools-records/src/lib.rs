@@ -4,6 +4,12 @@
 //! functions take the agent type from the engine, never from the model's input, so one agent can
 //! neither see nor change another's records.
 
+mod tools;
+pub use tools::tools;
+/// The catalog area these tools are listed under.
+pub const GROUP: &str = "records";
+
+
 use serde_json::{json, Value};
 use sqlx::PgConnection;
 use uuid::Uuid;

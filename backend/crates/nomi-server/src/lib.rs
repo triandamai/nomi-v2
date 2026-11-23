@@ -114,6 +114,13 @@ pub fn build_tool_catalog(project_storage: nomi_storage::ProjectStore) -> std::s
         nomi_agent_coding::catalog_tools(project_storage),
         nomi_agent_health::catalog_tools(&nomi_agent_health::HealthAgent::from_env()),
         nomi_agent_workspace::catalog_tools(&nomi_agent_workspace::WorkspaceAgent::from_env()),
+        nomi_tools_records::tools(),
+        nomi_tools_web::tools(),
+        nomi_tools_attachments::tools(),
+        nomi_tools_voice::tools(nomi_tools_voice::SpeakCopy {
+            description: nomi_agent_core::prompts::SPEAK_TOOL_DESCRIPTION,
+            done: nomi_agent_core::prompts::SPEAK_TOOL_DONE,
+        }),
     ];
     std::sync::Arc::new(nomi_agent_core::ToolCatalog::from_tools(tools.into_iter().flatten().collect()))
 }
