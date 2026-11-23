@@ -400,4 +400,13 @@ export default [
 		accessibility: ['An article named for the plan; its name is a heading.'],
 		related: ['settings/PlanOption.svelte', 'settings/PhonePlanSummary.svelte', 'overlays/BottomSheet.svelte'],
 	},
+	{
+		file: 'settings/PhoneCrewMember.svelte',
+		summary: 'The top of a crew member’s own screen on a phone: their mascot at 96, their name as the title, and what they do.',
+		use: ['A crew member opened from Settings › Crew on a phone.'],
+		avoid: ['A desktop page: use CrewMemberHeader.'],
+		dos: ['Say what they do in a line (“Builds and edits project files”).'],
+		accessibility: ['The name is the screen’s level-1 heading; the mascot is decorative.'],
+		related: ['settings/CrewMemberHeader.svelte', 'agents/Mascot.svelte', 'settings/PhoneSettingsGroup.svelte'],
+	},
 ] satisfies ComponentDoc[];

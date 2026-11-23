@@ -6,9 +6,11 @@ import PhoneStatGrid from './PhoneStatGrid.svelte';
 import PhonePlanSummary from './PhonePlanSummary.svelte';
 import PhoneDayChart from './PhoneDayChart.svelte';
 import PhonePlanOption from './PhonePlanOption.svelte';
+import PhoneCrewMember from './PhoneCrewMember.svelte';
+import PhoneSettingsGroup from './PhoneSettingsGroup.svelte';
 import type { DayBar } from './DayBars.svelte';
 
-// Flow / Mobile — You & Settings, steps 8 and 9 (Plan & usage, Compare plans).
+// Flow / Mobile — You & Settings, steps 8 to 11 (Plan & usage, Compare plans, Crew, a crew member).
 
 afterEach(() => {
 	document.body.innerHTML = '';
@@ -70,5 +72,38 @@ describe('PhonePlanOption', () => {
 		await render(PhonePlanOption, { name: 'Pro', price: 'Rp 99.000', line: '10M tokens a month', children: button('Upgrade to Pro') });
 		await expect.element(page.getByRole('heading', { name: 'Pro' })).toBeVisible();
 		await expect.element(page.getByRole('button', { name: 'Upgrade to Pro' })).toBeVisible();
+	});
+});
+
+describe('PhoneCrewMember', () => {
+	it('names the screen after the member, under their mascot at 96', async () => {
+		await page.viewport(390, 844);
+		await render(PhoneCrewMember, { agent: 'koda', name: 'Koda', role: 'Builds and edits project files' });
+		await expect.element(page.getByRole('heading', { level: 1, name: 'Koda' })).toBeVisible();
+		await expect.element(page.getByText('Builds and edits project files')).toBeVisible();
+		const mascot = page.getByRole('heading', { level: 1 }).element().parentElement!.previousElementSibling!;
+		expect(Math.round(box(mascot).width)).toBe(96);
+	});
+
+	it('gives a custom member their initial', async () => {
+		await render(PhoneCrewMember, { name: 'riset', role: 'Finds sources' });
+		await expect.element(page.getByText('R', { exact: true })).toBeInTheDocument();
+	});
+});
+
+describe('PhoneSettingsGroup crew rows', () => {
+	it('leads a member’s row with their mark: the mascot, or a custom one’s initial', async () => {
+		await render(PhoneSettingsGroup, {
+			label: 'Core',
+			rows: [
+				{ crew: { agent: 'nomi', initial: 'N' }, label: 'Nomi', sub: 'Talks with you', meta: 'on', href: '?member=chitchat' },
+				{ crew: { initial: 'R' }, label: 'riset', sub: 'Finds sources', meta: 'on', href: '?member=riset' },
+			],
+		});
+		const nomi = page.getByRole('link', { name: /Nomi/ });
+		await expect.element(nomi).toHaveAttribute('href', '?member=chitchat');
+		// The mascot, then the chevron.
+		expect(nomi.element().querySelectorAll('svg').length).toBeGreaterThanOrEqual(2);
+		expect(page.getByRole('link', { name: /riset/ }).element().querySelector('[data-part="mark"]')?.textContent).toBe('R');
 	});
 });

@@ -1,6 +1,7 @@
 <script lang="ts" module>
 	import type { Component, Snippet } from 'svelte';
 	import type { LucideProps } from '@lucide/svelte';
+	import type { CrewId } from '../agents/crew';
 
 	export type SettingsRow = {
 		/** Where the row goes (a page); without it, `onclick` makes it a button (a sheet, a screen). */
@@ -9,8 +10,10 @@
 		download?: boolean;
 		onclick?: () => void;
 		icon?: Component<LucideProps>;
-		/** Leads the row in place of the icon (a crew member's mascot). */
+		/** Leads the row in place of the icon. */
 		lead?: Snippet;
+		/** A crew member's mark at 32 in place of the icon: their mascot, or a custom one's initial. */
+		crew?: { agent?: CrewId; initial: string };
 		label: string;
 		/** A second line under the label. */
 		sub?: string;
@@ -37,11 +40,12 @@
 	import { Check, ChevronRight } from '@lucide/svelte';
 	import Icon from '../foundations/Icon.svelte';
 	import Toggle from '../inputs/Toggle.svelte';
+	import CrewMark from './CrewMark.svelte';
 
 	// Flow / Mobile — You & Settings (EtSi2): a group of settings rows. Its label in mono capitals
 	// (with a note at the end where it has one), then the rows in a card (surface, border, radius 14):
-	// 52 high, or 12 above and below with a second line; the icon at 18 (or a mascot), the label at
-	// 16 and its line at 13, what's set at 15 (mono at 11 for machine values), then a chevron, a
+	// 52 high, or 12 above and below with a second line; the icon at 18 (or a crew member's mark at 32), the label
+	// at 16 and its line at 13 (two lines at most), what's set at 15 (mono at 11 for machine values), then a chevron, a
 	// switch, or the tick of a chosen choice. A row goes somewhere (a link), opens something (a
 	// button), or holds its switch; a switch row's label names the switch.
 	type Props = { label?: string; note?: string; rows: SettingsRow[] };
@@ -63,12 +67,14 @@
 				{#snippet body()}
 					{#if row.lead}
 						<span class="inline-flex shrink-0">{@render row.lead()}</span>
+					{:else if row.crew}
+						<span class="inline-flex shrink-0"><CrewMark agent={row.crew.agent} initial={row.crew.initial} size={32} /></span>
 					{:else if row.icon}
 						<span class={['inline-flex shrink-0', row.danger ? 'text-danger' : 'text-text-2']}><Icon icon={row.icon} size={18} /></span>
 					{/if}
 					<span class="flex min-w-0 flex-1 flex-col gap-0.5 text-left">
 						<span class={['truncate text-phone', row.danger ? 'text-danger' : 'text-text']}>{row.label}</span>
-						{#if row.sub}<span class="text-phone-sm text-text-3">{row.sub}</span>{/if}
+						{#if row.sub}<span class="line-clamp-2 text-phone-sm text-text-3">{row.sub}</span>{/if}
 					</span>
 					{#if row.meta}
 						<span class={['max-w-1/2 shrink-0 truncate', row.mono ? 'font-mono text-label' : 'text-phone-sm', row.tone === 'accent' ? 'text-accent' : row.tone === 'warning' ? 'text-warning' : 'text-text-3']}>{row.meta}</span>

@@ -92,7 +92,7 @@ test('You on a phone: who’s signed in, the plan, the settings in their groups,
 	// A settings page is a screen inside You, with the way back.
 	await page.getByRole('region', { name: 'AI' }).getByRole('link', { name: /Crew/ }).click();
 	await expect(page).toHaveURL(/\/settings\/crew$/);
-	await page.getByRole('link', { name: 'Back to You' }).click();
+	await page.getByRole('main').getByRole('link', { name: 'You', exact: true }).click();
 	await expect(page).toHaveURL(/\/settings$/);
 
 	await page.getByRole('button', { name: 'Log out' }).click();

@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { BACKEND_URL } from './support/env';
 import { api, createAccount, signInAs, type Account } from './support/accounts';
 import { codeFor } from './support/mailpit';
-import { seedUsage } from './support/seed';
+import { seedNomiModel, seedPersonality, seedUsage } from './support/seed';
 import { readFile } from 'node:fs/promises';
 
 // The You flow on a phone against the real backend (Flow / Mobile — You & Settings, EtSi2): each
@@ -23,7 +23,7 @@ test('General on a phone: rows show what’s set, sheets pick, switches save', a
 	await page.goto('/settings', { waitUntil: 'networkidle' });
 	await page.getByRole('region', { name: 'Account' }).getByRole('link', { name: /General/ }).click();
 	await expect(page).toHaveURL(/\/settings\/general$/);
-	await expect(page.getByRole('main').getByRole('link', { name: 'You' })).toHaveAttribute('href', '/settings');
+	await expect(page.getByRole('main').getByRole('link', { name: 'You', exact: true })).toHaveAttribute('href', '/settings');
 	await expect(page.getByRole('banner')).toBeHidden();
 	await expect(page.getByRole('button', { name: new RegExp(`Email ${account.email.slice(0, 2)}`) })).toBeVisible();
 
@@ -127,7 +127,7 @@ test('Profile on a phone: each field on its own screen with its own Save, switch
 	await page.goto('/settings', { waitUntil: 'networkidle' });
 	await page.getByRole('link', { name: /Profile/ }).first().click();
 	await expect(page).toHaveURL(/\/settings\/profile$/);
-	await expect(page.getByRole('main').getByRole('link', { name: 'You' })).toHaveAttribute('href', '/settings');
+	await expect(page.getByRole('main').getByRole('link', { name: 'You', exact: true })).toHaveAttribute('href', '/settings');
 	await expect(page.getByRole('img', { name: /tokens in the last 13 weeks/ })).toBeVisible();
 	await expect(page.getByRole('term').filter({ hasText: 'Current streak' })).toBeVisible();
 	// No unsaved-changes bar on a phone.
@@ -235,4 +235,49 @@ test('Plan & usage on a phone: the plan first, Compare plans in a sheet, the mon
 	await page.getByRole('link', { name: 'Export usage CSV' }).click();
 	const csv = await readFile((await (await download).path())!, 'utf8');
 	expect(csv).toContain('deepseek-flash,nomi,3500,1,0.05');
+});
+
+test('Crew on a phone: the roster as rows, a member on their own screen, their model from a sheet', async ({ page, context }) => {
+	const account = await createAccount();
+	await seedNomiModel(account.email);
+	await signInAs(context, account);
+	await page.goto('/settings', { waitUntil: 'networkidle' });
+	await page.getByRole('main').getByRole('link', { name: /^Crew/ }).click();
+	await expect(page).toHaveURL(/\/settings\/crew$/);
+	await expect(page.getByRole('heading', { level: 1, name: 'Crew' })).toBeVisible();
+	await expect(page.getByRole('main').getByText(/^\d+ members/)).toBeVisible();
+	await expect(page.getByRole('region', { name: 'Core' }).getByRole('link')).toHaveCount(2);
+
+	// Koda: their own screen, back to Crew; Koda's model picked from a sheet and kept.
+	await page.getByRole('region', { name: 'Specialists' }).getByRole('link', { name: /^Koda/ }).click();
+	await expect(page).toHaveURL(/\?member=coding$/);
+	await expect(page.getByRole('heading', { level: 1, name: 'Koda' })).toBeVisible();
+	await expect(page.getByRole('main').getByRole('link', { name: 'Crew', exact: true })).toHaveAttribute('href', '/settings/crew');
+	await page.getByRole('button', { name: /^Model/ }).click();
+	const sheet = page.getByRole('dialog', { name: 'Model' });
+	await sheet.getByRole('button', { name: 'Same as new chats' }).click();
+	await expect(page.getByText('Model saved')).toBeVisible();
+	type Models = { coding: { kind: string } };
+	await expect.poll(async () => ((await (await api(account, '/api/llm/models')).json()) as Models).coding.kind).toBe('same_as_chat');
+
+	// Someone whose model follows the chat: no sheet, just why.
+	await page.goto('/settings/crew?member=money', { waitUntil: 'networkidle' });
+	await expect(page.getByRole('heading', { level: 1, name: 'Dana' })).toBeVisible();
+	await expect(page.getByText('Works on the model of the chat it’s helping in.')).toBeVisible();
+	await expect(page.getByRole('button', { name: /^Model/ })).toHaveCount(0);
+
+	// Personality: an earlier version brought back from its sheet.
+	await seedPersonality(account.email, ['Friendly and chatty', 'Formal, full sentences']);
+	await page.goto('/settings/crew?member=personality', { waitUntil: 'networkidle' });
+	await expect(page.getByRole('region', { name: 'Versions · 2' })).toBeVisible();
+	await page.getByRole('button', { name: /^v1/ }).click();
+	await page.getByRole('dialog').getByRole('button', { name: 'Restore', exact: true }).click();
+	await expect(page.getByText('Personality v1 is back')).toBeVisible();
+	await expect(page.getByRole('region', { name: 'Versions · 3' })).toBeVisible();
+
+	// Back to Crew, then to You.
+	await page.getByRole('main').getByRole('link', { name: 'Crew', exact: true }).click();
+	await expect(page).toHaveURL(/\/settings\/crew$/);
+	await page.getByRole('main').getByRole('link', { name: 'You', exact: true }).click();
+	await expect(page).toHaveURL(/\/settings$/);
 });
