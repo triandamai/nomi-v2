@@ -8,6 +8,7 @@
 pub mod connection;
 pub mod google;
 
+use nomi_agent_core::ToolContext;
 use std::borrow::Cow;
 use std::sync::{Arc, OnceLock};
 
@@ -315,7 +316,8 @@ impl nomi_agent_core::Tool for WorkspaceTool {
     fn keywords(&self) -> &'static [&'static str] {
         keywords_for(&self.definition.name)
     }
-    async fn execute(&self, conn: &mut PoolConnection<Postgres>, _session_id: Uuid, _agent_session_id: Uuid, user_id: Uuid, input: Value) -> Result<ToolOutcome, String> {
+    async fn execute(&self, conn: &mut PoolConnection<Postgres>, ctx: &ToolContext<'_>, input: Value) -> Result<ToolOutcome, String> {
+        let (_session_id, _agent_session_id, user_id) = (ctx.session_id, ctx.agent_session_id, ctx.user_id);
         self.agent.run(conn, user_id, &self.definition.name, input).await
     }
 }

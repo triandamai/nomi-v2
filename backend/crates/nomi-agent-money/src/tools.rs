@@ -1,10 +1,10 @@
 //! Dana's tools as `Tool`s: what `MoneyAgent` runs, and what custom agents can be granted.
 
+use nomi_agent_core::ToolContext;
 use async_trait::async_trait;
 use serde_json::Value;
 use sqlx::pool::PoolConnection;
 use sqlx::Postgres;
-use uuid::Uuid;
 
 use nomi_agent_core::{Tool, ToolOutcome};
 use nomi_llm::ToolDefinition;
@@ -36,7 +36,8 @@ impl Tool for ListTransactions {
     fn keywords(&self) -> &'static [&'static str] {
         &["expenses", "spending", "history", "payments"]
     }
-    async fn execute(&self, conn: &mut PoolConnection<Postgres>, _session_id: Uuid, _agent_session_id: Uuid, user_id: Uuid, input: Value) -> Result<ToolOutcome, String> {
+    async fn execute(&self, conn: &mut PoolConnection<Postgres>, ctx: &ToolContext<'_>, input: Value) -> Result<ToolOutcome, String> {
+        let (_session_id, _agent_session_id, user_id) = (ctx.session_id, ctx.agent_session_id, ctx.user_id);
         crate::list_transactions(conn, user_id, input).await.map(ToolOutcome::text)
     }
 }
@@ -54,7 +55,8 @@ impl Tool for SummarizeBudget {
     fn keywords(&self) -> &'static [&'static str] {
         &["spending", "categories", "totals", "report"]
     }
-    async fn execute(&self, conn: &mut PoolConnection<Postgres>, _session_id: Uuid, _agent_session_id: Uuid, user_id: Uuid, input: Value) -> Result<ToolOutcome, String> {
+    async fn execute(&self, conn: &mut PoolConnection<Postgres>, ctx: &ToolContext<'_>, input: Value) -> Result<ToolOutcome, String> {
+        let (_session_id, _agent_session_id, user_id) = (ctx.session_id, ctx.agent_session_id, ctx.user_id);
         crate::summarize_budget(conn, user_id, input).await.map(ToolOutcome::text)
     }
 }
@@ -72,7 +74,8 @@ impl Tool for LogTransaction {
     fn keywords(&self) -> &'static [&'static str] {
         &["expense", "income", "receipt", "record", "spent"]
     }
-    async fn execute(&self, conn: &mut PoolConnection<Postgres>, session_id: Uuid, _agent_session_id: Uuid, user_id: Uuid, input: Value) -> Result<ToolOutcome, String> {
+    async fn execute(&self, conn: &mut PoolConnection<Postgres>, ctx: &ToolContext<'_>, input: Value) -> Result<ToolOutcome, String> {
+        let (session_id, _agent_session_id, user_id) = (ctx.session_id, ctx.agent_session_id, ctx.user_id);
         crate::log_transaction_outcome(conn, user_id, &input, session_id).await
     }
 }
@@ -90,7 +93,8 @@ impl Tool for SetBudget {
     fn keywords(&self) -> &'static [&'static str] {
         &["limit", "monthly", "category", "spending"]
     }
-    async fn execute(&self, conn: &mut PoolConnection<Postgres>, _session_id: Uuid, _agent_session_id: Uuid, user_id: Uuid, input: Value) -> Result<ToolOutcome, String> {
+    async fn execute(&self, conn: &mut PoolConnection<Postgres>, ctx: &ToolContext<'_>, input: Value) -> Result<ToolOutcome, String> {
+        let (_session_id, _agent_session_id, user_id) = (ctx.session_id, ctx.agent_session_id, ctx.user_id);
         crate::set_budget(conn, user_id, &input).await.map(ToolOutcome::text)
     }
 }
@@ -108,7 +112,8 @@ impl Tool for ListBudgets {
     fn keywords(&self) -> &'static [&'static str] {
         &["limits", "monthly", "spent", "progress"]
     }
-    async fn execute(&self, conn: &mut PoolConnection<Postgres>, _session_id: Uuid, _agent_session_id: Uuid, user_id: Uuid, _input: Value) -> Result<ToolOutcome, String> {
+    async fn execute(&self, conn: &mut PoolConnection<Postgres>, ctx: &ToolContext<'_>, _input: Value) -> Result<ToolOutcome, String> {
+        let (_session_id, _agent_session_id, user_id) = (ctx.session_id, ctx.agent_session_id, ctx.user_id);
         crate::list_budgets(conn, user_id).await.map(ToolOutcome::text)
     }
 }
@@ -126,7 +131,8 @@ impl Tool for SetMonthStart {
     fn keywords(&self) -> &'static [&'static str] {
         &["payday", "salary", "period", "cycle"]
     }
-    async fn execute(&self, conn: &mut PoolConnection<Postgres>, _session_id: Uuid, _agent_session_id: Uuid, user_id: Uuid, input: Value) -> Result<ToolOutcome, String> {
+    async fn execute(&self, conn: &mut PoolConnection<Postgres>, ctx: &ToolContext<'_>, input: Value) -> Result<ToolOutcome, String> {
+        let (_session_id, _agent_session_id, user_id) = (ctx.session_id, ctx.agent_session_id, ctx.user_id);
         let day = input.get("day").and_then(|v| v.as_i64()).ok_or("day is required")?;
         crate::period::set_start_day(conn, user_id, day).await?;
         Ok(ToolOutcome::text(format!("Their money month now starts on day {day}.")))

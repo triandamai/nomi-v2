@@ -2,6 +2,7 @@
 
 pub mod tools;
 
+use nomi_agent_core::ToolContext;
 use std::borrow::Cow;
 
 use async_trait::async_trait;
@@ -149,7 +150,7 @@ impl SubAgent for DesignAgent {
     ) -> Result<nomi_agent_core::ToolOutcome, String> {
         let own = tools::own_tools(&self.mcp, &self.publisher, &self.source);
         match find_tool(&own, name) {
-            Some(tool) => tool.execute(conn, session_id, agent_session_id, user_id, input).await,
+            Some(tool) => tool.execute(conn, &ToolContext::new(session_id, agent_session_id, user_id, self.agent_type().as_ref(), self.display_name().as_ref()), input).await,
             None => Err(format!("unknown tool: {name}")),
         }
     }

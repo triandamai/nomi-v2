@@ -1,11 +1,11 @@
 //! The personality tools as `Tool`s: what `PersonalityAgent` runs, and what custom agents can be
 //! granted.
 
+use nomi_agent_core::ToolContext;
 use async_trait::async_trait;
 use serde_json::Value;
 use sqlx::pool::PoolConnection;
 use sqlx::Postgres;
-use uuid::Uuid;
 
 use nomi_agent_core::{Tool, ToolOutcome};
 use nomi_llm::ToolDefinition;
@@ -30,7 +30,8 @@ impl Tool for SetPersonality {
     fn keywords(&self) -> &'static [&'static str] {
         &["tone", "style", "voice", "behavior"]
     }
-    async fn execute(&self, conn: &mut PoolConnection<Postgres>, session_id: Uuid, agent_session_id: Uuid, user_id: Uuid, input: Value) -> Result<ToolOutcome, String> {
+    async fn execute(&self, conn: &mut PoolConnection<Postgres>, ctx: &ToolContext<'_>, input: Value) -> Result<ToolOutcome, String> {
+        let (session_id, agent_session_id, user_id) = (ctx.session_id, ctx.agent_session_id, ctx.user_id);
         crate::set_personality(conn, session_id, agent_session_id, user_id, input).await.map(ToolOutcome::text)
     }
 }
@@ -48,7 +49,8 @@ impl Tool for ResetChatPersonality {
     fn keywords(&self) -> &'static [&'static str] {
         &["default", "tone", "clear", "chat"]
     }
-    async fn execute(&self, conn: &mut PoolConnection<Postgres>, session_id: Uuid, _agent_session_id: Uuid, _user_id: Uuid, _input: Value) -> Result<ToolOutcome, String> {
+    async fn execute(&self, conn: &mut PoolConnection<Postgres>, ctx: &ToolContext<'_>, _input: Value) -> Result<ToolOutcome, String> {
+        let (session_id, _agent_session_id, _user_id) = (ctx.session_id, ctx.agent_session_id, ctx.user_id);
         crate::reset_chat_personality(conn, session_id).await.map(ToolOutcome::text)
     }
 }
@@ -66,7 +68,8 @@ impl Tool for ListPersonalityVersions {
     fn keywords(&self) -> &'static [&'static str] {
         &["history", "tone", "past", "style"]
     }
-    async fn execute(&self, conn: &mut PoolConnection<Postgres>, session_id: Uuid, _agent_session_id: Uuid, user_id: Uuid, _input: Value) -> Result<ToolOutcome, String> {
+    async fn execute(&self, conn: &mut PoolConnection<Postgres>, ctx: &ToolContext<'_>, _input: Value) -> Result<ToolOutcome, String> {
+        let (session_id, _agent_session_id, user_id) = (ctx.session_id, ctx.agent_session_id, ctx.user_id);
         crate::list_personality_versions(conn, session_id, user_id).await.map(ToolOutcome::text)
     }
 }
@@ -84,7 +87,8 @@ impl Tool for RollbackPersonality {
     fn keywords(&self) -> &'static [&'static str] {
         &["restore", "undo", "version", "tone"]
     }
-    async fn execute(&self, conn: &mut PoolConnection<Postgres>, session_id: Uuid, agent_session_id: Uuid, user_id: Uuid, input: Value) -> Result<ToolOutcome, String> {
+    async fn execute(&self, conn: &mut PoolConnection<Postgres>, ctx: &ToolContext<'_>, input: Value) -> Result<ToolOutcome, String> {
+        let (session_id, agent_session_id, user_id) = (ctx.session_id, ctx.agent_session_id, ctx.user_id);
         crate::rollback_personality(conn, session_id, agent_session_id, user_id, input).await.map(ToolOutcome::text)
     }
 }

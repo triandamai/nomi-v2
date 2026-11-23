@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use nomi_agent_core::ToolContext;
 use async_trait::async_trait;
 use serde_json::{json, Value};
 use sqlx::pool::PoolConnection;
@@ -19,7 +20,8 @@ impl Tool for Echo {
     fn group(&self) -> &'static str {
         "test"
     }
-    async fn execute(&self, _conn: &mut PoolConnection<Postgres>, _session_id: Uuid, _agent_session_id: Uuid, _user_id: Uuid, input: Value) -> Result<ToolOutcome, String> {
+    async fn execute(&self, _conn: &mut PoolConnection<Postgres>, ctx: &ToolContext<'_>, input: Value) -> Result<ToolOutcome, String> {
+        let (_session_id, _agent_session_id, _user_id) = (ctx.session_id, ctx.agent_session_id, ctx.user_id);
         Ok(ToolOutcome::text(input.to_string()))
     }
 }

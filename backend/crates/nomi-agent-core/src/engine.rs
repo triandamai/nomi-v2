@@ -41,8 +41,7 @@ pub const REASONING_STYLE: &str = "Keep your private thinking brief and on point
      (about 40 words) on what the person needs, what you'll do, and any catch, in the language you reply in. No \
      preamble, no restating their message, no weighing every option, no drafting the reply there. Your reply is only the answer for \
      the person: never write your thinking, your plan of action, or notes about what they asked in it.";
-pub const COMPLETE_TASK_TOOL_NAME: &str = "complete_task";
-pub const DELEGATE_TOOL_NAME: &str = "delegate_to_agent";
+pub use nomi_tool::tools::{COMPLETE_TASK_TOOL_NAME, DELEGATE_TOOL_NAME};
 pub const RENAME_CHAT_TOOL_NAME: &str = "rename_chat";
 /// What the model hears back after `show`: the view is in the chat, so it needn't say it again.
 const VIEW_SHOWN: &str = "Shown in the chat. Don't repeat what it shows; add only what it doesn't say.";

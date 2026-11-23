@@ -3,6 +3,7 @@
 //! reminders worker) as a message with Done / Snooze, with no model call. Agent tasks scheduled for
 //! later still go through the core scheduler (`scheduled_jobs`), which this crate never touches.
 
+use nomi_agent_core::ToolContext;
 use std::borrow::Cow;
 
 use async_trait::async_trait;
@@ -497,7 +498,8 @@ impl nomi_agent_core::Tool for ReminderTool {
     fn keywords(&self) -> &'static [&'static str] {
         keywords_for(&self.definition.name)
     }
-    async fn execute(&self, conn: &mut PoolConnection<Postgres>, session_id: Uuid, _agent_session_id: Uuid, user_id: Uuid, input: Value) -> Result<nomi_agent_core::ToolOutcome, String> {
+    async fn execute(&self, conn: &mut PoolConnection<Postgres>, ctx: &ToolContext<'_>, input: Value) -> Result<nomi_agent_core::ToolOutcome, String> {
+        let (session_id, _agent_session_id, user_id) = (ctx.session_id, ctx.agent_session_id, ctx.user_id);
         run_tool(conn, session_id, user_id, &self.definition.name, input).await
     }
 }
@@ -544,7 +546,7 @@ impl SubAgent for RemindersAgent {
     ) -> Result<nomi_agent_core::ToolOutcome, String> {
         let tools = catalog_tools();
         let tool = nomi_agent_core::find_tool(&tools, name).ok_or_else(|| format!("unknown tool: {name}"))?;
-        tool.execute(conn, session_id, agent_session_id, user_id, input).await
+        tool.execute(conn, &ToolContext::new(session_id, agent_session_id, user_id, self.agent_type().as_ref(), self.display_name().as_ref()), input).await
     }
 
     fn intent_label(&self) -> Cow<'static, str> {

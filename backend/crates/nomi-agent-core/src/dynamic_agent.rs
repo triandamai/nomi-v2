@@ -148,7 +148,9 @@ impl SubAgent for DynamicAgent {
         if !self.granted_tools.iter().any(|t| t == name) {
             return Err(format!("tool '{name}' is not granted to this agent"));
         }
-        self.catalog.execute(name, conn, session_id, agent_session_id, user_id, input).await
+        let agent_type = self.id.to_string();
+        let ctx = crate::ToolContext::new(session_id, agent_session_id, user_id, &agent_type, &self.name);
+        self.catalog.execute(name, conn, &ctx, input).await
     }
 
     fn intent_label(&self) -> Cow<'static, str> {

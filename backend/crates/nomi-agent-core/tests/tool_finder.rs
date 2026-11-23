@@ -1,5 +1,6 @@
 //! find_tools and create_agent against a real database: the catalog table, word and meaning
 //! matches, who carries a tool, and members made the way Settings › Crew makes them.
+use nomi_agent_core::ToolContext;
 use std::borrow::Cow;
 use std::sync::Arc;
 
@@ -37,7 +38,8 @@ impl Tool for Fake {
     fn keywords(&self) -> &'static [&'static str] {
         self.keywords
     }
-    async fn execute(&self, _: &mut PoolConnection<Postgres>, _: Uuid, _: Uuid, _: Uuid, _: Value) -> Result<ToolOutcome, String> {
+    async fn execute(&self, _: &mut PoolConnection<Postgres>, ctx: &ToolContext<'_>, _: Value) -> Result<ToolOutcome, String> {
+        let (_, _, _) = (ctx.session_id, ctx.agent_session_id, ctx.user_id);
         Ok(ToolOutcome::text(self.name))
     }
 }
