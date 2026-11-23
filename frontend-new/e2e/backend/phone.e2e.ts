@@ -57,26 +57,28 @@ test('a phone has the tab bar, and Chats as the pen draws it: large title, rows,
 	await page.getByRole('link', { name: 'New chat' }).click();
 	await expect(page).toHaveURL(/\/chat\/new$/);
 
-	// The other tabs go where they say; You is Settings.
+	// The other tabs go where they say; You is Settings' own index (phone-tabs.e2e.ts has the rest).
 	await page.goto('/inbox', { waitUntil: 'networkidle' });
 	await expect(page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Inbox' })).toHaveAttribute('aria-current', 'page');
 	await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'You' }).click();
-	await expect(page).toHaveURL(/\/settings\/profile$/);
+	await expect(page).toHaveURL(/\/settings$/);
 });
 
-test('You keeps the menu: the settings pages and Log out are in its drawer', async ({ page, context }) => {
+test('You holds the settings pages and Log out: a page opened from it goes back to it', async ({ page, context }) => {
 	const account = await createAccount();
 	await signInAs(context, account);
 
 	await page.goto('/settings/profile', { waitUntil: 'networkidle' });
 	await expect(page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'You' })).toHaveAttribute('aria-current', 'page');
-	await page.getByRole('button', { name: 'Open navigation' }).click();
-	const drawer = page.getByRole('dialog', { name: 'Navigation' });
-	await drawer.getByRole('link', { name: 'General' }).click();
+	// No drawer: You is the way to the rest of Settings.
+	await expect(page.getByRole('button', { name: 'Open navigation' })).toHaveCount(0);
+	await page.getByRole('link', { name: 'Back to You' }).click();
+	await expect(page).toHaveURL(/\/settings$/);
+	await page.getByRole('region', { name: 'Account' }).getByRole('link', { name: /General/ }).click();
 	await expect(page).toHaveURL(/\/settings\/general$/);
 
-	await page.getByRole('button', { name: 'Open navigation' }).click();
-	await drawer.getByRole('button', { name: /Log out/ }).click();
+	await page.getByRole('link', { name: 'Back to You' }).click();
+	await page.getByRole('button', { name: 'Log out' }).click();
 	await expect(page).toHaveURL(/\/sign-in$/);
 	expect((await context.cookies()).map((cookie) => cookie.name)).not.toContain('refresh_token');
 });
