@@ -3,7 +3,7 @@ import type { Cookies } from '@sveltejs/kit';
 
 vi.mock('$env/dynamic/private', () => ({ env: { API_URL: 'http://api.test' } }));
 
-const { createWorkspace, savePreferences, signOut, signOutTarget, chooseProjectsWorkspace } = await import('./account');
+const { createWorkspace, savePreferences, signOut, signOutTarget, switchActiveOrg, chooseProjectsWorkspace } = await import('./account');
 
 function cookieJar(initial: Record<string, string> = {}) {
 	const jar = new Map(Object.entries(initial));
@@ -114,14 +114,40 @@ describe('savePreferences', () => {
 	});
 });
 
-describe('chooseProjectsWorkspace', () => {
-	it('picks the workspace projects are listed from', async () => {
-		const api = backend(() => new Response(null, { status: 204 }));
-		expect(await chooseProjectsWorkspace({ fetch: api.fetch, cookies: cookieJar().cookies, locals: { accessToken: 'a1' } }, 'o2')).toEqual({ ok: true });
-		expect(api.calls[0]).toMatchObject({ method: 'PUT', path: '/api/preferences/project-org', body: { org_id: 'o2' } });
+describe('switchActiveOrg', () => {
+	it('switches the active workspace and updates session and locals', async () => {
+		const api = backend(() => Response.json({ access_token: 'a2' }));
+		const { cookies, jar } = cookieJar({ access_token: 'a1' });
+		const locals = { accessToken: 'a1' };
+		expect(await switchActiveOrg({ fetch: api.fetch, cookies, locals }, 'o2')).toEqual({ ok: true });
+		expect(api.calls[0]).toMatchObject({ method: 'PUT', path: '/api/auth/active-org', body: { org_id: 'o2' } });
+		expect(jar.get('access_token')).toBe('a2');
+		expect(locals.accessToken).toBe('a2');
 	});
 
-	it('says what went wrong', async () => {
+	it('says what went wrong when backend refuses', async () => {
+		const api = backend(() => Response.json({ error: 'not a member' }, { status: 403 }));
+		const { cookies, jar } = cookieJar({ access_token: 'a1' });
+		const locals = { accessToken: 'a1' };
+		expect(await switchActiveOrg({ fetch: api.fetch, cookies, locals }, 'o9')).toEqual({ ok: false, status: 403, message: 'not a member' });
+		expect(jar.get('access_token')).toBe('a1');
+		expect(locals.accessToken).toBe('a1');
+	});
+});
+
+describe('chooseProjectsWorkspace', () => {
+	it('picks the workspace projects are listed from and switches active workspace', async () => {
+		const api = backend((_method, path) => (path === '/api/auth/active-org' ? Response.json({ access_token: 'a2' }) : new Response(null, { status: 204 })));
+		const { cookies, jar } = cookieJar({ access_token: 'a1' });
+		const locals = { accessToken: 'a1' };
+		expect(await chooseProjectsWorkspace({ fetch: api.fetch, cookies, locals }, 'o2')).toEqual({ ok: true });
+		expect(api.calls[0]).toMatchObject({ method: 'PUT', path: '/api/auth/active-org', body: { org_id: 'o2' } });
+		expect(api.calls[1]).toMatchObject({ method: 'PUT', path: '/api/preferences/project-org', body: { org_id: 'o2' } });
+		expect(jar.get('access_token')).toBe('a2');
+		expect(locals.accessToken).toBe('a2');
+	});
+
+	it('says what went wrong when switching active workspace fails', async () => {
 		const api = backend(() => Response.json({ error: 'not a member' }, { status: 403 }));
 		expect(await chooseProjectsWorkspace({ fetch: api.fetch, cookies: cookieJar().cookies, locals: { accessToken: 'a1' } }, 'o9')).toEqual({ ok: false, status: 403, message: 'not a member' });
 	});

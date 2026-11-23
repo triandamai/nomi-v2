@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { Bell, CheckCheck, ChevronLeft, Download, Folder, House, Inbox, MessageCircle, MessageSquare, Plus, User } from '@lucide/svelte';
-	import { goto, invalidate } from '$app/navigation';
+	import { goto, invalidate, onNavigate } from '$app/navigation';
 	import { navigating, page } from '$app/state';
 	import { m } from '$lib/paraglide/messages';
 	import { getLocale } from '$lib/paraglide/runtime';
@@ -16,7 +16,8 @@
 	import { signedOutTarget } from '$lib/live/leaving';
 	import { settledRefresh } from '$lib/live/settle';
 	import { SHORTCUT_KEYS, isTyping, shortcutFor } from '$lib/shortcuts';
-	import { VERSION_LABEL } from '$lib/version';
+	import { APP_VERSION, VERSION_LABEL } from '$lib/version';
+	import { markSeen } from '$lib/releaseNotes';
 	import type { Theme } from '$lib/theme';
 	import AppShell from '$lib/ds/shells/AppShell.svelte';
 	import { setPanelPlacement } from '$lib/ds/shells/panelPlacement';
@@ -24,12 +25,16 @@
 	import { setPhoneChrome } from '$lib/ds/shells/phoneChrome';
 	import { PhoneScreen, setPhoneScreen } from '$lib/ds/shells/phoneScreen.svelte';
 	import { phoneView } from '$lib/phone.svelte';
+	import { LOADING_DELAY_MS, loadingPage, opensAnotherPage, type LoadingPage } from '$lib/navigation/loading';
+	import PageLoading from './PageLoading.svelte';
 	import Sidebar from '$lib/ds/chrome/Sidebar.svelte';
 	import NavItem from '$lib/ds/navigation/NavItem.svelte';
 	import NavGroupLabel from '$lib/ds/navigation/NavGroupLabel.svelte';
 	import RecentsList from '$lib/ds/chrome/RecentsList.svelte';
 	import UsageCard from '$lib/ds/chrome/UsageCard.svelte';
 	import AccountMenu from '$lib/ds/chrome/AccountMenu.svelte';
+	import ThemePickerButton from '$lib/ds/chrome/ThemePickerButton.svelte';
+	import { setThemeContext } from '$lib/ds/chrome/themeContext';
 	import WorkspaceSwitcher from '$lib/ds/chrome/WorkspaceSwitcher.svelte';
 	import TopBar from '$lib/ds/chrome/TopBar.svelte';
 	import QuickSearch, { type QuickSearchRow } from '$lib/ds/chrome/QuickSearch.svelte';
@@ -41,6 +46,7 @@
 	import AutosaveNote from '$lib/ds/settings/AutosaveNote.svelte';
 	import CrewPanel from '$lib/ds/chrome/CrewPanel.svelte';
 	import ShortcutsDialog from '$lib/ds/chrome/ShortcutsDialog.svelte';
+	import ReleaseNotesDialog from '$lib/ds/chrome/ReleaseNotesDialog.svelte';
 	import SessionExpired from '$lib/ds/chat/SessionExpired.svelte';
 	import PhoneSignedOutSheet from '$lib/ds/thread/PhoneSignedOutSheet.svelte';
 	import NeedsYouToast from '$lib/chat/NeedsYouToast.svelte';
@@ -86,6 +92,45 @@
 	const isYou = $derived(page.route.id === '/(app)/settings' && !page.error);
 	const path = $derived(page.url.pathname);
 
+	// Another page on its way: its server load runs before anything changes, so after a moment its
+	// place shows a shimmering placeholder saying which page is coming, instead of the old page
+	// sitting still. A quick one just swaps.
+	const going = $derived(opensAnotherPage(page.url.pathname, navigating.to?.url.pathname) ? (navigating.to?.url.pathname ?? null) : null);
+	let slow = $state(false);
+	$effect(() => {
+		if (!going) {
+			slow = false;
+			return;
+		}
+		const timer = setTimeout(() => (slow = true), LOADING_DELAY_MS);
+		return () => clearTimeout(timer);
+	});
+	const LOADING_LABEL: Record<LoadingPage, () => string> = {
+		home: () => m.app_loading_page({ page: m.nav_home().toLowerCase() }),
+		chat: m.app_loading_chat,
+		chats: () => m.app_loading_page({ page: m.nav_chats().toLowerCase() }),
+		projects: () => m.app_loading_page({ page: m.nav_projects().toLowerCase() }),
+		project: m.app_loading_project,
+		inbox: () => m.app_loading_page({ page: m.nav_inbox().toLowerCase() }),
+		settings: () => m.app_loading_page({ page: m.nav_settings().toLowerCase() }),
+	};
+	const loadingLabel = $derived.by(() => {
+		const to = going && loadingPage(going);
+		return to ? LOADING_LABEL[to]() : m.app_loading();
+	});
+
+	// Moving to another page cross-fades into it where the browser can (reduced motion: at once).
+	onNavigate((navigation) => {
+		if (!document.startViewTransition || !opensAnotherPage(navigation.from?.url.pathname ?? '', navigation.to?.url.pathname)) return;
+		if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+		return new Promise((resolve) => {
+			document.startViewTransition(async () => {
+				resolve();
+				await navigation.complete;
+			});
+		});
+	});
+
 	// Home and a chat have the crew column: Home runs its top bar across it, a chat stops beside it.
 	setPanelPlacement({
 		get underTopbar() {
@@ -123,6 +168,9 @@
 			return inThread || phoneScreenState.inside ? null : { label: m.nav_main(), tabs };
 		},
 		get ownTitle() {
+			// Home, the Inbox and You draw their own large titles (Flow / Mobile — Home, Inbox & You);
+			// You holds Settings' pages and Log out, so it needs no drawer: a settings page has a back link
+			// to it instead.
 			return isChats || isHome || inThread || isProjects || isInbox || isYou;
 		},
 	});
@@ -147,6 +195,23 @@
 	let theme = $derived<Theme>(data.theme);
 	let unread = $derived(data.unread);
 	let shortcutsOpen = $state(false);
+
+	// This version's release notes (baked into the build for its own environment): they open
+	// when the person clicks the version or What's new.
+	let releaseNotesOpen = $state(false);
+	const releaseDate = new Intl.DateTimeFormat(getLocale(), { day: 'numeric', month: 'short', year: 'numeric' });
+	const releaseNotes = $derived(data.releaseNotes.map((release) => ({ version: release.version, url: release.url || undefined, html: release.html, date: release.publishedAt ? releaseDate.format(new Date(release.publishedAt)) : '' })));
+	const storage = () => {
+		try {
+			return window.localStorage;
+		} catch {
+			return undefined;
+		}
+	};
+	$effect(() => {
+		// Seen once it's been opened, however it's closed.
+		if (releaseNotesOpen) markSeen(APP_VERSION, storage());
+	});
 	let sessionOver = $state(false);
 	let logout: HTMLFormElement | undefined = $state();
 
@@ -194,6 +259,13 @@
 		applyTheme(before);
 		toasts.show({ kind: 'error', title: m.theme_failed() });
 	}
+
+	setThemeContext({
+		get theme() {
+			return theme;
+		},
+		changeTheme,
+	});
 
 	/** Saved with the person's preferences, then the page loads again in it. */
 	async function changeLanguage(next: string) {
@@ -428,6 +500,7 @@
 			user={{ name: data.person.name, detail: data.usage?.account, avatar: data.person.avatar ?? undefined }}
 			version={VERSION_LABEL}
 			bind:query={settingsQuery}
+			onwhatsnew={releaseNotes.length > 0 ? () => (releaseNotesOpen = true) : undefined}
 			onlogout={() => logout?.requestSubmit()}
 		/>
 	{:else}
@@ -463,6 +536,7 @@
 					onlanguage={changeLanguage}
 					version={VERSION_LABEL}
 					onshortcuts={() => (shortcutsOpen = true)}
+					onwhatsnew={releaseNotes.length > 0 ? () => (releaseNotesOpen = true) : undefined}
 					onlogout={() => logout?.requestSubmit()}
 				/>
 			{/snippet}
@@ -487,10 +561,19 @@
 	</span>
 {/snippet}
 
+{#snippet themeButton()}
+	<span class="lg:hidden">
+		<ThemePickerButton {theme} ontheme={changeTheme} />
+	</span>
+{/snippet}
+
 {#snippet topbar()}
 	{#if isHome}
 		<TopBar title={m.home_title()} meta={stamp(now, language, timeZone)}>
-			{#snippet actions()}{@render search()}{/snippet}
+			{#snippet actions()}
+				{@render search()}
+				{@render themeButton()}
+			{/snippet}
 		</TopBar>
 	{:else if isChat && chatData.chat}
 		{@const id = chatData.chat.id}
@@ -516,6 +599,7 @@
 				{#if pageTitle.csv}<Button label={m.plan_export()} variant="ghost" iconStart={Download} href={pageTitle.csv} data-sveltekit-reload />{/if}
 				{#if pageTitle.exportLink}<Button label={pageTitle.exportLink.label} variant="secondary" iconEnd={Download} href={pageTitle.exportLink.href} data-sveltekit-reload />{/if}
 				{#if pageTitle.connect}<Button label={m.models_connect()} variant="inverse" iconEnd={Plus} href={pageTitle.connect} data-sveltekit-noscroll />{/if}
+				{@render themeButton()}
 			{/snippet}
 		</SettingsTopBar></div>
 		</div>
@@ -536,14 +620,20 @@
 				<span class="max-sm:hidden"><Button label={m.inbox_mark_all_read()} variant="ghost" iconStart={CheckCheck} disabled={unread === 0} loading={markingRead} onclick={markAllRead} /></span>
 				<span class="sm:hidden"><IconButton icon={CheckCheck} label={m.inbox_mark_all_read()} variant="ghost" disabled={unread === 0 || markingRead} onclick={markAllRead} /></span>
 				<Button label={m.inbox_new_reminder()} variant="inverse" iconEnd={Plus} onclick={() => document.getElementById(QUICK_REMINDER)?.focus()} />
+				{@render themeButton()}
 			{/snippet}
 		</TopBar>
 	{:else if page.error}
-		<TopBar title={page.route.id === CHAT ? m.nav_chats() : m.error_title()} />
+		<TopBar title={page.route.id === CHAT ? m.nav_chats() : m.error_title()}>
+			{#snippet actions()}{@render themeButton()}{/snippet}
+		</TopBar>
 	{:else}
 		<!-- Other pages name themselves in their load: { title, meta }. -->
 		<TopBar title={pageTitle.title ?? ''} meta={pageTitle.meta}>
-			{#snippet actions()}{@render search()}{/snippet}
+			{#snippet actions()}
+				{@render search()}
+				{@render themeButton()}
+			{/snippet}
 		</TopBar>
 	{/if}
 {/snippet}
@@ -552,17 +642,22 @@
 	<CrewPanel summary={data.crew.summary} members={isChat ? chatCrewRows(data.crew.rows, header.crew) : data.crew.rows} />
 {/snippet}
 
+{#snippet content()}
+	{#if going && slow}<PageLoading label={loadingLabel} />{:else}{@render children()}{/if}
+{/snippet}
+
 {#if isWorkspace}
-	{@render children()}
+	{@render content()}
 {:else}
 	<AppShell {sidebar} {topbar} panel={isHome || inThread ? crew : undefined}>
-		{@render children()}
+		{@render content()}
 	</AppShell>
 {/if}
 
 <form bind:this={logout} method="POST" action="/sign-out" hidden></form>
 
 <ShortcutsDialog bind:open={shortcutsOpen} {shortcuts} />
+<ReleaseNotesDialog bind:open={releaseNotesOpen} releases={releaseNotes} />
 
 <Dialog bind:open={creating} title={m.workspace_create_title()} description={m.workspace_create_body()}>
 	<form

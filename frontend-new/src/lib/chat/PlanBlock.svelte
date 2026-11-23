@@ -2,7 +2,7 @@
 	import { untrack } from 'svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { checklist } from '$lib/adapters/blocks';
-	import { crewIdOf } from '$lib/adapters/chat';
+	import { crewIdOf, stepOwner } from '$lib/adapters/chat';
 	import { addedSteps } from '$lib/adapters/phoneChat';
 	import type { CrewId } from '$lib/ds/agents/crew';
 	import PlanCard from '$lib/ds/chat/PlanCard.svelte';
@@ -69,7 +69,10 @@
 		title={plan?.title ?? title}
 		version={plan?.version}
 		intro={m.phone_plan_intro()}
-		steps={steps.map((step, index) => ({ label: step.label, owner: { agent: crewIdOf(name), name }, added: added[index] }))}
+		steps={steps.map((step, index) => {
+			const owner = stepOwner(step.label, name);
+			return { label: owner.label, owner: { agent: owner.agent, name: owner.name }, added: added[index] };
+		})}
 	/>
 {:else if steps.length > 0}
 	<PlanCard subject={plan?.title ?? title} {steps} onstop={working && plan?.state === 'active' ? onstop : undefined} />

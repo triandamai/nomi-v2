@@ -789,6 +789,173 @@ export function buildStudioPenDocument(options: {
 }
 
 /**
+ * The preview page a top-level `.pen` frame is: the one named by its id or its name, else the
+ * one in its place. A version's pages come from its frames (design_artifact::parse_pen_document).
+ */
+function pageOfFrame(
+	preview: StudioPreview | null,
+	frame: { id: string; name?: string },
+	index: number
+): StudioPreview['pages'][number] | undefined {
+	const pages = preview?.pages ?? [];
+	return pages.find((p) => p.path === frame.id) ?? pages.find((p) => !!frame.name && p.title === frame.name) ?? pages[index];
+}
+
+function normalizeRawPenDocument(
+	doc: Record<string, unknown>,
+	builtVariables: Record<string, PenVariable> | undefined,
+	dir: StudioDirection | null,
+	device: Device = 'desktop'
+): void {
+	if (builtVariables) {
+		const rawVars =
+			doc.variables && typeof doc.variables === 'object' && !Array.isArray(doc.variables)
+				? (doc.variables as Record<string, unknown>)
+				: {};
+		const normalizedVars: Record<string, PenVariable> = { ...builtVariables };
+		for (const [k, v] of Object.entries(rawVars)) {
+			if (!v) continue;
+			if (typeof v === 'string') {
+				const isHex = /^#[0-9a-fA-F]{3,8}$/.test(v.trim());
+				normalizedVars[k] = isHex ? { type: 'color', value: v.trim() } : { type: 'string', value: v };
+			} else if (typeof v === 'object' && 'value' in v) {
+				normalizedVars[k] = v as PenVariable;
+			}
+		}
+		doc.variables = normalizedVars;
+	}
+
+	function normalizeNode(node: Record<string, unknown>, depth: number, isTopLevel: boolean): void {
+		if (!node || typeof node !== 'object') return;
+
+		// 1. Normalize node types
+		const rawType = typeof node.type === 'string' ? node.type.toLowerCase().trim() : '';
+		if (rawType === 'component') {
+			node.type = 'frame';
+			node.reusable = true;
+		} else if (node.isComponent === true) {
+			node.reusable = true;
+		} else if (rawType === 'instance') {
+			node.type = 'ref';
+		} else if (
+			rawType === 'label' ||
+			rawType === 'heading' ||
+			rawType === 'paragraph' ||
+			rawType === 'title' ||
+			rawType === 'caption'
+		) {
+			node.type = 'text';
+		} else if (
+			rawType === 'card' ||
+			rawType === 'button' ||
+			rawType === 'section' ||
+			rawType === 'box' ||
+			rawType === 'container' ||
+			rawType === 'navbar' ||
+			rawType === 'header' ||
+			rawType === 'footer' ||
+			rawType === 'nav'
+		) {
+			node.type = 'frame';
+		} else if (!rawType) {
+			if (node.ref || node.componentId) {
+				node.type = 'ref';
+			} else if (node.content !== undefined || node.text !== undefined || node.fontSize !== undefined) {
+				node.type = 'text';
+			} else {
+				node.type = 'frame';
+			}
+		}
+
+		// 2. Normalize text content
+		if (node.type === 'text' || node.type === 'icon_font') {
+			const textCandidate =
+				node.content ??
+				node.text ??
+				node.label ??
+				node.value ??
+				(typeof node.name === 'string' &&
+				!/^node-|^text-?|^frame-?|^rect-?|^group-?/i.test(node.name)
+					? node.name
+					: '');
+			node.content = String(textCandidate ?? '');
+			if (node.fontSize === undefined) node.fontSize = 14;
+			if (node.fontFamily === undefined) node.fontFamily = 'Inter';
+		}
+
+		// 3. Normalize background / fill property aliases
+		if (node.fill === undefined) {
+			const altFill =
+				node.background ??
+				node.backgroundColor ??
+				node.bg ??
+				(node.type === 'text' ? node.color : undefined);
+			if (altFill !== undefined) {
+				node.fill = altFill;
+			}
+		}
+
+		// 4. Default visual styling for top-level artboards and child sections/cards
+		if (isTopLevel && (node.type === 'frame' || node.type === 'COMPONENT')) {
+			if (!node.fill) {
+				node.fill = '$color-bg';
+			}
+		} else if (!isTopLevel && node.type === 'frame') {
+			const nodeName = typeof node.name === 'string' ? node.name.toLowerCase() : '';
+			const isCardOrPanel =
+				/card|panel|surface|box|tile|summary|metric|table|modal|dialog/i.test(nodeName) ||
+				(typeof node.cornerRadius === 'number' && node.cornerRadius > 0);
+			const isButtonOrCta = /button|btn|cta|action/i.test(nodeName);
+			if (!node.fill && !node.stroke) {
+				if (isButtonOrCta) {
+					node.fill = '$color-accent';
+				} else if (isCardOrPanel) {
+					node.fill = '$color-surface';
+					node.stroke = { align: 'inside', thickness: 1, fill: '$color-border' };
+				}
+			}
+		}
+
+		// 5. Component references
+		if (node.type === 'ref') {
+			if (node.componentId && !node.ref) {
+				node.ref = node.componentId;
+			}
+		}
+
+		// 6. Recurse into children
+		if (Array.isArray(node.children)) {
+			for (const child of node.children as Array<Record<string, unknown>>) {
+				normalizeNode(child, depth + 1, false);
+			}
+		}
+	}
+
+	if (Array.isArray(doc.children)) {
+		const topFrames = (doc.children as Array<Record<string, unknown>>).filter(
+			(c) => c && (c.type === 'frame' || !c.type || c.type === 'component')
+		);
+		for (const frame of topFrames) {
+			normalizeNode(frame, 0, true);
+		}
+		// Auto-arrange top-level frames if all stacked at 0
+		const allAtZero = topFrames.length > 1 && topFrames.every((f) => !f.x || f.x === 0);
+		if (allAtZero) {
+			let cursorX = 0;
+			const frameGap = 64;
+			const defaultWidth = CANVAS_ARTBOARD_WIDTHS[device];
+			for (const frame of topFrames) {
+				frame.x = cursorX;
+				frame.y = (frame.y as number) ?? 0;
+				const w =
+					typeof frame.width === 'number' && frame.width > 0 ? frame.width : defaultWidth;
+				cursorX += w + frameGap;
+			}
+		}
+	}
+}
+
+/**
  * Builds and lays out a complete OpenPencil `SceneGraph` + headless `Editor` + linter pass
  * from either a raw `.pen` JSON file or the current Design Studio state.
  */
@@ -803,11 +970,15 @@ export function buildStudioSceneModel(options: {
 	const penJson = options.rawPenJson?.trim() || JSON.stringify(built.doc);
 	let graph: SceneGraph;
 	let penDocument: PenDocument = built.doc;
+	let normalizedPenJson = penJson;
 
 	if (options.rawPenJson?.trim()) {
 		try {
-			penDocument = JSON.parse(options.rawPenJson) as PenDocument;
-			graph = parsePenFile(options.rawPenJson);
+			const parsed = JSON.parse(options.rawPenJson) as Record<string, unknown>;
+			normalizeRawPenDocument(parsed, built.doc.variables, options.activeDirection, options.device ?? 'desktop');
+			normalizedPenJson = JSON.stringify(parsed);
+			penDocument = parsed as unknown as PenDocument;
+			graph = parsePenFile(normalizedPenJson);
 		} catch {
 			graph = parsePenFile(JSON.stringify(built.doc));
 		}
@@ -828,7 +999,7 @@ export function buildStudioSceneModel(options: {
 	if (options.rawPenJson?.trim()) {
 		const topFrames = graph.getChildren(pageId);
 		topFrames.forEach((frame, idx) => {
-			const pagePath = options.preview?.pages[idx]?.path ?? frame.id;
+			const pagePath = pageOfFrame(options.preview, frame, idx)?.path ?? frame.id;
 			pageNodeIds.set(pagePath, frame.id);
 			if (!nodeTargets.has(frame.id)) {
 				nodeTargets.set(frame.id, {
@@ -868,7 +1039,7 @@ export function buildStudioSceneModel(options: {
 	const frames: StudioCanvasFrame[] = topFrames.map((node, index) => {
 		const bounds = graph.getAbsoluteBounds(node.id);
 		const meta = built.frameMeta.find((m) => m.nodeId === node.id);
-		const fallbackPage = options.preview?.pages[index];
+		const fallbackPage = pageOfFrame(options.preview, node, index);
 		return {
 			id: meta?.id ?? node.id,
 			nodeId: node.id,
@@ -921,7 +1092,7 @@ export function buildStudioSceneModel(options: {
 
 	return {
 		penDocument,
-		penJson,
+		penJson: normalizedPenJson,
 		graph,
 		editor,
 		pageId,
@@ -1020,7 +1191,10 @@ function resolveNodeFillCss(graph: SceneGraph, node: SceneNode): string | null {
 	for (let i = 0; i < node.fills.length; i++) {
 		const fill = node.fills[i];
 		if (!fill || fill.visible === false || fill.type !== 'SOLID') continue;
-		const boundVarId = node.boundVariables[`fills[${i}].color`] ?? node.boundVariables['fill'];
+		const boundVarId =
+			node.boundVariables[`fills[${i}]`] ??
+			node.boundVariables[`fills[${i}].color`] ??
+			node.boundVariables['fill'];
 		let color: Color = fill.color;
 		if (boundVarId) {
 			const resolved = graph.resolveColorVariable(boundVarId);
@@ -1038,7 +1212,10 @@ function resolveNodeStrokeCss(
 	for (let i = 0; i < node.strokes.length; i++) {
 		const stroke = node.strokes[i];
 		if (!stroke || stroke.visible === false) continue;
-		const boundVarId = node.boundVariables[`strokes[${i}].color`] ?? node.boundVariables['stroke'];
+		const boundVarId =
+			node.boundVariables[`strokes[${i}]`] ??
+			node.boundVariables[`strokes[${i}].color`] ??
+			node.boundVariables['stroke'];
 		let color: Color = stroke.color;
 		if (boundVarId) {
 			const resolved = graph.resolveColorVariable(boundVarId);
@@ -1124,11 +1301,14 @@ export function paintOpenPencilSceneCanvas(
 	const accentCss = view.accentCss || '#2563EB';
 	const componentCss = view.componentCss || '#8B5CF6';
 
-	function drawSceneSubtree(node: SceneNode): void {
+	const topNodes = model.graph.getChildren(model.pageId);
+	const topNodeIds = new Set(topNodes.map((n) => n.id));
+
+	function drawSceneSubtree(node: SceneNode, isTopLevel = false): void {
 		if (!node.visible) return;
 		const bounds = model.graph.getAbsoluteBounds(node.id);
-		const fillCss = resolveNodeFillCss(model.graph, node);
-		const stroke = resolveNodeStrokeCss(model.graph, node);
+		let fillCss = resolveNodeFillCss(model.graph, node);
+		let stroke = resolveNodeStrokeCss(model.graph, node);
 		const radius = node.cornerRadius || 0;
 
 		ctx.save();
@@ -1136,64 +1316,134 @@ export function paintOpenPencilSceneCanvas(
 			ctx.globalAlpha *= node.opacity;
 		}
 
+		let filled = false;
+		if (isTopLevel && (node.type === 'FRAME' || node.type === 'COMPONENT')) {
+			if (!fillCss) {
+				const bgVar = model.variables.find((v) => v.name === 'color-bg');
+				fillCss = bgVar?.cssValue || '#FAF8F5';
+			}
+			if (!stroke) {
+				stroke = { css: 'rgba(0, 0, 0, 0.08)', weight: 1 };
+			}
+			// Subtle card drop shadow for artboards so they stand out from the canvas
+			ctx.save();
+			ctx.shadowColor = 'rgba(0, 0, 0, 0.06)';
+			ctx.shadowBlur = 12 / view.zoom;
+			ctx.shadowOffsetY = 4 / view.zoom;
+			roundedRectPath(ctx, bounds.x, bounds.y, bounds.width, bounds.height, radius || 4);
+			ctx.fillStyle = fillCss;
+			ctx.fill();
+			ctx.restore();
+			filled = true;
+		}
+
 		if (node.type === 'TEXT') {
-			const textColor = fillCss || '#1A1917';
+			const rawText =
+				node.text ||
+				(node as unknown as { content?: string }).content ||
+				(node as unknown as { label?: string }).label ||
+				(node as unknown as { value?: string }).value ||
+				(node.name && !/^text-?|^node-?/i.test(node.name) ? node.name : '') ||
+				'';
+			let textColor = fillCss;
+			if (
+				!textColor ||
+				textColor === '#FFFFFF' ||
+				textColor === 'rgb(255, 255, 255)' ||
+				textColor === 'rgba(255, 255, 255, 1)' ||
+				textColor === 'white'
+			) {
+				textColor = '#1A1917';
+			}
 			const weight = node.fontWeight || 400;
 			const size = node.fontSize || 14;
 			const family = node.fontFamily ? `${node.fontFamily}, sans-serif` : 'Inter, sans-serif';
 			ctx.font = `${weight} ${size}px ${family}`;
 			ctx.fillStyle = textColor;
 			ctx.textBaseline = 'top';
-			const text = node.text || '';
-			const maxW = bounds.width > 0 ? bounds.width : 360;
+			const text = rawText;
+			const measuredW = ctx.measureText(text).width;
+			const maxW = bounds.width > 0 ? bounds.width : measuredW + 8;
 			// Simple word wrap within bounds
 			const words = text.split(/\s+/);
 			let line = '';
 			let lineY = bounds.y + 2;
 			const lineHeight = node.lineHeight || Math.round(size * 1.38);
+			const maxBottom = bounds.height > 0 ? bounds.y + bounds.height + lineHeight : Infinity;
 			for (const word of words) {
 				const testLine = line ? `${line} ${word}` : word;
 				if (ctx.measureText(testLine).width > maxW && line) {
 					ctx.fillText(line, bounds.x, lineY);
 					line = word;
 					lineY += lineHeight;
-					if (lineY > bounds.y + bounds.height + lineHeight) break;
+					if (lineY > maxBottom) break;
 				} else {
 					line = testLine;
 				}
 			}
-			if (line) {
+			if (line && lineY <= maxBottom) {
 				ctx.fillText(line, bounds.x, lineY);
 			}
 		} else {
-			if (fillCss) {
-				roundedRectPath(ctx, bounds.x, bounds.y, bounds.width, bounds.height, radius);
-				ctx.fillStyle = fillCss;
+			let activeFill = fillCss;
+			let activeStroke = stroke;
+			let activeRadius = radius;
+			if (node.type === 'INSTANCE') {
+				const compId = (node as unknown as { componentId?: string }).componentId;
+				if (compId) {
+					const comp = model.graph.getNode(compId);
+					if (comp) {
+						if (!activeFill) activeFill = resolveNodeFillCss(model.graph, comp);
+						if (!activeStroke) activeStroke = resolveNodeStrokeCss(model.graph, comp);
+						if (!activeRadius) activeRadius = comp.cornerRadius || 0;
+					}
+				}
+			}
+			if (!filled && activeFill) {
+				roundedRectPath(ctx, bounds.x, bounds.y, bounds.width, bounds.height, activeRadius);
+				ctx.fillStyle = activeFill;
 				ctx.fill();
 			}
-			if (stroke) {
-				roundedRectPath(ctx, bounds.x, bounds.y, bounds.width, bounds.height, radius);
-				ctx.strokeStyle = stroke.css;
-				ctx.lineWidth = stroke.weight;
+			if (activeStroke) {
+				roundedRectPath(ctx, bounds.x, bounds.y, bounds.width, bounds.height, activeRadius);
+				ctx.strokeStyle = activeStroke.css;
+				ctx.lineWidth = activeStroke.weight;
 				ctx.stroke();
 			}
 		}
 
-		if (node.clipsContent && node.childIds.length > 0) {
+		if (node.clipsContent && node.childIds.length > 0 && bounds.width > 10 && bounds.height > 10) {
 			roundedRectPath(ctx, bounds.x, bounds.y, bounds.width, bounds.height, radius);
 			ctx.clip();
 		}
 
+		// If this is an INSTANCE with no explicit child nodes, render master component children
+		if (node.type === 'INSTANCE' && node.childIds.length === 0) {
+			const compId = (node as unknown as { componentId?: string }).componentId;
+			if (compId) {
+				const comp = model.graph.getNode(compId);
+				if (comp && comp.childIds.length > 0) {
+					const compBounds = model.graph.getAbsoluteBounds(comp.id);
+					ctx.save();
+					ctx.translate(bounds.x - compBounds.x, bounds.y - compBounds.y);
+					for (const childId of comp.childIds) {
+						const child = model.graph.getNode(childId);
+						if (child) drawSceneSubtree(child, false);
+					}
+					ctx.restore();
+				}
+			}
+		}
+
 		for (const childId of node.childIds) {
 			const child = model.graph.getNode(childId);
-			if (child) drawSceneSubtree(child);
+			if (child) drawSceneSubtree(child, false);
 		}
 		ctx.restore();
 	}
 
-	const topNodes = model.graph.getChildren(model.pageId);
 	for (const topNode of topNodes) {
-		drawSceneSubtree(topNode);
+		drawSceneSubtree(topNode, true);
 	}
 
 	// 2. Draw hover and selection outlines in OpenPencil / Figma style

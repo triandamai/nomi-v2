@@ -10,8 +10,6 @@ import { appendOutput, capLog } from './terminal';
 
 /** The heartbeat that keeps the sandbox awake. */
 const BEAT_MS = 20_000;
-/** How often the phase and the log are read again. */
-const POLL_MS = 5_000;
 /** The backend's phases for a sandbox that isn't running or on its way up: opening the workspace wakes it. */
 const AT_REST = ['idle', 'stopped', 'stopping'];
 
@@ -33,6 +31,7 @@ export class SandboxRuntime {
 	#offset = 0;
 	#reading = false;
 	#timers: ReturnType<typeof setInterval>[] = [];
+	#unlisten: (() => void) | null = null;
 
 	constructor(projectId: string) {
 		this.#base = `/projects/${encodeURIComponent(projectId)}/sandbox`;
@@ -42,7 +41,7 @@ export class SandboxRuntime {
 		if (this.#started) return;
 		this.#started = true;
 		void this.#beat();
-		this.#timers = [setInterval(() => void this.#beat(), BEAT_MS), setInterval(() => void this.#refresh(), POLL_MS)];
+		this.#timers = [setInterval(() => void this.#beat(), BEAT_MS)];
 		const status = await this.#refresh();
 		// Nothing to preview until the crew's first build: the reads below start it once there is.
 		if (status?.preview_ready === false) {
@@ -63,10 +62,28 @@ export class SandboxRuntime {
 		}
 	}
 
+	/** The sandbox changed on MQTT: re-read status and log. */
+	async onSandboxChange() {
+		if (!this.#started) return;
+		await this.#refresh();
+	}
+
+	/** Listens to sandbox changes from the project's live link or an MQTT listener. */
+	listen(subscribe: (listener: (phase: string) => void) => () => void): () => void {
+		this.#unlisten?.();
+		const off = subscribe(() => {
+			void this.onSandboxChange();
+		});
+		this.#unlisten = off;
+		return off;
+	}
+
 	stop() {
 		this.#started = false;
 		for (const timer of this.#timers) clearInterval(timer);
 		this.#timers = [];
+		this.#unlisten?.();
+		this.#unlisten = null;
 	}
 
 	/** Starts the sandbox again after it failed. */

@@ -10,6 +10,10 @@ COPY . .
 # (the image has no git history).
 ARG APP_VERSION=""
 ENV APP_VERSION=${APP_VERSION}
+# The release notes of this build's environment (staging or production), as base64 JSON, read
+# from GitHub by CI (release-notes.js). Without them the app has no notes to show.
+ARG RELEASE_NOTES=""
+ENV RELEASE_NOTES=${RELEASE_NOTES}
 RUN npm run build
 
 FROM node:22-bookworm-slim AS runtime

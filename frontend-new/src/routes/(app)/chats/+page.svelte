@@ -17,6 +17,7 @@
 	import PhoneChatRow from '$lib/ds/thread/PhoneChatRow.svelte';
 	import LargeTitle from '$lib/ds/chrome/LargeTitle.svelte';
 	import Fab from '$lib/ds/chrome/Fab.svelte';
+	import ThemePickerButton from '$lib/ds/chrome/ThemePickerButton.svelte';
 	import BottomSheet from '$lib/ds/overlays/BottomSheet.svelte';
 	import SheetRow from '$lib/ds/mobile/SheetRow.svelte';
 	import { phoneView } from '$lib/phone.svelte';
@@ -89,7 +90,11 @@
 
 {#if phone.current}
 	<div class="-mx-4 -mt-6 flex flex-col pb-20">
-		<LargeTitle title={m.chats_title()} />
+		<LargeTitle title={m.chats_title()}>
+			{#snippet trailing()}
+				<ThemePickerButton />
+			{/snippet}
+		</LargeTitle>
 		{#if none}
 			<div class="px-4"><EmptyState icon={MessageSquare} title={m.chats_empty_title()} body={m.chats_empty_body()} action={{ label: m.nav_new_chat(), href: '/chat/new' }} /></div>
 		{:else}

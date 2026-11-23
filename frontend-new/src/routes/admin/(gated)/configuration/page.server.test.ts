@@ -37,6 +37,9 @@ describe('configuration', () => {
 		const xendit = event({ section: 'xendit' }, () => json({ success: true, message: 'ok' }));
 		expect(await actions.test(xendit.event)).toMatchObject({ data: { section: 'xendit', success: true } });
 		expect(xendit.api.calls[0]).toMatchObject({ method: 'POST', url: 'http://api.test/api/admin/payment/xendit/test' });
+		const doku = event({ section: 'doku' }, () => json({ success: false, message: 'Invalid client id' }));
+		expect(await actions.test(doku.event)).toMatchObject({ data: { section: 'doku', success: false } });
+		expect(doku.api.calls[0]).toMatchObject({ method: 'POST', url: 'http://api.test/api/admin/payment/doku/test' });
 
 		const other = event({ section: 'smtp' });
 		expect(await actions.test(other.event)).toMatchObject({ status: 400 });

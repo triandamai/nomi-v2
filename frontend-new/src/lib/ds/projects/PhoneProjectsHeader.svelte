@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { ChevronDown, Plus, UserPlus, Users } from '@lucide/svelte';
 	import Icon from '../foundations/Icon.svelte';
+	import ThemePickerButton from '../chrome/ThemePickerButton.svelte';
 
 	// Mobile / Projects Header (Flow / Mobile Projects): [6,16,8,20], 6 apart. The top row, 36 tall
 	// and 8 apart: the workspace (surface-2, round, its 28 tile with the initial at 12 / 600, the name at 14 /
@@ -43,6 +44,7 @@
 				<Icon icon={UserPlus} size={18} />
 			</button>
 		{/if}
+		<ThemePickerButton />
 	</div>
 	<div class="flex items-center gap-3">
 		<h1 class="min-w-0 flex-1 truncate text-phone-large font-semibold tracking-phone-large text-text">{title}</h1>

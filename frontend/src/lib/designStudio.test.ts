@@ -215,6 +215,10 @@ describe('designStudio compare', () => {
 import {
 	activeDirectionForPreview,
 	adjustDirectionMessage,
+	isPenPreview,
+	mergePenDocuments,
+	penUrl,
+	toolForKey,
 	clampZoom,
 	elementPinDraft,
 	fitZoom,
@@ -313,3 +317,34 @@ describe('designStudio spatial canvas helpers', () => {
 	});
 });
 
+describe('the .pen canvas', () => {
+	const pen = (id: string, variables?: unknown) => JSON.stringify({ version: '1.0', ...(variables ? { variables } : {}), children: [{ id, type: 'frame' }] });
+	const base = { version: 1, direction_id: 'd', title: 't', elements: [], preview_token: 'ab', published_url: null, created_at: '' };
+
+	it('serves a version\'s .pen file beside its pages', () => {
+		expect(penUrl({ ...base, pages: [] }, 'canvas.pen')).toBe('/design-preview/ab/canvas.pen');
+	});
+
+	it('puts several .pen files side by side and skips what is not one', () => {
+		const merged = JSON.parse(mergePenDocuments([pen('home', { a: 1 }), 'not json', pen('menu', { b: 2 }), '{"children":[]}']) as string);
+		expect(merged.children.map((c: { id: string }) => c.id)).toEqual(['home', 'menu']);
+		expect(merged.variables).toEqual({ a: 1, b: 2 });
+		expect(mergePenDocuments(['', '{}'])).toBeNull();
+	});
+
+	it('draws a version on the canvas unless it is made of HTML pages', () => {
+		expect(isPenPreview({ ...base, pages: [{ path: 'design-system', title: 'System' }] })).toBe(true);
+		expect(isPenPreview({ ...base, pages: [{ path: 'index.html', title: 'Home' }], pen_files: ['canvas.pen'] })).toBe(true);
+		expect(isPenPreview({ ...base, pages: [{ path: 'index.html', title: 'Home' }] })).toBe(false);
+		expect(isPenPreview(null)).toBe(false);
+	});
+
+	it('picks a tool by its key, but not while the person types or uses a shortcut', () => {
+		expect(toolForKey({ key: 'v' })).toBe('select');
+		expect(toolForKey({ key: 'H' })).toBe('move');
+		expect(toolForKey({ key: 'c' })).toBe('comment');
+		expect(toolForKey({ key: 'c', metaKey: true })).toBeNull();
+		expect(toolForKey({ key: 'v', target: { tagName: 'TEXTAREA' } as never })).toBeNull();
+		expect(toolForKey({ key: 'x' })).toBeNull();
+	});
+});

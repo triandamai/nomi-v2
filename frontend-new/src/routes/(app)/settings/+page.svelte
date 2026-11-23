@@ -5,6 +5,7 @@
 	import { phoneView } from '$lib/phone.svelte';
 	import Icon from '$lib/ds/foundations/Icon.svelte';
 	import LargeTitle from '$lib/ds/chrome/LargeTitle.svelte';
+	import ThemePickerButton from '$lib/ds/chrome/ThemePickerButton.svelte';
 	import PhonePerson from '$lib/ds/settings/PhonePerson.svelte';
 	import PhonePlanCard from '$lib/ds/settings/PhonePlanCard.svelte';
 	import PhoneSettingsGroup, { type SettingsRow } from '$lib/ds/settings/PhoneSettingsGroup.svelte';
@@ -51,7 +52,9 @@
 
 {#if phone.current}
 	<div class="flex h-full flex-col overflow-y-auto pb-6">
-		<LargeTitle title={m.nav_you()} />
+		<LargeTitle title={m.nav_you()}>
+			{#snippet trailing()}<ThemePickerButton />{/snippet}
+		</LargeTitle>
 		<div class="flex flex-col gap-5 px-4 pt-1">
 			<PhonePerson name={data.person.name} {detail} avatar={data.person.avatar ?? undefined} href="/settings/profile" />
 			{#if data.usage}

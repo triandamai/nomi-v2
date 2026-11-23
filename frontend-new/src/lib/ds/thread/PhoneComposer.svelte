@@ -76,6 +76,24 @@
 		requestAnimationFrame(() => field?.setSelectionRange(at, at));
 	}
 
+	// It starts one line tall (the pen's 38 pill). As the message grows the field follows it, up to
+	// MAX_FIELD_PX and then it scrolls, and the pill's corners come in, line by line, from a pill to a
+	// card: sized here, not by `field-sizing`, which iOS Safari doesn't do.
+	const MAX_FIELD_PX = 128;
+	let lines = $state(1);
+	function grow() {
+		if (!field) return;
+		field.style.height = 'auto';
+		const full = field.scrollHeight;
+		field.style.height = `${Math.min(full, MAX_FIELD_PX)}px`;
+		const lineHeight = Number.parseFloat(getComputedStyle(field).lineHeight) || full;
+		lines = Math.max(1, Math.round(full / lineHeight));
+	}
+	$effect(() => {
+		void value;
+		grow();
+	});
+
 	const SETTLE_MS = 500;
 	let sentAt = -Infinity;
 	function send() {
@@ -143,7 +161,13 @@
 					<Icon icon={Plus} size={20} />
 				</button>
 			{/if}
-			<div class="flex min-h-9.5 min-w-0 flex-1 items-end gap-2 rounded-full border border-border-strong bg-surface py-2 pr-2.25 pl-3.25">
+			<div
+				data-lines={lines}
+				class={[
+					'flex min-h-9.5 min-w-0 flex-1 items-end gap-2 border border-border-strong bg-surface py-2 pr-2.25 pl-3.25',
+					lines <= 1 ? 'rounded-full' : lines === 2 ? 'rounded-3xl' : lines === 3 ? 'rounded-2xl' : lines === 4 ? 'rounded-xl' : 'rounded-lg',
+				]}
+			>
 				<textarea
 					bind:this={field}
 					bind:value
@@ -154,21 +178,29 @@
 					aria-controls={picking ? `${id}-mentions` : undefined}
 					aria-activedescendant={picking ? `${id}-mentions-option-${active}` : undefined}
 					{onkeydown}
-					oninput={findMention}
+					oninput={() => {
+						findMention();
+						grow();
+					}}
 					onclick={findMention}
-					onfocus={() => (focused = true)}
+					onfocus={() => {
+						focused = true;
+						if (typeof window !== 'undefined') {
+							requestAnimationFrame(() => window.scrollTo(0, 0));
+						}
+					}}
 					onblur={() => {
 						focused = false;
 						mention = null;
 					}}
-					class="field-sizing-content max-h-32 min-w-0 flex-1 resize-none bg-transparent text-phone leading-tight text-text outline-none placeholder:text-text-3"
-				></textarea>
-				{#if onrecord}
-					<button type="button" aria-label={m.composer_record()} class="inline-flex shrink-0 cursor-pointer text-text-2 outline-offset-2" onclick={onrecord}><Icon icon={Mic} size={20} /></button>
-				{/if}
-			</div>
-			{#if streaming && onstop}
-				<button type="button" aria-label={m.reply_stop()} class="inline-flex size-9.5 shrink-0 cursor-pointer items-center justify-center rounded-full bg-text text-bg outline-offset-1" onclick={stop}>
+					class="max-h-32 min-w-0 flex-1 resize-none overflow-y-auto bg-transparent text-phone leading-tight text-text outline-none placeholder:text-text-3"
+					></textarea>
+					{#if onrecord}
+						<button type="button" aria-label={m.composer_record()} class="inline-flex shrink-0 cursor-pointer text-text-2 outline-offset-2" onclick={onrecord}><Icon icon={Mic} size={20} /></button>
+					{/if}
+					</div>
+					{#if streaming && onstop}
+					<button type="button" aria-label={m.reply_stop()} class="inline-flex size-9.5 shrink-0 cursor-pointer items-center justify-center rounded-full bg-text text-bg outline-offset-1" onclick={stop}>
 					<Icon icon={Square} size={14} />
 				</button>
 			{:else if blocked}

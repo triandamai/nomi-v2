@@ -1,8 +1,10 @@
 <script lang="ts">
 	import type { Component, Snippet } from 'svelte';
-	import { ArrowUpRight, ChevronLeft, Download, Share2, type LucideProps } from '@lucide/svelte';
+	import { ArrowUpRight, ChevronLeft, Download, Pencil, Share2, type LucideProps } from '@lucide/svelte';
 	import Icon from '../foundations/Icon.svelte';
 	import Mascot from '../agents/Mascot.svelte';
+	import RenameField from '../chat/RenameField.svelte';
+	import { m } from '$lib/paraglide/messages';
 	import type { CrewId } from '../agents/crew';
 
 	// Flow / Build → Screen / Building (H4DIH) → Project Bar: a project's own bar, 52 high, 16 in and
@@ -35,11 +37,15 @@
 		 * while someone else has the project open.
 		 */
 		presence?: Snippet;
+		renaming?: boolean;
+		onrename?: (name: string) => void;
+		oncancelrename?: () => void;
+		onstartrename?: () => void;
 		onnav?: (id: string) => void;
 		onshare?: () => void;
 		onexport?: () => void;
 	};
-	let { backHref, backLabel, agent, name, status, space, url, nav, navLabel, active, shareLabel, exportLabel, initials, publish, presence, onnav, onshare, onexport }: Props = $props();
+	let { backHref, backLabel, agent, name, status, space, url, nav, navLabel, active, shareLabel, exportLabel, initials, publish, presence, renaming = false, onrename, oncancelrename, onstartrename, onnav, onshare, onexport }: Props = $props();
 
 	const shown = $derived(url?.replace(/^https?:\/\//, '').replace(/\/$/, ''));
 </script>
@@ -51,7 +57,22 @@
 	<Mascot {agent} size={20} live />
 	<div class="flex min-w-0 flex-1 flex-col gap-0.5">
 		<div class="flex min-w-0 items-center gap-2.5">
-			<span class="truncate text-ui font-medium text-text">{name}</span>
+			{#if renaming && onrename && oncancelrename}
+				<RenameField value={name} onsave={onrename} oncancel={oncancelrename} />
+			{:else}
+				<span class="truncate text-ui font-medium text-text">{name}</span>
+				{#if onstartrename}
+					<button
+						type="button"
+						aria-label={m.projects_rename()}
+						title={m.projects_rename()}
+						onclick={onstartrename}
+						class="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-xs text-text-3 opacity-60 hover:text-text hover:opacity-100"
+					>
+						<Icon icon={Pencil} size={12} />
+					</button>
+				{/if}
+			{/if}
 			<span class="inline-flex shrink-0 items-center gap-1.5 rounded-sm px-1.5 py-0.5 outline -outline-offset-1 outline-border-strong">
 				<span
 					aria-hidden="true"

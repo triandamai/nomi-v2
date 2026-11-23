@@ -35,6 +35,8 @@ export type StudioPreview = {
 	published_url: string | null;
 	/** Why it isn't published outside Nomi, when its newest publish failed. */
 	publish_error?: string | null;
+	/** Its OpenPencil `.pen` files, served beside its pages; the canvas draws them. */
+	pen_files?: string[];
 	created_at: string;
 };
 /** What publishing a version again came to. */
@@ -77,7 +79,22 @@ export type Device = 'desktop' | 'tablet' | 'phone';
 export const DEVICE_WIDTHS: Record<Device, number | null> = { desktop: null, tablet: 768, phone: 390 };
 /** Explicit pixel width for each device artboard on the 2D spatial canvas. */
 export const CANVAS_ARTBOARD_WIDTHS: Record<Device, number> = { desktop: 1120, tablet: 768, phone: 390 };
-export type CanvasStageFilter = 'all' | 'directions' | 'system' | 'flow';
+/**
+ * What a click on the canvas does, as in a design tool: move pans it, select picks an element,
+ * comment drops a pin with feedback on what it lands on.
+ */
+export type CanvasTool = 'move' | 'select' | 'comment';
+/** The key that picks each tool (Figma's: V select, H hand, C comment). */
+export const CANVAS_TOOL_KEYS: Record<string, CanvasTool> = { v: 'select', h: 'move', c: 'comment' };
+
+/** The tool a key press picks, or null when it picks none or the person is typing. */
+export function toolForKey(event: { key: string; metaKey?: boolean; ctrlKey?: boolean; altKey?: boolean; target?: EventTarget | null }): CanvasTool | null {
+	if (event.metaKey || event.ctrlKey || event.altKey) return null;
+	const target = event.target as { tagName?: string; isContentEditable?: boolean } | null | undefined;
+	const tag = target?.tagName?.toLowerCase();
+	if (tag === 'input' || tag === 'textarea' || tag === 'select' || target?.isContentEditable) return null;
+	return CANVAS_TOOL_KEYS[event.key.toLowerCase()] ?? null;
+}
 export const MIN_ZOOM = 0.25;
 export const MAX_ZOOM = 2;
 export const ZOOM_STEP = 0.25;
@@ -91,6 +108,44 @@ const TAG = /^[a-z][a-z0-9-]{0,19}$/;
 export function previewUrl(preview: StudioPreview, page: string = ENTRY_PAGE): string {
 	const known = preview.pages.some((p) => p.path === page) ? page : ENTRY_PAGE;
 	return `/design-preview/${preview.preview_token}/${known}`;
+}
+
+/** Where one of a version's `.pen` files is served. */
+export function penUrl(preview: StudioPreview, path: string): string {
+	return `/design-preview/${preview.preview_token}/${path}`;
+}
+
+/**
+ * One `.pen` document from a version's `.pen` files: their frames side by side and their
+ * variables together. Null when none of them reads as a document with frames.
+ */
+export function mergePenDocuments(contents: string[]): string | null {
+	const children: unknown[] = [];
+	let variables: Record<string, unknown> | unknown[] | null = null;
+	let version = '1.0';
+	for (const content of contents) {
+		let doc: unknown;
+		try {
+			doc = JSON.parse(content);
+		} catch {
+			continue;
+		}
+		if (typeof doc !== 'object' || doc === null) continue;
+		const pen = doc as { version?: unknown; children?: unknown; variables?: unknown };
+		if (!Array.isArray(pen.children) || pen.children.length === 0) continue;
+		if (typeof pen.version === 'string') version = pen.version;
+		children.push(...pen.children);
+		if (Array.isArray(pen.variables)) variables = [...(Array.isArray(variables) ? variables : []), ...pen.variables];
+		else if (pen.variables && typeof pen.variables === 'object') variables = { ...(variables && !Array.isArray(variables) ? variables : {}), ...(pen.variables as Record<string, unknown>) };
+	}
+	if (children.length === 0) return null;
+	return JSON.stringify(variables ? { version, variables, children } : { version, children });
+}
+
+/** Whether a version is drawn from `.pen` files rather than shown as HTML pages. */
+export function isPenPreview(preview: StudioPreview | null): boolean {
+	if (!preview) return false;
+	return (preview.pen_files?.length ?? 0) > 0 || !preview.pages.some((p) => p.path.endsWith('.html'));
 }
 
 /** The version asked for (`?version=2`), else the newest; null when there are none. */

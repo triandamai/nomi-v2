@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import { page, userEvent } from 'vitest/browser';
-import CodeView from './CodeView.svelte';
+import CodeView, { FILE_DRAG_TYPE } from './CodeView.svelte';
 import Terminal from './Terminal.svelte';
 import DeviceBar from './DeviceBar.svelte';
 import PhoneFrame from './PhoneFrame.svelte';
@@ -47,12 +47,12 @@ describe('CodeView', () => {
 		await render(CodeView, { tree, path: 'a.svelte', lines, onask, onasklines });
 		await page.getByRole('button', { name: 'Ask Koda about this file' }).click();
 		expect(onask).toHaveBeenCalledOnce();
-		await page.getByRole('button', { name: 'Line 2' }).click();
+		await page.getByRole('button', { name: 'Line 2', exact: true }).click();
 		await userEvent.keyboard('{Shift>}');
-		await page.getByRole('button', { name: 'Line 4' }).click();
+		await page.getByRole('button', { name: 'Line 4', exact: true }).click();
 		await userEvent.keyboard('{/Shift}');
-		await expect.element(page.getByRole('button', { name: 'Line 3' })).toHaveAttribute('aria-pressed', 'true');
-		const row = page.getByRole('button', { name: 'Line 3' }).element().closest('[data-line]')!;
+		await expect.element(page.getByRole('button', { name: 'Line 3', exact: true })).toHaveAttribute('aria-pressed', 'true');
+		const row = page.getByRole('button', { name: 'Line 3', exact: true }).element().closest('[data-line]')!;
 		expect(getComputedStyle(row).backgroundColor).toBe(tokenBackground('nm-accent-bg'));
 		await page.getByRole('button', { name: 'Ask Koda about lines 2–4' }).click();
 		expect(onasklines).toHaveBeenCalledWith(2, 4);
@@ -132,5 +132,78 @@ describe('CodeQuote', () => {
 		expect(getComputedStyle(page.getByText('<PickupSlots', { exact: false }).element()).color).toBe(tokenColor('nm-text-3'));
 		await page.getByRole('button', { name: 'Remove quote' }).click();
 		expect(onremove).toHaveBeenCalledOnce();
+	});
+});
+
+describe('CodeView folders, line menu and drag', () => {
+	const pathed = [
+		{ name: 'src', depth: 0, kind: 'folder' as const, path: 'src' },
+		{ name: 'routes', depth: 1, kind: 'folder' as const, path: 'src/routes' },
+		{ name: '+page.svelte', depth: 2, kind: 'file' as const, path: 'src/routes/+page.svelte', active: true },
+		{ name: 'app.css', depth: 1, kind: 'file' as const, path: 'src/app.css' },
+		{ name: 'README.md', depth: 0, kind: 'text' as const, path: 'README.md' },
+	];
+
+	it('closes and opens a folder, hiding what is inside it', async () => {
+		const onopen = vi.fn();
+		await page.viewport(1280, 800);
+		await render(CodeView, { tree: pathed, path: 'src/routes/+page.svelte', lines, onopen, onask: () => {}, onasklines: () => {} });
+		const src = page.getByRole('treeitem', { name: 'src', exact: true });
+		await expect.element(src).toHaveAttribute('aria-expanded', 'true');
+		await src.click();
+		await expect.element(src).toHaveAttribute('aria-expanded', 'false');
+		await expect.element(page.getByRole('treeitem', { name: 'app.css' })).not.toBeInTheDocument();
+		await expect.element(page.getByRole('treeitem', { name: 'README.md' })).toBeVisible();
+		expect(onopen).not.toHaveBeenCalled();
+		(src.element() as HTMLElement).focus();
+		await userEvent.keyboard('{ArrowRight}');
+		await expect.element(page.getByRole('treeitem', { name: 'app.css' })).toBeVisible();
+		await page.getByRole('treeitem', { name: 'app.css' }).click();
+		expect(onopen).toHaveBeenCalledWith(3);
+	});
+
+	it('drags a file out of the tree with its path', async () => {
+		await page.viewport(1280, 800);
+		await render(CodeView, { tree: pathed, path: 'src/routes/+page.svelte', lines, onask: () => {}, onasklines: () => {} });
+		const file = page.getByRole('treeitem', { name: 'app.css' }).element() as HTMLElement;
+		expect(file.draggable).toBe(true);
+		expect((page.getByRole('treeitem', { name: 'src', exact: true }).element() as HTMLElement).draggable).toBe(false);
+		const data = new DataTransfer();
+		file.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: data }));
+		expect(data.getData(FILE_DRAG_TYPE)).toBe('src/app.css');
+	});
+
+	it('opens a line’s menu from its gutter “+” and asks Koda about the line', async () => {
+		const onasklines = vi.fn();
+		await render(CodeView, { tree, path: 'a.svelte', lines, onask: () => {}, onasklines });
+		const plus = page.getByRole('button', { name: 'Actions for L2' });
+		expect(getComputedStyle(plus.element()).opacity).toBe('0');
+		await page.getByRole('button', { name: 'Line 2', exact: true }).hover();
+		await expect.poll(() => getComputedStyle(plus.element()).opacity).toBe('1');
+		await plus.click();
+		await expect.element(page.getByRole('menu')).toBeVisible();
+		await expect.element(page.getByRole('menuitem', { name: 'Copy line' })).toBeVisible();
+		await page.getByRole('menuitem', { name: 'Ask Koda about this line' }).click();
+		expect(onasklines).toHaveBeenCalledWith(2, 2);
+		await expect.element(page.getByRole('menu')).not.toBeInTheDocument();
+	});
+
+	it('closes the line menu with Escape, focus back on its “+”', async () => {
+		await render(CodeView, { tree, path: 'a.svelte', lines, onask: () => {}, onasklines: () => {} });
+		await page.getByRole('button', { name: 'Actions for L3' }).click();
+		await userEvent.keyboard('{Escape}');
+		await expect.element(page.getByRole('menu')).not.toBeInTheDocument();
+		expect(document.activeElement?.getAttribute('aria-label')).toBe('Actions for L3');
+	});
+});
+
+describe('Terminal in a pane', () => {
+	it('fills the pane’s height even with nothing printed', async () => {
+		const host = document.createElement('div');
+		host.style.height = '700px';
+		document.body.append(host);
+		await render(Terminal, { target: host, props: { run: 'sandbox', lines: [], fill: true } });
+		expect(host.querySelector('section')!.getBoundingClientRect().height).toBe(700);
+		host.remove();
 	});
 });

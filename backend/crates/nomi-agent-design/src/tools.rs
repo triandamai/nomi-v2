@@ -26,8 +26,11 @@ pub const SAVE_PREVIEW: &str = "save_preview";
 pub const READ_PREVIEW: &str = "read_preview";
 pub const CREATE_HANDOFF: &str = "create_handoff";
 pub const REVIEW_BUILD: &str = "review_build";
+pub const APPROVE_VERSION: &str = "approve_version";
 /// What Sora is told when she tries to hand over a design the person hasn't approved.
-pub const NOT_APPROVED_YET: &str = "the person hasn't approved a version yet: ask them to approve the one they want built with Approve in the Design Studio, then hand it over";
+pub const NOT_APPROVED_YET: &str = "the person hasn't approved a version yet: ask them to approve the one they want built, here in the chat or with Approve in the Design Studio, then hand it over";
+/// The fewest characters of the person's words an approval quotes: enough to be their reply, not one letter.
+const MIN_QUOTE_CHARS: usize = 2;
 pub const LIST_CONNECTED_TOOLS: &str = "list_connected_tools";
 pub const USE_CONNECTED_TOOL: &str = "use_connected_tool";
 /// The tools' group in listings.
@@ -124,8 +127,9 @@ pub fn proposed_message(version: i32, brief_version: Option<i32>, set: &DesignDi
     let from = brief_version.map(|v| format!(", from design brief version {v}")).unwrap_or_default();
     let names: Vec<String> = set.directions.iter().map(|d| format!("{} ({})", d.name, d.id)).collect();
     format!(
-        "Directions saved as version {version}{from}: {}. The person now sees them as a choice with each one's reason and trade-offs: \
-         say in a sentence or two how they differ and which you'd pick, then wait for their answer.",
+        "Directions saved as version {version}{from}: {}. The person now sees them as a choice card under your reply, with each one's name, look, reason, \
+         trade-offs and your pick marked: don't list or describe them again. Say in one sentence what to weigh \
+         between them, then wait for their answer.",
         names.join(", ")
     )
 }
@@ -212,7 +216,7 @@ pub fn staged_message(direction_id: &str, paths: &[&str]) -> String {
     )
 }
 
-pub fn saved_message(session_id: Uuid, version: i32, manifest: &Manifest, missing: &[String], published: &Result<Published, String>) -> String {
+pub fn saved_message(session_id: Uuid, version: i32, manifest: &Manifest, missing: &[String], published: Option<&Result<Published, String>>) -> String {
     let mut said = format!(
         "Preview saved as version {version} of direction {}: {}, {}.",
         manifest.direction_id,
@@ -230,8 +234,9 @@ pub fn saved_message(session_id: Uuid, version: i32, manifest: &Manifest, missin
         studio_link(session_id, version)
     ));
     match published {
-        Ok(published) => said.push_str(&format!(" It is also published at {}, a link they can pass on.", published.url)),
-        Err(why) => said.push_str(&format!(" It isn't published outside Nomi ({why}), so that is the only link: never give another.")),
+        Some(Ok(published)) => said.push_str(&format!(" It is also published at {}, a link they can pass on.", published.url)),
+        Some(Err(why)) => said.push_str(&format!(" It isn't published outside Nomi ({why}), so that is the only link: never give another.")),
+        None => said.push_str(" That is the only link: never give another."),
     }
     said
 }
@@ -397,17 +402,97 @@ impl Tool for SavePreview {
             tracing::error!(error = %e, "design preview: the draft couldn't be cleared");
         }
 
-        let request = PublishRequest { user_id, session_id, version, title: &artifact.manifest.title, files: &artifact.files };
-        let published = static_publish::publish_and_record(&mut **conn, self.publisher.as_ref(), &request).await;
+        // A .pen preview is a canvas for the Design Studio, not a website: only HTML pages are published.
+        let published = if artifact.files.iter().any(|f| f.path.ends_with(".html")) {
+            let request = PublishRequest { user_id, session_id, version, title: &artifact.manifest.title, files: &artifact.files };
+            Some(static_publish::publish_and_record(&mut **conn, self.publisher.as_ref(), &request).await)
+        } else {
+            None
+        };
         let resolved = design_feedback::resolve(&mut **conn, session_id, version, &resolutions).await.map_err(|e| {
             tracing::error!(error = %e, "design preview: feedback couldn't be marked");
             format!("version {version} is saved, but the feedback it dealt with couldn't be marked")
         })?;
         let still_open = feedback.iter().filter(|f| f.status == Status::Open && !resolved.contains(&f.number)).count();
-        let mut said = saved_message(session_id, version, &artifact.manifest, &missing, &published);
+        let mut said = saved_message(session_id, version, &artifact.manifest, &missing, published.as_ref());
         said.push_str(&from_draft_message(&from_draft));
         said.push_str(&resolved_message(version, &resolved, still_open));
         Ok(ToolOutcome::text(said))
+    }
+}
+
+/// Text folded for comparing what someone said: lowercase, with runs of whitespace as one space.
+fn folded(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase()
+}
+
+/// Whether `quote` is words of `said` (the person's latest message), ignoring case and spacing.
+pub fn quoted_in(said: &str, quote: &str) -> bool {
+    let quote = folded(quote);
+    quote.chars().count() >= MIN_QUOTE_CHARS && folded(said).contains(&quote)
+}
+
+/// `approve_version`: records the approval the person just gave in the chat. It only works with
+/// their own words from their latest message, so Sora can't approve on her own.
+pub struct ApproveVersion;
+
+#[async_trait]
+impl Tool for ApproveVersion {
+    fn definition(&self) -> ToolDefinition {
+        ToolDefinition {
+            name: APPROVE_VERSION.to_string(),
+            description: "Record that the person approved a preview version, when they said so in this chat. Quote their \
+                          latest message's words exactly in quote; it is refused when their latest message doesn't contain \
+                          them. Never call it on your own judgement or on an unclear reply: ask instead."
+                .to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "version": {"type": "integer", "description": "The preview version they approved; the newest when they didn't name one"},
+                    "quote": {"type": "string", "description": "The words of their latest message that approve it, exactly as they wrote them"},
+                    "note": {"type": "string", "description": "Anything they asked for with the approval, in a sentence"}
+                },
+                "required": ["version", "quote"]
+            }),
+        }
+    }
+
+    fn group(&self) -> &'static str {
+        GROUP
+    }
+
+    fn keywords(&self) -> &'static [&'static str] {
+        &["design", "approve", "approval"]
+    }
+
+    async fn execute(&self, conn: &mut PoolConnection<Postgres>, session_id: Uuid, _agent_session_id: Uuid, user_id: Uuid, input: Value) -> Result<ToolOutcome, String> {
+        let unsaved = |e: sqlx::Error| {
+            tracing::error!(error = %e, "design approval in chat: failed");
+            "the approval couldn't be recorded right now".to_string()
+        };
+        let version = input
+            .get("version")
+            .and_then(Value::as_i64)
+            .and_then(|v| i32::try_from(v).ok())
+            .ok_or("version must be a preview version number")?;
+        let quote = input.get("quote").and_then(Value::as_str).unwrap_or_default();
+        let note = design_approval::note_of(&input)?;
+        let said: Option<String> = sqlx::query_scalar(
+            "SELECT content FROM messages WHERE session_id = $1 AND sender_channel_identity_id IS NOT NULL \
+             ORDER BY created_at DESC, id DESC LIMIT 1",
+        )
+        .bind(session_id)
+        .fetch_optional(&mut **conn)
+        .await
+        .map_err(unsaved)?;
+        if !said.as_deref().is_some_and(|said| quoted_in(said, quote)) {
+            return Err(nomi_agent_core::prompts::DESIGN_APPROVAL_NOT_SAID.to_string());
+        }
+        if design_artifact::version(&mut **conn, session_id, version).await.map_err(unsaved)?.is_none() {
+            return Err(format!("there is no preview version {version} in this chat"));
+        }
+        design_approval::approve(&mut **conn, session_id, user_id, version, note.as_deref()).await.map_err(unsaved)?;
+        Ok(ToolOutcome::text(nomi_agent_core::prompts::DESIGN_APPROVED_IN_CHAT.replace("{version}", &version.to_string())))
     }
 }
 
@@ -542,6 +627,7 @@ pub fn own_tools(mcp: &SharedMcpOps, publisher: &SharedStaticPublisher, source: 
         Box::new(ProposeDirections),
         Box::new(SavePreview { publisher: publisher.clone() }),
         Box::new(ReadPreview),
+        Box::new(ApproveVersion),
         Box::new(CreateHandoff),
         Box::new(ReviewBuild { source: source.clone() }),
         Box::new(ListConnectedTools { mcp: mcp.clone() }),
@@ -626,7 +712,7 @@ pub(crate) mod tests {
 
     #[test]
     fn a_saved_preview_gives_sora_the_studio_link_and_no_other() {
-        let said = saved_message(Uuid::nil(), 2, &manifest(), &[], &Err(nomi_agent_core::static_publish::NOT_SET_UP.to_string()));
+        let said = saved_message(Uuid::nil(), 2, &manifest(), &[], Some(&Err(nomi_agent_core::static_publish::NOT_SET_UP.to_string())));
         assert!(said.starts_with("Preview saved as version 2 of direction editorial: 1 page, 1 element id."), "{said}");
         assert!(said.contains("[Open in Design Studio](/chat/00000000-0000-0000-0000-000000000000/design?version=2)"), "{said}");
         assert!(said.contains("It isn't published outside Nomi (publishing previews isn't set up)"));
@@ -636,7 +722,7 @@ pub(crate) mod tests {
     #[test]
     fn a_published_preview_tells_sora_its_address() {
         let published = nomi_agent_core::static_publish::Published { provider: "fake".into(), url: "https://previews.example/a".into() };
-        let said = saved_message(Uuid::nil(), 1, &manifest(), &[], &Ok(published));
+        let said = saved_message(Uuid::nil(), 1, &manifest(), &[], Some(&Ok(published)));
         assert!(said.contains("It is also published at https://previews.example/a"), "{said}");
         assert!(said.contains("/design?version=1"));
         assert!(!said.contains("isn't published"));
@@ -644,7 +730,7 @@ pub(crate) mod tests {
 
     #[test]
     fn ids_that_went_missing_are_pointed_out() {
-        let said = saved_message(Uuid::nil(), 3, &manifest(), &["menu-list".to_string(), "footer".to_string()], &Err("down".into()));
+        let said = saved_message(Uuid::nil(), 3, &manifest(), &["menu-list".to_string(), "footer".to_string()], Some(&Err("down".into())));
         assert!(said.contains("These ids from the last version of this direction are gone: menu-list, footer."), "{said}");
         assert!(said.contains("keep an element's id"));
     }
@@ -781,5 +867,13 @@ pub(crate) mod tests {
         let failed = use_connected(&mcp, Uuid::nil(), &json!({"server": "Refs", "tool": "search_references"})).await.unwrap_err();
         assert!(failed.starts_with("search_references on Refs didn't work: the server couldn't be reached (no connection)."), "{failed}");
         assert!(failed.ends_with(CARRY_ON));
+    }
+    #[test]
+    fn an_approval_quotes_the_persons_own_words() {
+        assert!(quoted_in("Looks great,  APPROVE it please", "approve it"));
+        assert!(quoted_in("yes v3", "Yes v3"));
+        assert!(!quoted_in("can you make the header bigger?", "approve"));
+        assert!(!quoted_in("ok", ""), "an empty quote is no approval");
+        assert!(!quoted_in("ok", "o"), "one letter is no approval");
     }
 }

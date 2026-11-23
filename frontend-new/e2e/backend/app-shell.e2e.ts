@@ -21,8 +21,11 @@ async function open(page: Page, path = '/') {
 }
 
 test('someone signed out signs in first, and comes back to where they were going', async ({ request }) => {
+	// The bare front door is the landing page; anywhere in particular asks to sign in first.
+	const front = await request.get('/', { maxRedirects: 0 });
+	expect([front.status(), front.headers().location]).toEqual([303, '/welcome']);
 	for (const [path, back] of [
-		['/', '%2F'],
+		['/chats', '%2Fchats'],
 		['/?from=email', '%2F%3Ffrom%3Demail'],
 	]) {
 		const response = await request.get(path, { maxRedirects: 0 });
@@ -133,8 +136,9 @@ test('logging out ends the sign-in: it lands on sign in, and the app asks for it
 	const refreshed = await fetch(`${BACKEND_URL}/api/auth/refresh`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ refresh_token: account.tokens.refresh_token }) });
 	expect(refreshed.status).toBe(401);
 
-	const response = await page.request.get('/', { maxRedirects: 0 });
-	expect(response.headers().location).toBe('/sign-in?redirect_to=%2F');
+	// Signed out, the front door is the landing page; anywhere else asks to sign in again.
+	expect((await page.request.get('/', { maxRedirects: 0 })).headers().location).toBe('/welcome');
+	expect((await page.request.get('/chats', { maxRedirects: 0 })).headers().location).toBe('/sign-in?redirect_to=%2Fchats');
 });
 
 test('signed out from another device, this one signs out too', async ({ page, context }) => {

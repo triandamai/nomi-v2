@@ -30,7 +30,7 @@ fn rena_still_plans_anything_with_the_same_tools() {
     }
     // Nothing is taken away: every tool she had is still offered, in every chat.
     let tools: Vec<String> = PlanningAgent::new().tools().into_iter().map(|t| t.name).collect();
-    assert_eq!(tools, ["create_project", "publish_project"]);
+    assert_eq!(tools, ["create_project", "rename_project", "publish_project"]);
 }
 
 #[test]

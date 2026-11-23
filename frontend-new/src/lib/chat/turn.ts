@@ -102,19 +102,55 @@ export function applyChatEvent(turn: LiveTurn, event: ChatEvent, now: number): L
 			// A posted message is what was streaming: the real one takes over.
 			return turn.end ? turn : { ...turn, reply: emptyStream() };
 		case 'AgentSessionStarted':
-			return turn.stopRequested ? turn : { ...turn, agent: event.agent_display_name };
-		case 'AgentPhaseChanged':
 			if (turn.stopRequested) return turn;
 			return {
 				...turn,
-				agent: event.agent_display_name ?? turn.agent,
-				phase: event.phase === 'waiting' ? null : { phase: event.phase, detail: event.detail ?? null, subject: event.subject ?? null },
+				agent: event.agent_display_name,
+				openTurns: turn.openTurns.includes(event.agent_session_id) ? turn.openTurns : [...turn.openTurns, event.agent_session_id],
+				startedAt: turn.startedAt ?? now,
 			};
+		case 'AgentSessionEnded': {
+			const openTurns = turn.openTurns.filter((id) => id !== event.agent_session_id);
+			return { ...turn, openTurns, ...(openTurns.length === 0 && { phase: null }) };
+		}
+		case 'AgentPhaseChanged': {
+			if (turn.stopRequested) return turn;
+			const isWaiting = event.phase === 'waiting';
+			const openTurns = isWaiting
+				? turn.openTurns.filter((id) => id !== event.agent_session_id)
+				: (turn.openTurns.includes(event.agent_session_id) ? turn.openTurns : [...turn.openTurns, event.agent_session_id]);
+			return {
+				...turn,
+				openTurns,
+				agent: event.agent_display_name ?? turn.agent,
+				phase: isWaiting ? null : { phase: event.phase, detail: event.detail ?? null, subject: event.subject ?? null },
+				startedAt: isWaiting ? turn.startedAt : (turn.startedAt ?? now),
+			};
+		}
 		case 'ChatSettled':
 			return { ...turn, pending: false, openTurns: [], phase: null };
 		default:
 			return turn;
 	}
+}
+
+/** Restores or updates active agent session activity on a turn. */
+export function turnWithAgentActivity(
+	turn: LiveTurn,
+	session: { agent_session_id: string; agent_name: string; phase: string; detail: string | null },
+	now: number,
+): LiveTurn {
+	const isWaiting = session.phase === 'waiting';
+	const openTurns = isWaiting
+		? turn.openTurns.filter((id) => id !== session.agent_session_id)
+		: (turn.openTurns.includes(session.agent_session_id) ? turn.openTurns : [...turn.openTurns, session.agent_session_id]);
+	return {
+		...turn,
+		openTurns,
+		agent: session.agent_name,
+		phase: isWaiting ? null : { phase: session.phase, detail: session.detail, subject: null },
+		startedAt: turn.startedAt ?? now,
+	};
 }
 
 /** The provider failed and the crew tries again on its own (phase `retrying`): which attempt, of

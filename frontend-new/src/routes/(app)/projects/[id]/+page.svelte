@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { Activity, ArrowDownUp, ChevronLeft, ChevronRight, Coins, Cpu, Database, Download, Globe, History, Hourglass, KeyRound, Link, Lock, MemoryStick, MonitorX, RefreshCw, Rocket, Settings, Trash2, UserMinus, Users } from '@lucide/svelte';
+	import { Activity, ArrowDownUp, SquareKanban, ChevronLeft, ChevronRight, Coins, Cpu, Database, Download, Globe, History, Hourglass, KeyRound, Link, Lock, MemoryStick, MonitorX, Palette, Pencil, RefreshCw, Rocket, Settings, Trash2, UserMinus, Users } from '@lucide/svelte';
 	import { m } from '$lib/paraglide/messages';
 	import ChatView from '$lib/chat/ChatView.svelte';
 	import Button from '$lib/ds/actions/Button.svelte';
@@ -10,6 +10,9 @@
 	import PaneTabs from '$lib/ds/projects/PaneTabs.svelte';
 	import ProjectDialog from '$lib/ds/projects/ProjectDialog.svelte';
 	import DeployRow from '$lib/ds/projects/DeployRow.svelte';
+	import IssueBoard from '$lib/ds/projects/IssueBoard.svelte';
+	import { boardColumns, dropIndex, localDay } from '$lib/projects/issues';
+	import { getLocale } from '$lib/paraglide/runtime';
 	import AddressRow from '$lib/ds/projects/AddressRow.svelte';
 	import MonitorStat from '$lib/ds/projects/MonitorStat.svelte';
 	import TrafficBars from '$lib/ds/projects/TrafficBars.svelte';
@@ -35,7 +38,7 @@
 	import type { MetricsRange } from '$lib/adapters/api';
 	import SubdomainField from '$lib/ds/projects/SubdomainField.svelte';
 	import { invalidate } from '$app/navigation';
-	import CodeView from '$lib/ds/build/CodeView.svelte';
+	import CodeView, { FILE_DRAG_TYPE } from '$lib/ds/build/CodeView.svelte';
 	import { plainLines } from '$lib/ds/chat/code';
 	import PhoneFrame from '$lib/ds/build/PhoneFrame.svelte';
 	import PublishButton from '$lib/ds/build/PublishButton.svelte';
@@ -46,6 +49,7 @@
 	import EmptyState from '$lib/ds/lists/EmptyState.svelte';
 	import Terminal from '$lib/ds/build/Terminal.svelte';
 	import SandboxWait from '$lib/projects/SandboxWait.svelte';
+	import UseDevice from '$lib/projects/UseDevice.svelte';
 	import { terminalLines } from '$lib/projects/terminal';
 	import Presence from '$lib/ds/build/Presence.svelte';
 	import PresenceMenu from '$lib/ds/build/PresenceMenu.svelte';
@@ -102,6 +106,8 @@
 		if (ws.sheet) sheetBox?.querySelector<HTMLElement>('section')?.focus();
 	});
 	let presenceOpen = $state(false);
+	/** A file from the code tree is being dragged over the chat. */
+	let dropping = $state(false);
 	let hereBox = $state<HTMLElement>();
 	$effect(() => {
 		if (!presenceOpen) return;
@@ -186,7 +192,7 @@
 			status={ws.status}
 			space={ws.project.org_name}
 			url={ws.liveUrl ?? undefined}
-			nav={[...(ws.deploy ? [{ id: 'deployments', label: m.workspace_deployments(), icon: History }] : []), ...(data.address ? [{ id: 'domain', label: m.workspace_domain(), icon: Link }] : []), ...(ws.deploy ? [{ id: 'monitor', label: m.workspace_monitor(), icon: Activity }] : []), { id: 'usage', label: m.workspace_usage(), icon: Coins }, ...(data.database ? [{ id: 'database', label: m.workspace_database(), icon: Database }] : []), { id: 'settings', label: m.project_settings(), icon: Settings }]}
+			nav={[...(ws.deploy ? [{ id: 'deployments', label: m.workspace_deployments(), icon: History }] : []), { id: 'issues', label: m.workspace_issues(), icon: SquareKanban }, ...(data.address ? [{ id: 'domain', label: m.workspace_domain(), icon: Link }] : []), ...(ws.deploy ? [{ id: 'monitor', label: m.workspace_monitor(), icon: Activity }] : []), { id: 'usage', label: m.workspace_usage(), icon: Coins }, ...(data.database ? [{ id: 'database', label: m.workspace_database(), icon: Database }] : []), { id: 'settings', label: m.project_settings(), icon: Settings }]}
 			navLabel={m.workspace_tools()}
 			active={ws.sheet ?? undefined}
 			onnav={(id) => (ws.sheet = ws.sheet === id ? null : (id as typeof ws.sheet))}
@@ -196,6 +202,13 @@
 			onexport={ws.openExport}
 			presence={ws.peers.length ? here : undefined}
 			onshare={ws.liveUrl ? () => (ws.sharing = true) : undefined}
+			renaming={ws.projectRenaming}
+			onstartrename={() => (ws.projectRenaming = true)}
+			onrename={(name) => {
+				ws.projectRenaming = false;
+				void ws.renameFromBar(name);
+			}}
+			oncancelrename={() => (ws.projectRenaming = false)}
 		>
 			{#snippet publish()}
 				{#if ws.role === 'viewer'}
@@ -233,7 +246,35 @@
 	{/snippet}
 	{#snippet chat()}
 		<ChatPaneHeader title={m.workspace_chat()} crew={['koda', 'nomi']} />
-		<div class="min-h-0 flex-1"><ChatView {data} pane quote={ws.quote} onunquote={() => (ws.quote = null)} onactivity={() => void ws.loadQueue()} after={together} /></div>
+		<!-- A file dragged from the code tree drops here, quoted above the composer to ask Koda about. -->
+		<div
+			role="region"
+			aria-label={m.workspace_chat()}
+			class="relative flex min-h-0 flex-1 flex-col overflow-hidden"
+			ondragover={(event) => {
+				if (!event.dataTransfer?.types.includes(FILE_DRAG_TYPE)) return;
+				event.preventDefault();
+				event.dataTransfer.dropEffect = 'copy';
+				dropping = true;
+			}}
+			ondragleave={(event) => {
+				if (!(event.currentTarget as HTMLElement).contains(event.relatedTarget as Node)) dropping = false;
+			}}
+			ondrop={(event) => {
+				const path = event.dataTransfer?.getData(FILE_DRAG_TYPE);
+				dropping = false;
+				if (!path) return;
+				event.preventDefault();
+				ws.quoteFile(path);
+			}}
+		>
+			<ChatView {data} pane quote={ws.quote} onunquote={() => (ws.quote = null)} onactivity={() => void ws.loadQueue()} after={together} />
+			{#if dropping}
+				<div data-part="drop" class="pointer-events-none absolute inset-2 flex items-center justify-center rounded-md bg-accent-bg outline-2 -outline-offset-2 outline-dashed outline-accent">
+					<p class="text-ui font-medium text-text">{m.code_drop_here()}</p>
+				</div>
+			{/if}
+		</div>
 	{/snippet}
 	<div class="relative flex min-h-0 flex-1 flex-col">
 		<PaneTabs
@@ -253,7 +294,7 @@
 			views={ws.paneViews}
 			bind:view={ws.view}
 			bind:device={ws.device}
-			address={ws.sandboxOn ? (ws.frame ? { shown: m.workspace_preview_sandbox() } : undefined) : ws.frame ? { url: ws.frame, shown: ws.shownUrl, live: ws.liveUrl ? m.workspace_live() : undefined, deploy: ws.liveUrl && ws.liveNumber ? m.projects_deploy({ number: ws.liveNumber }) : undefined } : undefined}
+			address={ws.sandboxOn ? (ws.frame ? { shown: ws.onDevice ? m.device_preview_shown() : m.workspace_preview_sandbox() } : undefined) : ws.frame ? { url: ws.frame, shown: ws.shownUrl, live: ws.liveUrl ? m.workspace_live() : undefined, deploy: ws.liveUrl && ws.liveNumber ? m.projects_deploy({ number: ws.liveNumber }) : undefined } : undefined}
 			onreload={async () => {
 				// A fresh grant for the static preview, then the frame again.
 				if (!ws.sandboxOn && !ws.liveUrl) await invalidate('app:workspace-project');
@@ -268,18 +309,26 @@
 			{#each ws.pointers as pointer (pointer.user_id)}
 				<span class="pointer-events-none absolute z-10" style="left: {pointer.x * 100}%; top: {pointer.y * 100}%"><PeerCursor name={pointer.name} peer={pointer.peer} /></span>
 			{/each}
-			{#if ws.view === 'design' && data.design}
-				<DesignCanvas
-					sessionId={ws.project.session_id}
-					directions={data.design.directions ?? null}
-					previews={data.design.previews}
-					feedback={data.design.feedback}
-					approval={data.design.approval}
-					embedded
-					onrefresh={async () => {
-						await invalidate('app:workspace-project');
-					}}
-				/>
+			{#if ws.view === 'design'}
+				{#if ws.hasDesign && data.design}
+					<DesignCanvas
+						sessionId={ws.project.session_id}
+						directions={data.design.directions ?? null}
+						previews={data.design.previews}
+						feedback={data.design.feedback}
+						approval={data.design.approval}
+						embedded
+						onrefresh={async () => {
+							await invalidate('app:workspace-project');
+						}}
+					/>
+				{:else}
+					<EmptyState
+						icon={Palette}
+						title={ws.buildingOrPublished ? m.workspace_no_design_artifact_title() : m.workspace_no_design_title()}
+						body={ws.buildingOrPublished ? m.workspace_no_design_artifact_body() : m.workspace_no_design_body()}
+					/>
+				{/if}
 			{:else if ws.view === 'code'}
 				{#if ws.project.files.length && ws.codePath}
 					<CodeView
@@ -293,11 +342,7 @@
 								ws.openFile(entry.path);
 							}
 						}}
-						onask={() => {
-							if (!ws.codePath) return;
-							ws.quote = { file: ws.codePath, range: m.code_whole_file(), snippet: '', text: m.code_about_file({ file: ws.codePath }) };
-							ws.workspaceView = 'chat';
-						}}
+						onask={() => ws.codePath && ws.quoteFile(ws.codePath)}
 						onasklines={ws.askAbout}
 					/>
 				{:else}
@@ -306,6 +351,7 @@
 			{:else if ws.view === 'terminal' && ws.runtime}
 				{@const lines = terminalLines(ws.runtime.log)}
 				<Terminal
+					fill
 					run={m.sandbox_terminal_run()}
 					lines={lines.length ? lines : [{ kind: 'out', text: m.sandbox_terminal_empty() }]}
 					failure={ws.sandboxPhase === 'failed' ? { title: m.sandbox_failed_title(), detail: ws.runtime.error || undefined, onfix: ws.askToFix } : undefined}
@@ -319,9 +365,12 @@
 					{/if}
 				{/key}
 			{:else if ws.sandboxOn}
-				<SandboxWait phase={ws.sandboxPhase} log={ws.runtime?.log ?? ''} error={ws.runtime?.error ?? null} onretry={() => void ws.runtime?.retry()} />
+				<SandboxWait phase={ws.sandboxPhase} log={ws.runtime?.log ?? ''} error={ws.runtime?.error ?? null} onretry={() => void ws.runtime?.retry()} device={ws.deviceLink ? { href: ws.deviceLink, onclick: ws.useDevice } : undefined} />
 			{:else}
-				<EmptyState icon={MonitorX} title={m.workspace_nothing_title()} body={ws.project.status === 'building' ? m.workspace_nothing_building() : m.workspace_nothing_body()} />
+				<div class="flex flex-col items-start gap-3">
+					<EmptyState icon={MonitorX} title={m.workspace_nothing_title()} body={ws.project.status === 'building' ? m.workspace_nothing_building() : m.workspace_nothing_body()} />
+					{#if ws.deviceLink}<UseDevice href={ws.deviceLink} onclick={ws.useDevice} />{/if}
+				</div>
 			{/if}
 		</div>
 
@@ -329,6 +378,9 @@
 			<div bind:this={sheetBox} class="absolute inset-y-0 right-0 flex w-180 max-w-full">
 				<WorkspaceSheet icon={Settings} title={m.project_settings()} meta={ws.project.name} onclose={() => (ws.sheet = null)}>
 					<div class="flex flex-col border-t border-border">
+						<SettingRow title={m.projects_rename_title()} description={ws.project.name}>
+							{#snippet control()}<Button variant="secondary" iconStart={Pencil} label={m.projects_rename()} onclick={() => ws.openDialog('rename')} />{/snippet}
+						</SettingRow>
 						{#if ws.people}
 							<SettingRow title={m.people_title()} description={m.people_summary({ count: ws.people.people.filter((one) => one.project_role || one.is_owner).length })}>
 								{#snippet control()}<Button variant="secondary" iconStart={Users} label={m.settings_manage()} onclick={() => (ws.sheet = 'people')} />{/snippet}
@@ -340,20 +392,22 @@
 							</SettingRow>
 						{/if}
 					</div>
-					<section class="flex flex-col gap-2">
-						<h3 class="font-mono text-label tracking-label text-text-3 uppercase">{m.settings_ownership()}</h3>
-						<div class="flex flex-col border-t border-border">
-							<SettingRow title={m.settings_transfer()} description={m.settings_transfer_body({ name: ws.project.name })}>
-								{#snippet control()}<Button variant="secondary" label={m.settings_transfer_action()} onclick={() => ws.openDialog('transfer')} />{/snippet}
-							</SettingRow>
-							<SettingRow title={m.settings_takedown()} description={ws.liveUrl ? m.settings_takedown_body() : m.settings_takedown_not_live()}>
-								{#snippet control()}{#if ws.liveUrl}<Button variant="secondary" label={m.settings_takedown_action()} onclick={() => ws.openDialog('takedown')} />{/if}{/snippet}
-							</SettingRow>
-							<SettingRow title={m.settings_delete()} description={m.settings_delete_body()} danger>
-								{#snippet control()}<Button variant="danger" label={m.settings_delete_action()} onclick={() => ws.openDialog('delete')} />{/snippet}
-							</SettingRow>
-						</div>
-					</section>
+					{#if ws.projectAdmin}
+						<section class="flex flex-col gap-2">
+							<h3 class="font-mono text-label tracking-label text-text-3 uppercase">{m.settings_ownership()}</h3>
+							<div class="flex flex-col border-t border-border">
+								<SettingRow title={m.settings_transfer()} description={m.settings_transfer_body({ name: ws.project.name })}>
+									{#snippet control()}<Button variant="secondary" label={m.settings_transfer_action()} onclick={() => ws.openDialog('transfer')} />{/snippet}
+								</SettingRow>
+								<SettingRow title={m.settings_takedown()} description={ws.liveUrl ? m.settings_takedown_body() : m.settings_takedown_not_live()}>
+									{#snippet control()}{#if ws.liveUrl}<Button variant="secondary" label={m.settings_takedown_action()} onclick={() => ws.openDialog('takedown')} />{/if}{/snippet}
+								</SettingRow>
+								<SettingRow title={m.settings_delete()} description={m.settings_delete_body()} danger>
+									{#snippet control()}<Button variant="danger" label={m.settings_delete_action()} onclick={() => ws.openDialog('delete')} />{/snippet}
+								</SettingRow>
+							</div>
+						</section>
+					{/if}
 				</WorkspaceSheet>
 			</div>
 		{/if}
@@ -760,6 +814,33 @@
 				</WorkspaceSheet>
 			</div>
 		{/if}
+		{#if ws.sheet === 'issues'}
+			<div bind:this={sheetBox} class="absolute inset-0 flex">
+				<WorkspaceSheet
+					icon={SquareKanban}
+					title={m.workspace_issues()}
+					meta={ws.board ? m.issues_open_count({ count: ws.board.filter((column) => column.fixed !== 'done' && column.fixed !== 'closed').reduce((sum, column) => sum + column.issues.length, 0) }) : ws.project.name}
+					onclose={() => (ws.sheet = null)}
+				>
+					{#if ws.boardFailed}
+						<EmptyState icon={SquareKanban} title={m.issues_failed_title()} body={m.issues_failed_body()} />
+						<div><Button variant="secondary" label={m.issues_retry_load()} onclick={() => void ws.loadBoard()} /></div>
+					{:else if !ws.board}
+						<p class="text-ui text-text-3" role="status">{m.issues_loading()}</p>
+					{:else if !ws.board.some((column) => column.issues.length)}
+						<EmptyState icon={SquareKanban} title={m.issues_none_title()} body={m.issues_none_body()} />
+					{:else}
+						<IssueBoard
+							columns={boardColumns(ws.board, localDay(ws.now, ws.time.timeZone), (day) => new Date(`${day}T00:00:00`).toLocaleDateString(getLocale(), { day: 'numeric', month: 'short' }))}
+							labels={{ board: m.issues_board_label(), empty: m.board_empty_column(), moveTo: (number) => m.board_move_label({ number }), retry: m.board_retry(), openChat: m.board_open_chat() }}
+							onmove={(number, column, index) => void ws.moveIssue(number, column, index)}
+							onretry={(number) => void ws.retryIssue(number)}
+							dropAt={dropIndex}
+						/>
+					{/if}
+				</WorkspaceSheet>
+			</div>
+		{/if}
 		{#if ws.sheet === 'deployments' && ws.deploy}
 			<div bind:this={sheetBox} class="absolute inset-y-0 right-0 flex w-180 max-w-full">
 				<WorkspaceSheet
@@ -848,6 +929,16 @@
 	{#snippet actions()}
 		<Button variant="ghost" label={m.action_cancel()} onclick={() => (ws.dialog = null)} />
 		<Button variant="inverse" label={m.transfer_send()} loading={ws.acting} disabled={!ws.target || ws.confirmName.trim() !== ws.project.name} onclick={() => ws.act('transfer', { to: ws.target ?? '', name: ws.confirmName.trim() })} />
+	{/snippet}
+</ProjectDialog>
+
+<ProjectDialog open={ws.dialog === 'rename'} title={m.projects_rename_title()} width={460} onclose={() => (ws.dialog = null)}>
+	<div class="flex flex-col gap-3 pt-2">
+		<TextField label={m.projects_rename_label()} bind:value={ws.renameName} autocomplete="off" error={ws.actError} />
+	</div>
+	{#snippet actions()}
+		<Button variant="ghost" label={m.action_cancel()} onclick={() => (ws.dialog = null)} />
+		<Button variant="inverse" label={m.workspace_rename_save()} loading={ws.acting} disabled={!ws.renameName.trim() || ws.renameName.trim() === ws.project.name} onclick={() => ws.act('rename', { name: ws.renameName.trim() })} />
 	{/snippet}
 </ProjectDialog>
 

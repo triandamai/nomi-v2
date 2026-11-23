@@ -29,6 +29,7 @@
 	import { CheckCheck } from '@lucide/svelte';
 	import { phoneView } from '$lib/phone.svelte';
 	import LargeTitle from '$lib/ds/chrome/LargeTitle.svelte';
+	import ThemePickerButton from '$lib/ds/chrome/ThemePickerButton.svelte';
 	import Fab from '$lib/ds/chrome/Fab.svelte';
 	import Icon from '$lib/ds/foundations/Icon.svelte';
 	import PhoneFilters from '$lib/ds/projects/PhoneFilters.svelte';
@@ -243,6 +244,7 @@
 				<button type="button" aria-label={m.inbox_mark_all_read()} disabled={data.notifications.every((one) => one.read) || markingRead} class="inline-flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-full text-text outline-offset-1 focus-visible:outline-2 focus-visible:outline-focus disabled:cursor-default disabled:text-text-3" onclick={markAllRead}>
 					<Icon icon={CheckCheck} size={22} />
 				</button>
+				<ThemePickerButton />
 			{/snippet}
 		</LargeTitle>
 		<p class="px-5 pb-3 text-phone-sm text-text-3">

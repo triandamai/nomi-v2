@@ -13,6 +13,9 @@ export type PhoneChrome = {
 	readonly tabs: { label: string; tabs: Tab[] } | null;
 	/** The screen draws its own top on a phone (a large title, a chat's nav bar): no top bar. */
 	readonly ownTitle: boolean;
+	/** A tab screen with more inside it than the tab bar reaches (You: Settings' pages and Log out)
+	 *  keeps the menu, opening the sidebar in the drawer. */
+	readonly drawer?: boolean;
 };
 
 const KEY = Symbol('app-shell-phone-chrome');

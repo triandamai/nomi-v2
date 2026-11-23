@@ -5,7 +5,7 @@
 	import { page } from '$app/state';
 	import { m } from '$lib/paraglide/messages';
 	import { getLocale } from '$lib/paraglide/runtime';
-	import type { MessageItem, MessageVersion, RenderedMessage, RerunResult, ThinkingLevel } from '$lib/adapters/api';
+	import type { AgentStatus, MessageItem, MessageVersion, RenderedMessage, RerunResult, ThinkingLevel } from '$lib/adapters/api';
 	import { chatCrewRows, crewIdOf, failureView, mentionOptions, modelMenu, type FailureAction } from '$lib/adapters/chat';
 	import { clock as appClock } from '$lib/clock';
 	import { callJson } from '$lib/chat/client';
@@ -18,7 +18,7 @@
 	import * as outbox from '$lib/chat/outbox';
 	import { afterRerun } from '$lib/chat/rerun';
 	import { threadEntries, turnDuration } from '$lib/chat/thread';
-	import { applyChatEvent, idleTurn, isWorking, retryInfo, turnSent, turnStopped } from '$lib/chat/turn';
+	import { applyChatEvent, idleTurn, isWorking, retryInfo, turnSent, turnStopped, turnWithAgentActivity, type LiveTurn } from '$lib/chat/turn';
 	import { toasts } from '$lib/ds/overlays/toasts.svelte';
 	import MessageUser from '$lib/ds/conversation/MessageUser.svelte';
 	import TeammateMessage from '$lib/ds/build/TeammateMessage.svelte';
@@ -78,6 +78,7 @@
 	import { blockedReason, composeMessage, extensionOf, formatBytes, hiddenLine, kindLabel, progressParts, readyCount, seesImages, splitAttachments, visionSplit, type SentFile } from '$lib/chat/attachments';
 	import { ComposerUploads, type Chip } from '$lib/chat/uploads.svelte';
 	import { clearDraft, loadDraft, saveDraft } from '$lib/chat/draft';
+	import { forwardScrollTo } from '$lib/chat/scroll';
 	import ComposerFile from '$lib/ds/thread/ComposerFile.svelte';
 	import ModelFix from '$lib/ds/thread/ModelFix.svelte';
 	import VisionModelMenu, { type VisionGroup } from '$lib/ds/thread/VisionModelMenu.svelte';
@@ -162,13 +163,32 @@
 
 	type Pending = { key: number; text: string; status: 'sending' | 'queued' | 'failed'; reason?: string };
 
+	function crewNameOf(agentType: string): string {
+		const crewId = crewOf(agentType);
+		return CREW.find((member) => member.id === crewId)?.name ?? (agentType ? agentType.charAt(0).toUpperCase() + agentType.slice(1) : 'Nomi');
+	}
+
+	function initialTurn(status: AgentStatus | null | undefined): LiveTurn {
+		if (!status) return idleTurn();
+		return turnWithAgentActivity(
+			idleTurn(),
+			{
+				agent_session_id: status.agent_session_id,
+				agent_name: crewNameOf(status.agent_type),
+				phase: status.current_phase,
+				detail: status.current_phase_detail,
+			},
+			Date.now(),
+		);
+	}
+
 	const chatId = $derived(data.chat.id);
 	const api = $derived(`/chat/${data.chat.id}/api`);
 	const outboxKey = $derived(`/chat/${data.chat.id}`);
 
 	let messages = $state<RenderedMessage[]>(untrack(() => data.messages));
 	let hasOlder = $state(untrack(() => data.hasOlder));
-	let turn = $state(idleTurn());
+	let turn = $state<LiveTurn>(untrack(() => initialTurn(data.agentStatus)));
 	let tickNow = $state(Date.now());
 	let pending = $state<Pending[]>([]);
 	let nextKey = 1;
@@ -246,7 +266,8 @@
 				shownId = id;
 				messages = incoming;
 				hasOlder = older;
-				turn = idleTurn();
+				turn = initialTurn(data.agentStatus);
+				void readCrewAtWork();
 				pending = [];
 				editing = null;
 				versions = {};
@@ -467,11 +488,29 @@
 
 	/** Who of the crew is at work in the chat already (the feed only says who starts from now). */
 	async function readCrewAtWork() {
-		if (!phone) return;
-		const result = await callJson<{ agent_session_id: string; agent_type: string } | null>(`${api}/agent-status`);
-		if (!result.ok || !result.data) return;
-		const crewId = crewOf(result.data.agent_type);
-		flows.sessionStarted(result.data.agent_session_id, CREW.find((member) => member.id === crewId)?.name ?? 'Nomi');
+		const result = await callJson<AgentStatus | null>(`${api}/agent-status`);
+		if (!result.ok) return;
+		if (result.data) {
+			const agentName = crewNameOf(result.data.agent_type);
+			flows.sessionStarted(result.data.agent_session_id, agentName);
+			if (!turn.stopRequested) {
+				turn = turnWithAgentActivity(
+					turn,
+					{
+						agent_session_id: result.data.agent_session_id,
+						agent_name: agentName,
+						phase: result.data.current_phase,
+						detail: result.data.current_phase_detail,
+					},
+					Date.now(),
+				);
+			}
+			header.crew = { replied: header.crew.replied, working: agentName };
+			onactivity?.();
+		} else if (!turn.pending && turn.openTurns.length > 0 && !turn.reply.text.trim()) {
+			turn = idleTurn();
+			header.crew = { replied: header.crew.replied, working: null };
+		}
 	}
 
 	function continueReply() {
@@ -928,12 +967,18 @@
 		// Signed back in (or reloaded) with a message waiting: it goes now.
 		void flushOutbox();
 		restoreDraft(chatId);
+		void readCrewAtWork();
+		const onVisible = () => {
+			if (document.visibilityState === 'visible') void readCrewAtWork();
+		};
+		document.addEventListener('visibilitychange', onVisible);
 		if (!matchMedia('(pointer: coarse)').matches) field?.focus();
 		jumpToLatest();
 		return () => {
 			clearTimeout(hide);
 			window.removeEventListener('offline', offline);
 			window.removeEventListener('online', back);
+			document.removeEventListener('visibilitychange', onVisible);
 		};
 	});
 
@@ -1267,8 +1312,8 @@
 	</FileViewer>
 {/snippet}
 
-<div class="flex h-full">
-<div class="flex h-full min-w-0 flex-1 flex-col">
+<div class="flex h-full w-full min-h-0 flex-1">
+<div class="flex h-full min-h-0 min-w-0 flex-1 flex-col">
 	{#if phone && !pane}<NavBar title={shownTitle ?? m.nav_new_chat()} who={answering} onback={() => void goto('/chats')} onmenu={() => (sheet = { kind: 'chat' })} />{/if}
 	{#if phone && (!online || backOnline || quota !== null || flows.working.length > 0)}
 		<!-- On a phone the banners stay under the nav bar, wherever the person is in the thread (UX
@@ -1285,9 +1330,10 @@
 			{#if flows.working.length > 0}<PhoneCrewWorking crew={flows.working.map((name) => crewIdOf(name))} onstop={() => void stopAll()} />{/if}
 		</div>
 	{/if}
-	<div bind:this={scroller} {onscroll} class={['min-h-0 flex-1 overflow-y-auto', phone ? 'px-4 pt-4' : pane ? 'px-5 pt-5' : 'px-4 pt-6 lg:px-12 lg:pt-10']}>
+	<!-- The thread scrolls up and down only: nothing in it may slide it sideways on a phone. -->
+	<div bind:this={scroller} {onscroll} class={['min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain', phone ? 'px-4 pt-4' : pane ? 'px-5 pt-5' : 'px-4 pt-6 lg:px-12 lg:pt-10']}>
 		<!-- On a phone a short thread sits at the bottom, over the composer, as the pen draws it. -->
-		<div class={['mx-auto flex w-full max-w-180 flex-col', phone ? 'min-h-full justify-end gap-6 pb-5' : 'gap-8 pb-8']}>
+		<div class={['mx-auto flex w-full max-w-180 flex-col wrap-anywhere', phone ? 'min-h-full justify-end gap-6 pb-5' : 'gap-8 pb-8']}>
 			{#if !phone}
 				{#if !online}
 					<Banner kind="offline" text={m.banner_offline()} action={{ label: m.banner_retry_now(), onclick: () => void flushOutbox() }} />
@@ -1381,7 +1427,7 @@
 									<!-- Thinking that never reached a reply (stopped, or still on its way). -->
 								{:else if cutOff === message.id && turn.end && phone}
 									<!-- Errors & recovery, scenario 5 step 3 (UTrnr): what was written stays, then when it was cut off. -->
-									<p class="text-phone leading-phone whitespace-pre-wrap text-text">{turn.reply.text}</p>
+									<p class="text-phone leading-phone whitespace-pre-wrap wrap-anywhere text-text">{turn.reply.text}</p>
 									<PhoneCutNotice seconds={Math.round(turn.end.elapsedMs / 1000)} oncontinue={continueReply} onrestart={entry.failure?.retry ? () => entry.failure && retryRun(message, entry.failure.text) : undefined} />
 								{:else if cutOff === message.id && turn.end}
 									<ReplyText text={turn.reply.text} status="interrupted" reason={turn.end.reason} oncontinue={continueReply} onrestart={() => entry.failure?.retry && retryRun(message, entry.failure.text)} />
@@ -1392,7 +1438,28 @@
 									{@const view = failureActions(message, entry.failure)}
 									<FailedReply text={entry.failure.text} title={view.title} actions={view.actions} />
 								{:else}
-									<Prose {phone} html={message.content_html} />
+									{#if !entry.quiet}<Prose {phone} html={message.content_html} />{/if}
+									{#each entry.cards as card (card.id)}
+										<div data-message-id={card.id} class="contents">
+											<ReplyBlocks
+												blocks={replyBlocks(card, { language })}
+												{api}
+												messageId={card.id}
+												agentName={nameOf(card)}
+												{language}
+												timeZone={time.timeZone}
+												now={time.now}
+												{working}
+												latest={entry.latest}
+												onsend={(text) => send(text)}
+												{phone}
+												{flows}
+												onreload={() => void fetchMessage(card.id)}
+												chatId={chatId}
+												onanswer={() => field?.focus()}
+											/>
+										</div>
+									{/each}
 									<ReplyBlocks
 										blocks={replyBlocks(message, { language })}
 										{api}
@@ -1506,7 +1573,7 @@
 		</div>
 	</div>
 
-	<div class={['relative', !phone && 'px-4 pb-4', !phone && !pane && 'lg:px-12 lg:pb-6']}>
+	<div use:forwardScrollTo={() => scroller} class={['relative shrink-0 overscroll-none', !phone && 'px-4 pb-4', !phone && !pane && 'lg:px-12 lg:pb-6']}>
 		{#if !atLatest && entries.length > 0}
 			<div class="absolute -top-12 left-1/2 -translate-x-1/2"><JumpToLatest count={unseen} onclick={() => jumpToLatest(true)} /></div>
 		{/if}

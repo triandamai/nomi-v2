@@ -2,8 +2,9 @@ import { onMount, untrack } from 'svelte';
 import { m } from '$lib/paraglide/messages';
 import { pageAction } from '$lib/pageAction';
 import { clock as appClock } from '$lib/clock';
-import { deployRows, publishState, publishing } from '$lib/projects/deploy';
-import type { DeployOverview, ExportSummary, MetricsRange, ProjectUsage } from '$lib/adapters/api';
+import { deployRows, initialStages, publishState, publishing } from '$lib/projects/deploy';
+import type { BoardColumn, DeployOverview, ExportSummary, IssueBoard, MetricsRange, ProjectUsage } from '$lib/adapters/api';
+import { moveOnBoard } from '$lib/projects/issues';
 import { toasts } from '$lib/ds/overlays/toasts.svelte';
 import type { PaneView } from '$lib/ds/projects/PaneTabs.svelte';
 import type { SubdomainCheck } from '$lib/ds/projects/SubdomainField.svelte';
@@ -14,6 +15,8 @@ import { getLocale } from '$lib/paraglide/runtime';
 import type { CodeLine } from '$lib/ds/chat/code';
 import { fileTree, firstFile, quoteLines } from '$lib/projects/code';
 import { SandboxRuntime } from '$lib/projects/sandbox.svelte';
+import { DeviceRuntime } from '$lib/projects/device.svelte';
+import { deviceHref } from '$lib/projects/device';
 import { ProjectLive } from '$lib/projects/live.svelte';
 import { distinctInitials, peerFor, pointersIn } from '$lib/projects/peers';
 import { answeredRequests, askLine, movableAsk, myOpenRequest, openRequests, type PublishRequestRow, type QueuedAsk } from '$lib/projects/asks';
@@ -22,7 +25,9 @@ import { page } from '$app/state';
 import type { PageData } from './$types';
 
 /** The desktop's tool sheets (the phone opens the same ones as bottom sheets). */
-export type ToolSheet = 'deployments' | 'domain' | 'monitor' | 'usage' | 'database' | 'settings' | 'people' | 'environment';
+export type ToolSheet = 'deployments' | 'issues' | 'domain' | 'monitor' | 'usage' | 'database' | 'settings' | 'people' | 'environment';
+/** How often an open Issues sheet reads the board again. */
+const BOARD_POLL_MS = 15_000;
 /** A `?open=` link, read once when the workspace opens (each layout opens it its own way). */
 export type OpenRequest = { open: string; file: string | null };
 /** What a new person's invite gave back (People, G10): the link to copy and when it runs out. */
@@ -55,7 +60,7 @@ export class Workspace {
 		// The sandbox runs while the workspace is open.
 		$effect(() => {
 			if (!this.sandboxOn) return;
-			const one = new SandboxRuntime(this.projectId);
+			const one = this.onDevice ? new DeviceRuntime(this.projectId) : new SandboxRuntime(this.projectId);
 			this.runtime = one;
 			void one.start();
 			return () => {
@@ -66,7 +71,6 @@ export class Workspace {
 		onMount(() => {
 			const tick = setInterval(() => {
 				this.now = new Date();
-				if (this.deploy && publishing(this.deploy)) void this.refresh();
 			}, 3000);
 			return () => clearInterval(tick);
 		});
@@ -87,8 +91,15 @@ export class Workspace {
 			const timer = setInterval(() => !document.hidden && void this.loadMonitoring(asked), 30_000);
 			return () => clearInterval(timer);
 		});
+		// The Issues sheet reads the board when it opens, and again while it's open (the crew moves cards too).
 		$effect(() => {
-			// Another project opened in this page starts again from its own month.
+			if (this.sheet !== 'issues' || !this.project.id) return;
+			untrack(() => void this.loadBoard());
+			const timer = setInterval(() => !document.hidden && void this.loadBoard(), BOARD_POLL_MS);
+			return () => clearInterval(timer);
+		});
+		$effect(() => {
+		// Another project opened in this page starts again from its own month.
 			if (this.sheet !== 'usage' || !this.project.id) return;
 			untrack(() => void this.loadUsage(null));
 		});
@@ -143,6 +154,14 @@ export class Workspace {
 				void this.refresh();
 			});
 		});
+		$effect(() => {
+			const link = this.live;
+			const runtime = this.runtime;
+			if (!link || !runtime) return;
+			return link.onSandboxChange(() => {
+				void runtime.onSandboxChange();
+			});
+		});
 	}
 
 	/** The phone's layout is showing (a few toasts say things its own way). */
@@ -161,8 +180,10 @@ export class Workspace {
 	readonly liveRow = $derived(this.deploy?.publishes.find((one) => one.is_live && one.environment === 'production'));
 	readonly liveUrl = $derived(this.deploy?.url ?? this.data.live?.url ?? null);
 	readonly liveNumber = $derived(this.liveRow?.version ?? this.data.live?.deploys ?? null);
+	/** Completed stages waiting to publish before the first publish. */
+	readonly initialStages = $derived(initialStages(this.project));
 	/** What the Publish button says. */
-	readonly button = $derived(this.deploy ? publishState(this.deploy, this.project.files.length, this.now) : ({ state: 'off' } as const));
+	readonly button = $derived(this.deploy ? publishState(this.deploy, this.initialStages, this.now) : ({ state: 'off' } as const));
 	readonly productionPublishes = $derived(this.deploy?.publishes.filter((one) => one.environment === 'production') ?? []);
 	readonly rows = $derived(this.deploy ? deployRows(this.productionPublishes, this.now, this.time.timeZone) : []);
 	readonly nextNumber = $derived((this.deploy?.publishes.reduce((top, one) => Math.max(top, one.version), 0) ?? 0) + 1);
@@ -247,11 +268,25 @@ export class Workspace {
 	}
 
 	// ── The sandbox ───────────────────────────────────────────────────────────────────────────
-	readonly sandboxOn = $derived(this.data.sandbox);
+	/** The project runs on this device (WebContainer) instead of the sandbox: the person chose "Use your device instead". */
+	readonly onDevice = $derived(Boolean(this.data.deviceRun));
+	/** A runtime serves the preview and the terminal: the backend's sandbox, or this device. */
+	readonly sandboxOn = $derived(this.data.sandbox || this.onDevice);
 	readonly projectId = $derived(this.project.id);
-	runtime = $state<SandboxRuntime | null>(null);
+	runtime = $state<SandboxRuntime | DeviceRuntime | null>(null);
 	readonly sandboxPhase = $derived(this.runtime?.phase ?? 'loading');
 	readonly frame = $derived(this.sandboxOn ? (this.runtime?.previewUrl ?? null) : (this.liveUrl ?? this.staticPreview));
+	/**
+	 * Where "Use your device instead" goes, offered when the sandbox is off or can't be used (it
+	 * failed or stopped): the workspace again, isolated so WebContainer can run (a full load).
+	 */
+	readonly deviceLink = $derived(
+		this.onDevice ? null : !this.data.sandbox ? (this.frame ? null : deviceHref(this.projectId)) : this.sandboxPhase === 'failed' || this.sandboxPhase === 'stopped' ? deviceHref(this.projectId) : null,
+	);
+	/** Leaving the sandbox for the device stops it, so it doesn't keep running (and billing) beside it; best effort. */
+	useDevice = () => {
+		if (this.data.sandbox) void fetch(`/projects/${encodeURIComponent(this.projectId)}/sandbox/stop`, { method: 'POST' }).catch(() => undefined);
+	};
 	/** Ask Koda to fix: the sandbox's error quoted above the composer, on the chat. */
 	askToFix = () => {
 		const error = this.runtime?.error || m.sandbox_failed_body();
@@ -315,6 +350,37 @@ export class Workspace {
 		await invalidate('app:workspace-project');
 		return true;
 	}
+
+	// ── Issues ────────────────────────────────────────────────────────────────────────────────
+	/** The board as the server last had it (a move shows at once, then the server's board replaces it). */
+	board = $state<BoardColumn[] | null>(null);
+	boardFailed = $state(false);
+	async loadBoard() {
+		const response = await fetch(`/projects/${encodeURIComponent(this.project.id)}/issues`).catch(() => null);
+		if (!response?.ok) {
+			this.boardFailed = !this.board;
+			return;
+		}
+		this.board = ((await response.json()) as IssueBoard).columns;
+		this.boardFailed = false;
+	}
+	async #issueAction(body: Record<string, unknown>): Promise<boolean> {
+		const response = await fetch(`/projects/${encodeURIComponent(this.project.id)}/issues`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null);
+		if (response?.ok) return true;
+		toasts.show({ kind: 'error', title: m.board_err(), ...(response && { detail: (await response.text().catch(() => '')) || undefined }) });
+		return false;
+	}
+	moveIssue = async (number: number, columnId: string, index: number) => {
+		const issue = this.board?.flatMap((column) => column.issues).find((one) => one.number === number);
+		if (!this.board || !issue) return;
+		const before = this.board;
+		this.board = moveOnBoard(before, issue, columnId, index);
+		if (!(await this.#issueAction({ action: 'move', number, column: columnId, index }))) this.board = before;
+		await this.loadBoard();
+	};
+	retryIssue = async (number: number) => {
+		if (await this.#issueAction({ action: 'retry', number })) await this.loadBoard();
+	};
 
 	// ── Monitor ───────────────────────────────────────────────────────────────────────────────
 	range = $state<MetricsRange>('24h');
@@ -392,16 +458,20 @@ export class Workspace {
 		return true;
 	}
 
-	// ── Settings: transfer, take down, delete ─────────────────────────────────────────────────
-	dialog = $state<'transfer' | 'takedown' | 'delete' | null>(null);
+	// ── Settings: transfer, take down, delete, rename ─────────────────────────────────────────
+	dialog = $state<'transfer' | 'takedown' | 'delete' | 'rename' | null>(null);
 	targets = $state<TransferTarget[]>([]);
 	targetQuery = $state('');
 	target = $state<string | null>(null);
 	confirmName = $state('');
+	renameName = $state('');
+	projectRenaming = $state(false);
 	acting = $state(false);
 	actError = $state<string>();
-	openDialog(which: 'transfer' | 'takedown' | 'delete') {
+	openDialog(which: 'transfer' | 'takedown' | 'delete' | 'rename') {
+		if (which !== 'rename' && !this.projectAdmin) return;
 		this.confirmName = '';
+		this.renameName = this.project.name;
 		this.actError = undefined;
 		this.target = null;
 		this.dialog = which;
@@ -412,18 +482,35 @@ export class Workspace {
 		const response = await fetch(`/projects/${this.project.id}/transfer?q=${encodeURIComponent(query)}`).catch(() => null);
 		this.targets = response?.ok ? ((await response.json()) as TransferTarget[]) : [];
 	}
-	async act(name: 'transfer' | 'takedown' | 'delete', fields: Record<string, string>) {
+	async act(name: 'transfer' | 'takedown' | 'delete' | 'rename', fields: Record<string, string>) {
 		this.acting = true;
 		this.actError = undefined;
 		const result = await pageAction(`/projects/${this.project.id}`, name, fields);
 		this.acting = false;
 		if (!result.ok) return void (this.actError = result.message || m.action_failed());
-		if (name === 'takedown') {
+		if (name === 'rename') {
+			this.dialog = null;
+			this.project.name = fields.name;
+			toasts.show({ kind: 'success', title: m.projects_renamed({ name: fields.name }) });
+			await invalidate('app:workspace-project');
+		} else if (name === 'takedown') {
 			this.dialog = null;
 			toasts.show({ kind: 'success', title: m.takedown_done({ name: this.project.name }) });
 			await invalidate('app:workspace-project');
 			await this.refresh();
 		}
+	}
+	async renameFromBar(nextName: string) {
+		const wanted = nextName.trim();
+		if (!wanted || wanted === this.project.name) return;
+		const result = await pageAction(`/projects/${this.project.id}`, 'rename', { name: wanted });
+		if (!result.ok) {
+			toasts.show({ kind: 'error', title: result.message || m.action_failed() });
+			return;
+		}
+		this.project.name = wanted;
+		toasts.show({ kind: 'success', title: m.projects_renamed({ name: wanted }) });
+		await invalidate('app:workspace-project');
 	}
 
 	// ── People and Environment ────────────────────────────────────────────────────────────────
@@ -555,6 +642,11 @@ export class Workspace {
 		this.codeText = file && !file.binary ? (file.content ?? '') : null;
 		this.codeLines = file?.lines ?? null;
 	}
+	/** A whole file quoted above the composer (its own Ask, or dropped on the chat from the tree), on the chat. */
+	quoteFile = (path: string) => {
+		this.quote = { file: path, range: m.code_whole_file(), snippet: '', text: m.code_about_file({ file: path }) };
+		this.workspaceView = 'chat';
+	};
 	askAbout = (from: number, to: number) => {
 		if (!this.codePath || this.codeText === null) return;
 		this.quote = quoteLines(this.codePath, this.codeText.split('\n'), from, to);
@@ -572,7 +664,8 @@ export class Workspace {
 	readonly where = $derived({ preview: m.workspace_preview(), design: m.workspace_design(), code: m.workspace_code(), terminal: m.workspace_terminal() });
 	/** Sora's design pane shows once the project has previews or directions to look at. */
 	readonly hasDesign = $derived(Boolean((this.data.design?.previews?.length ?? 0) > 0 || (this.data.design?.directions?.directions?.length ?? 0) > 0));
-	readonly paneViews = $derived<PaneView[]>(['preview', ...(this.hasDesign ? (['design'] as const) : []), 'code', ...(this.sandboxOn ? (['terminal'] as const) : [])]);
+	readonly buildingOrPublished = $derived(Boolean(this.liveUrl || (this.deploy?.publishes && this.deploy.publishes.length > 0) || this.project.status === 'building' || this.sandboxPhase === 'running'));
+	readonly paneViews = $derived<PaneView[]>(['preview', 'design', 'code', ...(this.sandboxOn ? (['terminal'] as const) : [])]);
 	readonly myName = $derived(this.data.person?.name ?? '');
 	/** Faces are told apart by their initials: yours and everyone else's, made distinct together. */
 	readonly faces = $derived(distinctInitials([this.myName, ...(this.live?.people ?? []).map((person) => person.name)]));

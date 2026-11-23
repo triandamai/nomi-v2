@@ -96,4 +96,16 @@ describe('a project’s live link', () => {
 		expect(heard).toEqual(['publish_request.changed', '']);
 		live.stop();
 	});
+
+	it('hands on what changed about the sandbox, and on (re)opening', () => {
+		const { live, socket } = opened();
+		const heard: string[] = [];
+		const stop = live.onSandboxChange((phase) => heard.push(phase));
+		socket.fire('message', { data: JSON.stringify({ kind: 'SandboxChanged', phase: 'running' }) });
+		socket.fire('message', { data: JSON.stringify({ kind: 'SandboxChanged' }) });
+		stop();
+		socket.fire('message', { data: JSON.stringify({ kind: 'SandboxChanged', phase: 'stopped' }) });
+		expect(heard).toEqual(['running', '']);
+		live.stop();
+	});
 });

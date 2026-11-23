@@ -20,7 +20,7 @@ export default [
 			'Language opens its own list in the same menu; Escape goes back to the rest, then closes.',
 			'Links are real links; Escape, Tab or a click elsewhere closes it.',
 		],
-		related: ['chrome/UserRow.svelte', 'overlays/Menu.svelte', 'chrome/ShortcutsDialog.svelte', 'chrome/Sidebar.svelte'],
+		related: ['chrome/UserRow.svelte', 'overlays/Menu.svelte', 'chrome/ShortcutsDialog.svelte', 'chrome/ReleaseNotesDialog.svelte', 'chrome/Sidebar.svelte'],
 	},
 	{
 		file: 'chrome/CrewPanel.svelte',
@@ -74,6 +74,16 @@ export default [
 		dos: ['List only keys that work.', 'Write ⌘ as the design does; the description tells Windows and Linux to use Ctrl.'],
 		accessibility: ['A native modal dialog: focus stays inside and Escape closes it. The keys are a description list.'],
 		related: ['chrome/AccountMenu.svelte', 'overlays/Dialog.svelte', 'actions/Kbd.svelte'],
+	},
+	{
+		file: 'chrome/ReleaseNotesDialog.svelte',
+		summary: 'What changed in the version the app is running, from its GitHub release, in a Dialog: that version first, then the earlier ones of the same environment (staging or production).',
+		use: ['The account menu\'s "What\'s new".', 'On its own, once, the first time a browser loads a version it hasn\'t seen the notes of.'],
+		avoid: ['News that isn\'t about a release: it only shows release notes.'],
+		dos: ['Show only the running environment\'s releases: staging never shows production\'s, nor the other way round.', 'Open it on its own once per version, never on every load.'],
+		content: ['Versions in mono with their v ("v0.1.7"); dates as the person\'s language writes them.'],
+		accessibility: ['A native modal dialog: focus stays inside and Escape closes it. Each earlier version is a section named by its version; the GitHub link opens in a new tab.'],
+		related: ['chrome/AccountMenu.svelte', 'overlays/Dialog.svelte', 'thread/Prose.svelte'],
 	},
 	{
 		file: 'chrome/QuickSearch.svelte',
@@ -188,5 +198,13 @@ export default [
 		content: ['The page’s name as the settings nav says it.'],
 		accessibility: ['The page’s name is marked as the current page; the › is hidden from screen readers.'],
 		related: ['chrome/TopBar.svelte', 'chrome/SettingsNav.svelte'],
+	},
+	{
+		file: 'chrome/ThemePickerButton.svelte',
+		summary: 'A theme picker button for mobile viewports: opens a bottom sheet with System, Light, and Dark options.',
+		use: ['Mobile top bars and headers (Home, Inbox, Settings, Chats, Projects) where the desktop sidebar is hidden.'],
+		avoid: ['Desktop layouts: AccountMenu in the sidebar footer handles theme switching.'],
+		accessibility: ['Button has aria-haspopup="dialog" and aria-expanded; sheet options are aria-pressed.'],
+		related: ['chrome/AccountMenu.svelte', 'overlays/BottomSheet.svelte', 'overlays/SheetOption.svelte'],
 	},
 ] satisfies ComponentDoc[];

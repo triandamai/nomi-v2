@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages';
 	import PhoneToast from '../mobile/PhoneToast.svelte';
+	import { raise, topLayer } from './topLayer';
 	import { toasts } from './toasts.svelte';
 
 	// Flow / Mobile Build (I8tuK0, J1r3Q) → the app's toasts on a phone: Mobile / Toast at the top of
@@ -14,24 +15,37 @@
 		const timers = errors.map((toast) => setTimeout(() => toasts.dismiss(toast.id), ERROR_MS));
 		return () => timers.forEach(clearTimeout);
 	});
+	// In the top layer (topLayer), so a sheet or dialog never covers it; forward with each new toast.
+	let region = $state<HTMLElement>();
+	$effect(() => {
+		if (toasts.items.length && region) raise(region);
+	});
 </script>
 
-<section aria-label={m.toast_region()} class="pointer-events-none fixed inset-x-4 top-safe z-50 flex flex-col gap-2 pt-2">
-	{#each toasts.items as toast (toast.id)}
-		<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-		<div class="pointer-events-auto" onclick={(event) => !(event.target as HTMLElement).closest('button') && toasts.dismiss(toast.id)}>
-			<PhoneToast
-				kind={toast.kind}
-				title={toast.title}
-				detail={toast.detail}
-				action={toast.action && {
-					label: toast.action.label,
-					onclick: () => {
-						toast.action?.onclick();
-						toasts.dismiss(toast.id);
-					},
-				}}
-			/>
-		</div>
-	{/each}
-</section>
+<div class="contents">
+	<section
+		bind:this={region}
+		{@attach topLayer}
+		popover="manual"
+		aria-label={m.toast_region()}
+		class="pointer-events-none fixed inset-x-4 top-safe bottom-auto m-0 flex w-auto flex-col gap-2 overflow-visible border-0 bg-transparent p-0 pt-2"
+	>
+		{#each toasts.items as toast (toast.id)}
+			<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+			<div class="pointer-events-auto" onclick={(event) => !(event.target as HTMLElement).closest('button') && toasts.dismiss(toast.id)}>
+				<PhoneToast
+					kind={toast.kind}
+					title={toast.title}
+					detail={toast.detail}
+					action={toast.action && {
+						label: toast.action.label,
+						onclick: () => {
+							toast.action?.onclick();
+							toasts.dismiss(toast.id);
+						},
+					}}
+				/>
+			</div>
+		{/each}
+	</section>
+</div>

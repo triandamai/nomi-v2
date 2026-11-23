@@ -408,9 +408,9 @@ async fn a_build_is_checked_against_the_handoff_it_was_built_from(pool: PgPool) 
 }
 
 #[test]
-fn sora_says_when_a_preview_is_not_published() {
+fn sora_never_offers_to_publish_a_pen_preview() {
     let prompt = nomi_agent_core::prompts::DESIGN_PREVIEW_RULES;
-    assert!(prompt.contains("isn't published outside Nomi"), "Sora passes on that a preview isn't published, and why");
+    assert!(prompt.contains("lives in the Design Studio only") && prompt.contains("never offer to publish it"), "a .pen preview isn't a website");
 }
 
 fn page(body: &str) -> String {

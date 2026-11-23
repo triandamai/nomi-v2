@@ -27,6 +27,7 @@ export class ProjectLive {
 	#reading: Promise<void> | null = null;
 	#again = false;
 	#deployListeners = new Set<(event: string) => void>();
+	#sandboxListeners = new Set<(phase: string) => void>();
 
 	constructor(projectId: string, openSocket: (url: string) => LinkSocket = (url) => new WebSocket(url)) {
 		this.#id = projectId;
@@ -42,6 +43,7 @@ export class ProjectLive {
 					this.#sendWhere();
 					// Nothing missed while the link was down is replayed: anything could have changed.
 					for (const listener of this.#deployListeners) listener('');
+					for (const listener of this.#sandboxListeners) listener('');
 				},
 				message: (data) => this.#handle(String(data)),
 				lost: () => {},
@@ -90,6 +92,15 @@ export class ProjectLive {
 		return () => this.#deployListeners.delete(listener);
 	}
 
+	/**
+	 * Hears what changed about the project's sandbox (`SandboxChanged`), or '' after (re)connecting.
+	 * Returns the way to stop hearing it.
+	 */
+	onSandboxChange(listener: (phase: string) => void): () => void {
+		this.#sandboxListeners.add(listener);
+		return () => this.#sandboxListeners.delete(listener);
+	}
+
 	/** Where the person is now, told to the others when it changes. */
 	moveTo(where: Whereabouts) {
 		const path = where.path ?? null;
@@ -113,7 +124,7 @@ export class ProjectLive {
 	}
 
 	#handle(data: string) {
-		let event: { kind?: string; user_id?: string; name?: string; x?: number; y?: number; view?: string; event?: string };
+		let event: { kind?: string; user_id?: string; name?: string; x?: number; y?: number; view?: string; event?: string; phase?: string };
 		try {
 			event = JSON.parse(data);
 		} catch {
@@ -121,6 +132,10 @@ export class ProjectLive {
 		}
 		if (event.kind === 'PresenceChanged' && event.user_id !== this.me) void this.refresh();
 		if (event.kind === 'DeployChanged') for (const listener of this.#deployListeners) listener(typeof event.event === 'string' ? event.event : '');
+		if (event.kind === 'SandboxChanged') {
+			const phase = typeof event.phase === 'string' ? event.phase : '';
+			for (const listener of this.#sandboxListeners) listener(phase);
+		}
 		if (event.kind === 'Cursor' && event.user_id && event.user_id !== this.me && typeof event.x === 'number' && typeof event.y === 'number') {
 			this.pointers = { ...this.pointers, [event.user_id]: { name: event.name ?? '', x: event.x, y: event.y, view: event.view ?? 'preview', at: Date.now() } };
 		}

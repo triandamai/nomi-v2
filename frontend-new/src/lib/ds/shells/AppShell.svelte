@@ -15,6 +15,7 @@
 	// sidebar moves into a drawer; the panel shows only where there's room for it (1280px and up).
 	// On a phone (below 768) a top-level screen has the tab bar along the bottom in place of the
 	// drawer, and one that draws its own top (a large title, a chat's nav bar) leaves the bar out.
+	// A tab screen with more behind it than the tab bar reaches (You) keeps the drawer too.
 	type Props = { sidebar: Snippet; topbar?: Snippet; panel?: Snippet; children: Snippet };
 	let { sidebar, topbar, panel, children }: Props = $props();
 
@@ -26,10 +27,31 @@
 
 	function drawer(dialog: HTMLDialogElement) {
 		dialog.showModal();
-		// Following a link inside closes the drawer.
-		const leave = (event: MouseEvent) => (event.target as Element).closest('a') && (drawerOpen = false);
-		dialog.addEventListener('click', leave);
-		return { destroy: () => dialog.removeEventListener('click', leave) };
+		const onclick = (event: MouseEvent) => {
+			const target = event.target as Element | null;
+			if (!target) return;
+			// Following a link inside closes the drawer.
+			if (target.closest('a')) {
+				drawerOpen = false;
+				return;
+			}
+			// Clicking on the backdrop (the dialog itself) or outside the dialog's bounding box closes the drawer.
+			if (target === dialog) {
+				drawerOpen = false;
+				return;
+			}
+			const rect = dialog.getBoundingClientRect();
+			if (
+				event.clientX < rect.left ||
+				event.clientX > rect.right ||
+				event.clientY < rect.top ||
+				event.clientY > rect.bottom
+			) {
+				drawerOpen = false;
+			}
+		};
+		dialog.addEventListener('click', onclick);
+		return { destroy: () => dialog.removeEventListener('click', onclick) };
 	}
 </script>
 
@@ -37,11 +59,11 @@
 	<div class="h-full w-80 shrink-0 overflow-y-auto border-l border-border max-xl:hidden">{@render panel?.()}</div>
 {/snippet}
 
-<div class="flex h-dvh w-full overflow-hidden bg-bg text-text">
+<div class="flex h-dvh w-full overflow-hidden bg-bg text-text" style="height: var(--viewport-height, 100dvh);">
 	<div class="h-full max-lg:hidden">{@render sidebar()}</div>
 	<div class="flex min-w-0 flex-1 flex-col">
 		<header class={['flex h-13 shrink-0 items-center gap-3 border-b border-border px-4 lg:px-6', phone.phone && phone.ownTitle && 'hidden']}>
-			<span class={['lg:hidden', phone.phone && phone.tabs && 'hidden']}><IconButton icon={Menu} label={m.shell_open_nav()} variant="ghost" onclick={() => (drawerOpen = true)} /></span>
+			<span class={['lg:hidden', phone.phone && phone.tabs && !phone.drawer && 'hidden']}><IconButton icon={Menu} label={m.shell_open_nav()} variant="ghost" onclick={() => (drawerOpen = true)} /></span>
 			<div class="min-w-0 flex-1">{@render topbar?.()}</div>
 		</header>
 		<div class="flex min-h-0 flex-1">
@@ -58,7 +80,8 @@
 		use:drawer
 		aria-label={m.shell_nav_drawer()}
 		onclose={() => (drawerOpen = false)}
-		class="m-0 h-dvh max-h-none w-auto bg-bg p-0 text-text backdrop:bg-overlay"
+		class="fixed inset-y-0 left-0 m-0 h-dvh max-h-none w-auto border-r border-border bg-bg p-0 text-text outline-none overscroll-contain backdrop:bg-overlay pb-safe"
+		style="height: var(--viewport-height, 100dvh); max-width: 85vw; padding-top: env(safe-area-inset-top, 0px);"
 	>
 		{@render sidebar()}
 	</dialog>

@@ -10,7 +10,7 @@
 	let { projectbar, chat, children, view = $bindable('chat') }: Props = $props();
 </script>
 
-<div class="flex h-dvh w-full flex-col overflow-hidden bg-bg text-text">
+<div class="flex h-dvh w-full flex-col overflow-hidden bg-bg text-text" style="height: var(--viewport-height, 100dvh);">
 	<header class="flex h-13 shrink-0 items-center gap-3 border-b border-border px-4">{@render projectbar()}</header>
 	<div class="flex justify-center border-b border-border p-2 lg:hidden">
 		<Segmented

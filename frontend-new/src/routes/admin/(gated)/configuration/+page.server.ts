@@ -34,14 +34,14 @@ export const actions: Actions = {
 		return { action: 'save', ok: true as const, data: { section: read.section } };
 	},
 
-	/** Storage tests what's typed (with the saved secret when it's left empty); Xendit tests what's saved. */
+	/** Storage tests what's typed (with the saved secret when it's left empty); Xendit and DOKU test what's saved. */
 	test: async (event) => {
 		const read = sectionValues(await event.request.formData());
-		if (read?.section !== 'storage' && read?.section !== 'xendit') return refuse('test', m.admin_config_section_invalid(), { section: read?.section ?? '' });
+		if (read?.section !== 'storage' && read?.section !== 'xendit' && read?.section !== 'doku') return refuse('test', m.admin_config_section_invalid(), { section: read?.section ?? '' });
 		const tested =
 			read.section === 'storage'
 				? await send<TestResult>(event, '/api/admin/configuration/storage/test', 'POST', { values: read.values })
-				: await send<TestResult>(event, '/api/admin/payment/xendit/test', 'POST');
+				: await send<TestResult>(event, `/api/admin/payment/${read.section}/test`, 'POST');
 		if (!tested.ok) return failed('test', read.section, tested.problem);
 		return { action: 'test', ok: true as const, data: { section: read.section, ...tested.data } };
 	},

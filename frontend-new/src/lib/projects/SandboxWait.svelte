@@ -4,11 +4,13 @@
 	import Button from '$lib/ds/actions/Button.svelte';
 	import EmptyState from '$lib/ds/lists/EmptyState.svelte';
 	import { latestLine, type SandboxPhase } from './sandbox';
+	import UseDevice from './UseDevice.svelte';
 
 	// The preview pane while the sandbox isn't serving the app yet (Code, terminal & phone preview
 	// uR6dq): what it's waiting for and, while it wakes or starts the app, the last thing it printed.
 	// The app itself is framed only once the sandbox answers with its address.
-	let { phase, log, error, onretry }: { phase: SandboxPhase; log: string; error: string | null; onretry: () => void } = $props();
+	// When it failed or stopped, `device` offers to run the app on this device instead.
+	let { phase, log, error, onretry, device }: { phase: SandboxPhase; log: string; error: string | null; onretry: () => void; device?: { href: string; onclick?: () => void } } = $props();
 
 	const progress = $derived(phase === 'waking' || phase === 'starting' ? latestLine(log) : null);
 </script>
@@ -29,4 +31,5 @@
 		<p data-progress class="max-w-full truncate font-mono text-label text-text-2" aria-live="polite">{progress}</p>
 	{/if}
 	{#if phase === 'failed' || phase === 'stopped'}<Button variant="secondary" label={m.sandbox_start_again()} onclick={onretry} />{/if}
+	{#if device && (phase === 'failed' || phase === 'stopped')}<UseDevice href={device.href} onclick={device.onclick} />{/if}
 </div>

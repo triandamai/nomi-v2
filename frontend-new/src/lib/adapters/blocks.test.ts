@@ -78,4 +78,22 @@ describe('reply blocks', () => {
 	it('leaves out what the thread already handles: thinking, failures, quota and follow-ups', () => {
 		expect(kinds(reply([{ kind: 'reasoning', text: '…' }, { kind: 'run_failed' }, { kind: 'quota_notice', reason: 'x' }, { kind: 'suggestions', items: ['x'] }]))).toEqual([]);
 	});
+
+	it('turns a crew member’s to-do list into a card, each item done, in progress or waiting (issue #335)', () => {
+		const [block] = replyBlocks(
+			reply([{ kind: 'todo_list', items: [{ id: '1', text: 'Configure package.json', status: 'in_progress' }, { id: '2', text: 'Set up Relay schema', status: 'pending' }, { id: '3', text: 'Plan the pages', status: 'done' }, { id: '4', text: ' ', status: 'pending' }] }], { agent_display_name: 'Koda' }),
+			{ language: 'en' },
+		);
+		expect(block).toEqual({
+			kind: 'todo',
+			key: expect.any(String),
+			agent: 'koda',
+			items: [
+				{ text: 'Configure package.json', state: 'running' },
+				{ text: 'Set up Relay schema', state: 'waiting' },
+				{ text: 'Plan the pages', state: 'done' },
+			],
+		});
+		expect(kinds(reply([{ kind: 'todo_list', items: [] }]))).toEqual([]);
+	});
 });

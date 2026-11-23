@@ -380,7 +380,10 @@ leaves out what v2 or the backend can't do yet, rather than draw it dead:
   of the bar.
 - The sidebar's collapse button: the shell has no collapsed layout yet.
 - The account menu's "Help & docs" (Nomi has no help site to open) and What's new's "new" dot
-  (there are no release notes to be new); What's new shows the version, as drawn.
+  (the notes open on their own once per version instead); What's new shows the version, as drawn,
+  and opens the running version's release notes (`ReleaseNotesDialog`, which the pen doesn't draw):
+  the GitHub releases of the build's own environment (a `-staging` tag is staging's), which
+  `release.yml` and `staging.yml` read and bake into the image as `RELEASE_NOTES`.
 - The workspace switcher's invited workspace with "Join" (the API doesn't list a person's pending
   invites) and its PERSONAL tag (the API doesn't say which workspace is personal; web sign-ups
   make a named one): both in BACKEND_TODO.md. The tiles take the pen's plain, teal and amber in
@@ -409,7 +412,9 @@ leaves out what v2 or the backend can't do yet, rather than draw it dead:
   nav's own groups (Account, AI, Workspace; the pen was changed to match) and Log out. A row shows a
   value only where the shell already knows it (the crew's size, how many workspaces), so Models,
   Memory and Connections show none rather than load for it. A settings page opened from You keeps
-  the tab bar and gets a back link to You before "Settings › Page".
+  the tab bar and gets a back link to You before "Settings › Page"; You is where a phone reaches
+  Settings' pages and Log out, so it has no drawer. Each of the three keeps the theme button the
+  phone's other tops have (`ThemePickerButton`).
 - A chat on a phone (Mobile Chat — Start & answer, steps 2–7) is the pen's: the nav bar
   (`PhoneChatNavBar`: back to Chats, the title, who answers with their 20 mascot, "· thinking" while
   they work, and More for the chat's sheet, "N messages · Dana": Rename, Pin to top, Move to a
@@ -550,6 +555,25 @@ leaves out what v2 or the backend can't do yet, rather than draw it dead:
   offline (the desktop has none either), Koda checking an app that's down from its own flow, and
   Import from GitHub (BACKEND_TODO.md). The sort isn't saved per workspace (the pen's "Saved for Trian's space"):
   nothing keeps it. The Workspaces sheet's "Join" for an invitation waits for that flow.
+- The landing page (`/welcome`, Figma: Nomi Builder → 05 Marketing → "Landing v2 · Playful (ID)" 170:2766;
+  work item `docs/ux/work/landing`) is drawn in the marketing design system, not Nomi.pen: its values live
+  in `src/lib/landing/landing.css` under `[data-landing]` (Figma's variables), its components in
+  `src/lib/landing/` with scoped styles, and its mascots are the app's own (`LandingMascot`
+  hosts `Mascot`: the agent shapes, live with open-bot-avatar, drawn at 96 and filled to the page's
+  sizes), not the design's flat drawings, so the page shows the crew people meet in v2. Its body copy is Geist (the design's Inter isn't shipped) and
+  its buttons keep the design's uppercase labels. Every section but the waitlist is built: the nav, the
+  hero, How it works, the crew, Own everything, the FAQ, the closing call and the footer, with the
+  design's motion played once (the hops and floats loop; reduced motion stops all of it). Both composers
+  and the FAQ's "Ask Nomi yourself" post to sign in, then a new chat with the words in it
+  (`/chat/new?q=`). The FAQ, the closing call and the footer are built from their layers' metadata and the
+  page's render (the Figma MCP's call limit stopped their design context), to check again when it can be
+  read. Changed to what Nomi does: an export holds the code and its data tables (not "its change
+  history"); the offline line (Ollama or LM Studio) is left out (Nomi connects Ollama Cloud only); the
+  FAQ's answers after the first, which the design doesn't write, say what the product does; the footer
+  links only what has a page (Cara kerja, Kru, Tanya-tanya: not Harga, Template, Panduan, Status or the
+  Nomi Labs column) and its languages switch the page. The waitlist is left out (BACKEND_TODO.md). The
+  dark (170:3097) and 390 (170:3425) frames wait for their design to be read; until then the page is
+  light, and narrower screens reflow the desktop layout.
 - The crew column lists every agent the backend has, so eleven: Iris (the inspector), whom the pen
   doesn't draw, shows her initial in place of a mascot.
 

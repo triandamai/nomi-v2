@@ -40,6 +40,7 @@
 	import { clock } from './dates';
 	import { callJson } from './client';
 	import PlanBlock from './PlanBlock.svelte';
+	import PlanCard from '$lib/ds/chat/PlanCard.svelte';
 	import type { PhoneFlows } from './phoneFlows.svelte';
 
 	// What a reply carries beyond its text, drawn with the design system's cards (Chat responses:
@@ -284,6 +285,8 @@
 		/>
 	{:else if block.kind === 'plan'}
 		<PlanBlock {api} agentSessionId={block.agentSessionId} planId={block.planId} title={block.title} agent={'rena' as CrewId} name={agentName} {working} onstop={() => onsend('stop')} {phone} {flows} {messageId} />
+	{:else if block.kind === 'todo'}
+		<PlanCard subject={m.todo_subject()} steps={block.items.map((item) => ({ label: item.text, state: item.state, owner: { agent: block.agent, name: agentName } }))} />
 	{:else if block.kind === 'table'}
 		<DataTable title={block.title} columns={block.columns} rows={block.rows} source={block.source} />
 	{:else if block.kind === 'decision'}

@@ -235,9 +235,40 @@
 	-webkit-touch-callout: none;
 }
 
+/* A loading placeholder's block: a light band sweeps across it, in the theme's own surfaces, so the
+   person sees it's on its way. Reduced motion keeps the still block. */
+@utility shimmer {
+	background-color: var(--nm-surface-2);
+	background-image: linear-gradient(90deg, transparent 0%, var(--nm-surface) 50%, transparent 100%);
+	background-size: 200% 100%;
+	background-repeat: no-repeat;
+	animation: nm-shimmer 1.4s ease-in-out infinite;
+	@media (prefers-reduced-motion: reduce) {
+		animation: none;
+		background-image: none;
+	}
+}
+
+@keyframes nm-shimmer {
+	from {
+		background-position: 150% 0;
+	}
+	to {
+		background-position: -50% 0;
+	}
+}
+
 @layer base {
+	:root {
+		--viewport-height: 100dvh;
+		--viewport-top: 0px;
+	}
+
 	html {
 		background: var(--nm-bg);
+		overscroll-behavior: none;
+		height: 100%;
+		overflow: hidden;
 	}
 
 	/* A [data-theme] subtree takes its own text colour, like the page does. */
@@ -254,6 +285,9 @@
 		line-height: 17px;
 		-webkit-font-smoothing: antialiased;
 		-moz-osx-font-smoothing: grayscale;
+		overscroll-behavior: none;
+		height: 100%;
+		overflow: hidden;
 	}
 
 	*,

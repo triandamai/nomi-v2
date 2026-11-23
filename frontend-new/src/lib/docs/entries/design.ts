@@ -7,15 +7,15 @@ export default [
 	{
 		file: 'design/DesignCanvas.svelte',
 		summary:
-			"The Design Studio's spatial workspace: 2D pan-and-zoom canvas showing style-tile directions, design system artboards, flow screens, direct click-to-pin feedback, and approval handoff.",
+			"The Design Studio's canvas: Sora's .pen design drawn as vector frames (older HTML versions as framed pages), with Move, Select and Comment tools, feedback pins, and approval.",
 		use: [
 			'In the chat design studio pane or full design preview page.',
 			'To explore visual directions and give pin-point element feedback before code generation.'
 		],
 		avoid: ['In the live code editor: use projects/ProjectWorkspace.svelte.'],
 		dos: [
-			'Keep zoom controls, device switchers, and stage filters accessible at all times.',
-			'Allow seamless switching between native OpenPencil vector rendering and responsive HTML artboards.'
+			'Keep the floating tool bar (Move H, Select V, Comment C, zoom, Fit, Layers) reachable at all times.',
+			'Draw a version from its own .pen files; frame only HTML pages.'
 		],
 		donts: ['Block navigation or canvas panning when clicking outside interactive targets.'],
 		accessibility: [
@@ -29,10 +29,10 @@ export default [
 		summary:
 			'Native 60fps vector design canvas powered by the OpenPencil scene-graph engine with variable token inspection, design linting, and SVG export.',
 		use: [
-			'Inside DesignCanvas when OpenPencil vector mode is enabled.',
+			'Inside DesignCanvas for every .pen version and for the proposed directions.',
 			'For inspecting design tokens, typography styles, and element bounding boxes directly on the canvas.'
 		],
-		avoid: ['When testing active HTML interactions and browser forms: switch to responsive HTML frame mode.'],
+		avoid: ['For an older HTML-only version: DesignCanvas frames its pages instead.'],
 		dos: [
 			'Render tokens and linter issues in the collapsible inspector sheet.',
 			'Support one-click SVG export for design system artboards.'

@@ -2,12 +2,13 @@ import { isRedirect, redirect } from '@sveltejs/kit';
 import { SIGN_IN_PATH } from '$lib/server/api';
 import { getMaintenance } from '$lib/server/maintenance';
 import { loadShell } from '$lib/server/shell';
+import { loadReleaseNotes } from '$lib/server/releaseNotes';
 import { looksLikePhone } from '$lib/phone';
 import type { LayoutServerLoad } from './$types';
 
 /**
  * The signed-in app around every page: everyone waits on the maintenance page while Nomi is down,
- * a signed-out visitor signs in and comes back here, and everyone else gets the shell's data.
+ * a signed-out visitor at the bare root gets the landing page and anywhere else signs in and comes back, and everyone else gets the shell's data.
  * `invalidate('app:shell')` reloads it (a workspace picked, a chat that moved on elsewhere).
  */
 export const load: LayoutServerLoad = async ({ locals, cookies, fetch, url, request, depends, untrack }) => {
@@ -17,12 +18,15 @@ export const load: LayoutServerLoad = async ({ locals, cookies, fetch, url, requ
 	// Read without tracking: the shell doesn't reload on every navigation, only when invalidated.
 	const here = untrack(() => url.pathname + url.search);
 	const signIn = `${SIGN_IN_PATH}?redirect_to=${encodeURIComponent(here)}`;
-	if (!locals.accessToken) redirect(303, signIn);
+	// A visitor at the bare front door gets the landing page (as nomi.build's old app does); anyone
+	// signed out going somewhere in particular (a deep link, an email's /?from=…) signs in first.
+	if (!locals.accessToken) redirect(303, here === '/' ? '/welcome' : signIn);
 
 	try {
 		const userAgent = request.headers.get('user-agent') ?? '';
 		// The phone's own screens on the first paint (lib/phone.ts); the page then follows the width.
-		return { ...(await loadShell({ fetch, cookies, locals, userAgent })), phone: looksLikePhone(userAgent, request.headers.get('sec-ch-ua-mobile')) };
+		const [shell, releaseNotes] = await Promise.all([loadShell({ fetch, cookies, locals, userAgent }), loadReleaseNotes()]);
+		return { ...shell, releaseNotes, phone: looksLikePhone(userAgent, request.headers.get('sec-ch-ua-mobile')) };
 	} catch (error) {
 		// The sign-in couldn't be renewed: sign in again and come back to this page.
 		if (isRedirect(error) && error.location === SIGN_IN_PATH) redirect(303, signIn);

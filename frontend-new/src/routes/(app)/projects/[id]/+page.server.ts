@@ -4,8 +4,9 @@ import { loadChatPage } from '$lib/server/chatPage';
 import { loadStudio } from '$lib/server/designStudio';
 import * as tools from '$lib/server/workspace';
 import { changeDomain, loadDeploy, loadDomain, loadProject, publish, rollBack, takeDown, transfer } from '$lib/server/workspace';
-import { deleteProject } from '$lib/server/projects';
+import { deleteProject, renameProject } from '$lib/server/projects';
 import { usesSandbox } from '$lib/projects/sandbox';
+import { DEVICE_PARAM, DEVICE_VALUE } from '$lib/projects/device';
 import { sealPreview } from '$lib/server/previewGrant';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -35,7 +36,8 @@ export const load: PageServerLoad = async (event) => {
 	// A static site shows its own files, sandboxed, through a grant made for this page (previewGrant.ts).
 	const token = event.locals.accessToken;
 	const preview = loaded.project.stack === 'static' && loaded.project.files.some((file) => file.path === 'index.html') && token ? `/projects/${id}/preview/~${sealPreview(id, token)}/` : null;
-	return { ...chat, preview, title: loaded.project.name, project: loaded.project, live: loaded.live, domain: loaded.domain, deploy, address, people, secrets, showcase, sandbox: usesSandbox(sandbox), database, ownDomains, design: designLoaded.studio };
+	// Only `run` is read from the address (not the path): reading more would run this whole load again on every `?open=` tidy.
+	return { ...chat, preview, title: loaded.project.name, project: loaded.project, live: loaded.live, domain: loaded.domain, deploy, address, people, secrets, showcase, sandbox: usesSandbox(sandbox), deviceRun: event.url.searchParams.get(DEVICE_PARAM) === DEVICE_VALUE, database, ownDomains, design: designLoaded.studio };
 };
 
 const refused = (sent: { status: number; message: string }) => fail(sent.status, { message: sent.message || m.action_failed() });
@@ -80,6 +82,13 @@ export const actions: Actions = {
 		const changed = await changeDomain(event, event.params.id, name);
 		if (changed.ok) return { url: changed.url };
 		return fail(changed.status, { message: changed.message || m.action_failed(), suggestions: changed.answer?.suggestions ?? [] });
+	},
+	/** Renames the project (builders only). */
+	rename: async (event) => {
+		const name = String((await event.request.formData()).get('name') ?? '').trim();
+		if (!name) return fail(400, { message: m.domain_name_needed() });
+		const sent = await renameProject(event, event.params.id, name);
+		return sent.ok ? { renamed: name } : refused(sent);
 	},
 	/** Gives the project to another workspace; the name, typed, confirms it. */
 	transfer: async (event) => {

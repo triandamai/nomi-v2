@@ -14,6 +14,7 @@
 	import TodayStrip, { type TodayColumnProps } from '$lib/ds/thread/TodayStrip.svelte';
 	import { AlarmClock, Inbox, ListChecks, SquarePen } from '@lucide/svelte';
 	import Fab from '$lib/ds/chrome/Fab.svelte';
+	import ThemePickerButton from '$lib/ds/chrome/ThemePickerButton.svelte';
 	import { getLocale } from '$lib/paraglide/runtime';
 	import { phoneView } from '$lib/phone.svelte';
 	import PhoneAskCard from '$lib/ds/thread/PhoneAskCard.svelte';
@@ -113,9 +114,12 @@
 
 {#if phone.current}
 	<div class="-mx-4 -mt-6 flex flex-col pb-24">
-		<div class="flex flex-col gap-1 px-5 pt-1.5 pb-3.5">
-			<p class="font-mono text-label tracking-label text-text-3 uppercase">{today}</p>
-			<h1 class="text-phone-large font-semibold tracking-phone-large text-text">{title}</h1>
+		<div class="flex items-start gap-3 px-5 pt-1.5 pb-3.5">
+			<div class="flex min-w-0 flex-1 flex-col gap-1">
+				<p class="font-mono text-label tracking-label text-text-3 uppercase">{today}</p>
+				<h1 class="text-phone-large font-semibold tracking-phone-large text-text">{title}</h1>
+			</div>
+			<ThemePickerButton />
 		</div>
 		<div class="px-4 pb-4.5">
 			<PhoneAskCard

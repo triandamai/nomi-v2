@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { RenderedMessage } from '$lib/adapters/api';
-import { threadEntries, turnDuration } from './thread';
+import { repeatsCard, threadEntries, turnDuration } from './thread';
 
 let clock = 0;
 function msg(partial: Partial<RenderedMessage> & { at?: string }): RenderedMessage {
@@ -75,3 +75,62 @@ describe('turnDuration', () => {
 		expect(turnDuration('2026-10-21T07:00:00Z', '2026-10-21T07:00:00.100Z')).toBe('0s');
 	});
 });
+
+describe('action cards', () => {
+	const decision = {
+		kind: 'view',
+		view: 'decision',
+		question: 'Which direction should we take?',
+		options: [
+			{ label: 'Lean Operator', detail: 'Clean fintech', recommended: true },
+			{ label: 'Studio Craft', detail: 'Warm editorial' },
+			{ label: 'Dark Velocity', detail: 'High-contrast dark' },
+		],
+	};
+	const card = (content: string) => msg({ agent_display_name: 'Sora', content, content_blocks: [decision] });
+
+	it('draws a card under the text the same crew member says after it', () => {
+		const user = msg({ sender: 'user', agent_display_name: null });
+		const thinking = msg({ agent_display_name: 'Sora', content: '', content_blocks: [{ kind: 'reasoning', text: 'Three looks.' }] });
+		const shown = card('');
+		const reply = msg({ agent_display_name: 'Sora', content: 'Here are three looks for FlowBudget; I would take the first.' });
+		const entries = threadEntries([user, thinking, shown, reply], options);
+		expect(entries.map((entry) => entry.type)).toEqual(['day', 'user', 'reply']);
+		expect(entries[2]).toMatchObject({ message: reply, cards: [shown], quiet: false, reasoning: ['Three looks.'] });
+	});
+
+	it('drops text that only repeats the options on the card', () => {
+		const user = msg({ sender: 'user', agent_display_name: null });
+		const shown = card('Directions saved as version 1: Lean Operator (lean-operator), Studio Craft (studio-craft), Dark Velocity (dark-velocity).');
+		const reply = msg({ agent_display_name: 'Sora', content: '- **Lean Operator** (Recommended)\n- **Studio  craft**: warm\n- **Dark Velocity**: dark\n\nWhich one?' });
+		const entries = threadEntries([user, shown, reply], options);
+		expect(entries[2]).toMatchObject({ message: reply, cards: [shown], quiet: true });
+	});
+
+	it('keeps a card in place when no text follows it in the turn', () => {
+		const user = msg({ sender: 'user', agent_display_name: null });
+		const shown = card('');
+		const other = msg({ agent_display_name: 'Nomi', content: 'Sora is on it.' });
+		const next = msg({ sender: 'user', agent_display_name: null });
+		const late = msg({ agent_display_name: 'Sora', content: 'Later.' });
+		const entries = threadEntries([user, shown, other, next, late], options);
+		expect(entries.filter((entry) => entry.type === 'reply').map((entry) => entry.type === 'reply' && entry.message.id)).toEqual([shown.id, other.id, late.id]);
+		expect(entries[2]).toMatchObject({ message: shown, quiet: false, cards: [] });
+	});
+
+	it('only calls text a repeat when it names every option', () => {
+		expect(repeatsCard('Lean Operator and Studio Craft', [card('')])).toBe(false);
+		expect(repeatsCard('lean operator, studio craft or dark velocity?', [card('')])).toBe(true);
+		expect(repeatsCard('Approve it?', [msg({ content_blocks: [{ kind: 'approval_request', id: 'a', status: 'pending' }] })])).toBe(false);
+	});
+});
+
+describe('a to-do list reply', () => {
+	it('draws only the card, not its fallback text (issue #335)', () => {
+		const todo = msg({ agent_display_name: 'Koda', content: '📋 To-do list:\n[~] Configure package.json\n[ ] Set up Relay schema\n', content_blocks: [{ kind: 'todo_list', items: [{ id: '1', text: 'Configure package.json', status: 'in_progress' }] }] as never });
+		const entries = threadEntries([msg({ sender: 'user', content: 'Build it' }), todo], options);
+		const reply = entries.find((entry) => entry.type === 'reply');
+		expect(reply?.type === 'reply' && reply.quiet).toBe(true);
+	});
+});
+

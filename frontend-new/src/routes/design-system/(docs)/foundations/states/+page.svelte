@@ -102,7 +102,7 @@
 
 	<DocSection title="Four states, shipped together" lede="Empty, loading, error and populated are designed and built at the same time, never one later.">
 		<p>
-			An empty list says so plainly, with the one thing to do about it. A loading list says what it is loading and stays still: no shimmer. An
+			An empty list says so plainly, with the one thing to do about it. A loading list says what it is loading, its blocks shimmering (still with reduced motion). An
 			error says what went wrong and what to do. Only then the populated list.
 		</p>
 		<Example title="One of each" description="The real components, with the Nomi sheet's copy." align="start">
@@ -169,7 +169,7 @@
 				'Progress bars that creep toward 90%.',
 				'More than one spinner, or a spinner that ignores reduced motion.',
 				'A guessed cost on a failed call.',
-				'Shimmering skeletons, or an error with no reason and no next move.',
+				'A skeleton that never says what is loading, or an error with no reason and no next move.',
 			]}
 		/>
 	</DocSection>

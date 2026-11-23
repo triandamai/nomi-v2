@@ -278,7 +278,7 @@ mod tests {
     #[test]
     fn soras_own_tools_are_directions_previews_and_the_persons_connected_tools() {
         let names: Vec<String> = DesignAgent::new().tools().into_iter().map(|t| t.name).collect();
-        assert_eq!(names, [tools::PROPOSE_DIRECTIONS, tools::SAVE_PREVIEW, tools::READ_PREVIEW, tools::CREATE_HANDOFF, tools::REVIEW_BUILD, tools::LIST_CONNECTED_TOOLS, tools::USE_CONNECTED_TOOL]);
+        assert_eq!(names, [tools::PROPOSE_DIRECTIONS, tools::SAVE_PREVIEW, tools::READ_PREVIEW, tools::APPROVE_VERSION, tools::CREATE_HANDOFF, tools::REVIEW_BUILD, tools::LIST_CONNECTED_TOOLS, tools::USE_CONNECTED_TOOL]);
     }
 
     #[test]
@@ -410,12 +410,14 @@ mod tests {
         let sora = DesignAgent::new();
         let prompt = sora.system_prompt();
         assert!(prompt.contains("Only the person approves") && prompt.contains("never say a design is approved"), "{prompt}");
-        assert!(!sora.tools().iter().any(|tool| tool.name.contains("approv")), "she has no tool that approves");
+        let approves: Vec<String> = sora.tools().into_iter().filter(|tool| tool.name.contains("approv")).map(|tool| tool.name).collect();
+        assert_eq!(approves, [tools::APPROVE_VERSION], "her one approving tool records what the person said in the chat");
+        assert!(prompt.contains("approve_version"), "she records an approval given in the chat");
         let approval = nomi_agent_core::design_approval::Approval { version: 2, note: None, user_id: Uuid::nil(), created_at: chrono::DateTime::<chrono::Utc>::UNIX_EPOCH };
         let context = approval_context(&approval, 3);
         assert!(context.starts_with("# Approved design\nThe person approved version 2"), "{context}");
         assert!(context.contains("Version 3 is newer and not approved"));
-        assert_eq!(NOT_APPROVED, "No version of the design is approved yet: the person approves one in the Design Studio.");
+        assert!(NOT_APPROVED.starts_with("No version of the design is approved yet") && NOT_APPROVED.contains("approve_version"));
     }
 
     #[test]

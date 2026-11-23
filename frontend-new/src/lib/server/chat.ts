@@ -1,5 +1,6 @@
 import { isRedirect } from '@sveltejs/kit';
 import type {
+	AgentStatus,
 	HomeSummary,
 	MessageItem,
 	MessageVersion,
@@ -306,7 +307,7 @@ export async function agentPlans(event: ApiEvent, sessionId: string, agentSessio
 }
 
 /** Who of the crew is working in a chat now (the latest active session), or null. */
-export async function agentStatus(event: ApiEvent, sessionId: string): Promise<Outcome<unknown>> {
+export async function agentStatus(event: ApiEvent, sessionId: string): Promise<Outcome<AgentStatus | null>> {
 	return outcome(await call(event, `/api/sessions/${sessionId}/agent-status`), (response) => response.json());
 }
 

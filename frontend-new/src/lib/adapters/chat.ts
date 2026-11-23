@@ -21,6 +21,18 @@ export function crewIdOf(name: string | null | undefined): CrewId {
 	return (name && BY_NAME.get(name.trim().toLowerCase())) || 'nomi';
 }
 
+/**
+ * Who a plan step is for: the crew member it names at its end ("Build the booking page (Koda)"),
+ * that name taken off the label; else whoever made the plan. The backend doesn't assign steps, so
+ * the plan's author used to stand on every one of them (issue #334).
+ */
+export function stepOwner(label: string, author: string): { label: string; agent: CrewId; name: string } {
+	const named = /^(.*\S)\s*\(([^()]+)\)\s*$/.exec(label);
+	const id = named ? BY_NAME.get(named[2].trim().toLowerCase()) : undefined;
+	if (named && id) return { label: named[1], agent: id, name: CREW.find((member) => member.id === id)?.name ?? named[2].trim() };
+	return { label, agent: crewIdOf(author), name: author };
+}
+
 export type Starter = { agent: CrewId; label: string; route: string; text: string };
 
 /** The blank chat's starters (App / Home → Suggestions Ce004), each routed to who owns it. */

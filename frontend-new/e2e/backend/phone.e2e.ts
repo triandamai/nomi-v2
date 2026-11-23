@@ -64,6 +64,25 @@ test('a phone has the tab bar, and Chats as the pen draws it: large title, rows,
 	await expect(page).toHaveURL(/\/settings$/);
 });
 
+test('You holds the settings pages and Log out: a page opened from it goes back to it', async ({ page, context }) => {
+	const account = await createAccount();
+	await signInAs(context, account);
+
+	await page.goto('/settings/profile', { waitUntil: 'networkidle' });
+	await expect(page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'You' })).toHaveAttribute('aria-current', 'page');
+	// No drawer: You is the way to the rest of Settings.
+	await expect(page.getByRole('button', { name: 'Open navigation' })).toHaveCount(0);
+	await page.getByRole('link', { name: 'Back to You' }).click();
+	await expect(page).toHaveURL(/\/settings$/);
+	await page.getByRole('region', { name: 'Account' }).getByRole('link', { name: /General/ }).click();
+	await expect(page).toHaveURL(/\/settings\/general$/);
+
+	await page.getByRole('link', { name: 'Back to You' }).click();
+	await page.getByRole('button', { name: 'Log out' }).click();
+	await expect(page).toHaveURL(/\/sign-in$/);
+	expect((await context.cookies()).map((cookie) => cookie.name)).not.toContain('refresh_token');
+});
+
 test.describe('on a desktop', () => {
 	test.use({ viewport: { width: 1512, height: 862 }, userAgent: undefined, hasTouch: false });
 	test('there is no tab bar, and Chats is the desktop list', async ({ page, context }) => {
