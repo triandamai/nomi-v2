@@ -75,7 +75,7 @@
 <svelte:head><title>{m.app_name()}</title></svelte:head>
 
 <!-- The shell pads the column 32 top and bottom; the pen's bottom is 48. -->
-<div class="flex min-h-full flex-col justify-center gap-8 lg:pb-4">
+<div class="my-auto flex min-h-full flex-col gap-8 lg:pb-4">
 	<Greeting {title} intro={m.home_intro()} />
 	<ChatComposer
 		bind:value={draft}

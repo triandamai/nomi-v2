@@ -59,7 +59,7 @@ describe('initViewport browser', () => {
 		expect(mockVV.removeEventListener).toHaveBeenCalledWith('scroll', expect.any(Function));
 	});
 
-	it('resets window scroll if scrollY > 0', () => {
+	it('resets window scroll on focusin if scrollY > 0', () => {
 		const scrollToSpy = vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
 
 		Object.defineProperty(window, 'scrollY', {
@@ -69,6 +69,8 @@ describe('initViewport browser', () => {
 		});
 
 		const cleanup = initViewport();
+
+		window.dispatchEvent(new Event('focusin'));
 
 		expect(scrollToSpy).toHaveBeenCalledWith(0, 0);
 

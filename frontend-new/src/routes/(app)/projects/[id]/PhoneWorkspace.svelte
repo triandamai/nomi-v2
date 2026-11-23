@@ -324,7 +324,7 @@
 			<ChatView {data} pane quote={ws.quote} onunquote={() => (ws.quote = null)} onactivity={() => void ws.loadQueue()} after={together} />
 		</div>
 		{#if tab === 'preview'}
-			<div class="relative min-h-0 flex-1 overflow-hidden">
+			<div class="relative flex min-h-0 flex-1 flex-col overflow-hidden">
 				{#if ws.frame}
 					<div class="flex h-full flex-col">
 						<PhonePreviewBar
