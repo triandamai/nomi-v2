@@ -41,9 +41,22 @@ export function initViewport(): () => void {
 	};
 	window.addEventListener('orientationchange', onOrientationChange);
 
-	const onFocus = () => {
-		if (window.scrollY !== 0 || window.scrollX !== 0) {
-			window.scrollTo(0, 0);
+	const onFocus = (event: Event) => {
+		const target = event.target as HTMLElement | null;
+		const isEditable =
+			target instanceof HTMLInputElement ||
+			target instanceof HTMLTextAreaElement ||
+			Boolean(target?.isContentEditable);
+		const isDocumentScrollable = document.documentElement.scrollHeight > window.innerHeight + 50;
+		if (
+			isEditable &&
+			!isDocumentScrollable &&
+			window.visualViewport &&
+			window.visualViewport.height < window.innerHeight
+		) {
+			if (window.scrollY !== 0 || window.scrollX !== 0) {
+				window.scrollTo(0, 0);
+			}
 		}
 		requestAnimationFrame(update);
 		setTimeout(update, 50);
