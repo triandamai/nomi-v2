@@ -1,0 +1,1402 @@
+{
+  "agents": {
+    "chitchat": {
+      "engine": {
+        "all_ready": [
+          "complete_task",
+          "delegate_to_agent",
+          "show",
+          "rename_chat",
+          "run_background_task",
+          "list_background_tasks",
+          "cancel_background_task",
+          "ask_agent",
+          "post_crew_note",
+          "ask_user",
+          "create_reminder",
+          "list_reminders",
+          "cancel_reminder",
+          "find_tools",
+          "create_agent",
+          "web_search",
+          "read_web_page",
+          "speak",
+          "read_attachment"
+        ],
+        "nothing_ready": [
+          "complete_task",
+          "delegate_to_agent",
+          "show",
+          "rename_chat",
+          "run_background_task",
+          "list_background_tasks",
+          "cancel_background_task",
+          "ask_agent",
+          "post_crew_note",
+          "ask_user",
+          "create_reminder",
+          "list_reminders",
+          "cancel_reminder",
+          "find_tools",
+          "create_agent",
+          "read_web_page"
+        ],
+        "voice_off": [
+          "complete_task",
+          "delegate_to_agent",
+          "show",
+          "rename_chat",
+          "run_background_task",
+          "list_background_tasks",
+          "cancel_background_task",
+          "ask_agent",
+          "post_crew_note",
+          "ask_user",
+          "create_reminder",
+          "list_reminders",
+          "cancel_reminder",
+          "find_tools",
+          "create_agent",
+          "web_search",
+          "read_web_page",
+          "read_attachment"
+        ],
+        "web_search_off": [
+          "complete_task",
+          "delegate_to_agent",
+          "show",
+          "rename_chat",
+          "run_background_task",
+          "list_background_tasks",
+          "cancel_background_task",
+          "ask_agent",
+          "post_crew_note",
+          "ask_user",
+          "create_reminder",
+          "list_reminders",
+          "cancel_reminder",
+          "find_tools",
+          "create_agent",
+          "read_web_page",
+          "speak",
+          "read_attachment"
+        ]
+      },
+      "own": []
+    },
+    "coding": {
+      "engine": {
+        "all_ready": [
+          "complete_task",
+          "show",
+          "rename_chat",
+          "run_background_task",
+          "list_background_tasks",
+          "cancel_background_task",
+          "ask_agent",
+          "post_crew_note",
+          "update_todos",
+          "write_plan",
+          "ask_user",
+          "read_plan",
+          "find_tools",
+          "web_search",
+          "read_web_page",
+          "speak",
+          "read_attachment"
+        ],
+        "nothing_ready": [
+          "complete_task",
+          "show",
+          "rename_chat",
+          "run_background_task",
+          "list_background_tasks",
+          "cancel_background_task",
+          "ask_agent",
+          "post_crew_note",
+          "update_todos",
+          "write_plan",
+          "ask_user",
+          "read_plan",
+          "find_tools",
+          "read_web_page"
+        ],
+        "voice_off": [
+          "complete_task",
+          "show",
+          "rename_chat",
+          "run_background_task",
+          "list_background_tasks",
+          "cancel_background_task",
+          "ask_agent",
+          "post_crew_note",
+          "update_todos",
+          "write_plan",
+          "ask_user",
+          "read_plan",
+          "find_tools",
+          "web_search",
+          "read_web_page",
+          "read_attachment"
+        ],
+        "web_search_off": [
+          "complete_task",
+          "show",
+          "rename_chat",
+          "run_background_task",
+          "list_background_tasks",
+          "cancel_background_task",
+          "ask_agent",
+          "post_crew_note",
+          "update_todos",
+          "write_plan",
+          "ask_user",
+          "read_plan",
+          "find_tools",
+          "read_web_page",
+          "speak",
+          "read_attachment"
+        ]
+      },
+      "own": [
+        "read_guide",
+        "list_files",
+        "read_file",
+        "search_files",
+        "write_files",
+        "write_file",
+        "add_attachment",
+        "edit_file",
+        "delete_file",
+        "run_command",
+        "publish_project"
+      ]
+    },
+    "design": {
+      "engine": {
+        "all_ready": [
+          "complete_task",
+          "delegate_to_agent",
+          "show",
+          "rename_chat",
+          "run_background_task",
+          "list_background_tasks",
+          "cancel_background_task",
+          "ask_agent",
+          "post_crew_note",
+          "update_todos",
+          "ask_user",
+          "read_plan",
+          "find_tools",
+          "web_search",
+          "read_web_page",
+          "speak",
+          "read_attachment"
+        ],
+        "nothing_ready": [
+          "complete_task",
+          "delegate_to_agent",
+          "show",
+          "rename_chat",
+          "run_background_task",
+          "list_background_tasks",
+          "cancel_background_task",
+          "ask_agent",
+          "post_crew_note",
+          "update_todos",
+          "ask_user",
+          "read_plan",
+          "find_tools",
+          "read_web_page"
+        ],
+        "voice_off": [
+          "complete_task",
+          "delegate_to_agent",
+          "show",
+          "rename_chat",
+          "run_background_task",
+          "list_background_tasks",
+          "cancel_background_task",
+          "ask_agent",
+          "post_crew_note",
+          "update_todos",
+          "ask_user",
+          "read_plan",
+          "find_tools",
+          "web_search",
+          "read_web_page",
+          "read_attachment"
+        ],
+        "web_search_off": [
+          "complete_task",
+          "delegate_to_agent",
+          "show",
+          "rename_chat",
+          "run_background_task",
+          "list_background_tasks",
+          "cancel_background_task",
+          "ask_agent",
+          "post_crew_note",
+          "update_todos",
+          "ask_user",
+          "read_plan",
+          "find_tools",
+          "read_web_page",
+          "speak",
+          "read_attachment"
+        ]
+      },
+      "own": [
+        "propose_directions",
+        "save_preview",
+        "read_preview",
+        "approve_version",
+        "create_handoff",
+        "review_build",
+        "list_connected_tools",
+        "use_connected_tool"
+      ]
+    },
+    "files": {
+      "engine": {
+        "all_ready": [
+          "complete_task",
+          "delegate_to_agent",
+          "show",
+          "rename_chat",
+          "run_background_task",
+          "list_background_tasks",
+          "cancel_background_task",
+          "ask_agent",
+          "post_crew_note",
+          "update_todos",
+          "ask_user",
+          "find_tools",
+          "web_search",
+          "read_web_page",
+          "speak",
+          "read_attachment"
+        ],
+        "nothing_ready": [
+          "complete_task",
+          "delegate_to_agent",
+          "show",
+          "rename_chat",
+          "run_background_task",
+          "list_background_tasks",
+          "cancel_background_task",
+          "ask_agent",
+          "post_crew_note",
+          "update_todos",
+          "ask_user",
+          "find_tools",
+          "read_web_page"
+        ],
+        "voice_off": [
+          "complete_task",
+          "delegate_to_agent",
+          "show",
+          "rename_chat",
+          "run_background_task",
+          "list_background_tasks",
+          "cancel_background_task",
+          "ask_agent",
+          "post_crew_note",
+          "update_todos",
+          "ask_user",
+          "find_tools",
+          "web_search",
+          "read_web_page",
+          "read_attachment"
+        ],
+        "web_search_off": [
+          "complete_task",
+          "delegate_to_agent",
+          "show",
+          "rename_chat",
+          "run_background_task",
+          "list_background_tasks",
+          "cancel_background_task",
+          "ask_agent",
+          "post_crew_note",
+          "update_todos",
+          "ask_user",
+          "find_tools",
+          "read_web_page",
+          "speak",
+          "read_attachment"
+        ]
+      },
+      "own": [
+        "make_file"
+      ]
+    },
+    "health": {
+      "engine": {
+        "all_ready": [
+          "complete_task",
+          "show",
+          "rename_chat",
+          "run_background_task",
+          "list_background_tasks",
+          "cancel_background_task",
+          "ask_agent",
+          "post_crew_note",
+          "ask_user",
+          "find_tools",
+          "web_search",
+          "read_web_page",
+          "speak",
+          "read_attachment"
+        ],
+        "nothing_ready": [
+          "complete_task",
+          "show",
+          "rename_chat",
+          "run_background_task",
+          "list_background_tasks",
+          "cancel_background_task",
+          "ask_agent",
+          "post_crew_note",
+          "ask_user",
+          "find_tools",
+          "read_web_page"
+        ],
+        "voice_off": [
+          "complete_task",
+          "show",
+          "rename_chat",
+          "run_background_task",
+          "list_background_tasks",
+          "cancel_background_task",
+          "ask_agent",
+          "post_crew_note",
+          "ask_user",
+          "find_tools",
+          "web_search",
+          "read_web_page",
+          "read_attachment"
+        ],
+        "web_search_off": [
+          "complete_task",
+          "show",
+          "rename_chat",
+          "run_background_task",
+          "list_background_tasks",
+          "cancel_background_task",
+          "ask_agent",
+          "post_crew_note",
+          "ask_user",
+          "find_tools",
+          "read_web_page",
+          "speak",
+          "read_attachment"
+        ]
+      },
+      "own": [
+        "hevy_workouts",
+        "hevy_workout",
+        "hevy_workout_count",
+        "hevy_workout_changes",
+        "hevy_log_workout",
+        "hevy_update_workout",
+        "hevy_routines",
+        "hevy_routine",
+        "hevy_create_routine",
+        "hevy_update_routine",
+        "hevy_routine_folders",
+        "hevy_create_routine_folder",
+        "hevy_find_exercises",
+        "hevy_create_exercise",
+        "hevy_exercise_history",
+        "hevy_body_measurements",
+        "hevy_log_body_measurement"
+      ]
+    },
+    "inspector": {
+      "engine": {
+        "all_ready": [
+          "complete_task",
+          "delegate_to_agent",
+          "show",
+          "rename_chat",
+          "run_background_task",
+          "list_background_tasks",
+          "cancel_background_task",
+          "ask_agent",
+          "post_crew_note",
+          "ask_user",
+          "find_tools",
+          "web_search",
+          "read_web_page",
+          "speak",
+          "read_attachment"
+        ],
+        "nothing_ready": [
+          "complete_task",
+          "delegate_to_agent",
+          "show",
+          "rename_chat",
+          "run_background_task",
+          "list_background_tasks",
+          "cancel_background_task",
+          "ask_agent",
+          "post_crew_note",
+          "ask_user",
+          "find_tools",
+          "read_web_page"
+        ],
+        "voice_off": [
+          "complete_task",
+          "delegate_to_agent",
+          "show",
+          "rename_chat",
+          "run_background_task",
+          "list_background_tasks",
+          "cancel_background_task",
+          "ask_agent",
+          "post_crew_note",
+          "ask_user",
+          "find_tools",
+          "web_search",
+          "read_web_page",
+          "read_attachment"
+        ],
+        "web_search_off": [
+          "complete_task",
+          "delegate_to_agent",
+          "show",
+          "rename_chat",
+          "run_background_task",
+          "list_background_tasks",
+          "cancel_background_task",
+          "ask_agent",
+          "post_crew_note",
+          "ask_user",
+          "find_tools",
+          "read_web_page",
+          "speak",
+          "read_attachment"
+        ]
+      },
+      "own": [
+        "app_status",
+        "read_logs",
+        "list_tables",
+        "query_database",
+        "request_access"
+      ]
+    },
+    "money": {
+      "engine": {
+        "all_ready": [
+          "complete_task",
+          "show",
+          "rename_chat",
+          "run_background_task",
+          "list_background_tasks",
+          "cancel_background_task",
+          "ask_agent",
+          "post_crew_note",
+          "ask_user",
+          "find_tools",
+          "web_search",
+          "read_web_page",
+          "speak",
+          "read_attachment"
+        ],
+        "nothing_ready": [
+          "complete_task",
+          "show",
+          "rename_chat",
+          "run_background_task",
+          "list_background_tasks",
+          "cancel_background_task",
+          "ask_agent",
+          "post_crew_note",
+          "ask_user",
+          "find_tools",
+          "read_web_page"
+        ],
+        "voice_off": [
+          "complete_task",
+          "show",
+          "rename_chat",
+          "run_background_task",
+          "list_background_tasks",
+          "cancel_background_task",
+          "ask_agent",
+          "post_crew_note",
+          "ask_user",
+          "find_tools",
+          "web_search",
+          "read_web_page",
+          "read_attachment"
+        ],
+        "web_search_off": [
+          "complete_task",
+          "show",
+          "rename_chat",
+          "run_background_task",
+          "list_background_tasks",
+          "cancel_background_task",
+          "ask_agent",
+          "post_crew_note",
+          "ask_user",
+          "find_tools",
+          "read_web_page",
+          "speak",
+          "read_attachment"
+        ]
+      },
+      "own": [
+        "list_transactions",
+        "summarize_budget",
+        "log_transaction",
+        "set_budget",
+        "list_budgets",
+        "set_month_start"
+      ]
+    },
+    "personality": {
+      "engine": {
+        "all_ready": [
+          "complete_task",
+          "show",
+          "rename_chat",
+          "run_background_task",
+          "list_background_tasks",
+          "cancel_background_task",
+          "ask_agent",
+          "post_crew_note",
+          "ask_user",
+          "find_tools",
+          "web_search",
+          "read_web_page",
+          "speak",
+          "read_attachment"
+        ],
+        "nothing_ready": [
+          "complete_task",
+          "show",
+          "rename_chat",
+          "run_background_task",
+          "list_background_tasks",
+          "cancel_background_task",
+          "ask_agent",
+          "post_crew_note",
+          "ask_user",
+          "find_tools",
+          "read_web_page"
+        ],
+        "voice_off": [
+          "complete_task",
+          "show",
+          "rename_chat",
+          "run_background_task",
+          "list_background_tasks",
+          "cancel_background_task",
+          "ask_agent",
+          "post_crew_note",
+          "ask_user",
+          "find_tools",
+          "web_search",
+          "read_web_page",
+          "read_attachment"
+        ],
+        "web_search_off": [
+          "complete_task",
+          "show",
+          "rename_chat",
+          "run_background_task",
+          "list_background_tasks",
+          "cancel_background_task",
+          "ask_agent",
+          "post_crew_note",
+          "ask_user",
+          "find_tools",
+          "read_web_page",
+          "speak",
+          "read_attachment"
+        ]
+      },
+      "own": [
+        "set_personality",
+        "reset_chat_personality",
+        "list_personality_versions",
+        "rollback_personality"
+      ]
+    },
+    "planning": {
+      "engine": {
+        "all_ready": [
+          "complete_task",
+          "delegate_to_agent",
+          "show",
+          "rename_chat",
+          "run_background_task",
+          "list_background_tasks",
+          "cancel_background_task",
+          "ask_agent",
+          "post_crew_note",
+          "update_todos",
+          "write_plan",
+          "ask_user",
+          "find_tools",
+          "web_search",
+          "read_web_page",
+          "speak",
+          "read_attachment"
+        ],
+        "nothing_ready": [
+          "complete_task",
+          "delegate_to_agent",
+          "show",
+          "rename_chat",
+          "run_background_task",
+          "list_background_tasks",
+          "cancel_background_task",
+          "ask_agent",
+          "post_crew_note",
+          "update_todos",
+          "write_plan",
+          "ask_user",
+          "find_tools",
+          "read_web_page"
+        ],
+        "voice_off": [
+          "complete_task",
+          "delegate_to_agent",
+          "show",
+          "rename_chat",
+          "run_background_task",
+          "list_background_tasks",
+          "cancel_background_task",
+          "ask_agent",
+          "post_crew_note",
+          "update_todos",
+          "write_plan",
+          "ask_user",
+          "find_tools",
+          "web_search",
+          "read_web_page",
+          "read_attachment"
+        ],
+        "web_search_off": [
+          "complete_task",
+          "delegate_to_agent",
+          "show",
+          "rename_chat",
+          "run_background_task",
+          "list_background_tasks",
+          "cancel_background_task",
+          "ask_agent",
+          "post_crew_note",
+          "update_todos",
+          "write_plan",
+          "ask_user",
+          "find_tools",
+          "read_web_page",
+          "speak",
+          "read_attachment"
+        ]
+      },
+      "own": [
+        "create_project",
+        "rename_project",
+        "publish_project"
+      ]
+    },
+    "reminders": {
+      "engine": {
+        "all_ready": [
+          "complete_task",
+          "show",
+          "rename_chat",
+          "run_background_task",
+          "list_background_tasks",
+          "cancel_background_task",
+          "ask_agent",
+          "post_crew_note",
+          "ask_user",
+          "find_tools",
+          "web_search",
+          "read_web_page",
+          "speak",
+          "read_attachment"
+        ],
+        "nothing_ready": [
+          "complete_task",
+          "show",
+          "rename_chat",
+          "run_background_task",
+          "list_background_tasks",
+          "cancel_background_task",
+          "ask_agent",
+          "post_crew_note",
+          "ask_user",
+          "find_tools",
+          "read_web_page"
+        ],
+        "voice_off": [
+          "complete_task",
+          "show",
+          "rename_chat",
+          "run_background_task",
+          "list_background_tasks",
+          "cancel_background_task",
+          "ask_agent",
+          "post_crew_note",
+          "ask_user",
+          "find_tools",
+          "web_search",
+          "read_web_page",
+          "read_attachment"
+        ],
+        "web_search_off": [
+          "complete_task",
+          "show",
+          "rename_chat",
+          "run_background_task",
+          "list_background_tasks",
+          "cancel_background_task",
+          "ask_agent",
+          "post_crew_note",
+          "ask_user",
+          "find_tools",
+          "read_web_page",
+          "speak",
+          "read_attachment"
+        ]
+      },
+      "own": [
+        "add_reminder",
+        "show_reminders",
+        "edit_reminder",
+        "complete_reminder",
+        "remove_reminder"
+      ]
+    },
+    "supervisor": {
+      "engine": {
+        "all_ready": [
+          "complete_task",
+          "show",
+          "rename_chat",
+          "run_background_task",
+          "list_background_tasks",
+          "cancel_background_task",
+          "ask_agent",
+          "post_crew_note",
+          "ask_user",
+          "find_tools",
+          "create_agent",
+          "web_search",
+          "read_web_page",
+          "speak",
+          "read_attachment"
+        ],
+        "nothing_ready": [
+          "complete_task",
+          "show",
+          "rename_chat",
+          "run_background_task",
+          "list_background_tasks",
+          "cancel_background_task",
+          "ask_agent",
+          "post_crew_note",
+          "ask_user",
+          "find_tools",
+          "create_agent",
+          "read_web_page"
+        ],
+        "voice_off": [
+          "complete_task",
+          "show",
+          "rename_chat",
+          "run_background_task",
+          "list_background_tasks",
+          "cancel_background_task",
+          "ask_agent",
+          "post_crew_note",
+          "ask_user",
+          "find_tools",
+          "create_agent",
+          "web_search",
+          "read_web_page",
+          "read_attachment"
+        ],
+        "web_search_off": [
+          "complete_task",
+          "show",
+          "rename_chat",
+          "run_background_task",
+          "list_background_tasks",
+          "cancel_background_task",
+          "ask_agent",
+          "post_crew_note",
+          "ask_user",
+          "find_tools",
+          "create_agent",
+          "read_web_page",
+          "speak",
+          "read_attachment"
+        ]
+      },
+      "own": [
+        "list_recent_agent_activity",
+        "stop_agents"
+      ]
+    },
+    "workspace": {
+      "engine": {
+        "all_ready": [
+          "complete_task",
+          "show",
+          "rename_chat",
+          "run_background_task",
+          "list_background_tasks",
+          "cancel_background_task",
+          "ask_agent",
+          "post_crew_note",
+          "update_todos",
+          "ask_user",
+          "find_tools",
+          "web_search",
+          "read_web_page",
+          "speak",
+          "read_attachment"
+        ],
+        "nothing_ready": [
+          "complete_task",
+          "show",
+          "rename_chat",
+          "run_background_task",
+          "list_background_tasks",
+          "cancel_background_task",
+          "ask_agent",
+          "post_crew_note",
+          "update_todos",
+          "ask_user",
+          "find_tools",
+          "read_web_page"
+        ],
+        "voice_off": [
+          "complete_task",
+          "show",
+          "rename_chat",
+          "run_background_task",
+          "list_background_tasks",
+          "cancel_background_task",
+          "ask_agent",
+          "post_crew_note",
+          "update_todos",
+          "ask_user",
+          "find_tools",
+          "web_search",
+          "read_web_page",
+          "read_attachment"
+        ],
+        "web_search_off": [
+          "complete_task",
+          "show",
+          "rename_chat",
+          "run_background_task",
+          "list_background_tasks",
+          "cancel_background_task",
+          "ask_agent",
+          "post_crew_note",
+          "update_todos",
+          "ask_user",
+          "find_tools",
+          "read_web_page",
+          "speak",
+          "read_attachment"
+        ]
+      },
+      "own": [
+        "gmail_search",
+        "gmail_read",
+        "gmail_draft",
+        "gmail_send",
+        "sheets_read",
+        "sheets_append",
+        "sheets_update",
+        "sheets_create",
+        "docs_read",
+        "docs_create",
+        "docs_append",
+        "drive_search",
+        "calendar_events",
+        "calendar_add_event"
+      ]
+    }
+  },
+  "catalog": {
+    "add_attachment": "coding",
+    "add_reminder": "reminders",
+    "calendar_add_event": "workspace",
+    "calendar_events": "workspace",
+    "complete_reminder": "reminders",
+    "create_project": "planning",
+    "delete_file": "coding",
+    "docs_append": "workspace",
+    "docs_create": "workspace",
+    "docs_read": "workspace",
+    "drive_search": "workspace",
+    "edit_file": "coding",
+    "edit_reminder": "reminders",
+    "gmail_draft": "workspace",
+    "gmail_read": "workspace",
+    "gmail_search": "workspace",
+    "gmail_send": "workspace",
+    "hevy_body_measurements": "health",
+    "hevy_create_exercise": "health",
+    "hevy_create_routine": "health",
+    "hevy_create_routine_folder": "health",
+    "hevy_exercise_history": "health",
+    "hevy_find_exercises": "health",
+    "hevy_log_body_measurement": "health",
+    "hevy_log_workout": "health",
+    "hevy_routine": "health",
+    "hevy_routine_folders": "health",
+    "hevy_routines": "health",
+    "hevy_update_routine": "health",
+    "hevy_update_workout": "health",
+    "hevy_workout": "health",
+    "hevy_workout_changes": "health",
+    "hevy_workout_count": "health",
+    "hevy_workouts": "health",
+    "list_budgets": "money",
+    "list_files": "coding",
+    "list_personality_versions": "personality",
+    "list_recent_agent_activity": "supervisor",
+    "list_transactions": "money",
+    "log_transaction": "money",
+    "read_file": "coding",
+    "read_guide": "coding",
+    "remove_reminder": "reminders",
+    "rename_project": "planning",
+    "reset_chat_personality": "personality",
+    "rollback_personality": "personality",
+    "run_command": "coding",
+    "search_files": "coding",
+    "set_budget": "money",
+    "set_month_start": "money",
+    "set_personality": "personality",
+    "sheets_append": "workspace",
+    "sheets_create": "workspace",
+    "sheets_read": "workspace",
+    "sheets_update": "workspace",
+    "show_reminders": "reminders",
+    "summarize_budget": "money",
+    "write_file": "coding",
+    "write_files": "coding"
+  },
+  "tools": {
+    "add_attachment": {
+      "gateable": true,
+      "quiet": false
+    },
+    "add_reminder": {
+      "gateable": true,
+      "quiet": false
+    },
+    "app_status": {
+      "gateable": true,
+      "quiet": false
+    },
+    "approve_version": {
+      "gateable": true,
+      "quiet": false
+    },
+    "ask_agent": {
+      "gateable": false,
+      "quiet": false
+    },
+    "ask_user": {
+      "gateable": false,
+      "quiet": false
+    },
+    "calendar_add_event": {
+      "gateable": true,
+      "quiet": false
+    },
+    "calendar_events": {
+      "gateable": true,
+      "quiet": false
+    },
+    "cancel_background_task": {
+      "gateable": false,
+      "quiet": true
+    },
+    "cancel_reminder": {
+      "gateable": false,
+      "quiet": true
+    },
+    "complete_reminder": {
+      "gateable": true,
+      "quiet": false
+    },
+    "complete_task": {
+      "gateable": false,
+      "quiet": true
+    },
+    "create_agent": {
+      "gateable": true,
+      "quiet": false
+    },
+    "create_handoff": {
+      "gateable": true,
+      "quiet": false
+    },
+    "create_project": {
+      "gateable": true,
+      "quiet": false
+    },
+    "create_reminder": {
+      "gateable": false,
+      "quiet": true
+    },
+    "delegate_to_agent": {
+      "gateable": false,
+      "quiet": true
+    },
+    "delete_file": {
+      "gateable": true,
+      "quiet": false
+    },
+    "delete_record": {
+      "gateable": false,
+      "quiet": true
+    },
+    "docs_append": {
+      "gateable": true,
+      "quiet": false
+    },
+    "docs_create": {
+      "gateable": true,
+      "quiet": false
+    },
+    "docs_read": {
+      "gateable": true,
+      "quiet": false
+    },
+    "drive_search": {
+      "gateable": true,
+      "quiet": false
+    },
+    "edit_file": {
+      "gateable": true,
+      "quiet": false
+    },
+    "edit_reminder": {
+      "gateable": true,
+      "quiet": false
+    },
+    "find_tools": {
+      "gateable": false,
+      "quiet": true
+    },
+    "gmail_draft": {
+      "gateable": true,
+      "quiet": false
+    },
+    "gmail_read": {
+      "gateable": true,
+      "quiet": false
+    },
+    "gmail_search": {
+      "gateable": true,
+      "quiet": false
+    },
+    "gmail_send": {
+      "gateable": true,
+      "quiet": false
+    },
+    "hevy_body_measurements": {
+      "gateable": true,
+      "quiet": false
+    },
+    "hevy_create_exercise": {
+      "gateable": true,
+      "quiet": false
+    },
+    "hevy_create_routine": {
+      "gateable": true,
+      "quiet": false
+    },
+    "hevy_create_routine_folder": {
+      "gateable": true,
+      "quiet": false
+    },
+    "hevy_exercise_history": {
+      "gateable": true,
+      "quiet": false
+    },
+    "hevy_find_exercises": {
+      "gateable": true,
+      "quiet": false
+    },
+    "hevy_log_body_measurement": {
+      "gateable": true,
+      "quiet": false
+    },
+    "hevy_log_workout": {
+      "gateable": true,
+      "quiet": false
+    },
+    "hevy_routine": {
+      "gateable": true,
+      "quiet": false
+    },
+    "hevy_routine_folders": {
+      "gateable": true,
+      "quiet": false
+    },
+    "hevy_routines": {
+      "gateable": true,
+      "quiet": false
+    },
+    "hevy_update_routine": {
+      "gateable": true,
+      "quiet": false
+    },
+    "hevy_update_workout": {
+      "gateable": true,
+      "quiet": false
+    },
+    "hevy_workout": {
+      "gateable": true,
+      "quiet": false
+    },
+    "hevy_workout_changes": {
+      "gateable": true,
+      "quiet": false
+    },
+    "hevy_workout_count": {
+      "gateable": true,
+      "quiet": false
+    },
+    "hevy_workouts": {
+      "gateable": true,
+      "quiet": false
+    },
+    "list_background_tasks": {
+      "gateable": false,
+      "quiet": true
+    },
+    "list_budgets": {
+      "gateable": true,
+      "quiet": false
+    },
+    "list_connected_tools": {
+      "gateable": true,
+      "quiet": false
+    },
+    "list_files": {
+      "gateable": true,
+      "quiet": false
+    },
+    "list_personality_versions": {
+      "gateable": true,
+      "quiet": false
+    },
+    "list_recent_agent_activity": {
+      "gateable": true,
+      "quiet": false
+    },
+    "list_records": {
+      "gateable": false,
+      "quiet": true
+    },
+    "list_reminders": {
+      "gateable": false,
+      "quiet": true
+    },
+    "list_tables": {
+      "gateable": true,
+      "quiet": false
+    },
+    "list_transactions": {
+      "gateable": true,
+      "quiet": false
+    },
+    "log_transaction": {
+      "gateable": true,
+      "quiet": false
+    },
+    "make_file": {
+      "gateable": true,
+      "quiet": false
+    },
+    "post_crew_note": {
+      "gateable": false,
+      "quiet": false
+    },
+    "propose_directions": {
+      "gateable": true,
+      "quiet": false
+    },
+    "publish_project": {
+      "gateable": true,
+      "quiet": false
+    },
+    "query_database": {
+      "gateable": true,
+      "quiet": false
+    },
+    "read_attachment": {
+      "gateable": false,
+      "quiet": false
+    },
+    "read_file": {
+      "gateable": true,
+      "quiet": false
+    },
+    "read_guide": {
+      "gateable": true,
+      "quiet": false
+    },
+    "read_logs": {
+      "gateable": true,
+      "quiet": false
+    },
+    "read_plan": {
+      "gateable": false,
+      "quiet": true
+    },
+    "read_preview": {
+      "gateable": true,
+      "quiet": false
+    },
+    "read_web_page": {
+      "gateable": false,
+      "quiet": true
+    },
+    "remove_reminder": {
+      "gateable": true,
+      "quiet": false
+    },
+    "rename_chat": {
+      "gateable": false,
+      "quiet": false
+    },
+    "rename_project": {
+      "gateable": true,
+      "quiet": false
+    },
+    "request_access": {
+      "gateable": true,
+      "quiet": false
+    },
+    "reset_chat_personality": {
+      "gateable": true,
+      "quiet": false
+    },
+    "review_build": {
+      "gateable": true,
+      "quiet": false
+    },
+    "rollback_personality": {
+      "gateable": true,
+      "quiet": false
+    },
+    "run_background_task": {
+      "gateable": false,
+      "quiet": true
+    },
+    "run_command": {
+      "gateable": true,
+      "quiet": false
+    },
+    "save_preview": {
+      "gateable": true,
+      "quiet": false
+    },
+    "save_record": {
+      "gateable": false,
+      "quiet": true
+    },
+    "search_files": {
+      "gateable": true,
+      "quiet": false
+    },
+    "set_budget": {
+      "gateable": true,
+      "quiet": false
+    },
+    "set_month_start": {
+      "gateable": true,
+      "quiet": false
+    },
+    "set_personality": {
+      "gateable": true,
+      "quiet": false
+    },
+    "sheets_append": {
+      "gateable": true,
+      "quiet": false
+    },
+    "sheets_create": {
+      "gateable": true,
+      "quiet": false
+    },
+    "sheets_read": {
+      "gateable": true,
+      "quiet": false
+    },
+    "sheets_update": {
+      "gateable": true,
+      "quiet": false
+    },
+    "show": {
+      "gateable": false,
+      "quiet": false
+    },
+    "show_reminders": {
+      "gateable": true,
+      "quiet": false
+    },
+    "speak": {
+      "gateable": false,
+      "quiet": false
+    },
+    "stop_agents": {
+      "gateable": true,
+      "quiet": false
+    },
+    "summarize_budget": {
+      "gateable": true,
+      "quiet": false
+    },
+    "update_record": {
+      "gateable": false,
+      "quiet": true
+    },
+    "update_todos": {
+      "gateable": false,
+      "quiet": true
+    },
+    "use_connected_tool": {
+      "gateable": true,
+      "quiet": false
+    },
+    "web_search": {
+      "gateable": false,
+      "quiet": true
+    },
+    "write_file": {
+      "gateable": true,
+      "quiet": false
+    },
+    "write_files": {
+      "gateable": true,
+      "quiet": false
+    },
+    "write_plan": {
+      "gateable": false,
+      "quiet": true
+    }
+  }
+}

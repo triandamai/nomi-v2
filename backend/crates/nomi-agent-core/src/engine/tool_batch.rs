@@ -513,19 +513,7 @@ pub(super) async fn resolve_tool_batch_in_reply(
             // seen, whether or not the agent narrates the rest of its tool calls.
             let should_post = name.as_str() == crate::views::SHOW_TOOL_NAME
                 || rich_block.is_some()
-                || (agent.surfaces_activity()
-                    && name.as_str() != COMPLETE_TASK_TOOL_NAME
-                    && name.as_str() != DELEGATE_TOOL_NAME
-                    && name.as_str() != UPDATE_TODOS_TOOL_NAME
-                    && name.as_str() != WRITE_PLAN_TOOL_NAME
-                    && name.as_str() != READ_PLAN_TOOL_NAME
-                    && name.as_str() != CREATE_REMINDER_TOOL_NAME
-                    && name.as_str() != LIST_REMINDERS_TOOL_NAME
-                    && name.as_str() != CANCEL_REMINDER_TOOL_NAME
-                    && name.as_str() != FIND_TOOLS_TOOL_NAME
-                    && !crate::background::BACKGROUND_TOOL_NAMES.contains(&name.as_str())
-                    && !crate::web::is_web_tool(name)
-                    && !crate::records::RECORD_TOOL_NAMES.contains(&name.as_str()));
+                || (agent.surfaces_activity() && !is_quiet(name));
             if should_post {
                 // A card's message says what the card shows; the result text is a note for the agent.
                 let shown = posted_text.or_else(|| rich_block.as_ref().map(card_text).filter(|text| !text.is_empty())).unwrap_or_else(|| result_text.clone());

@@ -15,11 +15,13 @@ use crate::registry::AgentRegistry;
 use crate::subagent::SubAgent;
 
 mod activity;
+mod offer;
 mod plans;
 mod tool_batch;
 mod tool_definitions;
 
 pub use activity::*;
+pub use offer::*;
 pub use plans::*;
 pub use tool_batch::*;
 pub use tool_definitions::*;
@@ -248,71 +250,19 @@ async fn run_agent_turn_in_reply(
         own_tools.extend(chat_tools.iter().map(|t| t.name.clone()));
     }
     tools.extend(chat_tools);
-    tools.push(complete_task_tool_definition());
     // The members the person switched off take no work and answer no questions.
     let off = crate::personal_crew::disabled_agent_types(conn, user_id).await;
-    if agent.can_delegate() {
-        let mut targets = registry.delegation_targets_of(agent);
-        targets.retain(|t| !off.contains(t));
-        if !targets.is_empty() {
-            tools.push(delegate_tool_definition(&targets));
-        }
-    }
-    tools.push(crate::views::show_tool_definition());
-    tools.push(rename_chat_tool_definition());
-    tools.extend(crate::background::background_tool_definitions());
-    let mut crew = crate::crew_talk::ask_targets(registry, agent.agent_type().as_ref());
-    crew.retain(|t| !off.contains(t));
-    if !crew.is_empty() {
-        tools.push(crate::crew_talk::ask_agent_tool_definition(&crew));
-    }
-    tools.push(crate::crew_talk::note_tool_definition());
-    if agent.supports_todos() {
-        tools.push(update_todos_tool_definition());
-    }
-    if agent.supports_plans() {
-        tools.push(write_plan_tool_definition());
-    }
-    if agent.asks_questions() {
-        tools.push(ask_user_tool_definition());
-    }
-    if agent.reads_plans() {
-        tools.push(read_plan_tool_definition());
-    }
-    if agent.uses_records() {
-        tools.extend(crate::records::record_tool_definitions());
-    }
-    if agent.supports_reminders() {
-        let mut targets = registry.reminder_target_agent_types();
-        // Sora takes no reminders while she is off for this person.
-        targets.retain(|t| t != crate::crew::DESIGN_AGENT_TYPE || !off.contains(t));
-        tools.push(create_reminder_tool_definition(&targets));
-        tools.push(list_reminders_tool_definition());
-        tools.push(cancel_reminder_tool_definition());
-    }
-    // Looking through the tool catalog, and (Nomi and the supervisor) making crew members with it.
-    if registry.tool_catalog().is_some() {
-        tools.push(find_tools_tool_definition());
-        if agent.creates_crew_members() {
-            tools.push(create_agent_tool_definition());
-        }
-    }
-    // The web tools, and whatever an admin switched off in Admin → Tools.
+    // Whatever an admin switched off in Admin → Tools.
     let switches = crate::tools::ToolSwitches::load(conn).await;
-    if switches.allows(crate::web::WEB_SEARCH_TOOL_NAME) && crate::web::search_setup(conn).await.is_some() {
-        tools.push(crate::web::web_search_tool_definition());
-    }
-    if switches.allows(crate::web::READ_WEB_PAGE_TOOL_NAME) {
-        tools.push(crate::web::read_web_page_tool_definition());
-    }
-    // Saying things aloud, while it's on and has its ElevenLabs key.
-    if switches.allows(crate::voice::SPEAK_TOOL_NAME) && crate::voice::is_ready(conn).await {
-        tools.push(crate::voice::speak_tool_definition());
-    }
-    // Reading on in a file the user attached, whenever the conversation holds one.
-    if crate::attachments::mentions_files(&messages) {
-        tools.push(crate::attachments::read_attachment_tool_definition());
-    }
+    let inputs = OfferInputs {
+        web_search_ready: switches.allows(crate::web::WEB_SEARCH_TOOL_NAME) && crate::web::search_setup(conn).await.is_some(),
+        voice_ready: switches.allows(crate::voice::SPEAK_TOOL_NAME) && crate::voice::is_ready(conn).await,
+        mentions_files: crate::attachments::mentions_files(&messages),
+        off,
+        switches,
+    };
+    tools.extend(engine_tools_for(agent, registry, &inputs));
+    let switches = inputs.switches;
     tools.retain(|t| own_tools.contains(&t.name) || switches.allows(&t.name));
     // In a project's chat, its tools default to that project: no one asks the person for an id.
     let chat_project = crate::chat_project::of_chat(conn, session_id, user_id).await;
