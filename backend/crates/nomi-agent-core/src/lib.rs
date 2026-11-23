@@ -1,6 +1,6 @@
 pub mod agent_permissions;
 pub mod attachments;
-pub mod background;
+pub use nomi_tools_background as background;
 pub mod chat_summary;
 pub mod build_flow;
 pub mod build_intent;
@@ -44,7 +44,7 @@ pub mod relay_ops;
 pub mod sandbox_ops;
 pub mod registry;
 pub mod reply;
-pub mod scheduled_jobs;
+pub use nomi_tools_reminders::scheduled_jobs;
 pub mod stop;
 pub mod subagent;
 pub mod suggestions;
@@ -62,8 +62,8 @@ pub use background::{
 pub use content_block::{ApprovalStatus, ContentBlock, FileWriteEntry, TableColumn, TableVariant, TodoItem, TodoStatus, ToolOutcome};
 pub use dynamic_agent::{DynamicAgent, DynamicAgentRow};
 pub use engine::{
-    crew_tool_definitions, resolve_tool_batch, run_agent_turn, LoopOutcome, ToolBatchOutcome, CANCEL_REMINDER_TOOL_NAME,
-    COMPLETE_TASK_TOOL_NAME, CREATE_AGENT_TOOL_NAME, CREATE_REMINDER_TOOL_NAME, FIND_TOOLS_TOOL_NAME, DELEGATE_TOOL_NAME, LIST_REMINDERS_TOOL_NAME,
+    crew_tool_definitions, resolve_tool_batch, run_agent_turn, LoopOutcome, ToolBatchOutcome,
+    COMPLETE_TASK_TOOL_NAME, CREATE_AGENT_TOOL_NAME, FIND_TOOLS_TOOL_NAME, DELEGATE_TOOL_NAME,
     UPDATE_TODOS_TOOL_NAME, WRITE_PLAN_TOOL_NAME,
 };
 pub use error::TurnError;

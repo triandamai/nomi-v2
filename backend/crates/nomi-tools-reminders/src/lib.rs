@@ -3,6 +3,8 @@
 //! reminders worker) as a message with Done / Snooze, with no model call. Agent tasks scheduled for
 //! later still go through the core scheduler (`scheduled_jobs`), which this crate never touches.
 
+pub mod scheduled_jobs;
+
 use nomi_tool::ToolContext;
 
 use async_trait::async_trait;

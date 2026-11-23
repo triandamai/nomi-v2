@@ -11,6 +11,8 @@ nomi-tools-records = { path = "../nomi-tools-records" }
 nomi-tools-web = { path = "../nomi-tools-web" }
 nomi-tools-voice = { path = "../nomi-tools-voice" }
 nomi-tools-attachments = { path = "../nomi-tools-attachments" }
+nomi-tools-background = { path = "../nomi-tools-background" }
+nomi-tools-reminders = { path = "../nomi-tools-reminders" }
 nomi-llm = { path = "../nomi-llm" }
 nomi-embedding = { path = "../nomi-embedding" }
 nomi-realtime = { path = "../nomi-realtime" }

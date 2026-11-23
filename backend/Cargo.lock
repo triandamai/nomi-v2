@@ -3338,8 +3338,10 @@ dependencies = [
  "nomi-test-support",
  "nomi-tool",
  "nomi-tools-attachments",
+ "nomi-tools-background",
  "nomi-tools-personality",
  "nomi-tools-records",
+ "nomi-tools-reminders",
  "nomi-tools-voice",
  "nomi-tools-web",
  "nomi-usage",
@@ -3744,10 +3746,6 @@ dependencies = [
  "nomi-shipyard",
  "nomi-storage",
  "nomi-test-support",
- "nomi-tools-attachments",
- "nomi-tools-records",
- "nomi-tools-voice",
- "nomi-tools-web",
  "nomi-turn",
  "nomi-usage",
  "rand 0.8.7",
@@ -3861,6 +3859,21 @@ dependencies = [
  "sqlx",
  "tokio",
  "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "nomi-tools-background"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "nomi-llm",
+ "nomi-realtime",
+ "nomi-tool",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
  "uuid",
 ]
 

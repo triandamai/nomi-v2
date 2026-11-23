@@ -123,13 +123,15 @@ fn match_of(info: &ToolInfo, query: &str) -> Option<Match> {
 /// shared behind an `Arc` everywhere it's needed.
 pub struct ToolCatalog {
     entries: HashMap<String, Entry>,
+    /// Names in the order they were registered: the order the engine offers its own tools in.
+    order: Vec<String>,
 }
 
 impl ToolCatalog {
     /// No entries — for tests that need a `&ToolCatalog`/`Arc<ToolCatalog>` but never exercise
     /// dynamic-agent tool execution.
     pub fn empty() -> Self {
-        Self { entries: HashMap::new() }
+        Self { entries: HashMap::new(), order: Vec::new() }
     }
 
     /// Every tool in `tools`. Panics on two tools with the same name (see `register`).
@@ -153,6 +155,7 @@ impl ToolCatalog {
                 tool.group()
             );
         }
+        self.order.push(definition.name.clone());
         self.entries.insert(definition.name.clone(), Entry { definition, tool });
     }
 
@@ -210,6 +213,11 @@ impl ToolCatalog {
         let mut entries: Vec<&Entry> = self.entries.values().collect();
         entries.sort_by(|a, b| a.definition.name.cmp(&b.definition.name));
         entries.into_iter().map(|entry| entry.tool.as_ref())
+    }
+
+    /// Every tool, in the order it was registered.
+    pub fn in_registration_order(&self) -> impl Iterator<Item = &dyn Tool> {
+        self.order.iter().filter_map(|name| self.get(name))
     }
 
     pub async fn execute(&self, name: &str, conn: &mut PoolConnection<Postgres>, ctx: &ToolContext<'_>, input: Value) -> Result<ToolOutcome, String> {

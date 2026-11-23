@@ -68,5 +68,7 @@ mod tests {
         assert!(catalog.get("missing").is_none());
         let names: Vec<String> = catalog.tools().map(|t| t.definition().name).collect();
         assert_eq!(names, ["alpha", "zeta"]);
+        let registered: Vec<String> = catalog.in_registration_order().map(|t| t.definition().name).collect();
+        assert_eq!(registered, ["zeta", "alpha"]);
     }
 }

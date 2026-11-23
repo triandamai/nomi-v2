@@ -13,6 +13,8 @@ use crate::permissions;
 use crate::personal_crew::Level;
 use crate::registry::AgentRegistry;
 use crate::subagent::SubAgent;
+use crate::tool_catalog::ToolCatalog;
+use nomi_tool::{Approval, ToolContext};
 
 mod activity;
 mod offer;
@@ -51,9 +53,6 @@ pub const ASK_USER_TOOL_NAME: &str = "ask_user";
 /// Most questions one `ask_user` card holds; the person steps through them with Next.
 pub const MAX_QUESTIONS_PER_CARD: usize = 5;
 pub const READ_PLAN_TOOL_NAME: &str = "read_plan";
-pub const CREATE_REMINDER_TOOL_NAME: &str = "create_reminder";
-pub const LIST_REMINDERS_TOOL_NAME: &str = "list_reminders";
-pub const CANCEL_REMINDER_TOOL_NAME: &str = "cancel_reminder";
 pub const FIND_TOOLS_TOOL_NAME: &str = "find_tools";
 pub const CREATE_AGENT_TOOL_NAME: &str = "create_agent";
 
@@ -163,9 +162,6 @@ pub enum LoopOutcome {
     Cancelled,
 }
 
-/// The personality agent's tools that change which personality a chat replies in.
-const PERSONALITY_TOOL_NAMES: [&str; 3] = ["set_personality", "reset_chat_personality", "rollback_personality"];
-
 /// After an agent answers in chat (a reply, or the summary it finished with), queues the exchange
 /// so the memory worker can save anything lasting the person said. Never waits on a model call.
 async fn learn_from_turn(
@@ -253,13 +249,17 @@ async fn run_agent_turn_in_reply(
     let off = crate::personal_crew::disabled_agent_types(conn, user_id).await;
     // Whatever an admin switched off in Admin → Tools.
     let switches = crate::tools::ToolSwitches::load(conn).await;
-    let inputs = OfferInputs {
-        web_search_ready: switches.allows(crate::web::WEB_SEARCH_TOOL_NAME) && crate::web::search_setup(conn).await.is_some(),
-        voice_ready: switches.allows(crate::voice::SPEAK_TOOL_NAME) && crate::voice::is_ready(conn).await,
-        mentions_files: crate::attachments::mentions_files(&messages),
-        off,
-        switches,
-    };
+    // Catalog tools that aren't set up yet (no search provider, no voice key) aren't offered.
+    let mut not_ready = std::collections::HashSet::new();
+    if let Some(catalog) = registry.tool_catalog() {
+        for tool in catalog.in_registration_order().filter(|t| auto_offered_to(*t, agent)) {
+            let name = tool.definition().name;
+            if switches.allows(&name) && !tool.ready(&mut **conn).await {
+                not_ready.insert(name);
+            }
+        }
+    }
+    let inputs = OfferInputs { mentions_files: crate::attachments::mentions_files(&messages), not_ready, off, switches };
     tools.extend(engine_tools_for(agent, registry, &inputs));
     let switches = inputs.switches;
     tools.retain(|t| own_tools.contains(&t.name) || switches.allows(&t.name));
@@ -755,26 +755,26 @@ mod background_engine_tests {
 
     #[test]
     fn crew_tools_list_find_tools_ungated_and_create_agent_gated() {
-        let registry = AgentRegistry::new(vec![Box::new(DummyDefaultAgent)]);
+        let registry = AgentRegistry::new(vec![Box::new(DummyDefaultAgent)]).with_tool_catalog(std::sync::Arc::new(ToolCatalog::from_tools(engine_catalog_tools())));
         let defs = crew_tool_definitions(&registry);
         let names: Vec<&str> = defs.iter().map(|d| d.name.as_str()).collect();
         assert!(names.contains(&FIND_TOOLS_TOOL_NAME) && names.contains(&CREATE_AGENT_TOOL_NAME));
-        assert!(!is_gateable(FIND_TOOLS_TOOL_NAME), "looking through the catalog changes nothing");
-        assert!(is_gateable(CREATE_AGENT_TOOL_NAME), "making a member goes through the person's permission level");
+        assert!(!is_gateable(registry.tool_catalog().map(|c| c.as_ref()), FIND_TOOLS_TOOL_NAME), "looking through the catalog changes nothing");
+        assert!(is_gateable(registry.tool_catalog().map(|c| c.as_ref()), CREATE_AGENT_TOOL_NAME), "making a member goes through the person's permission level");
         assert!(!crate::tools::REQUIRED_TOOLS.contains(&FIND_TOOLS_TOOL_NAME), "an admin can switch it off");
     }
 
     #[test]
     fn crew_tools_include_all_background_task_tools_and_never_gate_them() {
-        let registry = AgentRegistry::new(vec![Box::new(DummyDefaultAgent)]);
+        let registry = AgentRegistry::new(vec![Box::new(DummyDefaultAgent)]).with_tool_catalog(std::sync::Arc::new(ToolCatalog::from_tools(engine_catalog_tools())));
         let defs = crew_tool_definitions(&registry);
         let names: Vec<&str> = defs.iter().map(|t| t.name.as_str()).collect();
         assert!(names.contains(&RUN_BACKGROUND_TASK_TOOL_NAME));
         assert!(names.contains(&LIST_BACKGROUND_TASKS_TOOL_NAME));
         assert!(names.contains(&CANCEL_BACKGROUND_TASK_TOOL_NAME));
 
-        assert!(!is_gateable(RUN_BACKGROUND_TASK_TOOL_NAME));
-        assert!(!is_gateable(LIST_BACKGROUND_TASKS_TOOL_NAME));
-        assert!(!is_gateable(CANCEL_BACKGROUND_TASK_TOOL_NAME));
+        assert!(!is_gateable(registry.tool_catalog().map(|c| c.as_ref()), RUN_BACKGROUND_TASK_TOOL_NAME));
+        assert!(!is_gateable(registry.tool_catalog().map(|c| c.as_ref()), LIST_BACKGROUND_TASKS_TOOL_NAME));
+        assert!(!is_gateable(registry.tool_catalog().map(|c| c.as_ref()), CANCEL_BACKGROUND_TASK_TOOL_NAME));
     }
 }

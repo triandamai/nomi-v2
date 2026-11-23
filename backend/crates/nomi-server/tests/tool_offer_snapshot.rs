@@ -14,18 +14,17 @@ const SNAPSHOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/snapshots/too
 const UNUSED_DATABASE_URL: &str = "postgres://localhost/unused";
 
 fn scenarios() -> Vec<(&'static str, OfferInputs)> {
-    let ready = |switches: ToolSwitches, web: bool, voice: bool, files: bool| OfferInputs {
+    let ready = |switches: ToolSwitches, not_ready: &[&str], files: bool| OfferInputs {
         off: HashSet::new(),
         switches,
-        web_search_ready: web,
-        voice_ready: voice,
+        not_ready: not_ready.iter().map(|n| n.to_string()).collect(),
         mentions_files: files,
     };
     vec![
-        ("all_ready", ready(ToolSwitches::default(), true, true, true)),
-        ("nothing_ready", ready(ToolSwitches::default(), false, false, false)),
-        ("web_search_off", ready(ToolSwitches::with_off(["web_search"]), true, true, true)),
-        ("voice_off", ready(ToolSwitches::with_off(["speak"]), true, true, true)),
+        ("all_ready", ready(ToolSwitches::default(), &[], true)),
+        ("nothing_ready", ready(ToolSwitches::default(), &["web_search", "speak"], false)),
+        ("web_search_off", ready(ToolSwitches::with_off(["web_search"]), &[], true)),
+        ("voice_off", ready(ToolSwitches::with_off(["speak"]), &[], true)),
     ]
 }
 
@@ -72,7 +71,7 @@ async fn offered_tools_match_snapshot() {
     every_name.extend(names(&crew_tools));
 
     let tools: BTreeMap<String, Value> =
-        every_name.iter().map(|n| (n.clone(), json!({ "gateable": is_gateable(n), "quiet": is_quiet(n) }))).collect();
+        every_name.iter().map(|n| (n.clone(), json!({ "gateable": is_gateable(Some(catalog.as_ref()), n), "quiet": is_quiet(Some(catalog.as_ref()), n) }))).collect();
     let catalog_groups: BTreeMap<String, &str> = catalog.entries().into_iter().map(|e| (e.name, e.group)).collect();
     let actual = json!({ "agents": agents, "tools": tools, "catalog": catalog_groups, "definitions": definitions });
     let actual_text = serde_json::to_string_pretty(&actual).unwrap() + "\n";
