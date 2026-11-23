@@ -1,13 +1,13 @@
 # Where Sora's design library comes from
 
 Sora's library is adapted from the open projects below and rewritten for drawing on the
-OpenPencil canvas. It isn't served to Sora (`read_design_skill` reads only the skill files); it
+OpenPencil canvas. It isn't served to Sora (`read_design_skill` reads only the skills: `<area>/<skill>/SKILL.md` and its `references/`); it
 records each source, its licence, and how we may use it. Keep it up to date when a skill is
 added or re-synced.
 
 | Folder / topic | Source | Version read | Licence | How we use it |
 |---|---|---|---|---|
-| `pen-format` | `@open-pencil/pen` 0.16 (what the Design Studio parses) and Nomi's own `design_artifact.rs` | 0.16.0 | Written for Nomi | The canvas format |
+| `design/pen-format` | `@open-pencil/pen` 0.16 (what the Design Studio parses) and Nomi's own `design_artifact.rs` | 0.16.0 | Written for Nomi | The canvas format |
 | `taste/` | Taste Skill, [github.com/Leonxlnx/taste-skill](https://github.com/Leonxlnx/taste-skill) (`design-taste-frontend`) | 2.5.1 (7 Nov 2026) | MIT, Copyright (c) 2026 Leonxlnx | Adapted: Sora's design rulebook |
 | `styles/` | [github.com/mengto/skills](https://github.com/mengto/skills): the UI, workflow and web-design skills named in each file | main, 22 Nov 2026 | MIT, Copyright (c) 2026 Meng To | Adapted: anti-slop audit, design loop, styles to offer as directions |
 | `components/` | shadcn/ui's agent skill (`skills/shadcn`), [github.com/shadcn-ui/ui](https://github.com/shadcn-ui/ui) | main, Nov 2026 | MIT, Copyright (c) 2023 shadcn | Adapted: token roles, design-system page, state matrix |

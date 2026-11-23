@@ -287,7 +287,8 @@ mod tests {
         let sora = DesignAgent::new();
         assert!(!sora.tool_needs_approval(tools::READ_DESIGN_SKILL), "reading her own library changes nothing");
         let tool = sora.tools().into_iter().find(|t| t.name == tools::READ_DESIGN_SKILL).unwrap();
-        assert!(tool.description.contains(&library::index()), "the tool lists every skill she can read");
+        assert!(tool.description.contains(&library::tool_index()), "the tool lists the areas and the skills to start with");
+        assert!(tool.input_schema["properties"]["reference"].is_object(), "she can read one reference of a skill");
     }
 
     #[test]
