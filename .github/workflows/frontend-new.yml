@@ -233,8 +233,8 @@ jobs:
   coverage:
     name: Frontend new (merged coverage)
     runs-on: ubuntu-latest
-    needs: [test, e2e-backend]
-    if: ${{ !cancelled() && (needs.test.result == 'success' || needs.e2e-backend.result == 'success') }}
+    needs: [frontend-new, e2e-backend]
+    if: ${{ !cancelled() && (needs.frontend-new.result == 'success' || needs.e2e-backend.result == 'success') }}
     defaults:
       run:
         working-directory: frontend-new
