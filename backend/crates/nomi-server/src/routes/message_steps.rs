@@ -57,7 +57,7 @@ pub fn step_detail(tool: &str, input: &Value) -> Option<String> {
                 [first, rest @ ..] => format!("{first} +{}", rest.len()),
             }
         }),
-        _ => ["query", "url", "path", "command", "title", "name", "description", "category"].iter().find_map(|k| field(k)).map(str::to_string),
+        _ => ["query", "url", "path", "command", "title", "name", "description", "category", "topic"].iter().find_map(|k| field(k)).map(str::to_string),
     };
     detail.filter(|d| !d.is_empty()).map(|d| clip(&d, 90))
 }
@@ -161,6 +161,7 @@ mod tests {
             step_detail("write_files", &json!({"files": [{"path": "a.ts"}, {"path": "b.ts"}, {"path": "c.ts"}]})).as_deref(),
             Some("a.ts +2")
         );
+        assert_eq!(step_detail("read_design_skill", &json!({"topic": "taste-core"})).as_deref(), Some("taste-core"), "the skill Sora studied");
         assert_eq!(step_detail("whatever", &json!({})), None);
     }
 
