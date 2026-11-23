@@ -1,19 +1,19 @@
 //! The personality tools as `Tool`s: what `PersonalityAgent` runs, and what custom agents can be
 //! granted.
 
-use nomi_agent_core::ToolContext;
+use nomi_tool::ToolContext;
 use async_trait::async_trait;
 use serde_json::Value;
 use sqlx::pool::PoolConnection;
 use sqlx::Postgres;
 
-use nomi_agent_core::{Tool, ToolOutcome};
+use nomi_tool::{Tool, ToolOutcome};
 use nomi_llm::ToolDefinition;
 
 use crate::PERSONALITY_AGENT_TYPE;
 
 /// Every personality tool, in the order the agent is offered them. All of them run for any agent.
-pub fn catalog_tools() -> Vec<Box<dyn Tool>> {
+pub fn tools() -> Vec<Box<dyn Tool>> {
     vec![Box::new(SetPersonality), Box::new(ResetChatPersonality), Box::new(ListPersonalityVersions), Box::new(RollbackPersonality)]
 }
 

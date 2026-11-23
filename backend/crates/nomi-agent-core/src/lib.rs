@@ -31,7 +31,7 @@ pub mod mention;
 pub mod notification;
 pub mod permissions;
 pub mod personal_crew;
-pub mod personality;
+pub use nomi_tools_personality::store as personality;
 pub mod plans;
 pub mod project_ops;
 pub mod mcp_ops;
