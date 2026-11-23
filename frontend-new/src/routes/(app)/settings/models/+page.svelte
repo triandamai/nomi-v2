@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Ellipsis, Unplug } from '@lucide/svelte';
+	import { ArrowUpRight, Ellipsis, KeyRound, MessageSquare, Plus, Server, Unplug } from '@lucide/svelte';
 	import { goto, invalidate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { m } from '$lib/paraglide/messages';
@@ -24,6 +24,18 @@
 	import ConnectDialog from '$lib/ds/settings/ConnectDialog.svelte';
 	import ProviderList from '$lib/ds/settings/ProviderList.svelte';
 	import ConnectPane from '$lib/ds/settings/ConnectPane.svelte';
+	import { phoneView } from '$lib/phone.svelte';
+	import { phoneScreen } from '$lib/ds/shells/phoneScreen.svelte';
+	import PhoneBackBar from '$lib/ds/chrome/PhoneBackBar.svelte';
+	import LargeTitle from '$lib/ds/chrome/LargeTitle.svelte';
+	import PhoneSettingsGroup, { type SettingsRow } from '$lib/ds/settings/PhoneSettingsGroup.svelte';
+	import PhoneFormScreen from '$lib/ds/settings/PhoneFormScreen.svelte';
+	import PhoneButton from '$lib/ds/mobile/PhoneButton.svelte';
+	import BottomSheet from '$lib/ds/overlays/BottomSheet.svelte';
+	import SheetOption from '$lib/ds/overlays/SheetOption.svelte';
+	import ActionSheet from '$lib/ds/overlays/ActionSheet.svelte';
+	import TextField from '$lib/ds/inputs/TextField.svelte';
+	import Search from '$lib/ds/inputs/Search.svelte';
 
 	// Settings › Models & providers (App / Settings / Models & providers RbTgo): the defaults for new
 	// chats and for Koda; Nomi's own models and each connected provider with which models are in the
@@ -148,9 +160,203 @@
 		toasts.show({ kind: 'success', title: m.models_added({ name: made.label }) });
 		await close(true);
 	}
+
+	// On a phone (Flow / Mobile — You & Settings, steps 12 to 15): the defaults as rows that open a
+	// picker sheet, then each provider as a row with how many of its models are in the picker; a
+	// provider is its own screen (`?provider=`) with its models as switches and Disconnect last.
+	// Connect a provider is a sheet with search (`?connect`); picking one opens its key screen
+	// (`?connect=<id>`), checked with the provider as it connects, its models then picked for the
+	// picker. No table, no top-bar button.
+	const guess = () => data.phone;
+	const phone = phoneView(guess());
+	const screen = phoneScreen();
+	$effect(() => {
+		screen.inside = phone.current && !!chosen;
+		return () => (screen.inside = false);
+	});
+	let defaultSheet = $state<'chat' | 'coding' | null>(null);
+	let disconnecting = $state(false);
+	const provider = $derived(cards.find((card) => card.id === page.url.searchParams.get('provider')));
+	const chatOptions = $derived(chatChoices(data.options.groups));
+	const codingOptions = $derived(data.models ? codingChoices(data.models) : []);
+	const firstPart = (label: string | undefined) => label?.split(' · ')[0];
+	const providerDetail = (card: (typeof cards)[number]) =>
+		card.kind === 'included'
+			? data.usage
+				? m.models_nomi_usage({ plan: data.usage.plan.name, used: formatTokens(data.usage.tokens_used), allowance: formatTokens(data.usage.plan.monthly_tokens) })
+				: m.models_nomi_detail()
+			: [card.kind === 'local' ? m.models_local() : m.models_your_key(), card.detail].filter(Boolean).join(' · ');
+	const providerRows = $derived<SettingsRow[]>(
+		cards.map((card) => ({
+			key: card.id,
+			...(card.kind === 'included' ? { crew: { agent: 'nomi' as const, initial: 'N' } } : { icon: card.kind === 'local' ? Server : KeyRound }),
+			label: card.label,
+			sub: providerDetail(card),
+			meta: card.error === 'unreachable' ? m.models_unreachable_status() : m.models_in_picker({ shown: card.shown, total: card.total }),
+			tone: card.error === 'unreachable' ? ('warning' as const) : undefined,
+			href: `?provider=${encodeURIComponent(card.id)}`,
+		})),
+	);
+
+	async function disconnect() {
+		if (!provider?.connectionId) return;
+		const name = provider.label;
+		const result = await pageAction(PATH, 'disconnect', { id: provider.connectionId });
+		if (!result.ok) return void (result.message && toasts.show({ kind: 'error', title: m.action_failed(), detail: result.message }));
+		toasts.show({ kind: 'success', title: m.models_disconnected({ name }) });
+		await goto(PATH, { replaceState: true, noScroll: true });
+		await invalidate('app:models');
+	}
 </script>
 
 <svelte:head><title>{m.settings_models()} · {m.app_name()}</title></svelte:head>
+
+{#snippet kodaLead()}<Mascot agent="koda" size={20} live={false} />{/snippet}
+
+{#if phone.current}
+	<div class="h-full overflow-y-auto">
+		{#if chosen}
+			{#if chosen.auth_type === 'oauth'}
+				<PhoneBackBar label={m.phone_models_back()} onback={() => close()} />
+				<LargeTitle title={chosen.name} />
+				<p class="px-5 text-phone-sm leading-firm text-text-3">{m.models_oauth({ name: chosen.name })}</p>
+			{:else}
+				<PhoneFormScreen
+					backLabel={m.phone_models_back()}
+					onback={() => close()}
+					title={chosen.name}
+					sub={addressed ? m.phone_models_address_sub() : m.phone_models_key_sub({ name: chosen.name })}
+					onsubmit={act}
+				>
+					<TextField
+						label={addressed ? m.models_address() : m.models_api_key()}
+						type={addressed ? 'url' : 'password'}
+						name={addressed ? 'base_url' : 'api_key'}
+						autocomplete="off"
+						placeholder={addressed ? 'https://…/v1' : m.models_api_key_placeholder()}
+						bind:value={secret}
+						disabled={!!made}
+						error={failed}
+						helper={failed ? undefined : made ? (made.models.length === 1 ? m.models_key_works_one() : m.models_key_works({ count: made.models.length })) : local ? m.models_foot_local() : m.models_foot_key()}
+					/>
+					{#if !addressed && chosen.doc_url && !made}
+						<!-- Its own tab, so a key half-typed here is still here after. -->
+						<a
+							href={chosen.doc_url}
+							target="_blank"
+							rel="noopener noreferrer"
+							class="-mt-2 inline-flex h-11 items-center gap-1 self-start text-phone-sm font-medium text-text underline-offset-2 outline-offset-1 hover:underline focus-visible:outline-2 focus-visible:outline-focus"
+							>{m.models_get_key()}<ArrowUpRight size={14} aria-hidden="true" /></a
+						>
+					{/if}
+					{#if made && made.models.length}
+						<PhoneSettingsGroup
+							label={m.models_show_in_picker()}
+							note={m.models_selected({ count: picked })}
+							rows={made.models.map((model) => ({
+								key: model.id,
+								label: model.label,
+								toggle: { checked: model.shown, onchange: (shown) => made && (made = { ...made, models: made.models.map((one) => (one.id === model.id ? { ...one, shown } : one)) }) },
+							}))}
+						/>
+					{/if}
+					{#snippet action()}
+						<PhoneButton
+							label={!made ? m.models_check() : picked === 0 ? m.models_done() : picked === 1 ? m.models_add_one() : m.models_add({ count: picked })}
+							disabled={busy || (!made && !secret.trim())}
+							onclick={act}
+						/>
+					{/snippet}
+				</PhoneFormScreen>
+			{/if}
+		{:else if provider}
+			<PhoneBackBar label={m.phone_models_back()} href={PATH} />
+			<LargeTitle title={provider.label} />
+			<p class="-mt-1 px-5 pb-3.5 text-phone-sm text-text-3">{providerDetail(provider)}</p>
+			<div class="flex flex-col gap-5 px-4 pb-8">
+				<PhoneSettingsGroup
+					label={m.models_col_picker()}
+					note={m.models_in_picker({ shown: provider.shown, total: provider.total })}
+					rows={provider.models.length
+						? provider.models.map((model) => ({
+								key: model.key,
+								label: model.label,
+								sub: model.isDefault ? m.models_default_badge() : model.month === '—' ? m.phone_models_month_none() : m.phone_models_month({ tokens: model.month }),
+								toggle: { checked: model.enabled, onchange: (shown) => void show(model.key, shown) },
+							}))
+						: [{ key: 'none', label: m.models_no_models() }]}
+				/>
+				{#if provider.connectionId}
+					<PhoneSettingsGroup rows={[{ key: 'disconnect', icon: Unplug, label: m.phone_models_disconnect({ name: provider.label }), danger: true, onclick: () => (disconnecting = true) }]} />
+				{/if}
+			</div>
+		{:else}
+			<PhoneBackBar label={m.nav_you()} href="/settings" />
+			<LargeTitle title={m.settings_models()} />
+			<div class="flex flex-col gap-5 px-4 pt-1 pb-8">
+				<div class="flex flex-col gap-2">
+					<PhoneSettingsGroup
+						label={m.models_defaults()}
+						rows={[
+							{ key: 'chat', icon: MessageSquare, label: m.models_new_chats(), meta: firstPart(chatOptions.find((one) => one.value === chatDefault)?.label) ?? m.models_none_shown(), mono: true, onclick: () => (defaultSheet = 'chat') },
+							...(data.models ? [{ key: 'coding', lead: kodaLead, label: m.models_coding(), meta: firstPart(codingOptions.find((one) => one.value === codingDefault)?.label), onclick: () => (defaultSheet = 'coding') }] : []),
+						]}
+					/>
+					<p class="px-1 text-phone-sm leading-firm text-text-3">{m.models_defaults_body()}</p>
+				</div>
+				<PhoneSettingsGroup label={m.models_providers()} rows={providerRows} />
+				<PhoneSettingsGroup rows={[{ key: 'connect', icon: Plus, label: m.models_connect(), sub: m.models_connect_detail(), href: '?connect' }]} />
+			</div>
+		{/if}
+	</div>
+
+	<BottomSheet
+		open={defaultSheet !== null}
+		title={defaultSheet === 'coding' ? m.models_coding() : m.models_new_chats()}
+		subtitle={defaultSheet === 'coding' ? m.models_coding_body() : m.models_new_chats_body()}
+		onclose={() => (defaultSheet = null)}
+	>
+		{#each defaultSheet === 'coding' ? codingOptions : chatOptions as option (option.value)}
+			<SheetOption
+				label={firstPart(option.label) ?? option.label}
+				detail={option.label.split(' · ')[1]}
+				chosen={option.value === (defaultSheet === 'coding' ? codingDefault : chatDefault)}
+				onclick={() => {
+					const which = defaultSheet;
+					defaultSheet = null;
+					if (which === 'coding') {
+						codingDefault = option.value;
+						void choose('setCoding', { value: option.value });
+					} else {
+						chatDefault = option.value;
+						void choose('setDefault', { key: option.value });
+					}
+				}}
+			/>
+		{/each}
+	</BottomSheet>
+	<BottomSheet open={connecting && !chosen} title={m.models_connect()} subtitle={m.models_meta_providers({ count: data.catalog.length })} onclose={() => connecting && !chosen && void close()}>
+		<div class="flex flex-col gap-4 px-4 pb-4">
+			<Search placeholder={m.models_search()} label={m.models_search()} bind:value={query} />
+			{#each sections as section (section.label)}
+				<PhoneSettingsGroup
+					label={section.label}
+					rows={section.providers.map((one) => ({ key: one.id, icon: KeyRound, label: one.name, meta: one.connected ? m.models_connected() : undefined, tone: one.connected ? ('accent' as const) : undefined, onclick: () => pick(one.id) }))}
+				/>
+			{:else}
+				<p class="px-1 text-phone-sm text-text-3">{m.models_search_none()}</p>
+			{/each}
+			<PhoneSettingsGroup rows={[{ key: 'custom', icon: Server, label: m.models_custom(), sub: m.models_custom_detail(), onclick: () => pick('custom') }]} />
+		</div>
+	</BottomSheet>
+	<ActionSheet
+		bind:open={disconnecting}
+		title={m.phone_models_disconnect({ name: provider?.label ?? '' })}
+		body={m.phone_models_disconnect_body()}
+		cancel={m.action_cancel()}
+		actions={[{ label: m.models_disconnect(), danger: true, onclick: () => ((disconnecting = false), void disconnect()) }]}
+	/>
+{:else}
 
 <div class="h-full overflow-y-auto">
 	<div class="flex gap-14 px-4 pt-8 pb-12 lg:px-12">
@@ -314,3 +520,4 @@
 		{/snippet}
 	</ConnectDialog>
 </Modal>
+{/if}

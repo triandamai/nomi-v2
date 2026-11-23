@@ -72,12 +72,14 @@ test('You holds the settings pages and Log out: a page opened from it goes back 
 	await expect(page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'You' })).toHaveAttribute('aria-current', 'page');
 	// No drawer: You is the way to the rest of Settings.
 	await expect(page.getByRole('button', { name: 'Open navigation' })).toHaveCount(0);
-	await page.getByRole('link', { name: 'Back to You' }).click();
+	// Profile is its own phone screen: its back bar names You.
+	await page.getByRole('main').getByRole('link', { name: 'You' }).click();
 	await expect(page).toHaveURL(/\/settings$/);
 	await page.getByRole('region', { name: 'Account' }).getByRole('link', { name: /General/ }).click();
 	await expect(page).toHaveURL(/\/settings\/general$/);
 
-	await page.getByRole('link', { name: 'Back to You' }).click();
+	// General is its own phone screen: its back bar names You.
+	await page.getByRole('main').getByRole('link', { name: 'You' }).click();
 	await page.getByRole('button', { name: 'Log out' }).click();
 	await expect(page).toHaveURL(/\/sign-in$/);
 	expect((await context.cookies()).map((cookie) => cookie.name)).not.toContain('refresh_token');

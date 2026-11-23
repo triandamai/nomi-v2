@@ -207,4 +207,13 @@ export default [
 		accessibility: ['Button has aria-haspopup="dialog" and aria-expanded; sheet options are aria-pressed.'],
 		related: ['chrome/AccountMenu.svelte', 'overlays/BottomSheet.svelte', 'overlays/SheetOption.svelte'],
 	},
+	{
+		file: 'chrome/PhoneBackBar.svelte',
+		summary: 'A pushed phone screen’s way back: 48 high, “‹ You” at 16 with the 24 chevron (a 44 target), and the screen’s own action at the end where it has one.',
+		use: ['Every settings page on a phone, back to You; a form screen, back to its page.'],
+		avoid: ['A chat (PhoneChatNavBar) or a tab’s top level (LargeTitle).'],
+		dos: ['Name where back goes (“You”, “General”), not “Back”.', 'Make it a link when back is a page, a button when it’s a step inside the page.'],
+		accessibility: ['A link or a button named by where it goes; the chevron is decoration.'],
+		related: ['chrome/LargeTitle.svelte', 'settings/PhoneFormScreen.svelte'],
+	},
 ] satisfies ComponentDoc[];

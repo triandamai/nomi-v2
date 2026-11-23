@@ -89,4 +89,23 @@ export default [
 		accessibility: ['The count is a status, so screen readers hear it change.'],
 		related: ['actions/Button.svelte'],
 	},
+	{
+		file: 'profile/PhoneProfileHeader.svelte',
+		summary: 'The top of Profile on a phone: the picture round at 72, the name as the page’s title, the username and when they joined, and Change photo.',
+		use: ['Settings › Profile on a phone.'],
+		avoid: ['A desktop profile: use ProfileHeader.'],
+		dos: ['Leave out the username when there isn’t one rather than an empty @.'],
+		accessibility: ['The name is the page’s level-1 heading; Change photo is a 44 target.'],
+		related: ['profile/ProfileHeader.svelte', 'profile/ProfileAvatar.svelte'],
+	},
+	{
+		file: 'profile/PhoneActivity.svelte',
+		summary: 'Activity on a phone: two numbers side by side, then the last 13 weeks as cells that fill the width, with the busiest day under them.',
+		use: ['Settings › Profile on a phone.'],
+		avoid: ['A desktop profile: use StatStrip and ActivityHeatmap (a year).'],
+		dos: ['Show the lifetime total and the current streak: the two that change most.'],
+		donts: ['Squeeze a year into a phone: the cells get too small to read.'],
+		accessibility: ['The grid is one image named by its total; the numbers are a description list.'],
+		related: ['profile/ActivityHeatmap.svelte', 'profile/StatStrip.svelte'],
+	},
 ] satisfies ComponentDoc[];

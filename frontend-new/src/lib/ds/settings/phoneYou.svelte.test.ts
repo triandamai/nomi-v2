@@ -51,7 +51,7 @@ describe('PhoneSettingsGroup', () => {
 		});
 		const section = page.getByRole('region', { name: 'AI' }).element();
 		const links = [...section.querySelectorAll('a')];
-		expect(links.map((link) => [link.textContent?.trim(), Math.round(box(link).height)])).toEqual([
+		expect(links.map((link) => [link.textContent?.replace(/\s+/g, ' ').trim(), Math.round(box(link).height)])).toEqual([
 			['Crew 11', 52],
 			['Memory & context', 52],
 		]);

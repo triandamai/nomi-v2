@@ -97,3 +97,23 @@ test('sends the old addresses the backend links to on to their v2 pages', async 
 	expect(response.status()).toBe(307);
 	expect(response.headers().location).toBe('/sign-in?redirect_to=%2Fchat');
 });
+
+test.describe('on a phone', () => {
+	test.use({
+		viewport: { width: 390, height: 844 },
+		userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1',
+		hasTouch: true,
+	});
+	test('a settings page that couldn’t load says what happened, offers Try again, and keeps the way back to You', async ({ page, context }) => {
+		await context.addCookies([{ name: 'access_token', value: 'e2e-token', url: 'http://localhost:4175' }]);
+		await page.goto('/settings/memory');
+		await expect(page.getByRole('heading', { level: 1, name: 'Memory & context' })).toBeVisible();
+		await expect(page.getByRole('alert')).toContainText('Your memory couldn’t load.');
+		await expect(page.getByRole('alert')).toContainText('Nothing you saved is lost.');
+		await expect(page.getByRole('main').getByRole('link', { name: 'You', exact: true })).toHaveAttribute('href', '/settings');
+		await expect(page.getByRole('navigation', { name: 'Main' })).toBeVisible();
+		await page.screenshot({ path: process.env.SHOT_DIR ? `${process.env.SHOT_DIR}/error.png` : 'test-results/phone-settings-error.png' });
+		await page.getByRole('button', { name: 'Try again' }).click();
+		await expect(page.getByRole('alert')).toContainText('Your memory couldn’t load.');
+	});
+});
