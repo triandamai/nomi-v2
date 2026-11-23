@@ -204,6 +204,10 @@ export const handle: Handle = ({ event, resolve }) => resolve(event);
 Other imports: `redirect`, `error`, `fail` from `@sveltejs/kit`; `goto`, `invalidateAll` from
 `$app/navigation`; `page` from `$app/state` (`page.url`, `page.params`; not a store, no `$`).
 
+The form above is the bare shape. Build real screens from shadcn-svelte components in
+`src/lib/components/ui/` (`Button`, `Input`, `Card`…), themed from the design's tokens: the
+components guide says how.
+
 ## Svelte 5 (runes only)
 
 - State: `let count = $state(0);` (objects and arrays are deeply reactive). Derived:

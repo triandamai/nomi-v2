@@ -243,7 +243,8 @@ pub const CODING_SYSTEM_PROMPT: &str =
      again later; never ask the person or offer Drizzle. When it says the backend couldn't be set \
      up, tell the person to open the project's Relay sheet and choose Try again. A project not on Relay uses \
      Drizzle: Postgres for real multi-user apps, SQLite for small personal tools. Nothing when the browser's \
-     localStorage is enough. Never use another ORM, CSS framework, database or native module.\n\n\
+     localStorage is enough. UI components come from shadcn-svelte in SvelteKit (shadcn/ui in React), written into \
+     the project as the components guide shows. Never use another ORM, CSS framework, component kit, database or native module.\n\n\
      How you work:\n\
      0. Start from your brief (below, when there is one): the project and its files, the plan Rena drafted with the \
      person (the pages, data, content and design direction they chose), what 'done' means, the last failed check if \
@@ -257,7 +258,7 @@ pub const CODING_SYSTEM_PROMPT: &str =
      doesn't spell out, ask her first with ask_agent (agent planning). Never fill the app with made-up business details: use clearly marked placeholders.\n\
      1. Call list_files again only after files change outside your own writes.\n\
      2. Follow the stack's guide (read it with read_guide if your brief doesn't include it), read the design guide \
-     before writing any UI, and the relay guide on a Relay project (the database guide before adding Drizzle to one \
+     and, in SvelteKit or React, the components guide before writing any UI, and the relay guide on a Relay project (the database guide before adding Drizzle to one \
      that isn't). Follow their versions, config files and \
      design rules exactly: your memory of these frameworks is out of date.\n\
      3. Write the project: write_files for many files at once, edit_file to change part of a file (read it first), \
@@ -269,8 +270,9 @@ pub const CODING_SYSTEM_PROMPT: &str =
      4. How preview and development work: Nomi's preview runs the live dev server ('npm run dev') with instant Hot Module Replacement (HMR), in the person's browser or, when your brief has the sandbox guide, in a sandbox on Nomi's servers. Do NOT start the dev server yourself (Nomi starts and manages it), and do NOT run 'npm run build' during development (build is only for packaging production bundles when publishing). Only run 'npm install' via run_command if you add or change dependencies in package.json. If run_command says the project isn't open or its sandbox isn't up, don't wait: finish, and say so in your summary.\n\
      5. Make it look designed, not generated, even for a tiny app. When your brief has an approved design from Sora, build \
      that design: its colours, fonts, layout and components, as the brief says, and use the design guide only for what it \
-     leaves out. Otherwise pick one direction from the design guide and define its colours and fonts as tokens. Either way, never ship the generic AI look (purple gradients, gradient text, emoji icons, \
-     glowing blobs, card-in-card, default indigo and slate, marketing filler). It must work on a phone, use real \
+     leaves out; the design wins over the design guide, its 'never do these' list included. Otherwise pick one direction \
+     from the design guide, define its colours and fonts as tokens, and never ship the generic AI look (purple gradients, gradient text, emoji icons, \
+     glowing blobs, card-in-card, default indigo and slate, marketing filler). Always, it must work on a phone, use real \
      copy (not lorem ipsum), have empty, loading and error states, and accessible forms and buttons. Run the design \
      guide's checklist before finishing.\n\
      When everything the plan asks for is built and checks pass (or can't run yet), call complete_task with a short \
@@ -724,7 +726,18 @@ pub const KODA_BRIEF_NO_PLAN: &str = "No plan from Rena in this chat: work from 
 pub const KODA_BRIEF_DESIGN_INTRO: &str = "Sora handed this over after the person approved it. Build what it describes, in this project's \
      stack: the same pages, layout, colours, type, content order and behaviour. The preview's files below are static \
      mock-ups to match, not code to copy in as it is; keep each data-design-id on the element you build for it. Where the \
-     plan and the design disagree about how something looks, the design wins; say so in your report.";
+     plan and the design disagree about how something looks, the design wins; say so in your report. It wins over the \
+     design guide too, its 'never do these' list included.";
+
+/// After the approved design's intro in a SvelteKit project.
+pub const KODA_BRIEF_DESIGN_COMPONENTS_SVELTE: &str = "Build its components with shadcn-svelte, themed from its tokens: \
+     read_guide components says how to add them without the CLI and which component each name in the handoff's \
+     Components list is.";
+
+/// After the approved design's intro in a React project.
+pub const KODA_BRIEF_DESIGN_COMPONENTS_REACT: &str = "Build its components with shadcn/ui, themed from its tokens: \
+     read_guide components says how to add them without the CLI and which component each name in the handoff's \
+     Components list is.";
 
 /// After the names of the preview's files left out of the brief for length.
 pub const KODA_BRIEF_DESIGN_LEFT_OUT: &str = "The handoff above describes them.";

@@ -322,6 +322,23 @@ mod tests {
     }
 
     #[test]
+    fn the_generic_look_bans_apply_only_without_an_approved_design() {
+        let step = CODING_SYSTEM_PROMPT.split("\n5. ").nth(1).and_then(|rest| rest.split("\n").next()).unwrap();
+        let otherwise = step.find("Otherwise").unwrap();
+        let bans = step.find("never ship the generic AI look").expect("still bans the generic look");
+        assert!(otherwise < bans, "the bans are part of the no-design branch: {step}");
+        assert!(!step.contains("Either way"), "{step}");
+        assert!(step.contains("the design wins over the design guide, its 'never do these' list included"), "{step}");
+    }
+
+    #[test]
+    fn koda_builds_ui_with_shadcn_svelte_from_the_components_guide() {
+        let step = CODING_SYSTEM_PROMPT.split("\n2. ").nth(1).and_then(|rest| rest.split("\n3. ").next()).unwrap();
+        assert!(step.contains("components guide"), "{step}");
+        assert!(CODING_SYSTEM_PROMPT.contains("shadcn-svelte") && CODING_SYSTEM_PROMPT.contains("shadcn/ui"));
+    }
+
+    #[test]
     fn the_preview_step_names_both_places_a_project_runs() {
         let step = CODING_SYSTEM_PROMPT.split("\n     4. ").nth(1).or_else(|| CODING_SYSTEM_PROMPT.split("\n4. ").nth(1)).and_then(|rest| rest.split("\n").next()).unwrap();
         assert!(step.contains("sandbox"), "{step}");

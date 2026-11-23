@@ -53,6 +53,8 @@ Rules for every project:
 - Vite as the build tool (SvelteKit, React, Vue and Astro all use it).
 - Tailwind CSS v4 for all styling: `@import 'tailwindcss';` in the main CSS file and the
   `@tailwindcss/vite` plugin. No `tailwind.config.js`, no `postcss.config.js`; customise with
-  `@theme { --color-brand: #0f766e; }` in CSS. No other CSS frameworks or component kits.
+  `@theme { --color-brand: #0f766e; }` in CSS. No other CSS frameworks.
+- UI components: shadcn-svelte in SvelteKit, shadcn/ui in React, written into the project as the
+  components guide shows (their CLI's files wouldn't reach the project). No other component kits.
 - package.json must have `dev`, `build` and `check` scripts.
 - Don't commit generated folders (`node_modules`, `.svelte-kit`, `dist`, `build`, `.data`).
