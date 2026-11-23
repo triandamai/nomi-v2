@@ -113,3 +113,74 @@ test('Delete account is last, alone, and closes the account from its sheet', asy
 	await expect(page).toHaveURL(/\/sign-in\?closed=1$/);
 	expect((await login(account.email, account.password)).status).toBe(401);
 });
+
+const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
+const unique = () => `e2e_${Date.now().toString(36)}${Math.floor(Math.random() * 1000)}`;
+type Profile = { display_name: string | null; username: string | null; avatar_url: string | null; show_stats_publicly: boolean; show_crew_publicly: boolean };
+const profileOf = async (account: Account) => (await (await api(account, '/api/profile')).json()) as Profile;
+
+test('Profile on a phone: each field on its own screen with its own Save, switches save as they flip', async ({ page, context }) => {
+	const account = await createAccount();
+	await signInAs(context, account);
+	await page.goto('/settings', { waitUntil: 'networkidle' });
+	await page.getByRole('link', { name: /Profile/ }).first().click();
+	await expect(page).toHaveURL(/\/settings\/profile$/);
+	await expect(page.getByRole('main').getByRole('link', { name: 'You' })).toHaveAttribute('href', '/settings');
+	await expect(page.getByRole('img', { name: /tokens in the last 13 weeks/ })).toBeVisible();
+	await expect(page.getByRole('term').filter({ hasText: 'Current streak' })).toBeVisible();
+	// No unsaved-changes bar on a phone.
+	await expect(page.getByRole('button', { name: 'Discard' })).toHaveCount(0);
+
+	// The display name: its own screen, without the tab bar; Save takes it back with the name shown.
+	await page.getByRole('button', { name: /^Display name/ }).click();
+	await expect(page.getByRole('heading', { level: 1, name: 'Display name' })).toBeVisible();
+	await expect(page.getByRole('navigation', { name: 'Main' })).toBeHidden();
+	await expect(page.getByRole('button', { name: 'Save' })).toBeDisabled();
+	await page.getByRole('textbox', { name: 'Display name' }).fill('Sari Wulandari');
+	await page.getByRole('textbox', { name: 'Display name' }).press('Enter');
+	await expect(page.getByText('Profile saved')).toBeVisible();
+	await expect(page.getByRole('heading', { level: 1, name: 'Sari Wulandari' })).toBeVisible();
+	await expect(page.getByRole('button', { name: /^Display name Sari Wulandari/ })).toBeVisible();
+	await expect.poll(async () => (await profileOf(account)).display_name).toBe('Sari Wulandari');
+
+	// The username: checked as it's typed; back without saving leaves it as it was.
+	await page.getByRole('button', { name: /^Username/ }).click();
+	await page.getByRole('textbox', { name: 'Username' }).fill('sari-w');
+	await expect(page.getByText('Letters, numbers, underscores and periods only.')).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Save' })).toBeDisabled();
+	await page.getByRole('button', { name: 'Profile' }).click();
+	await expect(page.getByRole('navigation', { name: 'Main' })).toBeVisible();
+	const username = unique();
+	await page.getByRole('button', { name: /^Username/ }).click();
+	await page.getByRole('textbox', { name: 'Username' }).fill(username);
+	await expect(page.getByText(`/@${username} · available`)).toBeVisible();
+	await page.getByRole('button', { name: 'Save' }).click();
+	await expect(page.getByText(`@${username} · joined`)).toBeVisible();
+	await expect.poll(async () => (await profileOf(account)).username).toBe(username);
+
+	// The public switches save as they flip.
+	await page.getByRole('switch', { name: 'Show crew on profile' }).click();
+	await expect.poll(async () => (await profileOf(account)).show_crew_publicly).toBe(true);
+	await page.getByRole('switch', { name: 'Show crew on profile' }).click();
+	await expect.poll(async () => (await profileOf(account)).show_crew_publicly).toBe(false);
+
+	// Showcase: nothing live yet, so nothing to add, and why.
+	await expect(page.getByText('Publish a project to feature it here.')).toBeVisible();
+});
+
+test('Profile on a phone: the photo is changed from the header and removed from ⋯', async ({ page, context }) => {
+	const account = await createAccount();
+	await signInAs(context, account);
+	await page.goto('/settings/profile', { waitUntil: 'networkidle' });
+	await expect(page.getByRole('button', { name: 'More for your profile' })).toHaveCount(0);
+	const chooser = page.waitForEvent('filechooser');
+	await page.getByRole('button', { name: 'Change photo' }).click();
+	await (await chooser).setFiles({ name: 'me.png', mimeType: 'image/png', buffer: PNG });
+	await expect(page.getByText('Photo saved')).toBeVisible();
+	await expect.poll(async () => (await profileOf(account)).avatar_url).toMatch(/^\/avatars\//);
+
+	await page.getByRole('button', { name: 'More for your profile' }).click();
+	await page.getByRole('dialog', { name: 'Photo' }).getByRole('button', { name: 'Remove' }).click();
+	await expect(page.getByText('Photo removed')).toBeVisible();
+	await expect.poll(async () => (await profileOf(account)).avatar_url).toBeNull();
+});

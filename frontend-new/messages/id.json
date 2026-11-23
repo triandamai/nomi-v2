@@ -3675,5 +3675,11 @@
 	"release_notes_done": "Oke",
 	"phone_general_off": "Mati",
 	"phone_general_quiet_sub": "Pengingat menunggu sampai selesai",
-	"phone_general_keep": "Tetap simpan akunku"
+	"phone_general_keep": "Tetap simpan akunku",
+	"phone_profile_details": "Detail",
+	"phone_profile_weeks": "{total} token dalam 13 minggu terakhir",
+	"phone_profile_busiest": "Paling aktif {day}",
+	"phone_profile_name_sub": "Cara namamu tampil di Nomi.",
+	"phone_profile_photo": "Foto",
+	"phone_profile_more": "Lainnya untuk profilmu"
 }
