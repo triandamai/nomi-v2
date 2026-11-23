@@ -238,74 +238,78 @@
 {/snippet}
 
 {#if phone.current}
-	<div class="flex h-full flex-col overflow-y-auto pb-24">
-		<LargeTitle title={m.nav_inbox()}>
-			{#snippet trailing()}
-				<button type="button" aria-label={m.inbox_mark_all_read()} disabled={data.notifications.every((one) => one.read) || markingRead} class="inline-flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-full text-text outline-offset-1 focus-visible:outline-2 focus-visible:outline-focus disabled:cursor-default disabled:text-text-3" onclick={markAllRead}>
-					<Icon icon={CheckCheck} size={22} />
-				</button>
-				<ThemePickerButton />
-			{/snippet}
-		</LargeTitle>
-		<p class="px-5 pb-3 text-phone-sm text-text-3">
-			{counts.needs > 0 ? m.inbox_meta({ needs: counts.needs, coming: coming.reduce((sum, day) => sum + day.entries.length, 0) }) : m.phone_inbox_sub_clear({ coming: laterToday })}
-		</p>
-		<PhoneFilters label={m.inbox_filter_label()} options={filters} value={filter} onchange={(value) => (filter = value as Filter)} />
+	<div class="flex h-full flex-col overflow-hidden">
+		<div class="shrink-0 bg-bg">
+			<LargeTitle title={m.nav_inbox()}>
+				{#snippet trailing()}
+					<button type="button" aria-label={m.inbox_mark_all_read()} disabled={data.notifications.every((one) => one.read) || markingRead} class="inline-flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-full text-text outline-offset-1 focus-visible:outline-2 focus-visible:outline-focus disabled:cursor-default disabled:text-text-3" onclick={markAllRead}>
+						<Icon icon={CheckCheck} size={22} />
+					</button>
+					<ThemePickerButton />
+				{/snippet}
+			</LargeTitle>
+			<p class="px-5 pb-3 text-phone-sm text-text-3">
+				{counts.needs > 0 ? m.inbox_meta({ needs: counts.needs, coming: coming.reduce((sum, day) => sum + day.entries.length, 0) }) : m.phone_inbox_sub_clear({ coming: laterToday })}
+			</p>
+			<PhoneFilters label={m.inbox_filter_label()} options={filters} value={filter} onchange={(value) => (filter = value as Filter)} />
+		</div>
 
-		{#if feed.needs.length}
-			<section class="flex flex-col">
-				<div class="flex items-center px-5 pt-3.5 pb-2">
-					<h2 class="flex-1 font-mono text-label tracking-label text-text-3 uppercase">{m.inbox_filter_needs()}</h2>
-					<span class="font-mono text-label text-text-3">{feed.needs.length}</span>
-				</div>
-				<div class="flex flex-col gap-2.5 px-4 pb-1.5">
-					{#each feed.needs as entry (key(entry))}
-						<PhoneInboxCard kind={entryTag(entry, language)} when={entryTime(entry, time.now, zone, language)} title={entry.title} body={entryCaption(entry, time.now) || undefined} unread={entry.kind === 'notification'}>
-							{#snippet actions()}
-								{#if entry.kind === 'notification'}
-									{#if inApp(entry.link)}<PhonePill label={m.inbox_open()} variant="inverse" loading={busy === key(entry)} onclick={() => open(entry)} />{/if}
-									<PhonePill label={m.inbox_mark_read()} onclick={() => run(entry, 'read', { id: entry.id })} />
-								{:else}
-									<PhonePill label={m.inbox_done()} variant="inverse" icon={Check} loading={busy === key(entry)} onclick={() => finish(entry)} />
-									<PhonePill label={m.inbox_snooze_hour()} icon={AlarmClockPlus} onclick={() => snooze(entry)} />
-								{/if}
-							{/snippet}
-						</PhoneInboxCard>
-					{/each}
-				</div>
-			</section>
-		{:else if filter === 'all' && !nothing}
-			<!-- Inbox, all clear (C6vql9): nothing waits on the person; what's still coming follows. -->
-			<div class="px-4 pt-6"><EmptyState icon={CircleCheck} title={m.inbox_empty_needs_title()} body={m.phone_inbox_clear_body()} /></div>
-		{/if}
+		<div class="flex min-h-0 flex-1 flex-col overflow-y-auto pb-24">
+			{#if feed.needs.length}
+				<section class="flex flex-col">
+					<div class="flex items-center px-5 pt-3.5 pb-2">
+						<h2 class="flex-1 font-mono text-label tracking-label text-text-3 uppercase">{m.inbox_filter_needs()}</h2>
+						<span class="font-mono text-label text-text-3">{feed.needs.length}</span>
+					</div>
+					<div class="flex flex-col gap-2.5 px-4 pb-1.5">
+						{#each feed.needs as entry (key(entry))}
+							<PhoneInboxCard kind={entryTag(entry, language)} when={entryTime(entry, time.now, zone, language)} title={entry.title} body={entryCaption(entry, time.now) || undefined} unread={entry.kind === 'notification'}>
+								{#snippet actions()}
+									{#if entry.kind === 'notification'}
+										{#if inApp(entry.link)}<PhonePill label={m.inbox_open()} variant="inverse" loading={busy === key(entry)} onclick={() => open(entry)} />{/if}
+										<PhonePill label={m.inbox_mark_read()} onclick={() => run(entry, 'read', { id: entry.id })} />
+									{:else}
+										<PhonePill label={m.inbox_done()} variant="inverse" icon={Check} loading={busy === key(entry)} onclick={() => finish(entry)} />
+										<PhonePill label={m.inbox_snooze_hour()} icon={AlarmClockPlus} onclick={() => snooze(entry)} />
+									{/if}
+								{/snippet}
+							</PhoneInboxCard>
+						{/each}
+					</div>
+				</section>
+			{:else if filter === 'all' && !nothing}
+				<!-- Inbox, all clear (C6vql9): nothing waits on the person; what's still coming follows. -->
+				<div class="px-4 pt-6"><EmptyState icon={CircleCheck} title={m.inbox_empty_needs_title()} body={m.phone_inbox_clear_body()} /></div>
+			{/if}
 
-		{#if feed.today.length}
-			<section class="flex flex-col">
-				<h2 class="px-5 pt-3.5 pb-2 font-mono text-label tracking-label text-text-3 uppercase">{m.inbox_today({ date: dayName(today, language) })}</h2>
-				<ul class="flex flex-col px-5">
-					{#each feed.today as entry (key(entry))}{@render phoneRow(entry)}{/each}
-				</ul>
-			</section>
-		{/if}
+			{#if feed.today.length}
+				<section class="flex flex-col">
+					<h2 class="px-5 pt-3.5 pb-2 font-mono text-label tracking-label text-text-3 uppercase">{m.inbox_today({ date: dayName(today, language) })}</h2>
+					<ul class="flex flex-col px-5">
+						{#each feed.today as entry (key(entry))}{@render phoneRow(entry)}{/each}
+					</ul>
+				</section>
+			{/if}
 
-		{#each phoneLater as day (day.day)}
-			<section class="flex flex-col">
-				<h2 class="px-5 pt-3.5 pb-2 font-mono text-label tracking-label text-text-3 uppercase">{dayName(day.day, language)}</h2>
-				<ul class="flex flex-col px-5">{#each day.entries as entry (key(entry))}{@render phoneRow(entry)}{/each}</ul>
-			</section>
-		{/each}
+			{#each phoneLater as day (day.day)}
+				<section class="flex flex-col">
+					<h2 class="px-5 pt-3.5 pb-2 font-mono text-label tracking-label text-text-3 uppercase">{dayName(day.day, language)}</h2>
+					<ul class="flex flex-col px-5">{#each day.entries as entry (key(entry))}{@render phoneRow(entry)}{/each}</ul>
+				</section>
+			{/each}
 
-		{#if feed.earlier.length || more}
-			<section class="flex flex-col gap-2 px-5 pt-3.5">
-				<EarlierToggle label={m.inbox_earlier()} count={feed.earlier.length} bind:expanded />
-				{#if expanded}
-					{#if feed.earlier.length}<ul class="flex flex-col">{#each feed.earlier as entry (key(entry))}{@render phoneRow(entry)}{/each}</ul>{/if}
-					{#if more}<span><PhonePill label={m.inbox_show_older()} variant="ghost" onclick={() => goto(`?shown=${data.shown + 1}`, { noScroll: true, keepFocus: true })} /></span>{/if}
-				{/if}
-			</section>
-		{/if}
+			{#if feed.earlier.length || more}
+				<section class="flex flex-col gap-2 px-5 pt-3.5">
+					<EarlierToggle label={m.inbox_earlier()} count={feed.earlier.length} bind:expanded />
+					{#if expanded}
+						{#if feed.earlier.length}<ul class="flex flex-col">{#each feed.earlier as entry (key(entry))}{@render phoneRow(entry)}{/each}</ul>{/if}
+						{#if more}<span><PhonePill label={m.inbox_show_older()} variant="ghost" onclick={() => goto(`?shown=${data.shown + 1}`, { noScroll: true, keepFocus: true })} /></span>{/if}
+					{/if}
+				</section>
+			{/if}
 
-		{#if nothing}<div class="px-4 pt-6"><EmptyState icon={empty.icon} title={empty.title} body={empty.body} /></div>{/if}
+			{#if nothing}<div class="px-4 pt-6"><EmptyState icon={empty.icon} title={empty.title} body={empty.body} /></div>{/if}
+		</div>
 	</div>
 	<div class="fixed right-4 bottom-14"><Fab label={m.inbox_new_reminder()} icon={AlarmClockPlus} iconSize={22} onclick={() => (reminderOpen = true)} /></div>
 	<BottomSheet bind:open={reminderOpen} title={m.inbox_new_reminder()}>

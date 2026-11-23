@@ -145,7 +145,7 @@
 	});
 	setMainLayout({
 		get bleed() {
-			return inThread || isInbox || isSettings || isProjects;
+			return inThread || isInbox || isSettings || isProjects || (isChats && phone.current);
 		},
 	});
 	// On a phone the top-level screens share the tab bar (Flow / Mobile Chat → Chats); a chat or a
