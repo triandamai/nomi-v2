@@ -3709,5 +3709,11 @@
 	"phone_connections_add_key": "Add key",
 	"phone_connections_update": "Update access on Google",
 	"phone_connections_apps": "Apps",
-	"phone_error_body": "Nomi’s server didn’t answer ({status}). Nothing you saved is lost."
+	"phone_error_body": "Nomi’s server didn’t answer ({status}). Nothing you saved is lost.",
+	"studio_pen_loading": "Loading Sora’s canvas…",
+	"studio_pen_failed_title": "Couldn’t load this design",
+	"studio_pen_unreachable": "Nomi couldn’t fetch this version’s canvas file, so nothing of it is drawn.",
+	"studio_pen_unreadable": "This version’s canvas file couldn’t be read, so nothing of it is drawn. Ask Sora to save the version again.",
+	"studio_pen_status": "HTTP {status}",
+	"studio_pen_retry": "Try again"
 }

@@ -19,9 +19,8 @@
 		fitZoom,
 		highlightMessage,
 		isPenPreview,
-		mergePenDocuments,
+		loadPenDocument,
 		modeMessage,
-		penUrl,
 		pickDirectionMessage,
 		pickVersion,
 		previewUrl,
@@ -36,6 +35,7 @@
 		type Device,
 		type FeedbackScope,
 		type Selection,
+		type PenLoad,
 		type StudioApproval,
 		type StudioDirection,
 		type StudioDirectionSet,
@@ -149,21 +149,22 @@
 	type CanvasEngine = 'openpencil' | 'frames';
 	const canvasEngine = $derived<CanvasEngine>(current && !isPenPreview(current) ? 'frames' : 'openpencil');
 
-	// The version's own .pen files, loaded from where its files are served.
-	let pen = $state<{ token: string; json: string | null } | null>(null);
+	// The version's own .pen files, loaded from where its files are served. Until they're here, or
+	// when they can't be, the canvas says so and draws nothing of the version in their place.
+	let pen = $state<{ token: string; load: PenLoad } | null>(null);
 	$effect(() => {
 		const preview = current;
-		if (!preview || canvasEngine !== 'openpencil') return;
-		const files = preview.pen_files ?? [];
-		if (files.length === 0 || pen?.token === preview.preview_token) return;
+		if (!preview || canvasEngine !== 'openpencil' || pen?.token === preview.preview_token) return;
 		const token = preview.preview_token;
-		void Promise.all(files.map((path) => fetch(penUrl(preview, path)).then((r) => (r.ok ? r.text() : '')).catch(() => '')))
-			.then((contents) => {
-				if (current?.preview_token === token) pen = { token, json: mergePenDocuments(contents) };
-			});
+		pen = { token, load: { state: 'loading' } };
+		void loadPenDocument(preview).then((load) => {
+			if (current?.preview_token === token) pen = { token, load };
+		});
 	});
-	const penJson = $derived(current && pen?.token === current.preview_token ? pen.json : null);
-
+	const penLoad = $derived<PenLoad | null>(
+		current && canvasEngine === 'openpencil' ? (pen?.token === current.preview_token ? pen.load : { state: 'loading' }) : null
+	);
+	const penJson = $derived(penLoad?.state === 'ready' ? penLoad.json : null);
 	const openPencilModel = $derived(
 		buildStudioSceneModel({
 			directions: directionList,
@@ -173,6 +174,24 @@
 			rawPenJson: penJson
 		})
 	);
+
+	// What the canvas says in place of a .pen version it hasn't drawn.
+	const penNotice = $derived<
+		{ kind: 'loading' } | { kind: 'failed'; reason: 'unreachable' | 'unreadable'; status: number | null } | null
+	>(
+		!penLoad
+			? null
+			: penLoad.state === 'loading'
+				? { kind: 'loading' }
+				: penLoad.state === 'failed'
+					? { kind: 'failed', reason: penLoad.reason, status: penLoad.status }
+					: openPencilModel.penUnreadable
+						? { kind: 'failed', reason: 'unreadable', status: null }
+						: null
+	);
+	function retryPen() {
+		pen = null;
+	}
 
 	// The canvas fits what is on it whenever something new is drawn.
 	let fittedFor = $state<string | null>(null);
@@ -669,6 +688,22 @@
 						if (dir) useDirection(dir);
 					}}
 				/>
+				{#if penNotice?.kind === 'loading'}
+					<p class="absolute inset-0 m-auto h-fit w-fit text-ui text-text-2" role="status">{m.studio_pen_loading()}</p>
+				{:else if penNotice?.kind === 'failed'}
+					<section class="absolute inset-0 m-auto flex h-fit max-w-96 flex-col items-center gap-1.5 p-8 text-center" role="alert">
+						<h2 class="m-0 text-body font-semibold text-text">{m.studio_pen_failed_title()}</h2>
+						<p class="m-0 text-ui text-text-2">
+							{penNotice.reason === 'unreachable' ? m.studio_pen_unreachable() : m.studio_pen_unreadable()}
+						</p>
+						{#if penNotice.status !== null}
+							<span class="font-mono text-label text-text-3">{m.studio_pen_status({ status: String(penNotice.status) })}</span>
+						{/if}
+						<button type="button" class="mt-2.5 cursor-pointer rounded-sm border border-border-strong bg-surface px-2.75 py-1.25 text-ui text-text hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus" onclick={retryPen}>
+							{m.studio_pen_retry()}
+						</button>
+					</section>
+				{/if}
 			{:else if current}
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
 				<div

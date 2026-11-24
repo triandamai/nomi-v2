@@ -125,6 +125,39 @@ describe('DesignCanvas', () => {
 		}
 	});
 
+	it('says a .pen version could not be reached, draws nothing in its place, and tries again', async () => {
+		const pen = JSON.stringify({ version: '1.0', children: [{ id: 'design-system', type: 'frame', name: 'Design system', width: 390, height: 600 }] });
+		const fetchSpy = vi.fn(async () => new Response('not found', { status: 404 }));
+		vi.stubGlobal('fetch', fetchSpy);
+		try {
+			const penVersion: StudioPreview = { ...previews[1], version: 3, pages: [{ path: 'design-system', title: 'Design system' }], elements: [{ id: 'ds-header', kind: 'section', label: 'ds-header', pages: ['design-system'] }], pen_files: ['canvas.pen'] };
+			render(DesignCanvas, { sessionId: 's1', directions, previews: [penVersion], feedback: [], approval: null });
+
+			await expect.element(page.getByRole('alert')).toHaveTextContent('Couldn’t load this design');
+			await expect.element(page.getByRole('alert')).toHaveTextContent('HTTP 404');
+			expect(document.body.textContent).not.toContain('click anywhere');
+
+			fetchSpy.mockImplementation(async () => new Response(pen, { status: 200 }));
+			await page.getByRole('button', { name: 'Try again' }).click();
+			await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(2));
+			await vi.waitFor(() => expect(document.querySelector('[role="alert"]')).toBeNull());
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+
+	it('says a .pen version could not be read when its file has no frames', async () => {
+		vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 200 })));
+		try {
+			const penVersion: StudioPreview = { ...previews[1], version: 3, pages: [{ path: 'design-system', title: 'Design system' }], elements: [], pen_files: ['canvas.pen'] };
+			render(DesignCanvas, { sessionId: 's1', directions, previews: [penVersion], feedback: [], approval: null });
+
+			await expect.element(page.getByRole('alert')).toHaveTextContent('This version’s canvas file couldn’t be read');
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+
 	it('picks a tool by click or key, selects without a note, and pins a note with the comment tool', async () => {
 		const fetchSpy = vi.fn(async () => new Response(JSON.stringify(openNote), { status: 201, headers: { 'content-type': 'application/json' } }));
 		vi.stubGlobal('fetch', fetchSpy);

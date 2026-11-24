@@ -565,3 +565,26 @@ describe('OpenPencil Scene-Graph Canvas Engine', () => {
 		});
 	});
 });
+
+describe('a .pen version the canvas could not read', () => {
+	const penVersion: StudioPreview = {
+		...preview,
+		pages: [{ path: 'ds-foundations', title: 'Design System' }],
+		elements: [{ id: 'ds-header', kind: 'section', label: 'ds-header', pages: ['ds-foundations'] }],
+		pen_files: ['canvas.pen']
+	};
+
+	it('draws nothing in its place while the file has not arrived', () => {
+		const model = buildStudioSceneModel({ directions, preview: penVersion, activeDirection: directions[0], rawPenJson: null });
+		expect(model.frames).toEqual([]);
+		expect(model.penJson).not.toContain('click anywhere');
+		expect(model.penUnreadable).toBe(false);
+	});
+
+	it('says the file is unreadable instead of drawing placeholder boxes', () => {
+		const model = buildStudioSceneModel({ directions, preview: penVersion, activeDirection: directions[0], rawPenJson: '{"children": [' });
+		expect(model.frames).toEqual([]);
+		expect(model.penJson).not.toContain('click anywhere');
+		expect(model.penUnreadable).toBe(true);
+	});
+});

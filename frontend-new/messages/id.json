@@ -3709,5 +3709,11 @@
 	"phone_connections_add_key": "Tambah key",
 	"phone_connections_update": "Perbarui akses di Google",
 	"phone_connections_apps": "Aplikasi",
-	"phone_error_body": "Server Nomi tidak menjawab ({status}). Yang sudah kamu simpan tetap aman."
+	"phone_error_body": "Server Nomi tidak menjawab ({status}). Yang sudah kamu simpan tetap aman.",
+	"studio_pen_loading": "Memuat kanvas Sora…",
+	"studio_pen_failed_title": "Desain ini tidak bisa dimuat",
+	"studio_pen_unreachable": "Nomi tidak bisa mengambil berkas kanvas versi ini, jadi belum ada yang digambar.",
+	"studio_pen_unreadable": "Berkas kanvas versi ini tidak bisa dibaca, jadi belum ada yang digambar. Minta Sora menyimpan versi ini lagi.",
+	"studio_pen_status": "HTTP {status}",
+	"studio_pen_retry": "Coba lagi"
 }
