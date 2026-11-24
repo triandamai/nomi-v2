@@ -419,7 +419,7 @@ pub(super) async fn resolve_tool_batch_in_reply(
                 // A generic tool this agent is offered (web, records, reminders, background
                 // tasks, speaking, attached files) runs straight away.
                 let (agent_type, agent_name) = (agent.agent_type(), agent.display_name());
-                let ctx = ToolContext { session_id, agent_session_id, user_id, agent_type: agent_type.as_ref(), agent_name: agent_name.as_ref(), mqtt };
+                let ctx = ToolContext { session_id, agent_session_id, user_id, agent_type: agent_type.as_ref(), agent_name: agent_name.as_ref(), mqtt, builtin_skills: agent.builtin_skills() };
                 match tool.execute(conn, &ctx, input.clone()).await {
                     Ok(outcome) => (outcome.display_text, false, outcome.block),
                     Err(err) => (err, true, None),

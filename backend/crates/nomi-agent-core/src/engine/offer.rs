@@ -21,6 +21,8 @@ pub struct OfferInputs {
     pub not_ready: HashSet<String>,
     /// The conversation holds an attached file.
     pub mentions_files: bool,
+    /// The member's skills for this person, theirs first (built-in ones they don't shadow after).
+    pub skills: Vec<nomi_skills::SkillEntry>,
 }
 
 /// The generic tools the engine gives agents, as catalog tools, in the order they're offered:
@@ -34,6 +36,7 @@ pub fn engine_catalog_tools() -> Vec<Box<dyn Tool>> {
         crate::web::tools(),
         crate::voice::tools(speak),
         nomi_tools_attachments::tools(),
+        nomi_tools_skills::tools(nomi_tools_skills::ReadSkillCopy { description: crate::prompts::READ_SKILL_TOOL_DESCRIPTION }),
     ]
     .into_iter()
     .flatten()
@@ -83,7 +86,7 @@ fn catalog_offer(agent: &dyn SubAgent, registry: &AgentRegistry, inputs: &OfferI
 pub fn engine_tools_for(agent: &dyn SubAgent, registry: &AgentRegistry, inputs: &OfferInputs) -> Vec<ToolDefinition> {
     let off = &inputs.off;
     let targets = reminder_targets(registry, off);
-    let offer = OfferContext { reminder_targets: &targets, mentions_files: inputs.mentions_files };
+    let offer = OfferContext { reminder_targets: &targets, mentions_files: inputs.mentions_files, skills: &inputs.skills };
     let background = |t: &dyn Tool| t.group() == crate::background::GROUP;
     let gated = |t: &dyn Tool| matches!(t.auto_offer(), AutoOffer::IfUsesRecords | AutoOffer::IfSupportsReminders);
 

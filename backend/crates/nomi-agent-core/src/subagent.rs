@@ -145,6 +145,12 @@ pub trait SubAgent: Send + Sync {
         false
     }
 
+    /// The skills compiled into this member (SKILL.md, like Sora's library). A person's own skills
+    /// for it come on top, from Settings › Crew; `read_skill` reads both.
+    fn builtin_skills(&self) -> &'static [nomi_skills::BuiltinSkill] {
+        &[]
+    }
+
     /// When true, run_agent_turn gives this agent the engine-level `write_plan` tool for writing
     /// a durable, versioned plan before or during a multi-step task — see
     /// docs/superpowers/specs/2026-09-17-agent-plan-artifacts-design.md. Off by default, same

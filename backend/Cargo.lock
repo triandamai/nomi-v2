@@ -3334,6 +3334,7 @@ dependencies = [
  "nomi-llm",
  "nomi-realtime",
  "nomi-settings",
+ "nomi-skills",
  "nomi-storage",
  "nomi-test-support",
  "nomi-tool",
@@ -3342,6 +3343,7 @@ dependencies = [
  "nomi-tools-personality",
  "nomi-tools-records",
  "nomi-tools-reminders",
+ "nomi-tools-skills",
  "nomi-tools-voice",
  "nomi-tools-web",
  "nomi-usage",
@@ -3842,6 +3844,7 @@ dependencies = [
  "nomi-llm",
  "nomi-realtime",
  "nomi-settings",
+ "nomi-skills",
  "serde",
  "serde_json",
  "sqlx",
@@ -3967,9 +3970,13 @@ dependencies = [
 name = "nomi-tools-skills"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "chrono",
+ "nomi-llm",
  "nomi-skills",
+ "nomi-tool",
  "serde",
+ "serde_json",
  "sqlx",
  "tokio",
  "uuid",

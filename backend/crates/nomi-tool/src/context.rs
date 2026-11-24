@@ -16,6 +16,8 @@ pub struct ToolContext<'a> {
     pub agent_name: &'a str,
     /// Where live updates go, with the reply message they belong to, when there is a live chat.
     pub mqtt: Option<(&'a MqttPublisher, Uuid)>,
+    /// The skills compiled into the calling agent (`SubAgent::builtin_skills`).
+    pub builtin_skills: &'a [nomi_skills::BuiltinSkill],
 }
 
 /// What a tool may need to know to describe itself for this turn.
@@ -25,6 +27,8 @@ pub struct OfferContext<'a> {
     pub reminder_targets: &'a [String],
     /// The conversation holds an attached file.
     pub mentions_files: bool,
+    /// The calling member's skills for this person, theirs first (`read_skill`'s index).
+    pub skills: &'a [nomi_skills::SkillEntry],
 }
 
 /// Whether a call goes through the person's permission levels and the approval card.
@@ -52,6 +56,6 @@ pub enum AutoOffer {
 impl<'a> ToolContext<'a> {
     /// A call with no live chat to publish to.
     pub fn new(session_id: Uuid, agent_session_id: Uuid, user_id: Uuid, agent_type: &'a str, agent_name: &'a str) -> Self {
-        Self { session_id, agent_session_id, user_id, agent_type, agent_name, mqtt: None }
+        Self { session_id, agent_session_id, user_id, agent_type, agent_name, mqtt: None, builtin_skills: &[] }
     }
 }

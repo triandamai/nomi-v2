@@ -44,7 +44,7 @@ mod tests {
         assert_eq!(tool.approval(), Approval::Checked);
         assert_eq!(tool.auto_offer(), AutoOffer::GrantOnly);
         assert!(tool.posts_activity());
-        let ctx = OfferContext { reminder_targets: &[], mentions_files: false };
+        let ctx = OfferContext { reminder_targets: &[], mentions_files: false, skills: &[] };
         assert_eq!(tool.offer(&ctx).map(|d| d.name), Some("plain".to_string()));
     }
 

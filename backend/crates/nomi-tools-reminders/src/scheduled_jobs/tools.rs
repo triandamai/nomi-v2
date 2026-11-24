@@ -105,7 +105,7 @@ mod tests {
     #[test]
     fn create_reminder_lists_the_targets_it_is_offered_with() {
         let targets = vec!["dana".to_string()];
-        let offered = CreateReminder.offer(&OfferContext { reminder_targets: &targets, mentions_files: false }).unwrap();
+        let offered = CreateReminder.offer(&OfferContext { reminder_targets: &targets, mentions_files: false, skills: &[] }).unwrap();
         assert!(offered.input_schema.to_string().contains("\"dana\""));
     }
 }

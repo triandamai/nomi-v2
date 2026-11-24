@@ -182,3 +182,19 @@ async fn records_call_refused_without_uses_records(pool: PgPool) {
     .unwrap();
     assert!(is_error, "refused call must be an error: {result}");
 }
+
+#[test]
+fn read_skill_offered_when_member_has_a_skill() {
+    let inputs = OfferInputs {
+        skills: vec![nomi_skills::SkillEntry { name: "menu".into(), description: "Use when planning meals for the week.".into() }],
+        ..ready_inputs()
+    };
+    let tools = engine_tools_for(&PLAIN, &registry(vec![Box::new(PLAIN)]), &inputs);
+    let read = tools.iter().find(|t| t.name == "read_skill").expect("offered");
+    assert!(read.description.contains("- menu: Use when planning meals for the week."), "the index is in the description");
+}
+
+#[test]
+fn read_skill_not_offered_without_one() {
+    assert!(!offered(&PLAIN, &registry(vec![Box::new(PLAIN)]), &ready_inputs()).contains(&"read_skill".to_string()));
+}

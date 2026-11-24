@@ -463,6 +463,12 @@ pub const INTENT_CLASSIFICATION_PROMPT_TEMPLATE: &str = "Classify the user's mes
      categories apply. Reply with only that single word, nothing else.\n\nCategories:\n{options}";
 
 /// The `speak` tool's description (`voice::speak_tool_definition`).
+/// `read_skill`'s description; `{index}` becomes the member's skills, one `- name: description`
+/// line each.
+pub const READ_SKILL_TOOL_DESCRIPTION: &str = "Read one of your skills: know-how the person gave you (or you came with) for a kind of task. \
+Before a task one of these covers, read that skill and follow it. `name` is the skill; `reference` reads one of its \
+extra files, named at the end of the skill.\n\nYour skills:\n{index}";
+
 pub const SPEAK_TOOL_DESCRIPTION: &str = "Say something out loud in Nomi's voice: posts a recording the person can play. Use it \
      when they ask to hear something or to be answered by voice (\"read it to me\", \"say it\", \"reply with voice\", \
      \"send a voice note\"), not for ordinary replies. Pass exactly the words to say, written for listening: no markdown, \
