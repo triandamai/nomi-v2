@@ -3,12 +3,12 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use serde_json::Value;
 use sqlx::pool::PoolConnection;
-use sqlx::Postgres;
-use uuid::Uuid;
+use sqlx::{PgConnection, Postgres};
 
 use nomi_llm::ToolDefinition;
 
 use crate::content_block::ToolOutcome;
+use crate::context::{Approval, AutoOffer, OfferContext, ToolContext};
 
 /// One tool that lives outside the agent loop, implemented in the crate that owns it. The
 /// built-in agents run their own tools through it, and the ones that can run for any agent are
@@ -27,14 +27,32 @@ pub trait Tool: Send + Sync {
         &[]
     }
 
-    async fn execute(
-        &self,
-        conn: &mut PoolConnection<Postgres>,
-        session_id: Uuid,
-        agent_session_id: Uuid,
-        user_id: Uuid,
-        input: Value,
-    ) -> Result<ToolOutcome, String>;
+    /// The definition to offer this turn, or `None` to leave the tool out of it.
+    fn offer(&self, _ctx: &OfferContext<'_>) -> Option<ToolDefinition> {
+        Some(self.definition())
+    }
+
+    /// Whether the tool can run right now (configured, has its key). Not ready: not offered.
+    async fn ready(&self, _conn: &mut PgConnection) -> bool {
+        true
+    }
+
+    /// Whether a call goes through the person's permission levels and the approval card.
+    fn approval(&self) -> Approval {
+        Approval::Checked
+    }
+
+    /// Which agents get the tool without a grant.
+    fn auto_offer(&self) -> AutoOffer {
+        AutoOffer::GrantOnly
+    }
+
+    /// Whether an agent that surfaces its activity posts a message for each call.
+    fn posts_activity(&self) -> bool {
+        true
+    }
+
+    async fn execute(&self, conn: &mut PoolConnection<Postgres>, ctx: &ToolContext<'_>, input: Value) -> Result<ToolOutcome, String>;
 }
 
 /// The definitions of `tools`, in order: a built-in agent's `SubAgent::tools()`.
@@ -105,13 +123,15 @@ fn match_of(info: &ToolInfo, query: &str) -> Option<Match> {
 /// shared behind an `Arc` everywhere it's needed.
 pub struct ToolCatalog {
     entries: HashMap<String, Entry>,
+    /// Names in the order they were registered: the order the engine offers its own tools in.
+    order: Vec<String>,
 }
 
 impl ToolCatalog {
     /// No entries — for tests that need a `&ToolCatalog`/`Arc<ToolCatalog>` but never exercise
     /// dynamic-agent tool execution.
     pub fn empty() -> Self {
-        Self { entries: HashMap::new() }
+        Self { entries: HashMap::new(), order: Vec::new() }
     }
 
     /// Every tool in `tools`. Panics on two tools with the same name (see `register`).
@@ -135,6 +155,7 @@ impl ToolCatalog {
                 tool.group()
             );
         }
+        self.order.push(definition.name.clone());
         self.entries.insert(definition.name.clone(), Entry { definition, tool });
     }
 
@@ -182,17 +203,26 @@ impl ToolCatalog {
         ranked.into_iter().take(limit).map(|(_, info)| info).collect()
     }
 
-    pub async fn execute(
-        &self,
-        name: &str,
-        conn: &mut PoolConnection<Postgres>,
-        session_id: Uuid,
-        agent_session_id: Uuid,
-        user_id: Uuid,
-        input: Value,
-    ) -> Result<ToolOutcome, String> {
+    /// The tool named `name`.
+    pub fn get(&self, name: &str) -> Option<&dyn Tool> {
+        self.entries.get(name).map(|entry| entry.tool.as_ref())
+    }
+
+    /// Every tool, sorted by name.
+    pub fn tools(&self) -> impl Iterator<Item = &dyn Tool> {
+        let mut entries: Vec<&Entry> = self.entries.values().collect();
+        entries.sort_by(|a, b| a.definition.name.cmp(&b.definition.name));
+        entries.into_iter().map(|entry| entry.tool.as_ref())
+    }
+
+    /// Every tool, in the order it was registered.
+    pub fn in_registration_order(&self) -> impl Iterator<Item = &dyn Tool> {
+        self.order.iter().filter_map(|name| self.get(name))
+    }
+
+    pub async fn execute(&self, name: &str, conn: &mut PoolConnection<Postgres>, ctx: &ToolContext<'_>, input: Value) -> Result<ToolOutcome, String> {
         match self.entries.get(name) {
-            Some(entry) => entry.tool.execute(conn, session_id, agent_session_id, user_id, input).await,
+            Some(entry) => entry.tool.execute(conn, ctx, input).await,
             None => Err(format!("tool not granted: {name}")),
         }
     }
@@ -226,7 +256,7 @@ mod tests {
         fn keywords(&self) -> &'static [&'static str] {
             self.keywords
         }
-        async fn execute(&self, _: &mut PoolConnection<Postgres>, _: Uuid, _: Uuid, _: Uuid, _: Value) -> Result<ToolOutcome, String> {
+        async fn execute(&self, _: &mut PoolConnection<Postgres>, _: &ToolContext<'_>, _: Value) -> Result<ToolOutcome, String> {
             Ok(ToolOutcome::text(self.name))
         }
     }

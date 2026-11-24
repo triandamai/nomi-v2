@@ -109,6 +109,14 @@
       "lines": 96,
       "functions": 91
     },
+    "nomi-tools-background": {
+      "lines": 77,
+      "functions": 73
+    },
+    "nomi-tools-voice": {
+      "lines": 63,
+      "functions": 53
+    },
     "nomi-turn": {
       "lines": 91,
       "functions": 91

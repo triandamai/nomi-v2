@@ -3,7 +3,6 @@ use sqlx::pool::PoolConnection;
 use sqlx::{Acquire, Postgres};
 use uuid::Uuid;
 
-use crate::error::TurnError;
 
 /// The personality a chat replies in: its own when it has one, else the person's default.
 pub async fn personality_for_chat(conn: &mut PoolConnection<Postgres>, user_id: Uuid, session_id: Uuid) -> Option<String> {
@@ -31,7 +30,7 @@ pub async fn set_chat_personality(
     agent_session_id: Option<Uuid>,
     user_id: Uuid,
     description: &str,
-) -> Result<(), TurnError> {
+) -> Result<(), sqlx::Error> {
     let mut tx = conn.begin().await?;
     let old_description: Option<String> = sqlx::query_scalar("SELECT description FROM session_personality WHERE session_id = $1")
         .bind(session_id)
@@ -60,7 +59,7 @@ pub async fn set_chat_personality(
 }
 
 /// Takes a chat back to the person's default personality. False when it had none of its own.
-pub async fn clear_chat_personality(conn: &mut PoolConnection<Postgres>, session_id: Uuid) -> Result<bool, TurnError> {
+pub async fn clear_chat_personality(conn: &mut PoolConnection<Postgres>, session_id: Uuid) -> Result<bool, sqlx::Error> {
     Ok(sqlx::query("DELETE FROM session_personality WHERE session_id = $1")
         .bind(session_id)
         .execute(&mut **conn)
@@ -96,7 +95,7 @@ pub async fn set_personality(
     agent_session_id: Option<Uuid>,
     user_id: Uuid,
     new_description: &str,
-) -> Result<(), TurnError> {
+) -> Result<(), sqlx::Error> {
     let mut tx = conn.begin().await?;
 
     let old_description: Option<String> =
@@ -169,7 +168,7 @@ pub async fn list_versions(
     conn: &mut PoolConnection<Postgres>,
     user_id: Uuid,
     limit: i64,
-) -> Result<Vec<PersonalityVersion>, TurnError> {
+) -> Result<Vec<PersonalityVersion>, sqlx::Error> {
     let rows: Vec<(i32, String, DateTime<Utc>, bool)> = sqlx::query_as(
         "SELECT v.version, v.description, v.created_at, v.version = up.current_version AS is_current \
          FROM user_personality_versions v \
@@ -200,8 +199,6 @@ pub enum RollbackError {
     Db(#[from] sqlx::Error),
     #[error("personality version {0} not found for this user")]
     VersionNotFound(i32),
-    #[error(transparent)]
-    SetPersonality(#[from] TurnError),
 }
 
 /// Restores `user_id`'s personality to `target_version`'s description by creating a *new*

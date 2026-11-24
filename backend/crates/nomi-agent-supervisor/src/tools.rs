@@ -1,10 +1,10 @@
 //! The supervisor's tools as `Tool`s.
 
+use nomi_agent_core::ToolContext;
 use async_trait::async_trait;
 use serde_json::Value;
 use sqlx::pool::PoolConnection;
 use sqlx::Postgres;
-use uuid::Uuid;
 
 use nomi_agent_core::{Tool, ToolOutcome};
 use nomi_llm::ToolDefinition;
@@ -36,7 +36,8 @@ impl Tool for ListRecentAgentActivity {
     fn keywords(&self) -> &'static [&'static str] {
         &["status", "delegations", "background", "progress"]
     }
-    async fn execute(&self, conn: &mut PoolConnection<Postgres>, session_id: Uuid, _agent_session_id: Uuid, _user_id: Uuid, _input: Value) -> Result<ToolOutcome, String> {
+    async fn execute(&self, conn: &mut PoolConnection<Postgres>, ctx: &ToolContext<'_>, _input: Value) -> Result<ToolOutcome, String> {
+        let (session_id, _agent_session_id, _user_id) = (ctx.session_id, ctx.agent_session_id, ctx.user_id);
         crate::list_recent_agent_activity(conn, session_id).await.map(ToolOutcome::text)
     }
 }
@@ -54,7 +55,8 @@ impl Tool for StopAgents {
     fn keywords(&self) -> &'static [&'static str] {
         &["cancel", "abort", "halt"]
     }
-    async fn execute(&self, conn: &mut PoolConnection<Postgres>, session_id: Uuid, _agent_session_id: Uuid, user_id: Uuid, input: Value) -> Result<ToolOutcome, String> {
+    async fn execute(&self, conn: &mut PoolConnection<Postgres>, ctx: &ToolContext<'_>, input: Value) -> Result<ToolOutcome, String> {
+        let (session_id, _agent_session_id, user_id) = (ctx.session_id, ctx.agent_session_id, ctx.user_id);
         crate::stop_agents_tool(conn, session_id, user_id, &input).await
     }
 }

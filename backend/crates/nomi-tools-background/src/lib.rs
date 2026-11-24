@@ -9,6 +9,10 @@
 //! task finishes, the background worker automatically spawns Nomi (the main assistant) with the
 //! result.
 
+mod tools;
+pub use tools::{tools, GROUP};
+
+
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -61,7 +65,7 @@ impl BackgroundWakeup {
     /// Formats the note injected into Nomi's conversation when she is spawned by a finished
     /// background task.
     pub fn prompt_note(&self) -> String {
-        let who = crate::crew::display_name_for(&self.agent_type);
+        let who = nomi_tool::crew_names::display_name_for(&self.agent_type);
         let code = self.exit_code.map(|c| format!(" (exit code {c})")).unwrap_or_default();
         let output_section = if self.output.trim().is_empty() {
             "(no output)".to_string()
@@ -333,7 +337,7 @@ pub async fn start_background_task(
     user_id: Uuid,
     agent_type: &str,
     input: &Value,
-) -> Result<(String, crate::content_block::ContentBlock), String> {
+) -> Result<(String, nomi_tool::content_block::ContentBlock), String> {
     let parsed = parse_background_task_input(input)?;
 
     let id: Uuid = sqlx::query_scalar(
@@ -365,16 +369,16 @@ pub async fn start_background_task(
 
     // A card in the chat follows the task: running now, brought up to date when it ends
     // (`settle_task_cards`).
-    let card = crate::views::View::Task(crate::views::TaskView {
+    let card = nomi_tool::views::View::Task(nomi_tool::views::TaskView {
         id: Some(id.to_string()),
         title: parsed.label.clone(),
-        status: crate::views::TaskStatus::Running,
+        status: nomi_tool::views::TaskStatus::Running,
         detail: Some(parsed.command.clone()),
         progress: None,
         agent: Some(agent_type.to_string()),
         eta: None,
     });
-    Ok((format_task_started_receipt(id, &parsed.label), crate::content_block::ContentBlock::View(card)))
+    Ok((format_task_started_receipt(id, &parsed.label), nomi_tool::content_block::ContentBlock::View(card)))
 }
 
 /// Brings the chat's card for a background task up to date with how the task ended
@@ -430,7 +434,7 @@ pub async fn list_background_tasks(
 
     let mut out = String::new();
     for (id, agent_type, label, command, status, exit_code, output, error) in rows {
-        let who = crate::crew::display_name_for(&agent_type);
+        let who = nomi_tool::crew_names::display_name_for(&agent_type);
         let code = exit_code.map(|c| format!(", exit {c}")).unwrap_or_default();
         out.push_str(&format!("- {id} [{status}{code}] ({who}): \"{label}\" (`{command}`)"));
         if let Some(err) = error.filter(|s| !s.trim().is_empty()) {
@@ -510,7 +514,7 @@ pub async fn fetch_background_board_rows(conn: &mut PgConnection, session_id: Uu
 pub fn format_background_board_lines(rows: &[BackgroundBoardRow]) -> Vec<String> {
     let mut lines = Vec::new();
     for row in rows {
-        let who = crate::crew::display_name_for(&row.agent_type);
+        let who = nomi_tool::crew_names::display_name_for(&row.agent_type);
         let minutes = (row.elapsed_secs / 60).max(0);
         let label = clip_one_line(&row.label, 120);
         let cmd = clip_one_line(&row.command, 100);

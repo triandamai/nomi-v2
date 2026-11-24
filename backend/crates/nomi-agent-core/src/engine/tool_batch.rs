@@ -8,35 +8,28 @@ use super::*;
 pub(super) const USER_DENIED_RESULT: &str =
     "The user denied this action. Do not try it again; tell them it wasn't done and ask how they'd like to proceed.";
 
-/// Tools that are never permission-gated: engine-level bookkeeping (complete_task,
-/// delegate_to_agent, show, update_todos) — none of these touch anything a user would
-/// want to approve/deny.
-pub fn is_gateable(tool_name: &str) -> bool {
-    tool_name != COMPLETE_TASK_TOOL_NAME
-        && tool_name != DELEGATE_TOOL_NAME
-        && tool_name != crate::views::SHOW_TOOL_NAME
-        && tool_name != ASK_USER_TOOL_NAME
-        && tool_name != READ_PLAN_TOOL_NAME
-        && tool_name != RENAME_CHAT_TOOL_NAME
-        && tool_name != UPDATE_TODOS_TOOL_NAME
-        && tool_name != WRITE_PLAN_TOOL_NAME
-        && tool_name != CREATE_REMINDER_TOOL_NAME
-        && tool_name != LIST_REMINDERS_TOOL_NAME
-        && tool_name != CANCEL_REMINDER_TOOL_NAME
-        // Looking through the tool catalog changes nothing.
-        && tool_name != FIND_TOOLS_TOOL_NAME
-        // Talking with the crew stays in the chat.
-        && tool_name != crate::crew_talk::ASK_AGENT_TOOL_NAME
-        && tool_name != crate::crew_talk::NOTE_TOOL_NAME
-        // Reading the public web, or the user's own files, changes nothing.
-        && !crate::web::is_web_tool(tool_name)
-        && tool_name != crate::attachments::READ_ATTACHMENT_TOOL_NAME
-        // Speaking only posts a recording in the chat the person asked for.
-        && tool_name != crate::voice::SPEAK_TOOL_NAME
-        // Record tools only touch the calling agent's own private records.
-        && !crate::records::RECORD_TOOL_NAMES.contains(&tool_name)
-        // Background task orchestration tools queue/inspect/cancel background tasks without blocking.
-        && !crate::background::BACKGROUND_TOOL_NAMES.contains(&tool_name)
+/// The loop's own tools that are never permission-gated: engine bookkeeping (complete_task,
+/// delegate_to_agent, show, update_todos…) touches nothing a person would want to approve.
+const UNGATED_LOOP_TOOLS: [&str; 11] = [
+    COMPLETE_TASK_TOOL_NAME,
+    DELEGATE_TOOL_NAME,
+    crate::views::SHOW_TOOL_NAME,
+    ASK_USER_TOOL_NAME,
+    READ_PLAN_TOOL_NAME,
+    RENAME_CHAT_TOOL_NAME,
+    UPDATE_TODOS_TOOL_NAME,
+    WRITE_PLAN_TOOL_NAME,
+    // Looking through the tool catalog changes nothing.
+    FIND_TOOLS_TOOL_NAME,
+    // Talking with the crew stays in the chat.
+    crate::crew_talk::ASK_AGENT_TOOL_NAME,
+    crate::crew_talk::NOTE_TOOL_NAME,
+];
+
+/// Whether a call to `tool_name` goes through the person's permission levels and approval card:
+/// not for the loop's own ungated tools, nor for catalog tools that run straight away.
+pub fn is_gateable(catalog: Option<&ToolCatalog>, tool_name: &str) -> bool {
+    !UNGATED_LOOP_TOOLS.contains(&tool_name) && catalog.and_then(|c| c.get(tool_name)).map_or(true, |t| t.approval() == Approval::Checked)
 }
 
 pub(super) fn describe_pending_action(tool_name: &str, input: &serde_json::Value, locale: Locale) -> String {
@@ -198,7 +191,7 @@ pub(super) async fn resolve_tool_batch_in_reply(
             if already_decided.iter().any(|(decided_id, _)| decided_id == id) {
                 continue;
             }
-            if !is_gateable(name) {
+            if !is_gateable(registry.tool_catalog().map(|c| c.as_ref()), name) {
                 continue;
             }
             let decision = match levels.get(name.as_str()) {
@@ -378,11 +371,6 @@ pub(super) async fn resolve_tool_batch_in_reply(
                     Ok(text) => (text, false, None),
                     Err(err) => (err, true, None),
                 }
-            } else if name.as_str() == crate::attachments::READ_ATTACHMENT_TOOL_NAME {
-                match crate::attachments::read_attachment(conn, user_id, input).await {
-                    Ok(text) => (text, false, None),
-                    Err(err) => (err, true, None),
-                }
             } else if name.as_str() == crate::crew_talk::ASK_AGENT_TOOL_NAME {
                 match crate::crew_talk::ask(conn, mqtt.map(|(p, _)| p), s3, provider, registry, agent, session_id, user_id, input, conversation_so_far).await {
                     Ok(text) => (text, false, None),
@@ -418,60 +406,23 @@ pub(super) async fn resolve_tool_batch_in_reply(
                     Ok(text) => (text, false, None),
                     Err(err) => (err, true, None),
                 }
-            } else if agent.uses_records() && crate::records::RECORD_TOOL_NAMES.contains(&name.as_str()) {
-                match crate::records::execute(conn, agent.agent_type().as_ref(), user_id, name, input).await {
-                    Some(Ok(text)) => (text, false, None),
-                    Some(Err(err)) => (err, true, None),
-                    None => (format!("unknown tool: {name}"), true, None),
-                }
-            } else if name.as_str() == CREATE_REMINDER_TOOL_NAME && agent.supports_reminders() {
-                match crate::scheduled_jobs::create_reminder(conn, session_id, user_id, agent.agent_type().as_ref(), input).await {
-                    Ok(text) => (text, false, None),
-                    Err(err) => (err, true, None),
-                }
-            } else if name.as_str() == LIST_REMINDERS_TOOL_NAME && agent.supports_reminders() {
-                match crate::scheduled_jobs::list_reminders(conn, user_id).await {
-                    Ok(text) => (text, false, None),
-                    Err(err) => (err, true, None),
-                }
-            } else if name.as_str() == CANCEL_REMINDER_TOOL_NAME && agent.supports_reminders() {
-                match crate::scheduled_jobs::cancel_reminder(conn, user_id, input).await {
-                    Ok(text) => (text, false, None),
-                    Err(err) => (err, true, None),
-                }
-            } else if name.as_str() == crate::background::RUN_BACKGROUND_TASK_TOOL_NAME {
-                match crate::background::start_background_task(conn, mqtt, session_id, user_id, agent.agent_type().as_ref(), input).await {
-                    Ok((text, card)) => {
-                        posted_text = Some(card_text(&card));
-                        (text, false, Some(card))
-                    }
-                    Err(err) => (err, true, None),
-                }
-            } else if name.as_str() == crate::background::LIST_BACKGROUND_TASKS_TOOL_NAME {
-                match crate::background::list_background_tasks(conn, session_id, user_id).await {
-                    Ok(text) => (text, false, None),
-                    Err(err) => (err, true, None),
-                }
-            } else if name.as_str() == crate::background::CANCEL_BACKGROUND_TASK_TOOL_NAME {
-                match crate::background::cancel_background_task(conn, mqtt.map(|(p, _)| p), session_id, user_id, input).await {
-                    Ok(text) => (text, false, None),
-                    Err(err) => (err, true, None),
-                }
-            } else if name.as_str() == crate::voice::SPEAK_TOOL_NAME {
-                match crate::voice::speak(conn, user_id, input).await {
-                    Ok((text, block)) => (text, false, Some(block)),
-                    Err(err) => (err, true, None),
-                }
             } else if let (FIND_TOOLS_TOOL_NAME, Some(catalog)) = (name.as_str(), registry.tool_catalog()) {
                 match crate::tool_finder::find_tools(conn, registry, catalog, embedding, &switches, agent, user_id, input).await {
                     Ok(text) => (text, false, None),
                     Err(err) => (err, true, None),
                 }
-            } else if crate::web::is_web_tool(name) {
-                match crate::web::execute(conn, name, input).await {
-                    Some(Ok(text)) => (text, false, None),
-                    Some(Err(err)) => (err, true, None),
-                    None => (format!("unknown tool: {name}"), true, None),
+            } else if let Some(tool) = registry
+                .tool_catalog()
+                .and_then(|c| c.get(name))
+                .filter(|t| t.approval() == Approval::Never && offered_to(*t, agent))
+            {
+                // A generic tool this agent is offered (web, records, reminders, background
+                // tasks, speaking, attached files) runs straight away.
+                let (agent_type, agent_name) = (agent.agent_type(), agent.display_name());
+                let ctx = ToolContext { session_id, agent_session_id, user_id, agent_type: agent_type.as_ref(), agent_name: agent_name.as_ref(), mqtt };
+                match tool.execute(conn, &ctx, input.clone()).await {
+                    Ok(outcome) => (outcome.display_text, false, outcome.block),
+                    Err(err) => (err, true, None),
                 }
             } else if levels.get(name.as_str()) == Some(&Level::Never) {
                 (crate::prompts::MEMBER_TOOL_NEVER_RESULT.to_string(), true, None)
@@ -503,7 +454,8 @@ pub(super) async fn resolve_tool_batch_in_reply(
             log_tool_call(conn, session_id, agent_session_id, agent.agent_type().as_ref(), name, input, &result_text, is_error).await;
 
             // A personality change shows in the chat's personality menu straight away.
-            if !is_error && PERSONALITY_TOOL_NAMES.contains(&name.as_str()) {
+            let is_personality_tool = registry.tool_catalog().and_then(|c| c.get(name)).is_some_and(|t| t.group() == nomi_tools_personality::GROUP);
+            if !is_error && is_personality_tool {
                 if let Some((publisher, _)) = mqtt {
                     let _ = publisher.publish(session_id, &StreamEnvelope::PersonalityChanged).await;
                 }
@@ -513,19 +465,7 @@ pub(super) async fn resolve_tool_batch_in_reply(
             // seen, whether or not the agent narrates the rest of its tool calls.
             let should_post = name.as_str() == crate::views::SHOW_TOOL_NAME
                 || rich_block.is_some()
-                || (agent.surfaces_activity()
-                    && name.as_str() != COMPLETE_TASK_TOOL_NAME
-                    && name.as_str() != DELEGATE_TOOL_NAME
-                    && name.as_str() != UPDATE_TODOS_TOOL_NAME
-                    && name.as_str() != WRITE_PLAN_TOOL_NAME
-                    && name.as_str() != READ_PLAN_TOOL_NAME
-                    && name.as_str() != CREATE_REMINDER_TOOL_NAME
-                    && name.as_str() != LIST_REMINDERS_TOOL_NAME
-                    && name.as_str() != CANCEL_REMINDER_TOOL_NAME
-                    && name.as_str() != FIND_TOOLS_TOOL_NAME
-                    && !crate::background::BACKGROUND_TOOL_NAMES.contains(&name.as_str())
-                    && !crate::web::is_web_tool(name)
-                    && !crate::records::RECORD_TOOL_NAMES.contains(&name.as_str()));
+                || (agent.surfaces_activity() && !is_quiet(registry.tool_catalog().map(|c| c.as_ref()), name));
             if should_post {
                 // A card's message says what the card shows; the result text is a note for the agent.
                 let shown = posted_text.or_else(|| rich_block.as_ref().map(card_text).filter(|text| !text.is_empty())).unwrap_or_else(|| result_text.clone());

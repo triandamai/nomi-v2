@@ -163,11 +163,11 @@ impl SubAgent for PlanningAgent {
         match name {
             "create_project" => {
                 let tool = tools::CreateProject { relay: self.relay_ops.clone() };
-                nomi_agent_core::Tool::execute(&tool, conn, session_id, agent_session_id, user_id, input).await
+                nomi_agent_core::Tool::execute(&tool, conn, &nomi_agent_core::ToolContext::new(session_id, agent_session_id, user_id, self.agent_type().as_ref(), self.display_name().as_ref()), input).await
             }
             "rename_project" => {
                 let tool = tools::RenameProject { relay: self.relay_ops.clone() };
-                nomi_agent_core::Tool::execute(&tool, conn, session_id, agent_session_id, user_id, input).await
+                nomi_agent_core::Tool::execute(&tool, conn, &nomi_agent_core::ToolContext::new(session_id, agent_session_id, user_id, self.agent_type().as_ref(), self.display_name().as_ref()), input).await
             }
             discovery::SAVE_DESIGN_BRIEF if nomi_settings::config::agent_on(nomi_agent_core::crew::DESIGN_AGENT_TYPE).await => {
                 discovery::save_design_brief(&mut **conn, session_id, agent_session_id, user_id, &input).await.map(nomi_agent_core::ToolOutcome::text)

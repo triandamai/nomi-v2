@@ -7,7 +7,10 @@ use std::collections::{HashMap, HashSet};
 use serde_json::Value;
 use sqlx::PgConnection;
 
-use crate::engine::{COMPLETE_TASK_TOOL_NAME, DELEGATE_TOOL_NAME};
+/// The tool an agent calls to finish its task.
+pub const COMPLETE_TASK_TOOL_NAME: &str = "complete_task";
+/// The tool an agent calls to hand work to another crew member.
+pub const DELEGATE_TOOL_NAME: &str = "delegate_to_agent";
 
 /// Tools the crew can't work without (finishing a task, handing it to another agent): listed,
 /// but never switched off.

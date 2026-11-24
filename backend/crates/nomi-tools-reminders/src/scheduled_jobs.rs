@@ -4,9 +4,18 @@
 //! are a separate thing, owned by `nomi-agent-reminders`.
 
 use chrono::Datelike;
+use nomi_llm::ToolDefinition;
+use serde_json::json;
 use sqlx::pool::PoolConnection;
 use sqlx::Postgres;
 use uuid::Uuid;
+
+mod tools;
+pub use tools::{tools, GROUP};
+
+pub const CREATE_REMINDER_TOOL_NAME: &str = "create_reminder";
+pub const LIST_REMINDERS_TOOL_NAME: &str = "list_reminders";
+pub const CANCEL_REMINDER_TOOL_NAME: &str = "cancel_reminder";
 
 pub async fn get_user_timezone(conn: &mut PoolConnection<Postgres>, user_id: Uuid) -> String {
     sqlx::query_scalar("SELECT timezone FROM user_preferences WHERE user_id = $1")
@@ -179,5 +188,53 @@ pub fn next_occurrence(
             from.with_day(1).unwrap().with_year(year).unwrap().with_month(month).unwrap().with_day(clamped_day).unwrap()
         }
         _ => from,
+    }
+}
+
+pub fn create_reminder_tool_definition(targets: &[String]) -> ToolDefinition {
+    ToolDefinition {
+        name: CREATE_REMINDER_TOOL_NAME.to_string(),
+        description: "Schedule a reminder to fire at a specific future time. Resolve any \
+                       relative time the user gives (\"tomorrow\", \"in an hour\") to an \
+                       absolute ISO 8601 datetime yourself, using the current date/time and the \
+                       user's timezone given in your system prompt. Before you set it, make sure you \
+                       know what it's for, when, and whether it's one-time or repeating (and how \
+                       often): ask with ask_user for whatever they didn't say, all of it in one card.".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "run_at": {"type": "string", "description": "Absolute ISO 8601 datetime, e.g. 2026-09-21T11:00:00-04:00"},
+                "label": {"type": "string", "description": "Short human label, e.g. \"take a bath\""},
+                "prompt": {"type": "string", "description": "The instruction the target agent will act on when this fires"},
+                "target_agent": {"type": "string", "enum": targets, "description": "Which agent takes this job when it fires"},
+                "recurrence": {"type": "string", "enum": ["daily", "weekly", "monthly"], "description": "Omit for a one-time reminder"},
+                "recurrence_weekday": {"type": "integer", "minimum": 0, "maximum": 6, "description": "Required when recurrence is weekly (0 = Sunday)"},
+                "recurrence_day_of_month": {"type": "integer", "minimum": 1, "maximum": 31, "description": "Required when recurrence is monthly"}
+            },
+            "required": ["run_at", "label", "prompt", "target_agent"]
+        }),
+    }
+}
+
+pub fn list_reminders_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        name: LIST_REMINDERS_TOOL_NAME.to_string(),
+        description: "List your active reminders.".to_string(),
+        input_schema: json!({"type": "object", "properties": {}}),
+    }
+}
+
+pub fn cancel_reminder_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        name: CANCEL_REMINDER_TOOL_NAME.to_string(),
+        description: "Cancel an active reminder by id. Call list_reminders first if you don't \
+                       already know the id.".to_string(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "reminder_id": {"type": "string", "description": "The reminder's id, from a prior list_reminders call"}
+            },
+            "required": ["reminder_id"]
+        }),
     }
 }

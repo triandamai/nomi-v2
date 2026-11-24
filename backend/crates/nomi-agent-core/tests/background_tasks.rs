@@ -10,6 +10,13 @@ use nomi_agent_core::{run_agent_turn, AgentRegistry, LoopOutcome, SubAgent, Tool
 use nomi_llm::{ContentBlock, LlmResponse, StopReason, ToolDefinition};
 use nomi_test_support::{FakeEmbeddingProvider, FakeLlmProvider};
 
+/// The engine's generic tools (records, reminders, background tasks, the web…) come from the
+/// tool catalog, as they do in the server.
+fn with_engine_tools(registry: AgentRegistry) -> AgentRegistry {
+    registry.with_tool_catalog(std::sync::Arc::new(nomi_agent_core::ToolCatalog::from_tools(nomi_agent_core::engine::engine_catalog_tools())))
+}
+
+
 struct CrewSpecialistAgent;
 
 #[async_trait]
@@ -88,7 +95,7 @@ async fn crew_agent_can_start_background_task_and_work_on_another_task_while_wai
     let user_id = seed_user(&pool).await;
     let mut conn = pool.acquire().await.unwrap();
 
-    let registry = AgentRegistry::new(vec![Box::new(CrewSpecialistAgent)]);
+    let registry = with_engine_tools(AgentRegistry::new(vec![Box::new(CrewSpecialistAgent)]));
     let provider = FakeLlmProvider::sequence(vec![
         LlmResponse {
             content: vec![ContentBlock::ToolUse {
