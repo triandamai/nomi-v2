@@ -189,3 +189,15 @@ export async function seedPendingApproval(sessionId: string, email: string, mess
 		await sql.end();
 	}
 }
+
+/** A Hevy connection, as connecting a key would leave it (the key itself is never read back). */
+export async function seedHevy(email: string, accountName = 'e2e-lifts'): Promise<void> {
+	const sql = postgres(DATABASE_URL, { max: 1, onnotice: () => {} });
+	try {
+		await sql`
+			INSERT INTO health_connections (user_id, provider, api_key_encrypted, account_name)
+			SELECT user_id, 'hevy', ''::bytea, ${accountName} FROM web_credentials WHERE email = ${email}`;
+	} finally {
+		await sql.end();
+	}
+}

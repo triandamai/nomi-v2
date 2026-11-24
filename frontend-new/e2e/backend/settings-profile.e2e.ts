@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from '../support/test';
 import { api, createAccount, signInAs } from './support/accounts';
 
 // Settings › Profile against the real backend (App / Settings / Profile U9Gnrg): the settings

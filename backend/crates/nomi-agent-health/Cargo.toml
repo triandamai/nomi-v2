@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 nomi-agent-core = { path = "../nomi-agent-core" }
+nomi-tools-health = { path = "../nomi-tools-health" }
 nomi-llm = { path = "../nomi-llm" }
 nomi-settings = { path = "../nomi-settings" }
 async-trait = "0.1"

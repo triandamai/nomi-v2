@@ -267,8 +267,7 @@
 	html {
 		background: var(--nm-bg);
 		overscroll-behavior: none;
-		height: 100%;
-		overflow: hidden;
+		overflow-x: clip;
 	}
 
 	/* A [data-theme] subtree takes its own text colour, like the page does. */
@@ -286,8 +285,7 @@
 		-webkit-font-smoothing: antialiased;
 		-moz-osx-font-smoothing: grayscale;
 		overscroll-behavior: none;
-		height: 100%;
-		overflow: hidden;
+		overflow-x: clip;
 	}
 
 	*,

@@ -60,7 +60,8 @@ async fn every_catalog_tool_runs_its_agents_own_tool(pool: PgPool) {
         }
         let mut conn = pool.acquire().await.unwrap();
         // Success or a tool's own refusal both mean it reached the agent's code.
-        let outcome = catalog.execute(name, &mut conn, session, Uuid::new_v4(), user, input).await;
+        let ctx = nomi_agent_core::ToolContext::new(session, Uuid::new_v4(), user, "chitchat", "Nomi");
+        let outcome = catalog.execute(name, &mut conn, &ctx, input).await;
         if name == "log_transaction" || name == "list_budgets" {
             assert!(outcome.is_ok(), "{name}: {outcome:?}");
         }
@@ -69,5 +70,5 @@ async fn every_catalog_tool_runs_its_agents_own_tool(pool: PgPool) {
     assert!(ran >= 11, "only {ran} catalog tools ran");
     assert!(catalog.definitions().len() >= 11);
     let mut conn = pool.acquire().await.unwrap();
-    assert_eq!(catalog.execute("nope", &mut conn, session, Uuid::new_v4(), user, json!({})).await.unwrap_err(), "tool not granted: nope");
+    assert_eq!(catalog.execute("nope", &mut conn, &nomi_agent_core::ToolContext::new(session, Uuid::new_v4(), user, "chitchat", "Nomi"), json!({})).await.unwrap_err(), "tool not granted: nope");
 }

@@ -129,8 +129,20 @@ impl SubAgent for DynamicAgent {
         Cow::Owned(self.system_prompt.clone())
     }
 
+    /// The granted area tools. Granted generic tools (reminders, …) are offered by the engine
+    /// alongside the ones every agent gets, so each tool is offered once.
     fn tools(&self) -> Vec<ToolDefinition> {
-        self.catalog.definitions_for(&self.granted_tools)
+        let area: Vec<String> = self
+            .granted_tools
+            .iter()
+            .filter(|name| self.catalog.get(name).map_or(true, |t| t.auto_offer() == nomi_tool::AutoOffer::GrantOnly))
+            .cloned()
+            .collect();
+        self.catalog.definitions_for(&area)
+    }
+
+    fn granted_tools(&self) -> Vec<String> {
+        self.granted_tools.clone()
     }
 
     async fn execute_tool(
@@ -142,13 +154,16 @@ impl SubAgent for DynamicAgent {
         name: &str,
         input: Value,
     ) -> Result<ToolOutcome, String> {
-        // Belt-and-suspenders beyond `tools()` only offering granted tools to the LLM: the
-        // catalog itself doesn't know which agent is calling, so an ungranted-but-catalog-known
-        // tool name (hallucinated, or left over from a stale tool list) is rejected here too.
-        if !self.granted_tools.iter().any(|t| t == name) {
+        // Belt-and-suspenders beyond the offer: the catalog itself doesn't know which agent is
+        // calling, so a tool this agent is neither granted nor given automatically (hallucinated,
+        // or left over from a stale tool list) is rejected here too.
+        let offered = self.catalog.get(name).is_some_and(|t| crate::engine::offered_to(t, self));
+        if !offered {
             return Err(format!("tool '{name}' is not granted to this agent"));
         }
-        self.catalog.execute(name, conn, session_id, agent_session_id, user_id, input).await
+        let agent_type = self.id.to_string();
+        let ctx = crate::ToolContext::new(session_id, agent_session_id, user_id, &agent_type, &self.name);
+        self.catalog.execute(name, conn, &ctx, input).await
     }
 
     fn intent_label(&self) -> Cow<'static, str> {

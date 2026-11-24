@@ -81,25 +81,30 @@ jobs:
       - name: Old frontend's design-system twins
         run: npm run test:twins
 
-      - name: Coverage summary
-        if: ${{ !cancelled() && hashFiles('frontend-new/coverage/coverage-summary.json') != '' }}
-        run: node scripts/coverage-summary.mjs >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Upload coverage report
-        if: ${{ !cancelled() && hashFiles('frontend-new/coverage/coverage-summary.json') != '' }}
-        uses: actions/upload-artifact@v6
-        with:
-          name: frontend-new-coverage
-          path: frontend-new/coverage
-          retention-days: 14
-
       - name: Build
         run: npm run build
 
       # The production server (server.js with the live-update relay) in a real browser, against a
-      # stub backend (e2e/stub-api.mjs).
+      # stub backend (e2e/stub-api.mjs), with V8 coverage enabled.
       - name: End-to-end smoke tests
+        env:
+          E2E_COVERAGE: '1'
+          E2E_COVERAGE_DIR: .e2e-coverage/smoke
         run: npm run test:e2e
+
+      - name: Convert smoke E2E coverage
+        if: ${{ !cancelled() && hashFiles('frontend-new/.e2e-coverage/smoke/**') != '' }}
+        run: node scripts/e2e-coverage.mjs .e2e-coverage/smoke coverage/e2e-smoke.json
+
+      - name: Upload unit + smoke coverage parts
+        if: ${{ !cancelled() && hashFiles('frontend-new/coverage/*.json') != '' }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: frontend-new-coverage-unit-smoke
+          path: |
+            frontend-new/coverage/coverage-final.json
+            frontend-new/coverage/e2e-smoke.json
+          retention-days: 1
 
   # The flows end to end against the real backend (its fake model, so replies are known), with
   # its real dependencies: Postgres, the EMQX broker, and Mailpit catching the emails that carry
@@ -199,7 +204,23 @@ jobs:
 
       - name: End-to-end against the real backend
         working-directory: frontend-new
+        env:
+          E2E_COVERAGE: '1'
+          E2E_COVERAGE_DIR: .e2e-coverage/backend
         run: npm run test:e2e:backend
+
+      - name: Convert backend E2E coverage
+        if: ${{ !cancelled() && hashFiles('frontend-new/.e2e-coverage/backend/**') != '' }}
+        working-directory: frontend-new
+        run: node scripts/e2e-coverage.mjs .e2e-coverage/backend coverage/e2e-backend.json
+
+      - name: Upload backend E2E coverage part
+        if: ${{ !cancelled() && hashFiles('frontend-new/coverage/e2e-backend.json') != '' }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: frontend-new-coverage-e2e-backend
+          path: frontend-new/coverage/e2e-backend.json
+          retention-days: 1
 
       - name: Traces of failed tests
         if: failure()
@@ -208,6 +229,56 @@ jobs:
           name: frontend-new-e2e-backend-traces
           path: frontend-new/test-results
           retention-days: 7
+
+  coverage:
+    name: Frontend new (merged coverage)
+    runs-on: ubuntu-latest
+    needs: [frontend-new, e2e-backend]
+    if: ${{ !cancelled() && (needs.frontend-new.result == 'success' || needs.e2e-backend.result == 'success') }}
+    defaults:
+      run:
+        working-directory: frontend-new
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend-new/package-lock.json
+
+      - name: npm ci
+        run: npm ci
+
+      - name: Download unit + smoke coverage
+        uses: actions/download-artifact@v6
+        continue-on-error: true
+        with:
+          name: frontend-new-coverage-unit-smoke
+          path: frontend-new/coverage-parts
+
+      - name: Download backend E2E coverage
+        uses: actions/download-artifact@v6
+        continue-on-error: true
+        with:
+          name: frontend-new-coverage-e2e-backend
+          path: frontend-new/coverage-parts
+
+      - name: Merge coverage reports
+        run: node scripts/merge-coverage.mjs coverage-parts/coverage-final.json coverage-parts/e2e-smoke.json coverage-parts/e2e-backend.json
+
+      - name: Coverage summary
+        if: ${{ !cancelled() && hashFiles('frontend-new/coverage/coverage-summary.json') != '' }}
+        run: node scripts/coverage-summary.mjs >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload coverage report
+        if: ${{ !cancelled() && hashFiles('frontend-new/coverage/coverage-summary.json') != '' }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: frontend-new-coverage
+          path: frontend-new/coverage
+          retention-days: 14
 
   docker:
     name: Frontend new (Docker image builds)

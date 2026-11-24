@@ -1142,9 +1142,29 @@
 	// reader drawing it), a photo in the lightbox; anything else downloads.
 	type Viewer = { file: SentFile; trigger: HTMLElement | null; status: 'loading' | 'ready' | 'error'; pages: number | null; started: number; code: string | null; attempt: number };
 	let viewer = $state<Viewer | null>(null);
-	let photo = $state<{ file: SentFile; trigger: HTMLElement | null; index: number; count: number; at: string } | null>(null);
+	let photo = $state<{ file: SentFile; src?: string; trigger: HTMLElement | null; index: number; count: number; at: string } | null>(null);
 	let viewerNow = $state(Date.now());
 	const PREVIEW_TIMEOUT_MS = 30_000;
+
+	function canPreviewChip(chip: Chip): boolean {
+		return Boolean(chip.thumb) || Boolean(chip.uploaded && (chip.uploaded.kind === 'image' || chip.uploaded.kind === 'pdf'));
+	}
+
+	function previewChip(chip: Chip) {
+		const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+		if (chip.thumb || chip.uploaded?.kind === 'image') {
+			const imageChips = chips.filter((one) => Boolean(one.thumb) || one.uploaded?.kind === 'image');
+			const file: SentFile = chip.uploaded
+				? { id: chip.uploaded.id, name: chip.uploaded.name, kind: 'image', size: chip.uploaded.size }
+				: { id: '', name: chip.name, kind: 'image', size: chip.size };
+			const src = chip.thumb ?? `/attachments/${file.id}/content`;
+			photo = { file, src, trigger, index: imageChips.indexOf(chip) + 1, count: imageChips.length, at: '' };
+		} else if (chip.uploaded?.kind === 'pdf') {
+			const file: SentFile = { id: chip.uploaded.id, name: chip.uploaded.name, kind: 'pdf', size: chip.uploaded.size };
+			viewer = { file, trigger, status: 'loading', pages: null, started: Date.now(), code: null, attempt: 0 };
+			void loadViewer();
+		}
+	}
 
 	function openFile(file: SentFile, all: SentFile[], at: string) {
 		const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -1259,7 +1279,7 @@
 {#snippet composerFiles()}
 	<div class={['flex flex-col', phone ? 'gap-2' : 'gap-1.5']}>
 		{#if chips.length}
-			<div class={['flex', phone ? 'flex-col items-start gap-1.5' : 'flex-wrap items-center gap-2']}>
+			<div class={['flex items-center overflow-x-auto pt-1.5 pr-1.5', phone ? 'gap-1.5' : 'gap-2']}>
 				{#each chips as chip (chip.key)}
 					<ComposerFile
 						name={chip.name}
@@ -1271,6 +1291,7 @@
 						onretry={() => uploads.retry(chip.key)}
 						onremove={() => void removeChip(chip)}
 						onmore={() => (fileSheet = chip)}
+						onpreview={canPreviewChip(chip) ? () => previewChip(chip) : undefined}
 					/>
 				{/each}
 			</div>
@@ -1888,8 +1909,8 @@
 	{@const shown = photo}
 	<PhotoViewer
 		name={shown.file.name}
-		meta={[fileMeta(shown.file), phone ? m.files_yours_phone() : m.files_yours(), phone ? null : m.files_sent_at({ time: shown.at })].filter(Boolean).join(' · ')}
-		src="/attachments/{shown.file.id}/content"
+		meta={[fileMeta(shown.file), phone ? m.files_yours_phone() : m.files_yours(), !phone && shown.at ? m.files_sent_at({ time: shown.at }) : null].filter(Boolean).join(' · ')}
+		src={shown.src ?? `/attachments/${shown.file.id}/content`}
 		where={phone
 			? shown.count === 1
 				? m.files_photo_where_phone_one()
@@ -1898,7 +1919,7 @@
 				? m.files_photo_where_one()
 				: m.files_photo_where({ index: String(shown.index), count: String(shown.count) })}
 		{phone}
-		downloadHref="/attachments/{shown.file.id}/content?download"
+		downloadHref={shown.file.id ? `/attachments/${shown.file.id}/content?download` : (shown.src ?? '')}
 		onclose={() => void closeViewer()}
 	/>
 {/if}

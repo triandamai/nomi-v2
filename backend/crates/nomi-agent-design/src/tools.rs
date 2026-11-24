@@ -2,6 +2,7 @@
 //! servers the person connected (visual references, moodboards, whatever they have), through
 //! `McpOps`.
 
+use nomi_agent_core::ToolContext;
 use async_trait::async_trait;
 use serde_json::{json, Value};
 use sqlx::pool::PoolConnection;
@@ -115,7 +116,8 @@ impl Tool for ListConnectedTools {
         &["mcp", "connected", "references"]
     }
 
-    async fn execute(&self, _conn: &mut PoolConnection<Postgres>, _session_id: Uuid, _agent_session_id: Uuid, user_id: Uuid, _input: Value) -> Result<ToolOutcome, String> {
+    async fn execute(&self, _conn: &mut PoolConnection<Postgres>, ctx: &ToolContext<'_>, _input: Value) -> Result<ToolOutcome, String> {
+        let (_session_id, _agent_session_id, user_id) = (ctx.session_id, ctx.agent_session_id, ctx.user_id);
         Ok(ToolOutcome::text(list_connected(self.mcp.as_ref(), user_id).await))
     }
 }
@@ -153,7 +155,8 @@ impl Tool for UseConnectedTool {
         &["mcp", "connected", "references"]
     }
 
-    async fn execute(&self, _conn: &mut PoolConnection<Postgres>, _session_id: Uuid, _agent_session_id: Uuid, user_id: Uuid, input: Value) -> Result<ToolOutcome, String> {
+    async fn execute(&self, _conn: &mut PoolConnection<Postgres>, ctx: &ToolContext<'_>, input: Value) -> Result<ToolOutcome, String> {
+        let (_session_id, _agent_session_id, user_id) = (ctx.session_id, ctx.agent_session_id, ctx.user_id);
         use_connected(self.mcp.as_ref(), user_id, &input).await.map(ToolOutcome::text)
     }
 }
@@ -196,7 +199,8 @@ impl Tool for ProposeDirections {
         &["design", "directions", "look"]
     }
 
-    async fn execute(&self, conn: &mut PoolConnection<Postgres>, session_id: Uuid, agent_session_id: Uuid, user_id: Uuid, input: Value) -> Result<ToolOutcome, String> {
+    async fn execute(&self, conn: &mut PoolConnection<Postgres>, ctx: &ToolContext<'_>, input: Value) -> Result<ToolOutcome, String> {
+        let (session_id, agent_session_id, user_id) = (ctx.session_id, ctx.agent_session_id, ctx.user_id);
         let set = DesignDirections::parse(&input)?;
         let brief_version = design_brief::latest(&mut **conn, session_id).await.ok().flatten().map(|(version, _)| version);
         let version = design_directions::save(&mut **conn, session_id, agent_session_id, user_id, brief_version, &set).await.map_err(|e| {
@@ -338,7 +342,8 @@ impl Tool for ReadPreview {
         &["design", "preview", "files"]
     }
 
-    async fn execute(&self, conn: &mut PoolConnection<Postgres>, session_id: Uuid, _agent_session_id: Uuid, _user_id: Uuid, input: Value) -> Result<ToolOutcome, String> {
+    async fn execute(&self, conn: &mut PoolConnection<Postgres>, ctx: &ToolContext<'_>, input: Value) -> Result<ToolOutcome, String> {
+        let (session_id, _agent_session_id, _user_id) = (ctx.session_id, ctx.agent_session_id, ctx.user_id);
         let unread = |e: sqlx::Error| {
             tracing::error!(error = %e, "design preview: read failed");
             "the preview couldn't be read right now".to_string()
@@ -391,7 +396,8 @@ impl Tool for SavePreview {
         &["design", "preview", "mockup"]
     }
 
-    async fn execute(&self, conn: &mut PoolConnection<Postgres>, session_id: Uuid, agent_session_id: Uuid, user_id: Uuid, input: Value) -> Result<ToolOutcome, String> {
+    async fn execute(&self, conn: &mut PoolConnection<Postgres>, ctx: &ToolContext<'_>, input: Value) -> Result<ToolOutcome, String> {
+        let (session_id, agent_session_id, user_id) = (ctx.session_id, ctx.agent_session_id, ctx.user_id);
         let sent = design_artifact::parse_file_list(&input)?;
         let remove = design_artifact::removals(&input)?;
         let finished = input.get("finished").and_then(Value::as_bool).unwrap_or(true);
@@ -501,7 +507,8 @@ impl Tool for ApproveVersion {
         &["design", "approve", "approval"]
     }
 
-    async fn execute(&self, conn: &mut PoolConnection<Postgres>, session_id: Uuid, _agent_session_id: Uuid, user_id: Uuid, input: Value) -> Result<ToolOutcome, String> {
+    async fn execute(&self, conn: &mut PoolConnection<Postgres>, ctx: &ToolContext<'_>, input: Value) -> Result<ToolOutcome, String> {
+        let (session_id, _agent_session_id, user_id) = (ctx.session_id, ctx.agent_session_id, ctx.user_id);
         let unsaved = |e: sqlx::Error| {
             tracing::error!(error = %e, "design approval in chat: failed");
             "the approval couldn't be recorded right now".to_string()
@@ -572,7 +579,8 @@ impl Tool for CreateHandoff {
         &["design", "handoff", "build"]
     }
 
-    async fn execute(&self, conn: &mut PoolConnection<Postgres>, session_id: Uuid, agent_session_id: Uuid, user_id: Uuid, input: Value) -> Result<ToolOutcome, String> {
+    async fn execute(&self, conn: &mut PoolConnection<Postgres>, ctx: &ToolContext<'_>, input: Value) -> Result<ToolOutcome, String> {
+        let (session_id, agent_session_id, user_id) = (ctx.session_id, ctx.agent_session_id, ctx.user_id);
         let unsaved = |e: sqlx::Error| {
             tracing::error!(error = %e, "design handoff: save failed");
             "the handoff couldn't be saved right now".to_string()
@@ -638,7 +646,8 @@ impl Tool for ReviewBuild {
         &["design", "review", "build"]
     }
 
-    async fn execute(&self, conn: &mut PoolConnection<Postgres>, session_id: Uuid, agent_session_id: Uuid, user_id: Uuid, input: Value) -> Result<ToolOutcome, String> {
+    async fn execute(&self, conn: &mut PoolConnection<Postgres>, ctx: &ToolContext<'_>, input: Value) -> Result<ToolOutcome, String> {
+        let (session_id, agent_session_id, user_id) = (ctx.session_id, ctx.agent_session_id, ctx.user_id);
         let unsaved = |e: sqlx::Error| {
             tracing::error!(error = %e, "design review: failed");
             "the build couldn't be checked right now".to_string()

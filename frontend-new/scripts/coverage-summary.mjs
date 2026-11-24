@@ -17,7 +17,7 @@ const cell = (/** @type {{pct: number, covered: number, total: number}} */ m) =>
 const out = [
 	'## Frontend new: test coverage',
 	'',
-	'Unit (Node) and component (Chromium) tests, merged.',
+	'Unit (Node), component (Chromium), and Playwright E2E tests, merged.',
 	'',
 	'| Metric | Coverage |',
 	'| --- | --- |',

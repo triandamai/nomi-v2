@@ -33,8 +33,10 @@
 		onremove?: () => void;
 		/** On a phone, a failed file's sheet (Retry, Remove). */
 		onmore?: () => void;
+		/** Opens a preview of the attachment before sending. */
+		onpreview?: () => void;
 	};
-	let { name, status, detail, progress, thumb, phone = false, onretry, onremove, onmore }: Props = $props();
+	let { name, status, detail, progress, thumb, phone = false, onretry, onremove, onmore, onpreview }: Props = $props();
 
 	const percent = $derived(Math.round(Math.min(1, Math.max(0, progress ?? 0)) * 100));
 
@@ -55,11 +57,53 @@
 	>
 {/snippet}
 
+{#snippet chipBody()}
+	{#if status === 'warning' && thumb}
+		<img src={thumb} alt="" class="size-7 shrink-0 rounded-xs object-cover outline -outline-offset-1 outline-border-strong" />
+	{:else if status === 'failed' || status === 'rejected'}
+		<span class="inline-flex shrink-0 text-danger"><Icon icon={status === 'rejected' ? FileX : CircleAlert} /></span>
+	{:else}
+		<span class="inline-flex shrink-0 text-text-2"><Icon icon={FileText} /></span>
+	{/if}
+	<span class={['flex min-w-0 flex-col', status === 'uploading' ? 'flex-1 gap-1' : 'gap-px']}>
+		<span class="truncate font-mono text-caption text-text">{name}</span>
+		{#if status === 'uploading'}
+			<span role="progressbar" aria-label={name} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent} class="h-0.75 w-full overflow-hidden rounded-xs bg-surface-2">
+				<span class="block h-full rounded-xs bg-accent" style="width: {percent}%"></span>
+			</span>
+		{/if}
+		{#if status === 'warning'}
+			<span class="flex min-w-0 items-center gap-1 text-warning">
+				<Icon icon={TriangleAlert} size={12} />
+				<span class="truncate font-mono text-label text-warning">{detail}</span>
+			</span>
+		{:else}
+			<span class={['truncate font-mono text-label', status === 'failed' || status === 'rejected' ? 'text-danger' : 'text-text-3']}>{detail}</span>
+		{/if}
+	</span>
+{/snippet}
+
 <!-- One stop per chip, as the contract's focus order asks: Backspace on it removes the file. -->
 <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
-<span role="group" aria-label={name} tabindex="0" data-file-chip={status} class="inline-flex max-w-full rounded-sm outline-offset-2" {onkeydown}>
+<span role="group" aria-label={name} tabindex="0" data-file-chip={status} class="inline-flex max-w-full shrink-0 rounded-sm outline-offset-2" {onkeydown}>
 	{#if status === 'ready' && thumb}
-		<AttachmentImage src={thumb} alt={name} {onremove} />
+		{#if onpreview}
+			<span class="group relative inline-flex size-11 shrink-0">
+				<button type="button" aria-label={m.files_open_name({ name })} class="inline-flex size-11 cursor-pointer rounded-sm outline-offset-2" onclick={onpreview}>
+					<img src={thumb} alt={name} class="size-11 rounded-sm bg-surface-2 object-cover outline -outline-offset-1 outline-border-strong" />
+				</button>
+				{#if onremove}
+					<button
+						type="button"
+						aria-label={m.attach_remove({ name })}
+						class="absolute -top-1.5 -right-1.5 inline-flex size-5 cursor-pointer items-center justify-center rounded-full border border-border-strong bg-surface text-text-2 opacity-0 outline-offset-1 group-focus-within:opacity-100 group-hover:opacity-100 hover:text-text pointer-coarse:opacity-100"
+						onclick={onremove}><Icon icon={X} size={12} /></button
+					>
+				{/if}
+			</span>
+		{:else}
+			<AttachmentImage src={thumb} alt={name} {onremove} />
+		{/if}
 	{:else}
 		<span
 			class={[
@@ -68,29 +112,13 @@
 				status === 'uploading' && 'w-62.5',
 			]}
 		>
-			{#if status === 'warning' && thumb}
-				<img src={thumb} alt="" class="size-7 shrink-0 rounded-xs object-cover outline -outline-offset-1 outline-border-strong" />
-			{:else if status === 'failed' || status === 'rejected'}
-				<span class="inline-flex shrink-0 text-danger"><Icon icon={status === 'rejected' ? FileX : CircleAlert} /></span>
+			{#if onpreview}
+				<button type="button" aria-label={m.files_open_name({ name })} class="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 text-left outline-offset-2" onclick={onpreview}>
+					{@render chipBody()}
+				</button>
 			{:else}
-				<span class="inline-flex shrink-0 text-text-2"><Icon icon={FileText} /></span>
+				{@render chipBody()}
 			{/if}
-			<span class={['flex min-w-0 flex-col', status === 'uploading' ? 'flex-1 gap-1' : 'gap-px']}>
-				<span class="truncate font-mono text-caption text-text">{name}</span>
-				{#if status === 'uploading'}
-					<span role="progressbar" aria-label={name} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent} class="h-0.75 w-full overflow-hidden rounded-xs bg-surface-2">
-						<span class="block h-full rounded-xs bg-accent" style="width: {percent}%"></span>
-					</span>
-				{/if}
-				{#if status === 'warning'}
-					<span class="flex min-w-0 items-center gap-1 text-warning">
-						<Icon icon={TriangleAlert} size={12} />
-						<span class="truncate font-mono text-label text-warning">{detail}</span>
-					</span>
-				{:else}
-					<span class={['truncate font-mono text-label', status === 'failed' || status === 'rejected' ? 'text-danger' : 'text-text-3']}>{detail}</span>
-				{/if}
-			</span>
 			{#if status === 'uploading' || status === 'ready' || status === 'warning'}
 				{#if onremove}{@render removeX(status === 'uploading' ? m.attach_cancel({ name }) : m.attach_remove({ name }))}{/if}
 			{:else if phone && onmore}

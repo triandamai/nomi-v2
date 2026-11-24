@@ -27,6 +27,7 @@ export default defineConfig({
 	// that asked for it, not at the site's root.
 	experimental: galleryStatic ? { renderBuiltUrl: (_file: string, { hostType }: { hostType: string }) => (hostType === 'js' ? { relative: true } : undefined) } : undefined,
 	build: {
+		sourcemap: process.env.E2E_COVERAGE === '1',
 		rolldownOptions: {
 			checks: { pluginTimings: false },
 		},
@@ -89,7 +90,7 @@ export default defineConfig({
 			provider: 'v8',
 			include: ['src/**/*.{ts,svelte}', 'ws-proxy/**/*.js', 'server.js'],
 			exclude: ['src/lib/paraglide/**', '**/*.test.ts', '**/*.test.js', '**/*.d.ts'],
-			reporter: ['text-summary', 'json-summary', 'html'],
+			reporter: ['text-summary', 'json-summary', 'json', 'html'],
 			reportsDirectory: './coverage',
 		},
 		projects: [

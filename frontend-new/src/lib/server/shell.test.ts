@@ -76,7 +76,7 @@ describe('loadShell', () => {
 	it('loads the person, their crew, usage, inbox, chats and workspaces, as the shell shows them', async () => {
 		const { event: e } = event(healthy);
 		const shell = await loadShell(e, now);
-		expect(shell.person).toEqual({ name: 'Mario Prasetyo', firstName: 'Mario', avatar: null });
+		expect(shell.person).toEqual({ name: 'Mario Prasetyo', firstName: 'Mario', avatar: null, username: 'mario' });
 		expect(shell.theme).toBe('dark');
 		expect(shell.timeZone).toBe('Asia/Jakarta');
 		expect(shell.usage).toEqual({ card: { plan: 'Free plan', used: 0.0218, caption: '21.8K / 1M tokens this month' }, account: 'Free · 21.8K / 1M tokens', canUpgrade: true, tokens: { used: '21.8K', total: '1M' } });
@@ -134,7 +134,7 @@ describe('loadShell', () => {
 		const failing = Object.fromEntries(Object.keys(healthy).map((key) => [key, { status: 500, body: { error: 'down' } }]));
 		const { event: e } = event(failing);
 		const shell = await loadShell(e, now);
-		expect(shell.person).toEqual({ name: 'You', firstName: 'You', avatar: null });
+		expect(shell.person).toEqual({ name: 'You', firstName: 'You', avatar: null, username: null });
 		expect(shell.theme).toBe('system');
 		expect(shell.usage).toBeNull();
 		expect(shell.unread).toBe(0);

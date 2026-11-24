@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { ArrowLeft } from '@lucide/svelte';
+	import { Activity, ArrowLeft, Cpu, CornerDownRight, History } from '@lucide/svelte';
 	import { invalidate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { m } from '$lib/paraglide/messages';
@@ -20,6 +20,14 @@
 	import CrewMemberHeader from '$lib/ds/settings/CrewMemberHeader.svelte';
 	import CrewDetailRow from '$lib/ds/settings/CrewDetailRow.svelte';
 	import PersonalityVersions from '$lib/ds/settings/PersonalityVersions.svelte';
+	import { phoneView } from '$lib/phone.svelte';
+	import PhoneBackBar from '$lib/ds/chrome/PhoneBackBar.svelte';
+	import LargeTitle from '$lib/ds/chrome/LargeTitle.svelte';
+	import PhoneSettingsGroup, { type SettingsRow } from '$lib/ds/settings/PhoneSettingsGroup.svelte';
+	import PhoneCrewMember from '$lib/ds/settings/PhoneCrewMember.svelte';
+	import BottomSheet from '$lib/ds/overlays/BottomSheet.svelte';
+	import SheetOption from '$lib/ds/overlays/SheetOption.svelte';
+	import ActionSheet from '$lib/ds/overlays/ActionSheet.svelte';
 
 	// Settings › Crew (App / Settings / Crew vVUeh): the roster in the pen's groups with a search, and
 	// the chosen member: their header, how they work (their model where it's the person's to pick:
@@ -75,9 +83,101 @@
 		toasts.show({ kind: 'success', title: m.crew_version_restored({ version }) });
 		await invalidate('app:crew');
 	}
+
+	// On a phone (Flow / Mobile — You & Settings, steps 10 and 11): the crew in the same groups as
+	// rows, each with what they do and how they are now; a member is their own screen, back to Crew:
+	// what they're doing now, then how they work. Their model, where it's the person's to pick (Nomi's
+	// and Koda's), opens a sheet; an earlier personality is brought back from its own sheet.
+	const guess = () => data.phone;
+	const phone = phoneView(guess());
+	let modelSheet = $state(false);
+	let restoreSheet = $state<number | null>(null);
+	const crewRow = (one: CrewMember): SettingsRow => ({
+		key: one.agent_type,
+		crew: { agent: one.is_dynamic ? undefined : crewOf(one.agent_type), initial: one.name.charAt(0) },
+		label: one.name,
+		sub: one.role,
+		meta: stateOf(one),
+		tone: one.state === 'working' ? 'accent' : one.state === 'waiting' ? 'warning' : undefined,
+		href: href(one),
+	});
+	const choices = $derived(role === 'chat' && data.options ? chatChoices(data.options.groups) : role === 'coding' && data.models ? codingChoices(data.models) : []);
+	const chosenModel = $derived(role === 'chat' ? (data.options?.current?.key ?? '') : role === 'coding' && data.models ? codingValue(data.models.coding) : '');
+	const modelMeta = $derived(choices.find((choice) => choice.value === chosenModel)?.label.split(' · ')[0]);
 </script>
 
 <svelte:head><title>{m.settings_crew()} · {m.app_name()}</title></svelte:head>
+
+{#if phone.current}
+	<div class="h-full overflow-y-auto">
+		{#if member && asked}
+			<PhoneBackBar label={m.crew_back()} href={PATH} />
+			<PhoneCrewMember agent={member.is_dynamic ? undefined : crewOf(member.agent_type)} name={member.name} role={member.role} />
+			<div class="flex flex-col gap-5 px-4 pb-8">
+				<PhoneSettingsGroup label={m.crew_now()} rows={[{ key: 'now', icon: Activity, label: member.status || stateOf(member), tone: member.state === 'working' ? 'accent' : undefined }]} />
+				<div class="flex flex-col gap-2">
+					<PhoneSettingsGroup
+						label={m.crew_how_works({ name: member.name })}
+						rows={[
+							choices.length
+								? { key: 'model', icon: Cpu, label: m.crew_model(), meta: modelMeta, mono: true, onclick: () => (modelSheet = true) }
+								: { key: 'model', icon: Cpu, label: m.crew_model(), sub: m.crew_model_follows() },
+							{ key: 'steps', icon: CornerDownRight, label: m.crew_steps(), sub: stepsIn(member) },
+						]}
+					/>
+					{#if choices.length}<p class="px-1 text-phone-sm leading-firm text-text-3">{role === 'chat' ? m.crew_model_nomi() : m.models_coding_body()}</p>{/if}
+				</div>
+				{#if member.agent_type === 'personality' && data.personality}
+					<PhoneSettingsGroup
+						label={m.crew_tab_versions({ count: data.personality.length })}
+						rows={data.personality.length
+							? data.personality.map((one) => ({
+									key: String(one.version),
+									icon: History,
+									label: `v${one.version}`,
+									sub: one.description || undefined,
+									meta: one.is_current ? m.crew_version_current() : dayMonth(new Date(one.created_at), language),
+									tone: one.is_current ? ('accent' as const) : undefined,
+									busy: restoring === one.version,
+									onclick: one.is_current ? undefined : () => (restoreSheet = one.version),
+								}))
+							: [{ key: 'none', icon: History, label: m.crew_versions_none(), sub: m.crew_versions_empty() }]}
+					/>
+				{/if}
+			</div>
+		{:else}
+			<PhoneBackBar label={m.nav_you()} href="/settings" />
+			<LargeTitle title={m.settings_crew()} />
+			<p class="-mt-1 px-5 pb-3.5 text-phone-sm text-text-3">{data.meta}</p>
+			<div class="flex flex-col gap-5 px-4 pb-8">
+				{#each crewGroups(data.members, '') as group (group.key)}
+					<PhoneSettingsGroup label={GROUPS[group.key].label()} note={group.key === 'core' ? m.crew_always_on() : String(group.members.length)} rows={group.members.map(crewRow)} />
+				{/each}
+			</div>
+		{/if}
+	</div>
+	<BottomSheet open={modelSheet} title={m.crew_model()} subtitle={role === 'chat' ? m.crew_model_nomi() : m.models_coding_body()} onclose={() => (modelSheet = false)}>
+		{#each choices as choice (choice.value)}
+			<SheetOption
+				label={choice.label.split(' · ')[0]}
+				detail={choice.label.split(' · ')[1]}
+				chosen={choice.value === chosenModel}
+				onclick={() => {
+					modelSheet = false;
+					void (role === 'chat' ? choose('setDefault', { key: choice.value }) : choose('setCoding', { value: choice.value }));
+				}}
+			/>
+		{/each}
+	</BottomSheet>
+	<ActionSheet
+		open={restoreSheet !== null}
+		title={m.crew_version_restore() + (restoreSheet !== null ? ` v${restoreSheet}` : '')}
+		body={data.personality?.find((one) => one.version === restoreSheet)?.description ?? undefined}
+		cancel={m.action_cancel()}
+		actions={[{ label: m.crew_version_restore(), onclick: () => (restoreSheet !== null && void restore(restoreSheet), (restoreSheet = null)) }]}
+		onclose={() => (restoreSheet = null)}
+	/>
+{:else}
 
 <div class="flex h-full min-h-0">
 	<nav aria-label={m.crew_roster()} class={['min-h-0 w-full shrink-0 flex-col gap-3 overflow-y-auto px-3 py-4 lg:flex lg:w-90 lg:border-r lg:border-border lg:pr-2.75', asked ? 'hidden' : 'flex']}>
@@ -175,3 +275,4 @@
 		</section>
 	{/if}
 </div>
+{/if}

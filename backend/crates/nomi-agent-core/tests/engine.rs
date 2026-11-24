@@ -11,6 +11,13 @@ use nomi_agent_core::TurnError;
 
 use nomi_test_support::{FakeEmbeddingProvider, FakeLlmProvider};
 
+/// The engine's generic tools (records, reminders, background tasks, the web…) come from the
+/// tool catalog, as they do in the server.
+fn with_engine_tools(registry: AgentRegistry) -> AgentRegistry {
+    registry.with_tool_catalog(std::sync::Arc::new(nomi_agent_core::ToolCatalog::from_tools(nomi_agent_core::engine::engine_catalog_tools())))
+}
+
+
 struct TestAgent;
 
 #[async_trait::async_trait]
@@ -1295,7 +1302,7 @@ async fn create_reminder_is_only_available_to_agents_that_opt_in(pool: PgPool) {
         text_response("ok", StopReason::EndTurn),
     ]);
     let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
-    let registry = AgentRegistry::new(vec![Box::new(PersonalityAwareTestAgent)]);
+    let registry = with_engine_tools(AgentRegistry::new(vec![Box::new(PersonalityAwareTestAgent)]));
 
     let outcome = run_agent_turn(&mut conn, None, None, &provider, &embedding_provider, &registry, &PersonalityAwareTestAgent, session_id, agent_session_id, user_id, vec![], 100)
         .await
@@ -1321,7 +1328,7 @@ async fn create_reminder_inserts_a_job_and_returns_a_confirmation(pool: PgPool) 
         text_response("I'll remind you tomorrow at 11!", StopReason::EndTurn),
     ]);
     let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
-    let registry = AgentRegistry::new(vec![Box::new(ReminderAwareTestAgent)]);
+    let registry = with_engine_tools(AgentRegistry::new(vec![Box::new(ReminderAwareTestAgent)]));
 
     let outcome = run_agent_turn(&mut conn, None, None, &provider, &embedding_provider, &registry, &ReminderAwareTestAgent, session_id, agent_session_id, user_id, vec![], 100)
         .await
@@ -1360,7 +1367,7 @@ async fn cancel_reminder_updates_status(pool: PgPool) {
         text_response("Cancelled.", StopReason::EndTurn),
     ]);
     let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
-    let registry = AgentRegistry::new(vec![Box::new(ReminderAwareTestAgent)]);
+    let registry = with_engine_tools(AgentRegistry::new(vec![Box::new(ReminderAwareTestAgent)]));
 
     run_agent_turn(&mut conn, None, None, &provider, &embedding_provider, &registry, &ReminderAwareTestAgent, session_id, agent_session_id, user_id, vec![], 100)
         .await
@@ -1539,7 +1546,7 @@ async fn an_agent_keeps_private_records_that_other_agents_cannot_touch(pool: PgP
     let embedding_provider = FakeEmbeddingProvider::success(vec![0.0; 1536]);
 
     let scout = RecordsAgent("travel_scout");
-    let registry = AgentRegistry::new(vec![Box::new(RecordsAgent("travel_scout"))]);
+    let registry = with_engine_tools(AgentRegistry::new(vec![Box::new(RecordsAgent("travel_scout"))]));
     let provider = FakeLlmProvider::sequence(vec![
         tool_use_response("t1", "save_record", serde_json::json!({"collection": "Trips", "data": {"place": "Bali", "nights": 5}})),
         text_response("Saved", StopReason::EndTurn),
@@ -1557,7 +1564,7 @@ async fn an_agent_keeps_private_records_that_other_agents_cannot_touch(pool: PgP
 
     // Another agent can neither list nor delete it.
     let other = RecordsAgent("gift_finder");
-    let registry = AgentRegistry::new(vec![Box::new(RecordsAgent("gift_finder"))]);
+    let registry = with_engine_tools(AgentRegistry::new(vec![Box::new(RecordsAgent("gift_finder"))]));
     let provider = FakeLlmProvider::sequence(vec![
         tool_use_response("t2", "list_records", serde_json::json!({"collection": "trips"})),
         tool_use_response("t3", "delete_record", serde_json::json!({"id": record_id.to_string()})),
