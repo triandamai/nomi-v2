@@ -3804,6 +3804,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "nomi-skills"
+version = "0.1.0"
+
+[[package]]
 name = "nomi-storage"
 version = "0.1.0"
 dependencies = [
