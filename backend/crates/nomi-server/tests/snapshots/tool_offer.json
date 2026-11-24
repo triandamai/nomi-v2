@@ -3564,7 +3564,7 @@
             "type": "array"
           },
           "files": {
-            "description": "Every file of the preview, whole: canvas.pen (OpenPencil scene graph). Relative lowercase paths",
+            "description": "Every file of the preview, whole: canvas.pen (OpenPencil scene graph) for a design; HTML, CSS and JS for a deck or a video. Relative lowercase paths",
             "items": {
               "properties": {
                 "content": {
@@ -3587,6 +3587,16 @@
           "finished": {
             "description": "false keeps these files in a draft the person doesn't see yet, to send the rest in later calls; true (the default) saves the version from the last version of this direction, the draft and these files",
             "type": "boolean"
+          },
+          "kind": {
+            "description": "What you made: design (a site or app, canvas.pen), deck (slides: index.html with a deck of slides), video (a composition: index.html and its scenes) or asset (a poster or social card). design when left out",
+            "enum": [
+              "design",
+              "deck",
+              "video",
+              "asset"
+            ],
+            "type": "string"
           },
           "remove": {
             "description": "Paths to drop from the last version when this call finishes it",
