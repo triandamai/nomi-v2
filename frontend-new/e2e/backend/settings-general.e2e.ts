@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { expect, test } from '@playwright/test';
+import { expect, test } from '../support/test';
 import { BACKEND_URL } from './support/env';
 import { api, createAccount, signInAs } from './support/accounts';
 import { codeFor } from './support/mailpit';

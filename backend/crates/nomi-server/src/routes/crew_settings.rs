@@ -205,7 +205,7 @@ async fn permission_items(
     let mut items: Vec<PermissionItem> = member
         .tools
         .iter()
-        .filter(|tool| nomi_agent_core::engine::is_gateable(&tool.name))
+        .filter(|tool| nomi_agent_core::engine::is_gateable(Some(state.tool_catalog.as_ref()), &tool.name))
         .map(|tool| {
             let default_level = if member.agent.tool_needs_approval(&tool.name) {
                 Level::Ask

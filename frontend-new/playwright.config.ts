@@ -26,13 +26,23 @@ export default defineConfig({
 		},
 		{
 			// One build after the other (they share the Vite cache), then the server.
-			command: 'npm run build && npm run build:gallery && node server.js',
+			command:
+				process.env.E2E_COVERAGE === '1'
+					? `npm run build && npm run build:gallery && NODE_V8_COVERAGE=${process.env.E2E_COVERAGE_DIR ?? '.e2e-coverage/smoke'}/server node server.js`
+					: 'npm run build && npm run build:gallery && node server.js',
 			// /health: `/` sends a signed-out visitor to sign in.
 			url: 'http://localhost:4175/health',
 			reuseExistingServer: !process.env.CI,
 			timeout: 180_000,
 			// The gallery is on so pen-parity.e2e.ts can hold it to the pen.
-			env: { PORT: '4175', HOST: '127.0.0.1', API_URL: 'http://127.0.0.1:4180', ORIGIN: 'http://localhost:4175', PUBLIC_DS_GALLERY: '1' },
+			env: {
+				PORT: '4175',
+				HOST: '127.0.0.1',
+				API_URL: 'http://127.0.0.1:4180',
+				ORIGIN: 'http://localhost:4175',
+				PUBLIC_DS_GALLERY: '1',
+				...(process.env.E2E_COVERAGE === '1' && { E2E_COVERAGE: '1' }),
+			},
 		},
 		{
 			// The static gallery, served under a nested path (gallery-static.e2e.ts).

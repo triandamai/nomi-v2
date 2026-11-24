@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from '../support/test';
 import { api, createAccount, signInAs, type Account } from './support/accounts';
 
 // Chatting against the real backend and its fake model (Flow / Chat — Ask → think → answer ENb07,

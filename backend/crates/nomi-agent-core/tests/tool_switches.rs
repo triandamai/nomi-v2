@@ -11,6 +11,13 @@ use nomi_agent_core::{run_agent_turn, AgentRegistry, LoopOutcome, SubAgent, Tool
 use nomi_llm::{ContentBlock, LlmResponse, StopReason, ToolDefinition};
 use nomi_test_support::{FakeEmbeddingProvider, FakeLlmProvider, TEST_SETTINGS_KEY};
 
+/// The engine's generic tools (records, reminders, background tasks, the web…) come from the
+/// tool catalog, as they do in the server.
+fn with_engine_tools(registry: AgentRegistry) -> AgentRegistry {
+    registry.with_tool_catalog(std::sync::Arc::new(nomi_agent_core::ToolCatalog::from_tools(nomi_agent_core::engine::engine_catalog_tools())))
+}
+
+
 /// `CUSTOM` makes it behave like a custom agent, whose tools come from the switchable catalog.
 struct TestAgent<const CUSTOM: bool>;
 
@@ -104,7 +111,7 @@ async fn run_as<const CUSTOM: bool>(pool: &PgPool, provider: &FakeLlmProvider) -
     let (session_id, user_id, agent_session_id) = seed(pool).await;
     let mut conn = pool.acquire().await.unwrap();
     let embedding = FakeEmbeddingProvider::success(vec![0.0; 1536]);
-    let registry = AgentRegistry::new(vec![Box::new(TestAgent::<CUSTOM>)]);
+    let registry = with_engine_tools(AgentRegistry::new(vec![Box::new(TestAgent::<CUSTOM>)]));
     run_agent_turn(&mut conn, None, None, provider, &embedding, &registry, &TestAgent::<CUSTOM>, session_id, agent_session_id, user_id, vec![], 100)
         .await
         .unwrap()

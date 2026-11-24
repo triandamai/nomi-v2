@@ -227,7 +227,14 @@ pub async fn find_tools(
         _ => Vec::new(),
     };
     let entries: HashMap<String, ToolInfo> = catalog.entries().into_iter().map(|info| (info.name.clone(), info)).collect();
-    let by_meaning = by_meaning.into_iter().filter(|name| entries.contains_key(name) && switches.allows(name)).collect();
+    let by_meaning: Vec<String> = by_meaning.into_iter().filter(|name| entries.contains_key(name) && switches.allows(name)).collect();
+    // A generic tool (records, reminders, …) the agent can't have is left out, so search never
+    // shows it a way round its gates. Area tools stay findable: who carries them is the point.
+    let eligible = |name: &String| {
+        catalog.get(name).map_or(true, |t| t.auto_offer() == nomi_tool::AutoOffer::GrantOnly || crate::engine::offered_to(t, agent))
+    };
+    let by_words: Vec<String> = by_words.into_iter().filter(eligible).collect();
+    let by_meaning: Vec<String> = by_meaning.into_iter().filter(eligible).collect();
     let names = merge_ranked(by_words, by_meaning, limit);
 
     let own: HashSet<String> = agent.tools().into_iter().map(|t| t.name).collect();
@@ -240,7 +247,7 @@ pub async fn find_tools(
                 "name": info.name,
                 "description": info.description,
                 "group": info.group,
-                "granted": switches.allows(&info.name) && own.contains(&info.name),
+                "granted": switches.allows(&info.name) && (own.contains(&info.name) || catalog.get(&info.name).is_some_and(|t| crate::engine::offered_to(t, agent))),
                 "carried_by": carriers.get(&info.name).cloned().unwrap_or_default(),
             })
         })

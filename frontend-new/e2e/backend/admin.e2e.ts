@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '../support/test';
 import { api, createAccount, signInAgain, signInAs, type Account } from './support/accounts';
 import { deleteAdminModel, deleteConnection, deleteDynamicAgent, makePlatformAdmin, seedSharedEndpoint } from './support/db';
 import { APP_URL } from './support/env';

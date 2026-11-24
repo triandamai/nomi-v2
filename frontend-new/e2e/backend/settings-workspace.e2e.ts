@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from '../support/test';
 import { api, createAccount, newEmail, signInAs, type Account } from './support/accounts';
 
 // Settings › Workspace against the real backend (App / Settings / Workspace wZm9B): an owner

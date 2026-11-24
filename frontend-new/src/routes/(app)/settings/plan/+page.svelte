@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { ArrowDown, ArrowUpRight, CircleCheck, KeyRound } from '@lucide/svelte';
+	import { ArrowDown, ArrowUpRight, CircleCheck, Download, Ellipsis, KeyRound } from '@lucide/svelte';
+	import { goto } from '$app/navigation';
 	import { m } from '$lib/paraglide/messages';
 	import { getLocale } from '$lib/paraglide/runtime';
 	import { clock } from '$lib/clock';
@@ -26,6 +27,17 @@
 	import Icon from '$lib/ds/foundations/Icon.svelte';
 	import { pageAction } from '$lib/pageAction';
 	import { paymentOutcome, planChoice, roomOf } from '$lib/settings/checkout';
+	import { phoneView } from '$lib/phone.svelte';
+	import PhoneBackBar from '$lib/ds/chrome/PhoneBackBar.svelte';
+	import LargeTitle from '$lib/ds/chrome/LargeTitle.svelte';
+	import PhoneSettingsGroup from '$lib/ds/settings/PhoneSettingsGroup.svelte';
+	import PhoneStatGrid from '$lib/ds/settings/PhoneStatGrid.svelte';
+	import PhonePlanSummary from '$lib/ds/settings/PhonePlanSummary.svelte';
+	import PhoneDayChart from '$lib/ds/settings/PhoneDayChart.svelte';
+	import PhonePlanOption from '$lib/ds/settings/PhonePlanOption.svelte';
+	import PhoneButton from '$lib/ds/mobile/PhoneButton.svelte';
+	import BottomSheet from '$lib/ds/overlays/BottomSheet.svelte';
+	import SheetOption from '$lib/ds/overlays/SheetOption.svelte';
 
 	// Settings › Plan & usage (App / Settings / Plan & usage C0og49): the plan the person is on and
 	// the billing facts beside it, a month of usage (its figures, a bar a day, by model), the plans
@@ -96,9 +108,136 @@
 		const passed = groups.filter((group) => (document.querySelector(group.href)?.getBoundingClientRect().top ?? Infinity) <= line);
 		active = passed.at(-1)?.href ?? groups[0].href;
 	}
+
+	// On a phone (Flow / Mobile — You & Settings, steps 8 and 9): the plan and what's left of it
+	// first, Compare plans opening a sheet; then the month as tiles, a bar a day and by model, and
+	// Export CSV as a row (no top-bar button). Other months are picked from a sheet off ⋯.
+	const guess = () => data.phone;
+	const phone = phoneView(guess());
+	let sheet = $state<'plans' | 'months' | null>(null);
+	let checkoutPlan = $state('');
+	let checkoutForm: HTMLFormElement | undefined = $state();
+	const phoneTiles = $derived.by(() => {
+		const [spend, tokensIn, tokensOut, requests] = usageStats(usage);
+		return [spend, requests, tokensIn, tokensOut];
+	});
+	const months = $derived(Array.from({ length: 6 }, (_, back) => shiftMonth(usage.current_month, -back)));
+	function checkout(planId: string) {
+		checkoutPlan = planId;
+		// The input takes the value before the post goes.
+		queueMicrotask(() => checkoutForm?.requestSubmit());
+	}
 </script>
 
 <svelte:head><title>{m.settings_plan()} · {m.app_name()}</title></svelte:head>
+
+{#if phone.current}
+	<div class="h-full overflow-y-auto">
+		<PhoneBackBar label={m.nav_you()} href="/settings">
+			{#snippet trailing()}
+				<button
+					type="button"
+					aria-label={m.phone_plan_months()}
+					class="inline-flex size-11 cursor-pointer items-center justify-center rounded-full text-text outline-offset-1 focus-visible:outline-2 focus-visible:outline-focus"
+					onclick={() => (sheet = 'months')}
+				>
+					<Ellipsis size={22} strokeWidth={1.5} aria-hidden="true" />
+				</button>
+			{/snippet}
+		</PhoneBackBar>
+		<LargeTitle title={m.settings_plan()} />
+		<div class="flex flex-col gap-5 px-4 pt-1 pb-8">
+			{#if payment}
+				<div class="flex flex-col gap-2">
+					<Notice kind={payment.kind} text={paymentText} detail={payment.status === 'pending' ? m.payment_pending_detail() : undefined} />
+					{#if payment.open && payment.invoice_url}<PhoneButton label={m.payment_open()} variant="secondary" icon={ArrowUpRight} href={payment.invoice_url} external />{/if}
+				</div>
+			{/if}
+			{#if form?.message}<Notice kind="error" text={form.message} />{/if}
+			<PhonePlanSummary
+				plan={usage.plan.name}
+				line={usage.plan.custom_quota || !current
+					? m.plan_line_custom({ allowance: formatTokens(usage.plan.monthly_tokens) })
+					: /\d/.test(current.price_label)
+						? m.plan_line({ price: current.price_label, allowance: formatTokens(usage.plan.monthly_tokens) })
+						: m.phone_plan_allowance({ allowance: formatTokens(usage.plan.monthly_tokens) })}
+				used={allowed.used}
+				usedLabel="{m.plan_allowance_value({ used: formatTokens(usage.tokens_used), allowance: formatTokens(usage.plan.monthly_tokens) })} · {m.plan_used({ percent: Math.round(allowed.used * 100) })}"
+				resets={thisMonth
+					? allowed.daysLeft === 1
+						? m.plan_resets_one({ date: weekdayDate(allowed.resets) })
+						: m.plan_resets({ date: weekdayDate(allowed.resets), days: allowed.daysLeft })
+					: undefined}
+			>
+				{#snippet action()}
+					{#if plans.length}<PhoneButton label={m.plan_compare()} variant="secondary" onclick={() => (sheet = 'plans')} />{/if}
+				{/snippet}
+			</PhonePlanSummary>
+
+			<section aria-labelledby="phone-month" class="flex flex-col gap-2">
+				<div class="flex items-center gap-2 px-1">
+					<h2 id="phone-month" class="min-w-0 flex-1 font-mono text-label tracking-label text-text-3 uppercase">{thisMonth ? m.phone_plan_month() : m.plan_usage_in({ month })}</h2>
+					{#if thisMonth}<span class="shrink-0 font-mono text-label text-text-3">{month}</span>{/if}
+				</div>
+				<PhoneStatGrid tiles={phoneTiles} />
+			</section>
+
+			<section aria-labelledby="phone-days" class="flex flex-col gap-2">
+				<div class="flex items-center gap-2 px-1">
+					<h2 id="phone-days" class="min-w-0 flex-1 font-mono text-label tracking-label text-text-3 uppercase">{m.plan_day_by_day()}</h2>
+					<span class="shrink-0 font-mono text-label text-text-3">{chart.peak ? m.plan_peak({ value: amount(chart.peak.value), date: weekdayDate(chart.peak.date) }) : m.plan_no_peak()}</span>
+				</div>
+				<PhoneDayChart label={m.plan_chart_label({ month })} bars={chart.bars} {describe} />
+			</section>
+
+			<PhoneSettingsGroup
+				label={m.plan_by_model()}
+				rows={usage.by_model.length
+					? usage.by_model.map((model) => ({ key: model.label, label: model.label, meta: formatTokens(model.tokens), mono: true }))
+					: [{ key: 'none', label: m.plan_by_model_empty() }]}
+			/>
+			<PhoneSettingsGroup rows={[{ key: 'csv', icon: Download, label: m.plan_export(), href: data.csv, download: true }]} />
+		</div>
+	</div>
+
+	<form bind:this={checkoutForm} method="POST" action="?/checkout" hidden>
+		<input type="hidden" name="plan" value={checkoutPlan} />
+	</form>
+	<BottomSheet open={sheet === 'plans'} title={m.plan_compare()} subtitle={m.plan_compare_body()} onclose={() => sheet === 'plans' && (sheet = null)}>
+		<div class="flex flex-col gap-2.5 px-4 pt-1 pb-2">
+			{#each plans as plan (plan.id)}
+				{@const theirs = plan.id === data.plans?.current_plan_id}
+				{@const choice = planChoice(plan.price_idr === undefined ? { ...plan, price_idr: null } : { ...plan, price_idr: plan.price_idr }, { ...offers, currentTokens: current?.monthly_tokens ?? null, waitlist: [...offers.waitlist, ...joined] })}
+				{@const soon = choice === 'waitlist' || choice === 'waiting'}
+				{@const allowance = m.phone_plan_allowance({ allowance: formatTokens(plan.monthly_tokens) })}
+				<PhonePlanOption
+					name={plan.name}
+					price={soon ? m.plan_coming_soon() : (plan.promo_price_label ?? plan.price_label)}
+					line={plan.description ? `${allowance} · ${plan.description}` : allowance}
+					yours={theirs ? m.plan_yours() : undefined}
+				>
+					{#if choice === 'buy'}
+						<PhoneButton label={m.plan_upgrade({ name: plan.name })} onclick={() => checkout(plan.id)} />
+						<p class="text-phone-sm leading-firm text-text-3">{m.plan_upgrade_note()}</p>
+					{:else if choice === 'closed'}
+						<p class="text-phone-sm leading-firm text-text-3">{m.plan_payments_closed()}</p>
+					{:else if choice === 'waitlist'}
+						<PhoneButton label={m.plan_join_waitlist()} variant="secondary" disabled={joining === plan.id} onclick={() => void join(plan.id)} />
+						<p class="text-phone-sm leading-firm text-text-3">{m.plan_waitlist_note()}</p>
+					{:else if choice === 'waiting'}
+						<p class="inline-flex items-center gap-1.5 text-phone-sm text-text"><span class="inline-flex text-accent"><Icon icon={CircleCheck} size={16} /></span>{m.plan_on_waitlist()}</p>
+					{/if}
+				</PhonePlanOption>
+			{/each}
+			{#if waitlistError}<Notice kind="error" text={waitlistError} />{/if}
+		</div>
+	</BottomSheet>
+	<BottomSheet open={sheet === 'months'} title={m.phone_plan_months()} onclose={() => sheet === 'months' && (sheet = null)}>
+		{#each months as one (one)}
+			<SheetOption label={monthName(one, language)} chosen={one === usage.month} onclick={() => ((sheet = null), void goto(`?month=${one}`, { noScroll: true }))} />
+		{/each}
+	</BottomSheet>
+{:else}
 
 <div bind:this={scroller} onscroll={follow} class="h-full overflow-y-auto">
 	<div class="flex gap-14 px-4 pt-8 pb-12 lg:px-12">
@@ -268,3 +407,4 @@
 		</aside>
 	</div>
 </div>
+{/if}

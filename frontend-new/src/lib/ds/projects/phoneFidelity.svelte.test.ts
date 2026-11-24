@@ -86,6 +86,39 @@ describe('Find & filter (owsMq)', () => {
 		expect(box(page.getByRole('radiogroup', { name: 'Show' }).element()).height).toBe(46);
 	});
 
+	it('the filters’ row does not shrink inside a flex-col scroll container', async () => {
+		const wrapper = document.createElement('div');
+		wrapper.style.display = 'flex';
+		wrapper.style.flexDirection = 'column';
+		wrapper.style.height = '200px';
+		wrapper.style.overflowY = 'auto';
+		document.body.appendChild(wrapper);
+
+		try {
+			await render(PhoneFilters, {
+				target: wrapper,
+				props: {
+					label: 'Filter inbox',
+					value: 'all',
+					options: [
+						{ value: 'all', label: 'All', count: 3 },
+						{ value: 'needs', label: 'Needs you', count: 3 },
+					],
+					onchange: () => {},
+				},
+			});
+
+			const tall = document.createElement('div');
+			tall.style.height = '800px';
+			tall.style.flexShrink = '0';
+			wrapper.appendChild(tall);
+
+			expect(box(page.getByRole('radiogroup', { name: 'Filter inbox' }).element()).height).toBe(46);
+		} finally {
+			wrapper.remove();
+		}
+	});
+
 	it('the sort sheet’s check is 18 (i7GQct)', async () => {
 		await render(SheetOption, { label: 'Updated', icon: FolderInput, chosen: true, onclick: () => {} });
 		const svgs = page.getByRole('button', { name: 'Updated' }).element().querySelectorAll('svg');
