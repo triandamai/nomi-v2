@@ -12,3 +12,4 @@ pub mod attachment_worker;
 pub mod background_worker;
 pub mod sandbox_worker;
 pub mod sandbox_cleanup;
+pub mod spawn;

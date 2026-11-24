@@ -1,6 +1,5 @@
 use std::env::var;
 
-use nomi_realtime::MqttPublisher;
 use nomi_settings as settings;
 
 #[tokio::main]
@@ -29,8 +28,6 @@ async fn main() {
     tracing::info!("migrations up to date");
 
     let http_client = nomi_server::http_client();
-    let mqtt_client_id = format!("nomi-worker-{}", uuid::Uuid::new_v4());
-    let mqtt = MqttPublisher::connect(&mqtt_broker_host, mqtt_broker_port, &mqtt_client_id);
 
     // Admin → Configuration is read from here on; the environment fills what isn't saved there.
     nomi_settings::config::install(pool.clone());
@@ -40,20 +37,23 @@ async fn main() {
     nomi_storage::blob::init_attachment_store(s3.clone());
     // Quota notices from turns are emailed through the same SMTP settings as the server's.
     nomi_server::notifications::init_mailer(nomi_mail::configured());
+    nomi_server::project_events::init(&mqtt_broker_host, mqtt_broker_port);
     nomi_server::user_events::init(&mqtt_broker_host, mqtt_broker_port);
     // Chat replies and quota notices reach phones through the same push setup as the server's.
     nomi_server::push::init(nomi_server::push::from_env(http_client.clone()));
     nomi_server::public_url::warn_if_unknown();
 
-    // Memory learning, chat summaries and tidying run beside the turn worker, as they do inline.
-    tokio::spawn(nomi_worker::memory_worker::run(pool.clone(), settings_key, http_client.clone()));
-    tokio::spawn(nomi_worker::issue_worker::run(pool.clone()));
-    // Server-side sandboxes follow what projects want; idle unless the admin switch is on.
-    tokio::spawn(nomi_worker::sandbox_worker::run(pool.clone(), http_client.clone(), project_storage.clone(), settings_key, nomi_shipyard::ShipyardConfig::from_env()));
-    // Attached images, audio and video are read by a model in the background.
-    tokio::spawn(nomi_worker::attachment_worker::run(pool.clone(), settings_key, http_client.clone()));
-    // Background tasks run alongside turns and wake Nomi when they finish.
-    tokio::spawn(nomi_worker::background_worker::run(pool.clone(), mqtt.clone(), database_url.clone()));
-
-    nomi_worker::worker::run(pool, mqtt, s3, settings_key, http_client, database_url, project_storage).await;
+    // Every loop, as the server runs them inline.
+    nomi_worker::spawn::spawn_all(nomi_worker::spawn::WorkerContext {
+        pool,
+        mqtt_host: mqtt_broker_host,
+        mqtt_port: mqtt_broker_port,
+        client_id_prefix: "nomi-worker",
+        s3,
+        settings_key,
+        http_client,
+        database_url,
+        project_storage,
+    });
+    std::future::pending::<()>().await;
 }
