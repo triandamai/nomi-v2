@@ -259,7 +259,13 @@ async fn run_agent_turn_in_reply(
             }
         }
     }
-    let inputs = OfferInputs { mentions_files: crate::attachments::mentions_files(&messages), not_ready, off, switches };
+    // The member's skills for this person: the index `read_skill` is offered with.
+    let mine = nomi_tools_skills::store::index(&mut **conn, user_id, agent.agent_type().as_ref()).await.unwrap_or_else(|e| {
+        tracing::warn!(error = %e, "can't load the member's skills; offering the built-in ones only");
+        Vec::new()
+    });
+    let skills = nomi_tools_skills::merged_index(agent.builtin_skills(), mine);
+    let inputs = OfferInputs { mentions_files: crate::attachments::mentions_files(&messages), not_ready, off, switches, skills };
     tools.extend(engine_tools_for(agent, registry, &inputs));
     let switches = inputs.switches;
     tools.retain(|t| own_tools.contains(&t.name) || switches.allows(&t.name));

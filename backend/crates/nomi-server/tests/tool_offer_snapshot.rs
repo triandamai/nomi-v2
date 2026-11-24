@@ -19,6 +19,7 @@ fn scenarios() -> Vec<(&'static str, OfferInputs)> {
         switches,
         not_ready: not_ready.iter().map(|n| n.to_string()).collect(),
         mentions_files: files,
+        skills: Vec::new(),
     };
     vec![
         ("all_ready", ready(ToolSwitches::default(), &[], true)),

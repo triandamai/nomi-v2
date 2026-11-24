@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+nomi-skills = { path = "../nomi-skills" }
+nomi-tools-skills = { path = "../nomi-tools-skills" }
 nomi-i18n = { path = "../nomi-i18n" }
 nomi-mail = { path = "../nomi-mail" }
 nomi-llm = { path = "../nomi-llm" }

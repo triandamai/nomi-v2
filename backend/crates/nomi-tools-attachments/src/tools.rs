@@ -60,7 +60,7 @@ mod tests {
     fn read_attachment_hidden_without_files() {
         let tools = tools();
         let t = &tools[0];
-        assert!(t.offer(&OfferContext { reminder_targets: &[], mentions_files: false }).is_none());
-        assert!(t.offer(&OfferContext { reminder_targets: &[], mentions_files: true }).is_some());
+        assert!(t.offer(&OfferContext { reminder_targets: &[], mentions_files: false, skills: &[] }).is_none());
+        assert!(t.offer(&OfferContext { reminder_targets: &[], mentions_files: true, skills: &[] }).is_some());
     }
 }

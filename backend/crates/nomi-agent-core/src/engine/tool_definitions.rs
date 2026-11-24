@@ -256,7 +256,7 @@ pub fn crew_tool_definitions(registry: &AgentRegistry) -> Vec<ToolDefinition> {
     // The catalog's generic tools (records, background tasks, reminders, the web, voice, files),
     // each as it is offered in a conversation that could use all of it.
     let targets = registry.reminder_target_agent_types();
-    let offer = nomi_tool::OfferContext { reminder_targets: &targets, mentions_files: true };
+    let offer = nomi_tool::OfferContext { reminder_targets: &targets, mentions_files: true, skills: &[] };
     if let Some(catalog) = registry.tool_catalog() {
         let generic = catalog.in_registration_order().filter(|t| t.auto_offer() != nomi_tool::AutoOffer::GrantOnly);
         tools.extend(generic.filter_map(|t| t.offer(&offer)));

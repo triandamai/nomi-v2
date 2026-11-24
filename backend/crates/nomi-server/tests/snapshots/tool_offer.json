@@ -1082,6 +1082,7 @@
     "read_attachment": "attachments",
     "read_file": "coding",
     "read_guide": "coding",
+    "read_skill": "skills",
     "read_web_page": "web",
     "remove_reminder": "reminders",
     "rename_project": "planning",
@@ -3330,6 +3331,25 @@
         "type": "object"
       }
     },
+    "read_skill": {
+      "description": "Read one of your skills: know-how the person gave you (or you came with) for a kind of task. Before a task one of these covers, read that skill and follow it. `name` is the skill; `reference` reads one of its extra files, named at the end of the skill.\n\nYour skills:\n",
+      "input_schema": {
+        "properties": {
+          "name": {
+            "description": "The skill's name, from your list of skills.",
+            "type": "string"
+          },
+          "reference": {
+            "description": "One of the skill's extra files, as the skill names it.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      }
+    },
     "read_web_page": {
       "description": "Read a public web page as plain text, e.g. a link from web_search or one the user shared.",
       "input_schema": {
@@ -4346,6 +4366,10 @@
     },
     "read_preview": {
       "gateable": true,
+      "quiet": false
+    },
+    "read_skill": {
+      "gateable": false,
       "quiet": false
     },
     "read_web_page": {
