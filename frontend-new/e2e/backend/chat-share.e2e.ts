@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from '../support/test';
 import { api, createAccount, signInAs } from './support/accounts';
 
 // Sharing a chat against the real backend (Flow / Chat — Share & delete TnscX, Shared link b8Flw8):

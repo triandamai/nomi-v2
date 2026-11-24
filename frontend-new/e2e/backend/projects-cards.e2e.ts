@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from '../support/test';
 import { api, createAccount, signInAs, type Account } from './support/accounts';
 import { seedReply, setProjectStatus } from './support/seed';
 

@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { expect, test } from '@playwright/test';
+import { expect, test } from './support/test';
 
 // The design-system gallery has to sit on the pen: every section of the four sheets starts and
 // ends where the pen's does, and every board is where the pen draws it, at its size. The numbers

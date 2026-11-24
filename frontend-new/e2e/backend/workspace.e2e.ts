@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from '../support/test';
 import { api, createAccount, signInAs } from './support/accounts';
 import { markPublished, siteHits } from './support/seed';
 import { APP_URL } from './support/env';

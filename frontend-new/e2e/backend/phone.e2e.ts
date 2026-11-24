@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from '../support/test';
 import { api, createAccount, signInAs } from './support/accounts';
 
 // The phone's own screens against the real backend (Flow / Mobile Chat — Start & answer): the tab

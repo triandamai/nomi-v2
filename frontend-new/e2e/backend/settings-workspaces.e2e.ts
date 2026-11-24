@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from '../support/test';
 import { api, createAccount, signInAs } from './support/accounts';
 
 // Settings › Workspaces against the real backend (App / Settings / Workspaces l222Mz): the

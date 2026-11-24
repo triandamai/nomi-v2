@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './support/test';
 
 // The production server (server.js: SvelteKit + the live-update relay) against a stub backend
 // (e2e/stub-api.mjs), in a real browser.
