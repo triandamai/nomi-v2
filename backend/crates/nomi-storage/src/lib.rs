@@ -89,6 +89,8 @@ pub async fn build_from(get: impl Fn(&str) -> Option<String>) -> Option<S3Config
 pub enum PresignError {
     #[error("failed to presign upload url: {0}")]
     Presign(#[from] aws_sdk_s3::error::SdkError<aws_sdk_s3::operation::put_object::PutObjectError, aws_sdk_s3::config::http::HttpResponse>),
+    #[error("failed to presign download url: {0}")]
+    PresignGet(#[from] aws_sdk_s3::error::SdkError<aws_sdk_s3::operation::get_object::GetObjectError, aws_sdk_s3::config::http::HttpResponse>),
     #[error(transparent)]
     Config(#[from] aws_sdk_s3::presigning::PresigningConfigError),
 }
@@ -196,6 +198,20 @@ impl S3Config {
         })
     }
 
+    /// Generates a pre-signed GET URL for `key` valid for `ttl`, so external services like
+    /// Shipyard can stream large objects directly from S3.
+    pub async fn presign_get(&self, key: &str, ttl: Duration) -> Result<String, PresignError> {
+        let presigned = self
+            .client
+            .get_object()
+            .bucket(&self.bucket)
+            .key(key)
+            .presigned(PresigningConfig::expires_in(ttl)?)
+            .await?;
+
+        Ok(presigned.uri().to_string())
+    }
+
     /// Writes `content` directly from the server — for writers that already hold the bytes
     /// in-process (an agent tool call, a browser-submitted body proxied through our own API),
     /// as opposed to `presign_put`'s browser-uploads-directly-to-S3 shape.
@@ -291,6 +307,32 @@ mod local_fs_tests {
         store.delete_object("proj/a.txt").await.unwrap();
         store.delete_object("proj/a.txt").await.unwrap();
         assert_eq!(store.get_object("proj/a.txt").await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn disk_project_store_presign_get_returns_none() {
+        let dir = tempfile_dir();
+        let store = store_in(&dir);
+        assert_eq!(store.presign_get("publishes/1/2.zip", Duration::from_secs(60)).await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn s3_project_store_presign_get_signs_get_url() {
+        let s3 = build_from(|field| match field {
+            "bucket" => Some("nomi-test".to_string()),
+            "region" => Some("us-east-1".to_string()),
+            "access_key_id" => Some("AKIAIOSFODNN7EXAMPLE".to_string()),
+            "secret_access_key" => Some("wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY".to_string()),
+            "endpoint_url" => Some("https://s3.example.test".to_string()),
+            _ => None,
+        })
+        .await
+        .unwrap();
+        let store = build_project_store(Some(s3));
+        let url = store.presign_get("publishes/1/2.zip", Duration::from_secs(900)).await.unwrap().unwrap();
+        assert!(url.starts_with("https://s3.example.test/nomi-test/projects/publishes/1/2.zip?"));
+        assert!(url.contains("X-Amz-Signature="));
+        assert!(url.contains("X-Amz-Expires=900"));
     }
 
     fn tempfile_dir() -> std::path::PathBuf {
