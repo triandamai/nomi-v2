@@ -254,7 +254,7 @@
 			<PhoneFilters label={m.inbox_filter_label()} options={filters} value={filter} onchange={(value) => (filter = value as Filter)} />
 		</div>
 
-		<div class="flex min-h-0 flex-1 flex-col overflow-y-auto pb-24">
+		<div class="flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto pb-24">
 			{#if feed.needs.length}
 				<section class="flex flex-col">
 					<div class="flex items-center px-5 pt-3.5 pb-2">
