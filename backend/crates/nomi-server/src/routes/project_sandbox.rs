@@ -11,7 +11,7 @@ use uuid::Uuid;
 use crate::app::AppState;
 use crate::configuration::{sandbox_config, SandboxConfig};
 use crate::sandbox_store::{self as store, State as SandboxState, Status, PHASE_IDLE};
-use crate::sandbox_worker::PROVIDER_NAME;
+use crate::sandbox_manager::PROVIDER_NAME;
 use nomi_auth::extractor::AuthClaims;
 
 /// The project runs in the user's browser (WebContainer).

@@ -40,9 +40,9 @@ async fn the_workers_pick_up_turns_hand_offs_and_background_tasks(pool: PgPool) 
     std::env::set_var("EMBEDDING_PROVIDER", "fake");
     let url = database_url(&pool).await;
     let storage = nomi_test_support::test_project_storage();
-    let turns = tokio::spawn(nomi_server::worker::run(pool.clone(), mqtt(), None, KEY, reqwest::Client::new(), url.clone(), storage.clone()));
-    let delegations = tokio::spawn(nomi_server::delegation_worker::run(pool.clone(), mqtt(), None, KEY, reqwest::Client::new(), url.clone(), storage.clone()));
-    let background = tokio::spawn(nomi_server::background_worker::run(pool.clone(), mqtt(), url.clone()));
+    let turns = tokio::spawn(nomi_worker::worker::run(pool.clone(), mqtt(), None, KEY, reqwest::Client::new(), url.clone(), storage.clone()));
+    let delegations = tokio::spawn(nomi_worker::delegation_worker::run(pool.clone(), mqtt(), None, KEY, reqwest::Client::new(), url.clone(), storage.clone()));
+    let background = tokio::spawn(nomi_worker::background_worker::run(pool.clone(), mqtt(), url.clone()));
 
     // A person and their chat, as the web app makes them.
     let user: Uuid = sqlx::query_scalar("INSERT INTO users DEFAULT VALUES RETURNING id").fetch_one(&pool).await.unwrap();

@@ -18,7 +18,7 @@ use uuid::Uuid;
 use crate::configuration::{ReaperMode, Rollout, SandboxConfig};
 use crate::routes::project_sandbox::{availability, RUNTIME_SANDBOX};
 use crate::sandbox_store::{self as store, State};
-use crate::sandbox_worker::PROVIDER_NAME;
+use crate::sandbox_manager::PROVIDER_NAME;
 
 /// How often the row is looked at while waiting for the sandbox to come up.
 const WAKE_POLL: Duration = Duration::from_millis(500);

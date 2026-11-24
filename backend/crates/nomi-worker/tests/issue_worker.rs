@@ -73,7 +73,7 @@ async fn studio_with_a_project(router: &axum::Router, ana: &str) -> (String, Str
 
 
 
-use nomi_server::issue_worker::{sweep, Swept};
+use nomi_worker::issue_worker::{sweep, Swept};
 
 /// A project with issues "One", "Two" and "Three" all moved into Ready to dev, in that order.
 async fn three_ready_issues(router: &axum::Router, ana: &str) -> String {

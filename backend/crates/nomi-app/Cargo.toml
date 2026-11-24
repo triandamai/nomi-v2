@@ -1,0 +1,21 @@
+[package]
+name = "nomi-app"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+nomi-server = { path = "../nomi-server" }
+nomi-worker = { path = "../nomi-worker" }
+nomi-agent-core = { path = "../nomi-agent-core" }
+nomi-agent-workspace = { path = "../nomi-agent-workspace" }
+nomi-realtime = { path = "../nomi-realtime" }
+nomi-settings = { path = "../nomi-settings" }
+nomi-storage = { path = "../nomi-storage" }
+nomi-shipyard = { path = "../nomi-shipyard" }
+nomi-mail = { path = "../nomi-mail" }
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json", "migrate", "macros"] }
+tokio = { version = "1", features = ["full"] }
+axum = { version = "0.7", features = ["ws"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }

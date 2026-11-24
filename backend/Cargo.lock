@@ -3534,6 +3534,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "nomi-app"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "nomi-agent-core",
+ "nomi-agent-workspace",
+ "nomi-mail",
+ "nomi-realtime",
+ "nomi-server",
+ "nomi-settings",
+ "nomi-shipyard",
+ "nomi-storage",
+ "nomi-worker",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "nomi-attachments"
 version = "0.1.0"
 dependencies = [
@@ -4063,6 +4084,54 @@ dependencies = [
  "tokio",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "nomi-worker"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "axum",
+ "base64 0.22.1",
+ "chrono",
+ "chrono-tz",
+ "flate2",
+ "futures-util",
+ "hex",
+ "http-body-util",
+ "image",
+ "nomi-agent-chitchat",
+ "nomi-agent-coding",
+ "nomi-agent-core",
+ "nomi-agent-reminders",
+ "nomi-agent-supervisor",
+ "nomi-attachments",
+ "nomi-embedding",
+ "nomi-i18n",
+ "nomi-llm",
+ "nomi-mail",
+ "nomi-payment",
+ "nomi-realtime",
+ "nomi-sandbox",
+ "nomi-server",
+ "nomi-settings",
+ "nomi-shipyard",
+ "nomi-storage",
+ "nomi-test-support",
+ "nomi-turn",
+ "nomi-usage",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tar",
+ "tokio",
+ "tokio-tungstenite",
+ "tower 0.4.13",
+ "tracing",
+ "uuid",
+ "wiremock",
+ "zip 2.4.2",
 ]
 
 [[package]]

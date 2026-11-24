@@ -73,7 +73,7 @@ async fn main() {
         let worker_database_url = database_url.clone();
         let worker_project_storage = project_storage.clone();
         tokio::spawn(async move {
-            nomi_server::worker::run(worker_pool, worker_mqtt, worker_s3, settings_key, worker_http_client, worker_database_url, worker_project_storage).await;
+            nomi_worker::worker::run(worker_pool, worker_mqtt, worker_s3, settings_key, worker_http_client, worker_database_url, worker_project_storage).await;
         });
 
         let delegation_mqtt_client_id = format!("nomi-orchestrator-delegation-worker-{}", uuid::Uuid::new_v4());
@@ -84,7 +84,7 @@ async fn main() {
         let delegation_database_url = database_url.clone();
         let delegation_project_storage = project_storage.clone();
         tokio::spawn(async move {
-            nomi_server::delegation_worker::run(delegation_pool, delegation_mqtt, delegation_s3, settings_key, delegation_http_client, delegation_database_url, delegation_project_storage).await;
+            nomi_worker::delegation_worker::run(delegation_pool, delegation_mqtt, delegation_s3, settings_key, delegation_http_client, delegation_database_url, delegation_project_storage).await;
         });
 
         let background_mqtt_client_id = format!("nomi-orchestrator-background-worker-{}", uuid::Uuid::new_v4());
@@ -92,7 +92,7 @@ async fn main() {
         let background_pool = pool.clone();
         let background_database_url = database_url.clone();
         tokio::spawn(async move {
-            nomi_server::background_worker::run(background_pool, background_mqtt, background_database_url).await;
+            nomi_worker::background_worker::run(background_pool, background_mqtt, background_database_url).await;
         });
 
         let scheduler_mqtt_client_id = format!("nomi-orchestrator-scheduler-{}", uuid::Uuid::new_v4());
@@ -103,28 +103,28 @@ async fn main() {
         let scheduler_project_storage = project_storage.clone();
         let notification: std::sync::Arc<dyn nomi_agent_core::NotificationDelivery> = std::sync::Arc::new(nomi_agent_core::LogOnlyDelivery);
         tokio::spawn(async move {
-            nomi_server::scheduler_worker::run(scheduler_pool, scheduler_mqtt, scheduler_s3, settings_key, scheduler_http_client, scheduler_project_storage, notification).await;
+            nomi_worker::scheduler_worker::run(scheduler_pool, scheduler_mqtt, scheduler_s3, settings_key, scheduler_http_client, scheduler_project_storage, notification).await;
         });
         let reminders_mqtt_client_id = format!("nomi-orchestrator-reminders-{}", uuid::Uuid::new_v4());
         let reminders_mqtt = MqttPublisher::connect(&mqtt_broker_host, mqtt_broker_port, &reminders_mqtt_client_id);
         let reminders_pool = pool.clone();
         tokio::spawn(async move {
-            nomi_server::reminders_worker::run(reminders_pool, reminders_mqtt).await;
+            nomi_worker::reminders_worker::run(reminders_pool, reminders_mqtt).await;
         });
         let memory_pool = pool.clone();
         let memory_http_client = http_client.clone();
         tokio::spawn(async move {
-            nomi_server::memory_worker::run(memory_pool, settings_key, memory_http_client).await;
+            nomi_worker::memory_worker::run(memory_pool, settings_key, memory_http_client).await;
         });
-        tokio::spawn(nomi_server::issue_worker::run(pool.clone()));
+        tokio::spawn(nomi_worker::issue_worker::run(pool.clone()));
         // Renewal invoices and reminders for paid plans.
-        tokio::spawn(nomi_server::billing_worker::run(pool.clone()));
+        tokio::spawn(nomi_worker::billing_worker::run(pool.clone()));
         // Server-side sandboxes follow what projects want; idle unless the admin switch is on.
-        tokio::spawn(nomi_server::sandbox_worker::run(pool.clone(), http_client.clone(), project_storage.clone(), settings_key, nomi_shipyard::ShipyardConfig::from_env()));
+        tokio::spawn(nomi_worker::sandbox_worker::run(pool.clone(), http_client.clone(), project_storage.clone(), settings_key, nomi_shipyard::ShipyardConfig::from_env()));
         let attachment_pool = pool.clone();
         let attachment_http_client = http_client.clone();
         tokio::spawn(async move {
-            nomi_server::attachment_worker::run(attachment_pool, settings_key, attachment_http_client).await;
+            nomi_worker::attachment_worker::run(attachment_pool, settings_key, attachment_http_client).await;
         });
         tracing::info!("embedded worker enabled (set RUN_WORKER_INLINE=false to disable)");
     } else {

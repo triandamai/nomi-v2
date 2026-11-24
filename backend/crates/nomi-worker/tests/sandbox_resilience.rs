@@ -2,6 +2,8 @@
 //! stuck mid-change, the cooldown after repeated failures, backoff during an outage, and the
 //! expiry of sandboxes that have sat stopped too long.
 
+/// The server tests' shared helpers.
+#[path = "../../nomi-server/tests/support/mod.rs"]
 mod support;
 
 use std::sync::{Arc, Mutex};
@@ -12,7 +14,7 @@ use nomi_sandbox::{FakeProvider, PreviewUrl, SandboxError, SandboxId};
 use nomi_server::configuration::{Rollout, SandboxConfig};
 use nomi_server::sandbox_manager::{ProjectSteps, ReconcileOutcome, SandboxManager, EXPIRY_WARN, MAX_ATTEMPTS, PROVIDER_COOLDOWN, STUCK_AFTER};
 use nomi_server::sandbox_store::{self as store, Desired, State};
-use nomi_server::sandbox_worker::SandboxWorker;
+use nomi_worker::sandbox_worker::SandboxWorker;
 use sqlx::PgPool;
 use support::App;
 use uuid::Uuid;

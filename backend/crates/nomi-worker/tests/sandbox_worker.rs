@@ -1,5 +1,7 @@
 //! The worker that reconciles due sandbox rows, the idle sweep, and the sandbox check-in.
 
+/// The server tests' shared helpers.
+#[path = "../../nomi-server/tests/support/mod.rs"]
 mod support;
 
 use std::sync::Arc;
@@ -7,9 +9,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use nomi_sandbox::{FakeProvider, PreviewUrl, SandboxError, SandboxId};
 use nomi_server::configuration::{Rollout, SandboxConfig};
-use nomi_server::sandbox_manager::{ProjectSteps, SandboxManager};
+use nomi_server::sandbox_manager::{sandbox_check_in, ProjectSteps, SandboxManager};
 use nomi_server::sandbox_store::{self as store, Desired, State};
-use nomi_server::sandbox_worker::{pass_mode, sandbox_check_in, PassMode, SandboxWorker, PROVIDER_NAME};
+use nomi_worker::sandbox_worker::{pass_mode, PassMode, SandboxWorker, PROVIDER_NAME};
 use sqlx::PgPool;
 use support::App;
 use uuid::Uuid;

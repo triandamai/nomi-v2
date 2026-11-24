@@ -8,7 +8,7 @@ use nomi_agent_core::LoopOutcome;
 use nomi_llm::{ContentBlock, LlmMessage, LlmRole};
 use nomi_realtime::{MqttPublisher, StreamEnvelope};
 
-use crate::bootstrap::build_embedding_provider_from_settings_or_env;
+use nomi_server::bootstrap::build_embedding_provider_from_settings_or_env;
 
 const NOTIFY_CHANNEL: &str = "agent_delegations_channel";
 const POLL_FALLBACK_INTERVAL: Duration = Duration::from_secs(5);
@@ -112,7 +112,7 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
     }
     tracing::info!("delegation worker: listening for new agent delegations");
 
-    let registry = crate::build_agent_registry(&pool, project_storage.clone(), crate::build_tool_catalog(project_storage));
+    let registry = nomi_server::build_agent_registry(&pool, project_storage.clone(), nomi_server::build_tool_catalog(project_storage));
 
     loop {
         let _ = tokio::time::timeout(POLL_FALLBACK_INTERVAL, listener.recv()).await;
@@ -142,8 +142,8 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
             };
 
             // Koda builds with the coding model; everyone else with the person's chat model.
-            let purpose = crate::bootstrap::purpose_for_agent(&claimed.target_agent_type);
-            let provider = crate::bootstrap::build_llm_provider_in_session(&pool, claimed.user_id, claimed.session_id, &settings_key, http_client.clone(), purpose).await;
+            let purpose = nomi_server::bootstrap::purpose_for_agent(&claimed.target_agent_type);
+            let provider = nomi_server::bootstrap::build_llm_provider_in_session(&pool, claimed.user_id, claimed.session_id, &settings_key, http_client.clone(), purpose).await;
             let embedding_provider =
                 build_embedding_provider_from_settings_or_env(&pool, &settings_key, http_client.clone(), Some(claimed.user_id)).await;
 

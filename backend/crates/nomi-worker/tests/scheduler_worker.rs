@@ -50,7 +50,7 @@ async fn claim_next_does_not_claim_a_future_job(pool: PgPool) {
     let (session_id, user_id) = seed_session_and_user(&pool).await;
     insert_job(&pool, session_id, user_id, "1 hour", None).await;
 
-    let claimed = nomi_server::scheduler_worker::claim_next(&pool).await.unwrap();
+    let claimed = nomi_worker::scheduler_worker::claim_next(&pool).await.unwrap();
 
     assert!(claimed.is_none());
 }
@@ -60,7 +60,7 @@ async fn claim_next_claims_a_due_job_and_sets_claimed_at(pool: PgPool) {
     let (session_id, user_id) = seed_session_and_user(&pool).await;
     let id = insert_job(&pool, session_id, user_id, "-1 hour", None).await;
 
-    let claimed = nomi_server::scheduler_worker::claim_next(&pool).await.unwrap();
+    let claimed = nomi_worker::scheduler_worker::claim_next(&pool).await.unwrap();
 
     assert!(claimed.is_some());
     assert_eq!(claimed.unwrap().id, id);
@@ -77,9 +77,9 @@ async fn claim_next_does_not_reclaim_an_already_claimed_job(pool: PgPool) {
     let (session_id, user_id) = seed_session_and_user(&pool).await;
     insert_job(&pool, session_id, user_id, "-1 hour", None).await;
 
-    let first = nomi_server::scheduler_worker::claim_next(&pool).await.unwrap();
+    let first = nomi_worker::scheduler_worker::claim_next(&pool).await.unwrap();
     assert!(first.is_some());
-    let second = nomi_server::scheduler_worker::claim_next(&pool).await.unwrap();
+    let second = nomi_worker::scheduler_worker::claim_next(&pool).await.unwrap();
 
     assert!(second.is_none());
 }
@@ -88,7 +88,7 @@ async fn claim_next_does_not_reclaim_an_already_claimed_job(pool: PgPool) {
 async fn a_one_time_job_is_marked_completed_after_a_successful_fire(pool: PgPool) {
     let (session_id, user_id) = seed_session_and_user(&pool).await;
     let id = insert_job(&pool, session_id, user_id, "-1 hour", None).await;
-    let claimed = nomi_server::scheduler_worker::claim_next(&pool).await.unwrap().unwrap();
+    let claimed = nomi_worker::scheduler_worker::claim_next(&pool).await.unwrap().unwrap();
 
     let provider = FakeLlmProvider::sequence(vec![LlmResponse {
         content: vec![ContentBlock::Text { text: "Time for a bath!".to_string() }],
@@ -100,7 +100,7 @@ async fn a_one_time_job_is_marked_completed_after_a_successful_fire(pool: PgPool
     let registry = AgentRegistry::new(vec![Box::new(nomi_agent_chitchat::ChitchatAgent)]);
     let notification: std::sync::Arc<dyn NotificationDelivery> = std::sync::Arc::new(LogOnlyDelivery);
 
-    nomi_server::scheduler_worker::process_claimed_job(&pool, None, None, &provider, &embedding_provider, &registry, notification.as_ref(), claimed)
+    nomi_worker::scheduler_worker::process_claimed_job(&pool, None, None, &provider, &embedding_provider, &registry, notification.as_ref(), claimed)
         .await;
 
     let (status, last_fired_at): (String, Option<chrono::DateTime<chrono::Utc>>) =
@@ -124,7 +124,7 @@ async fn a_one_time_job_is_marked_completed_after_a_successful_fire(pool: PgPool
 async fn a_recurring_job_has_its_run_at_advanced_and_claim_cleared_after_a_fire(pool: PgPool) {
     let (session_id, user_id) = seed_session_and_user(&pool).await;
     let id = insert_job(&pool, session_id, user_id, "-1 hour", Some("daily")).await;
-    let claimed = nomi_server::scheduler_worker::claim_next(&pool).await.unwrap().unwrap();
+    let claimed = nomi_worker::scheduler_worker::claim_next(&pool).await.unwrap().unwrap();
     let run_at_before_fire = claimed.run_at;
 
     let provider = FakeLlmProvider::sequence(vec![LlmResponse {
@@ -137,7 +137,7 @@ async fn a_recurring_job_has_its_run_at_advanced_and_claim_cleared_after_a_fire(
     let registry = AgentRegistry::new(vec![Box::new(nomi_agent_chitchat::ChitchatAgent)]);
     let notification: std::sync::Arc<dyn NotificationDelivery> = std::sync::Arc::new(LogOnlyDelivery);
 
-    nomi_server::scheduler_worker::process_claimed_job(&pool, None, None, &provider, &embedding_provider, &registry, notification.as_ref(), claimed)
+    nomi_worker::scheduler_worker::process_claimed_job(&pool, None, None, &provider, &embedding_provider, &registry, notification.as_ref(), claimed)
         .await;
 
     let (status, claimed_at, run_at): (String, Option<chrono::DateTime<chrono::Utc>>, chrono::DateTime<chrono::Utc>) =
@@ -163,7 +163,7 @@ async fn an_unknown_target_agent_type_cancels_the_job(pool: PgPool) {
     .execute(&pool)
     .await
     .unwrap();
-    let claimed = nomi_server::scheduler_worker::claim_next(&pool).await.unwrap().unwrap();
+    let claimed = nomi_worker::scheduler_worker::claim_next(&pool).await.unwrap().unwrap();
     let id = claimed.id;
 
     let provider = FakeLlmProvider::sequence(vec![]);
@@ -171,7 +171,7 @@ async fn an_unknown_target_agent_type_cancels_the_job(pool: PgPool) {
     let registry = AgentRegistry::new(vec![Box::new(nomi_agent_chitchat::ChitchatAgent)]);
     let notification: std::sync::Arc<dyn NotificationDelivery> = std::sync::Arc::new(LogOnlyDelivery);
 
-    nomi_server::scheduler_worker::process_claimed_job(&pool, None, None, &provider, &embedding_provider, &registry, notification.as_ref(), claimed)
+    nomi_worker::scheduler_worker::process_claimed_job(&pool, None, None, &provider, &embedding_provider, &registry, notification.as_ref(), claimed)
         .await;
 
     let status: String = sqlx::query_scalar("SELECT status FROM scheduled_jobs WHERE id = $1")

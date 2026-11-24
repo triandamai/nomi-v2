@@ -1,5 +1,7 @@
 //! A burst of wake-ups against the fake provider: the start limits hold and every project settles.
 
+/// The server tests' shared helpers.
+#[path = "../../nomi-server/tests/support/mod.rs"]
 mod support;
 
 use std::sync::Arc;
@@ -9,7 +11,7 @@ use nomi_sandbox::{FakeProvider, PreviewUrl, SandboxId};
 use nomi_server::configuration::{ReaperMode, Rollout, SandboxConfig};
 use nomi_server::sandbox_manager::{ProjectSteps, SandboxManager};
 use nomi_server::sandbox_store::{self as store, State};
-use nomi_server::sandbox_worker::{SandboxWorker, PROVIDER_NAME};
+use nomi_worker::sandbox_worker::{SandboxWorker, PROVIDER_NAME};
 use sqlx::PgPool;
 use support::App;
 use uuid::Uuid;

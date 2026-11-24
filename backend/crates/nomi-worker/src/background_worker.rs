@@ -105,7 +105,7 @@ pub enum TaskRoute {
 /// page, and to the host shell only when no page is open (the existing behaviour).
 pub fn task_route(project_runtime: Option<&str>, runner_online: bool) -> TaskRoute {
     match project_runtime {
-        Some(crate::routes::project_sandbox::RUNTIME_SANDBOX) => TaskRoute::Project,
+        Some(nomi_server::routes::project_sandbox::RUNTIME_SANDBOX) => TaskRoute::Project,
         Some(_) if runner_online => TaskRoute::Project,
         _ => TaskRoute::HostShell,
     }
@@ -124,7 +124,7 @@ async fn run_task_command(pool: &PgPool, claimed: &ClaimedBackgroundTask) -> Bac
                     "command": claimed.command,
                     "timeout_seconds": claimed.timeout_seconds,
                 });
-                let sandbox = crate::sandbox_ops::ServerSandboxOps::new(pool.clone());
+                let sandbox = nomi_server::sandbox_ops::ServerSandboxOps::new(pool.clone());
                 match nomi_agent_coding::runtime::run_command_with(&mut conn, &sandbox, claimed.user_id, input).await {
                     Ok(output) => return parse_project_runner_output(output),
                     Err(err) => {

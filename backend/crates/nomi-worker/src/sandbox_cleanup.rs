@@ -13,8 +13,8 @@ use nomi_sandbox::{SandboxError, SandboxId, SandboxProvider};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::configuration::ReaperMode;
-use crate::sandbox_manager::{PROJECT_LABEL, RETRY_BASE, RETRY_CAP};
+use nomi_server::configuration::ReaperMode;
+use nomi_server::sandbox_manager::{PROJECT_LABEL, RETRY_BASE, RETRY_CAP};
 
 /// Most outbox rows worked in one pass.
 const DELETION_BATCH: i64 = 20;

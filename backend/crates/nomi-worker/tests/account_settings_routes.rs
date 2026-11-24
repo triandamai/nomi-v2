@@ -1,6 +1,8 @@
 //! Settings: reminder pushes and quiet hours, the profile's active hours and insights, General's
 //! preferences, changing the email and closing the account.
 
+/// The server tests' shared helpers.
+#[path = "../../nomi-server/tests/support/mod.rs"]
 mod support;
 
 use std::sync::{Arc, Mutex};
@@ -184,7 +186,7 @@ async fn a_reminder_is_pushed_unless_reminder_pushes_are_off(pool: PgPool) {
     let sender = Arc::new(RecordingPush {
         sent: Mutex::new(Vec::new()),
     });
-    nomi_server::reminders_worker::push_reminder(&pool, sender.clone(), &fired).await;
+    nomi_worker::reminders_worker::push_reminder(&pool, sender.clone(), &fired).await;
     {
         let sent = sender.sent.lock().unwrap();
         assert_eq!(sent.len(), 1);
@@ -208,7 +210,7 @@ async fn a_reminder_is_pushed_unless_reminder_pushes_are_off(pool: PgPool) {
         json!({ "push_reminders": false }),
     )
     .await;
-    nomi_server::reminders_worker::push_reminder(&pool, sender.clone(), &fired).await;
+    nomi_worker::reminders_worker::push_reminder(&pool, sender.clone(), &fired).await;
     assert_eq!(
         sender.sent.lock().unwrap().len(),
         1,

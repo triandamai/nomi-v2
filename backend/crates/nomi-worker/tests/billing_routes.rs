@@ -413,7 +413,7 @@ async fn the_renewal_worker_invoices_reminds_and_announces_once(pool: PgPool) {
     // Activation above told each of them once; count from there.
     let base = notices(&pool, renews).await;
 
-    let summary = nomi_server::billing_worker::run_once(&pool, Utc::now()).await.unwrap();
+    let summary = nomi_worker::billing_worker::run_once(&pool, Utc::now()).await.unwrap();
     assert_eq!((summary.invoiced, summary.reminded, summary.ended), (1, 1, 1));
     let renewal: (String, String, i32, i64) = sqlx::query_as("SELECT kind, status, term_months, amount FROM payments WHERE user_id = $1 AND kind = 'renewal'").bind(renews).fetch_one(&pool).await.unwrap();
     assert_eq!(renewal, ("renewal".to_string(), "pending".to_string(), 1, PRICE));
@@ -425,7 +425,7 @@ async fn the_renewal_worker_invoices_reminds_and_announces_once(pool: PgPool) {
     assert!(invoice.unwrap().starts_with("https://pay.test/inv-"));
 
     // A second pass finds everything already done.
-    let summary = nomi_server::billing_worker::run_once(&pool, Utc::now()).await.unwrap();
+    let summary = nomi_worker::billing_worker::run_once(&pool, Utc::now()).await.unwrap();
     assert_eq!((summary.invoiced, summary.reminded, summary.ended), (0, 0, 0));
     let renewals: i64 = sqlx::query_scalar("SELECT count(*) FROM payments WHERE kind = 'renewal'").fetch_one(&pool).await.unwrap();
     assert_eq!(renewals, 1);

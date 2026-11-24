@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use sqlx::PgPool;
 
-use crate::bootstrap::{build_embedding_provider_from_settings_or_env, build_llm_provider_for_user};
+use nomi_server::bootstrap::{build_embedding_provider_from_settings_or_env, build_llm_provider_for_user};
 use nomi_agent_core::{memory, memory_settings, recent_activity, working_memory};
 
 /// How often queued exchanges are checked: soon after a reply, without being on its path.
@@ -139,7 +139,7 @@ async fn announce_saved(pool: &PgPool, job: &memory::LearningJob, since: chrono:
     .ok()
     .flatten();
     if let Some(session_id) = session {
-        crate::chat_events::message_updated(job.user_id, session_id, message_id);
+        nomi_server::chat_events::message_updated(job.user_id, session_id, message_id);
     }
 }
 

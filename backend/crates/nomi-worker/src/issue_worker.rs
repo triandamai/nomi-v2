@@ -18,7 +18,7 @@ use chrono::NaiveDate;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::routes::project_issues::ISSUES_CHANGED;
+use nomi_server::routes::project_issues::ISSUES_CHANGED;
 
 /// How often queued issues are picked up and running ones followed.
 const ISSUE_PICKUP_EVERY: Duration = Duration::from_secs(5);
@@ -93,7 +93,7 @@ async fn resume_followed_up(pool: &PgPool) -> Result<usize, sqlx::Error> {
     .await?;
     for (project_id, number) in &resumed {
         tracing::info!(%project_id, issue = number, "issue board: followed up, working again");
-        crate::project_events::changed(*project_id, ISSUES_CHANGED);
+        nomi_server::project_events::changed(*project_id, ISSUES_CHANGED);
     }
     Ok(resumed.len())
 }
@@ -178,7 +178,7 @@ async fn follow_working(pool: &PgPool) -> Result<Swept, sqlx::Error> {
             changed = true;
         }
         if changed {
-            crate::project_events::changed(row.project_id, ISSUES_CHANGED);
+            nomi_server::project_events::changed(row.project_id, ISSUES_CHANGED);
         }
     }
     Ok(swept)
@@ -229,7 +229,7 @@ async fn pick_up(pool: &PgPool, per_project: u64) -> Result<usize, sqlx::Error> 
         let Some(issue) = claim(pool, issue_id, project_id, per_project).await? else { continue };
         let started = start_chat(pool, issue_id, &issue).await;
         // The board hears once the issue's chat exists, so its card links to it.
-        crate::project_events::changed(project_id, ISSUES_CHANGED);
+        nomi_server::project_events::changed(project_id, ISSUES_CHANGED);
         match started {
             Ok(session_id) => {
                 tracing::info!(%project_id, issue = issue.number, %session_id, crew = %nomi_agent_core::crew::display_name_for(&issue.crew_agent), "issue board: picked up");
@@ -238,7 +238,7 @@ async fn pick_up(pool: &PgPool, per_project: u64) -> Result<usize, sqlx::Error> 
             Err(e) => {
                 tracing::warn!(%project_id, issue = issue.number, error = %e, "issue board: couldn't start the issue's chat");
                 sqlx::query("UPDATE project_issues SET crew_state = 'failed', updated_at = now() WHERE id = $1").bind(issue_id).execute(pool).await?;
-                crate::project_events::changed(project_id, ISSUES_CHANGED);
+                nomi_server::project_events::changed(project_id, ISSUES_CHANGED);
             }
         }
     }

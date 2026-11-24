@@ -55,7 +55,7 @@ async fn a_pass_reads_waiting_files_gives_up_on_stuck_ones_and_clears_abandoned_
     let tired = attachment(&pool, user, "pdf", "application/pdf", "u/x.pdf", "5, 'pending', now()").await;
     let abandoned = attachment(&pool, user, "text", "text/plain", "u/old.txt", "0, 'ready', now() - interval '7 hours'").await;
 
-    nomi_server::attachment_worker::pass(&pool, &KEY, &reqwest::Client::new()).await.unwrap();
+    nomi_worker::attachment_worker::pass(&pool, &KEY, &reqwest::Client::new()).await.unwrap();
 
     assert_eq!(status_of(&pool, tired).await.as_deref(), Some("failed"), "too many tries");
     assert_eq!(status_of(&pool, abandoned).await, None, "an unsent file is removed after six hours");
@@ -68,16 +68,16 @@ async fn a_pass_reads_waiting_files_gives_up_on_stuck_ones_and_clears_abandoned_
     assert!(details["error"].as_str().unwrap().contains("several tries"));
     // Nothing waiting: a quiet pass.
     sqlx::query("UPDATE attachments SET status = 'ready'").execute(&pool).await.unwrap();
-    nomi_server::attachment_worker::pass(&pool, &KEY, &reqwest::Client::new()).await.unwrap();
+    nomi_worker::attachment_worker::pass(&pool, &KEY, &reqwest::Client::new()).await.unwrap();
     let _ = std::fs::remove_dir_all(dir);
 }
 
 #[test]
 fn each_kind_of_file_has_its_own_instructions() {
     use nomi_attachments::Kind;
-    let all: std::collections::HashSet<&str> = [Kind::Image, Kind::Voice, Kind::Audio, Kind::Video, Kind::Pdf].into_iter().map(nomi_server::attachment_worker::instructions).collect();
+    let all: std::collections::HashSet<&str> = [Kind::Image, Kind::Voice, Kind::Audio, Kind::Video, Kind::Pdf].into_iter().map(nomi_worker::attachment_worker::instructions).collect();
     assert_eq!(all.len(), 5);
-    assert!(nomi_server::attachment_worker::instructions(Kind::Voice).contains("Transcribe"));
+    assert!(nomi_worker::attachment_worker::instructions(Kind::Voice).contains("Transcribe"));
 }
 
 #[sqlx::test(migrations = "../../migrations")]
@@ -102,7 +102,7 @@ async fn learning_and_sweeping_settle_what_was_queued(pool: PgPool) {
     assert_eq!(queued, 1);
 
     let http = reqwest::Client::new();
-    nomi_server::memory_worker::learn(&pool, &KEY, &http).await;
+    nomi_worker::memory_worker::learn(&pool, &KEY, &http).await;
     let attempts: Option<i32> = sqlx::query_scalar("SELECT attempts FROM memory_jobs").fetch_optional(&pool).await.unwrap();
     assert!(attempts.is_none() || attempts == Some(1), "learned and removed, or tried once and kept: {attempts:?}");
 
@@ -116,11 +116,11 @@ async fn learning_and_sweeping_settle_what_was_queued(pool: PgPool) {
         .execute(&pool)
         .await
         .unwrap();
-    nomi_server::memory_worker::sweep(&pool, &KEY, &http).await;
+    nomi_worker::memory_worker::sweep(&pool, &KEY, &http).await;
     let noted = nomi_agent_core::recent_activity::for_person(&pool, user).await.unwrap().is_some();
     let waiting = !nomi_agent_core::recent_activity::chats_gone_quiet(&pool, 10).await.unwrap().is_empty();
     assert!(noted != waiting, "noted, or left to try again: noted={noted} waiting={waiting}");
     // Nothing queued any more: a quiet pass.
-    nomi_server::memory_worker::learn(&pool, &KEY, &http).await;
+    nomi_worker::memory_worker::learn(&pool, &KEY, &http).await;
     let _ = json!({});
 }

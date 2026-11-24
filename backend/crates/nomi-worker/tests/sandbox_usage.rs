@@ -1,6 +1,8 @@
 //! Sandbox metering: minutes per person per month, the monthly allowance, the admin view and the
 //! drift check against the provider.
 
+/// The server tests' shared helpers.
+#[path = "../../nomi-server/tests/support/mod.rs"]
 mod support;
 
 use std::collections::BTreeMap;
@@ -12,7 +14,7 @@ use nomi_server::configuration::{Rollout, SandboxConfig};
 use nomi_server::sandbox_manager::{ProjectSteps, SandboxManager};
 use nomi_server::sandbox_store::{self as store, Desired, State};
 use nomi_server::sandbox_usage::{minutes_this_month, reconcile_usage_drift, within_allowance};
-use nomi_server::sandbox_worker::{SandboxWorker, PROVIDER_NAME};
+use nomi_worker::sandbox_worker::{SandboxWorker, PROVIDER_NAME};
 use serde_json::json;
 use sqlx::PgPool;
 use support::App;

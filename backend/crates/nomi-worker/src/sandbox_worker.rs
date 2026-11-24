@@ -17,17 +17,15 @@ use nomi_storage::ProjectStore;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::configuration::{sandbox_config, sandbox_credentials, ReaperMode, SandboxConfig};
-use crate::routes::project_sandbox::{availability, RUNTIME_SANDBOX};
+use nomi_server::configuration::{sandbox_config, sandbox_credentials, ReaperMode, SandboxConfig};
 use crate::sandbox_cleanup::{self, REAP_INTERVAL};
-use crate::sandbox_manager::{ReconcileOutcome, SandboxManager};
-use crate::sandbox_runs::RUN_LEASE;
-use crate::sandbox_steps::ServerSteps;
-use crate::sandbox_usage::DRIFT_INTERVAL;
-use crate::sandbox_store as store;
+use nomi_server::sandbox_manager::{ReconcileOutcome, SandboxManager};
+use nomi_server::sandbox_runs::RUN_LEASE;
+use nomi_server::sandbox_steps::ServerSteps;
+use nomi_server::sandbox_usage::DRIFT_INTERVAL;
+use nomi_server::sandbox_store as store;
 
-/// The provider name stored on a project's sandbox row.
-pub const PROVIDER_NAME: &str = "boat";
+pub use nomi_server::sandbox_manager::PROVIDER_NAME;
 /// How long the loop sleeps between looks for due rows.
 const POLL_INTERVAL: Duration = Duration::from_secs(2);
 /// How long the loop sleeps while the admin switch is off and there is nothing to wind down.
@@ -76,33 +74,6 @@ pub fn pass_mode(enabled: Option<SandboxConfig>, credentials: Option<SandboxConf
     }
 }
 
-/// The page checking in. `page_runtime` is what the page says it runs: only the sandbox page
-/// (`SandboxRuntime`) sends `runtime=sandbox`; the browser runtime (WebContainer, also the
-/// fallback and the person's "run in my browser" choice) sends nothing and gets `None`, so the
-/// caller does the WebContainer check-in exactly as before and the page claims Koda's commands.
-///
-/// For the sandbox page this returns the files version and never claims commands (they run in the
-/// sandbox). It asks for the sandbox to be running only while the sandbox may be used
-/// (`routes::project_sandbox::availability`: switch on, rollout, owner's allowance, no cooldown);
-/// otherwise it starts nothing and doesn't keep a running sandbox alive, which then idles out.
-/// It never marks the browser runner online, so Koda can tell the two pages apart.
-pub async fn sandbox_check_in(
-    conn: &mut sqlx::PgConnection,
-    project_id: Uuid,
-    user_id: Uuid,
-    page_runtime: Option<&str>,
-    config: Option<&SandboxConfig>,
-) -> Result<Option<i64>, sqlx::Error> {
-    if page_runtime != Some(RUNTIME_SANDBOX) {
-        return Ok(None);
-    }
-    let found = availability(conn, project_id, Some(user_id), config).await?;
-    // An open page keeps the sandbox awake only once there is a build to preview.
-    if found.is_some_and(|a| a.runtime == RUNTIME_SANDBOX && a.available) && nomi_agent_coding::runtime::build_state(conn, project_id).await?.ready_to_preview() {
-        store::want_running(conn, project_id, PROVIDER_NAME).await?;
-    }
-    Ok(Some(nomi_agent_coding::runtime::files_version(conn, project_id).await?))
-}
 
 pub struct SandboxWorker {
     pool: PgPool,
@@ -180,7 +151,7 @@ impl SandboxWorker {
              ORDER BY s.project_id",
         )
         .bind(RUN_LEASE.as_secs() as f64)
-        .bind(crate::sandbox_runs::BROWSER_ONLINE_SECS)
+        .bind(nomi_server::sandbox_runs::BROWSER_ONLINE_SECS)
         .fetch_all(&self.pool)
         .await;
         let due = match due {
@@ -247,7 +218,7 @@ impl SandboxWorker {
 
     /// Compare our metered time with the provider's and log the differences.
     pub async fn check_usage_drift(&self) {
-        crate::sandbox_usage::reconcile_usage_drift(&self.pool, self.manager.provider().as_ref()).await;
+        nomi_server::sandbox_usage::reconcile_usage_drift(&self.pool, self.manager.provider().as_ref()).await;
     }
 
     /// Ask the provider whether running sandboxes are still up (see `SandboxManager::check_alive`).

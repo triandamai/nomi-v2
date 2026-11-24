@@ -219,7 +219,7 @@ async fn unsent_uploads_are_swept_after_six_hours_and_sent_ones_stay(pool: PgPoo
     add("fresh-draft.txt", 1, false).await;
     add("old-sent.txt", 30, true).await;
 
-    nomi_server::attachment_worker::pass(&pool, &[7u8; 32], &reqwest::Client::new()).await.unwrap();
+    nomi_worker::attachment_worker::pass(&pool, &[7u8; 32], &reqwest::Client::new()).await.unwrap();
 
     let mut left: Vec<String> = sqlx::query_scalar("SELECT name FROM attachments").fetch_all(&pool).await.unwrap();
     left.sort();
@@ -573,7 +573,7 @@ async fn expired_uploads_are_swept_and_fresh_ones_stay(pool: PgPool) {
 
     // An expired upload can't be picked up even before the sweep.
     assert_eq!(upload_offset(router.clone(), &token, &old_id.to_string()).await.0, StatusCode::NOT_FOUND);
-    nomi_server::attachment_worker::pass(&pool, &[7u8; 32], &reqwest::Client::new()).await.unwrap();
+    nomi_worker::attachment_worker::pass(&pool, &[7u8; 32], &reqwest::Client::new()).await.unwrap();
 
     let left: Vec<String> = sqlx::query_scalar("SELECT name FROM attachment_uploads").fetch_all(&pool).await.unwrap();
     assert_eq!(left, vec!["fresh.csv".to_string()]);
@@ -643,7 +643,7 @@ async fn a_file_the_crew_made_is_not_swept_or_removed_as_an_unsent_draft(pool: P
     .await
     .unwrap();
 
-    nomi_server::attachment_worker::pass(&pool, &[7u8; 32], &reqwest::Client::new()).await.unwrap();
+    nomi_worker::attachment_worker::pass(&pool, &[7u8; 32], &reqwest::Client::new()).await.unwrap();
     let still: i64 = sqlx::query_scalar("SELECT count(*) FROM attachments WHERE id = $1").bind(made).fetch_one(&pool).await.unwrap();
     assert_eq!(still, 1, "the sweep leaves made files");
 

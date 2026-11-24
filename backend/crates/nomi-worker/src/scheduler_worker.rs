@@ -9,7 +9,7 @@ use nomi_agent_core::{AgentRegistry, LoopOutcome, NotificationDelivery};
 use nomi_llm::{ContentBlock, LlmMessage, LlmRole};
 use nomi_realtime::{MqttPublisher, StreamEnvelope};
 
-use crate::bootstrap::build_embedding_provider_from_settings_or_env;
+use nomi_server::bootstrap::build_embedding_provider_from_settings_or_env;
 
 const POLL_INTERVAL: Duration = Duration::from_secs(30);
 /// Room for an agent's reply (thinking gets its own budget on top). A ceiling, not a target:
@@ -222,14 +222,14 @@ pub async fn run(
     notification: Arc<dyn NotificationDelivery>,
 ) {
     tracing::info!("scheduler worker: polling for due reminders every {:?}", POLL_INTERVAL);
-    let registry = crate::build_agent_registry(&pool, project_storage.clone(), crate::build_tool_catalog(project_storage));
+    let registry = nomi_server::build_agent_registry(&pool, project_storage.clone(), nomi_server::build_tool_catalog(project_storage));
 
     loop {
         tokio::time::sleep(POLL_INTERVAL).await;
 
         // Projects' own domains and live apps' addresses, each looked at every few minutes.
-        crate::routes::custom_domains::recheck_due(&pool).await;
-        crate::routes::site_visits::probe_due(&pool, &http_client).await;
+        nomi_server::routes::custom_domains::recheck_due(&pool).await;
+        nomi_server::routes::site_visits::probe_due(&pool, &http_client).await;
 
         loop {
             let claimed = match claim_next(&pool).await {
@@ -241,8 +241,8 @@ pub async fn run(
                 }
             };
 
-            let purpose = crate::bootstrap::purpose_for_agent(&claimed.target_agent_type);
-            let provider = crate::bootstrap::build_llm_provider_in_session(&pool, claimed.user_id, claimed.session_id, &settings_key, http_client.clone(), purpose).await;
+            let purpose = nomi_server::bootstrap::purpose_for_agent(&claimed.target_agent_type);
+            let provider = nomi_server::bootstrap::build_llm_provider_in_session(&pool, claimed.user_id, claimed.session_id, &settings_key, http_client.clone(), purpose).await;
             let embedding_provider = build_embedding_provider_from_settings_or_env(&pool, &settings_key, http_client.clone(), Some(claimed.user_id)).await;
 
             process_claimed_job(&pool, Some(&mqtt), s3.as_ref(), provider.as_ref(), embedding_provider.as_ref(), &registry, notification.as_ref(), claimed).await;

@@ -11,7 +11,7 @@ use sqlx::PgPool;
 use nomi_agent_reminders::Fired;
 use nomi_realtime::{MqttPublisher, StreamEnvelope};
 
-use crate::push::{PushMessage, PushSender};
+use nomi_server::push::{PushMessage, PushSender};
 
 const POLL_INTERVAL: Duration = Duration::from_secs(15);
 const BATCH: i64 = 50;
@@ -39,7 +39,7 @@ pub async fn push_reminder(pool: &PgPool, sender: Arc<dyn PushSender>, fired: &F
         fired.message_id,
         fired.reminder_id,
     );
-    crate::push::dispatch(pool.clone(), sender, fired.user_id, message).await;
+    nomi_server::push::dispatch(pool.clone(), sender, fired.user_id, message).await;
 }
 
 pub async fn run(pool: PgPool, mqtt: MqttPublisher) {
@@ -59,7 +59,7 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher) {
                     tracing::info!(session_id = %fired.session_id, message_id = %fired.message_id, "reminders worker: reminder posted");
                     let pool = pool.clone();
                     tokio::spawn(async move {
-                        push_reminder(&pool, crate::push::sender(), &fired).await
+                        push_reminder(&pool, nomi_server::push::sender(), &fired).await
                     });
                 }
             }

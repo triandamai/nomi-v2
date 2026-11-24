@@ -1,0 +1,51 @@
+[package]
+name = "nomi-worker"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+nomi-server = { path = "../nomi-server" }
+nomi-agent-core = { path = "../nomi-agent-core" }
+nomi-agent-coding = { path = "../nomi-agent-coding" }
+nomi-agent-reminders = { path = "../nomi-agent-reminders" }
+nomi-agent-supervisor = { path = "../nomi-agent-supervisor" }
+nomi-turn = { path = "../nomi-turn" }
+nomi-realtime = { path = "../nomi-realtime" }
+nomi-settings = { path = "../nomi-settings" }
+nomi-storage = { path = "../nomi-storage" }
+nomi-shipyard = { path = "../nomi-shipyard" }
+nomi-sandbox = { path = "../nomi-sandbox" }
+nomi-llm = { path = "../nomi-llm" }
+nomi-embedding = { path = "../nomi-embedding" }
+nomi-attachments = { path = "../nomi-attachments" }
+nomi-payment = { path = "../nomi-payment" }
+nomi-usage = { path = "../nomi-usage" }
+nomi-mail = { path = "../nomi-mail" }
+nomi-i18n = { path = "../nomi-i18n" }
+futures-util = "0.3.33"
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json", "migrate", "macros"] }
+tokio = { version = "1", features = ["full"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+chrono-tz = "0.10"
+serde_json = "1"
+serde = { version = "1", features = ["derive"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream", "http2"] }
+tracing = "0.1.44"
+base64 = "0.22"
+
+[dev-dependencies]
+async-trait = "0.1"
+axum = { version = "0.7", features = ["ws"] }
+hex = "0.4"
+nomi-agent-chitchat = { path = "../nomi-agent-chitchat" }
+image = { version = "0.25", default-features = false, features = ["png"] }
+nomi-test-support = { path = "../nomi-test-support" }
+tower = { version = "0.4", features = ["util"] }
+http-body-util = "0.1"
+wiremock = "0.6"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+tokio-tungstenite = "0.24"
+futures-util = "0.3.33"
+flate2 = "1"
+tar = "0.4"

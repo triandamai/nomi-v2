@@ -4,7 +4,7 @@ use futures_util::FutureExt;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::bootstrap::build_embedding_provider_from_settings_or_env;
+use nomi_server::bootstrap::build_embedding_provider_from_settings_or_env;
 use nomi_realtime::{MqttPublisher, StreamEnvelope};
 use nomi_turn::queue;
 
@@ -47,9 +47,9 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
         return;
     }
 
-    let catalog = crate::build_tool_catalog(project_storage.clone());
-    let registry = crate::build_agent_registry(&pool, project_storage.clone(), catalog.clone());
-    let turn_registry = crate::build_agent_registry(&pool, project_storage, catalog.clone());
+    let catalog = nomi_server::build_tool_catalog(project_storage.clone());
+    let registry = nomi_server::build_agent_registry(&pool, project_storage.clone(), catalog.clone());
+    let turn_registry = nomi_server::build_agent_registry(&pool, project_storage, catalog.clone());
     let turns = std::sync::Arc::new(Turns {
         pool: pool.clone(),
         mqtt: mqtt.clone(),
@@ -173,7 +173,7 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
             };
 
             let handle = std::panic::AssertUnwindSafe(async {
-                let provider = crate::bootstrap::build_llm_provider_in_session(&pool, user_id, session_id, &settings_key, http_client.clone(), crate::bootstrap::ModelPurpose::Chat).await;
+                let provider = nomi_server::bootstrap::build_llm_provider_in_session(&pool, user_id, session_id, &settings_key, http_client.clone(), nomi_server::bootstrap::ModelPurpose::Chat).await;
                 let embedding_provider = build_embedding_provider_from_settings_or_env(&pool, &settings_key, http_client.clone(), Some(user_id)).await;
 
                 nomi_turn::resume_paused_turn_with(
@@ -193,7 +193,7 @@ pub async fn run(pool: PgPool, mqtt: MqttPublisher, s3: Option<nomi_storage::S3C
                         )
                         .await;
                     if let Some(message_id) = outcome.message_id {
-                        crate::user_events::announce_chat_reply(&pool, &mqtt, user_id, outcome.session_id, message_id, &outcome.reply);
+                        nomi_server::user_events::announce_chat_reply(&pool, &mqtt, user_id, outcome.session_id, message_id, &outcome.reply);
                     }
                     nomi_turn::activity::announce(&pool, &mqtt, outcome.session_id, user_id, nomi_turn::activity::Ended::Completed).await;
                     tracing::info!(resume_id = %claimed.id, "worker: approval resume completed");
@@ -297,13 +297,13 @@ async fn run_turn_job(turns: &Turns, claimed: queue::ClaimedJob) {
     let _ = turns.mqtt.publish(claimed.session_id, &StreamEnvelope::QueueChanged).await;
 
     // The chat's own model when someone picked one in the chat, else the person's.
-    let provider = crate::bootstrap::build_llm_provider_in_session(
+    let provider = nomi_server::bootstrap::build_llm_provider_in_session(
         &turns.pool,
         user_id,
         claimed.session_id,
         &turns.settings_key,
         turns.http_client.clone(),
-        crate::bootstrap::ModelPurpose::Chat,
+        nomi_server::bootstrap::ModelPurpose::Chat,
     )
     .await;
     let embedding_provider =
@@ -334,9 +334,9 @@ async fn run_turn_job(turns: &Turns, claimed: queue::ClaimedJob) {
                     &StreamEnvelope::TurnCompleted { turn_job_id: claimed.id, message_id: outcome.message_id.unwrap_or(Uuid::nil()) },
                 )
                 .await;
-            crate::ask_built::announce(&turns.pool, &turns.mqtt, claimed.id, claimed.session_id).await;
+            nomi_server::ask_built::announce(&turns.pool, &turns.mqtt, claimed.id, claimed.session_id).await;
             if let Some(message_id) = outcome.message_id {
-                crate::user_events::announce_chat_reply(&turns.pool, &turns.mqtt, user_id, claimed.session_id, message_id, &outcome.reply);
+                nomi_server::user_events::announce_chat_reply(&turns.pool, &turns.mqtt, user_id, claimed.session_id, message_id, &outcome.reply);
             }
             nomi_turn::activity::announce(&turns.pool, &turns.mqtt, claimed.session_id, user_id, nomi_turn::activity::Ended::Completed).await;
             tracing::info!(job_id = %claimed.id, reply_len = outcome.reply.len(), "worker: turn job completed");

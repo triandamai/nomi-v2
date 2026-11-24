@@ -3,10 +3,6 @@ name = "nomi-server"
 version = "0.1.0"
 edition = "2021"
 
-[[bin]]
-name = "nomi-orchestrator"
-path = "src/main.rs"
-
 [dependencies]
 nomi-i18n = { path = "../nomi-i18n" }
 nomi-mail = { path = "../nomi-mail" }

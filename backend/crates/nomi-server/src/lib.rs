@@ -1,20 +1,14 @@
 pub mod configuration;
 pub mod app;
 pub mod ask_built;
-pub mod attachment_worker;
-pub mod background_worker;
 pub mod billing;
-pub mod billing_worker;
 pub mod bootstrap;
 pub mod chat_events;
-pub mod delegation_worker;
 pub mod design_project_source;
 pub mod dns;
 pub mod github;
 pub mod import_review;
 pub mod routes;
-pub mod issue_worker;
-pub mod memory_worker;
 pub mod notifications;
 pub mod presence;
 pub mod project_events;
@@ -28,8 +22,6 @@ pub mod relay_connection;
 pub mod relay_ops;
 pub mod push;
 pub mod quota;
-pub mod reminders_worker;
-pub mod sandbox_cleanup;
 pub mod sandbox_devserver;
 pub mod sandbox_manager;
 pub mod sandbox_ops;
@@ -38,13 +30,10 @@ pub mod sandbox_steps;
 pub mod sandbox_store;
 pub mod sandbox_sync;
 pub mod sandbox_usage;
-pub mod sandbox_worker;
-pub mod scheduler_worker;
 pub mod shipyard;
 pub mod static_publisher;
 pub mod sign_in_codes;
 pub mod user_events;
-pub mod worker;
 
 /// The one place a new agent gets wired in. Adding an agent: implement `SubAgent` in its
 /// own crate (see nomi-agent-money or nomi-agent-chitchat for the shape), add it as a

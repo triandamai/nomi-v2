@@ -1,6 +1,8 @@
 //! Sandboxes are deleted with their projects (through the deletion outbox) and leaked ones are
 //! found by the reaper.
 
+/// The server tests' shared helpers.
+#[path = "../../nomi-server/tests/support/mod.rs"]
 mod support;
 
 use std::collections::BTreeMap;
@@ -11,7 +13,7 @@ use nomi_sandbox::{CreateSpec, FakeProvider, PreviewUrl, SandboxError, SandboxId
 use nomi_server::sandbox_store as store;
 use nomi_server::configuration::{ReaperMode, Rollout, SandboxConfig};
 use nomi_server::sandbox_manager::{ProjectSteps, SandboxManager};
-use nomi_server::sandbox_worker::SandboxWorker;
+use nomi_worker::sandbox_worker::SandboxWorker;
 use sqlx::PgPool;
 use support::App;
 use uuid::Uuid;

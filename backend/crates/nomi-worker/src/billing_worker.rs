@@ -11,7 +11,7 @@ use sqlx::PgPool;
 use nomi_usage::billing::{self, STATUS_PENDING};
 use nomi_usage::plans;
 
-use crate::billing::{self as server_billing, CheckoutError};
+use nomi_server::billing::{self as server_billing, CheckoutError};
 
 const SECONDS_PER_HOUR: u64 = 3600;
 /// How often the worker looks.

@@ -15,7 +15,7 @@ use uuid::Uuid;
 use nomi_attachments::Kind;
 use nomi_llm::{ContentBlock, LlmMessage, LlmRequest, LlmRole};
 
-use crate::bootstrap::{build_llm_provider_for_user, can_open_for_user};
+use nomi_server::bootstrap::{build_llm_provider_for_user, can_open_for_user};
 
 const INTERVAL: Duration = Duration::from_secs(3);
 /// Files read per pass.
@@ -113,7 +113,7 @@ pub async fn pass(pool: &PgPool, settings_key: &[u8; 32], http_client: &reqwest:
 /// clears its files' `message_id`).
 async fn remove_abandoned(pool: &PgPool) -> Result<(), sqlx::Error> {
     // Resumable uploads nobody picked up again, with the pieces staged for them.
-    crate::routes::attachment_uploads::remove_expired(pool).await?;
+    nomi_server::routes::attachment_uploads::remove_expired(pool).await?;
     let abandoned: Vec<(Uuid, String, Option<String>)> = sqlx::query_as(
         "DELETE FROM attachments WHERE id IN ( \
              SELECT id FROM attachments WHERE message_id IS NULL AND made_by IS NULL AND created_at < now() - interval '6 hours' LIMIT 50 \
