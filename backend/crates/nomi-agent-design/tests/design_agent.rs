@@ -73,6 +73,7 @@ async fn proposing_saves_a_version_shows_a_choice_and_refuses_a_set_that_is_not_
         .await
         .unwrap();
     let user_id: Uuid = sqlx::query_scalar("INSERT INTO users DEFAULT VALUES RETURNING id").fetch_one(&pool).await.unwrap();
+    read_skills(&pool, session_id, &EVERY_REQUIRED_SKILL).await;
     let mut conn = pool.acquire().await.unwrap();
     let sora = DesignAgent::new();
 
@@ -130,7 +131,59 @@ async fn chat(pool: &PgPool) -> (Uuid, Uuid) {
         .await
         .unwrap();
     let user_id: Uuid = sqlx::query_scalar("INSERT INTO users DEFAULT VALUES RETURNING id").fetch_one(pool).await.unwrap();
+    read_skills(pool, session_id, &EVERY_REQUIRED_SKILL).await;
     (session_id, user_id)
+}
+
+/// Every skill a step asks Sora to have read (`nomi_agent_design::reading`).
+const EVERY_REQUIRED_SKILL: [&str; 10] = [
+    "taste-core", "styles-index", "pen-format", "components-kit", "decks-html-ppt", "decks-runtime-notes",
+    "video-hyperframes", "video-hyperframes-composition", "components-handoff", "systems-schema",
+];
+
+/// Sora read `topics` with read_design_skill in this chat, as the engine logs it.
+async fn read_skills(pool: &PgPool, session_id: Uuid, topics: &[&str]) {
+    for topic in topics {
+        sqlx::query("INSERT INTO agent_events (session_id, agent_type, event_type, payload) VALUES ($1, 'design', 'ToolCalled', $2)")
+            .bind(session_id)
+            .bind(json!({"tool_name": "read_design_skill", "input": {"topic": topic}, "result": "# …", "is_error": false}))
+            .execute(pool)
+            .await
+            .unwrap();
+    }
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn sora_reads_a_steps_skills_before_she_does_it(pool: PgPool) {
+    let org_id: Uuid = sqlx::query_scalar("INSERT INTO organizations (name) VALUES ('Acme') RETURNING id").fetch_one(&pool).await.unwrap();
+    let session_id: Uuid = sqlx::query_scalar("INSERT INTO sessions (org_id, channel, chat_id) VALUES ($1, 'telegram', $2) RETURNING id")
+        .bind(org_id)
+        .bind(Uuid::new_v4().to_string())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let user_id: Uuid = sqlx::query_scalar("INSERT INTO users DEFAULT VALUES RETURNING id").fetch_one(&pool).await.unwrap();
+    let mut conn = pool.acquire().await.unwrap();
+    let sora = DesignAgent::new();
+
+    let early = sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "propose_directions", directions()).await.unwrap_err();
+    assert!(early.contains("taste-core") && early.contains("styles-index") && early.contains("read_design_skill"), "{early}");
+
+    // A read that failed, or one made in another chat, doesn't count.
+    sqlx::query("INSERT INTO agent_events (session_id, agent_type, event_type, payload) VALUES ($1, 'design', 'ToolCalled', $2)")
+        .bind(session_id)
+        .bind(json!({"tool_name": "read_design_skill", "input": {"topic": "styles-index"}, "result": "no", "is_error": true}))
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (elsewhere, _) = chat(&pool).await;
+    assert_ne!(elsewhere, session_id);
+    read_skills(&pool, session_id, &["Taste-Core"]).await;
+    let half = sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "propose_directions", directions()).await.unwrap_err();
+    assert!(half.contains("styles-index") && !half.contains("taste-core"), "only what's still unread, any case: {half}");
+
+    read_skills(&pool, session_id, &["styles-index"]).await;
+    sora.execute_tool(&mut conn, session_id, Uuid::new_v4(), user_id, "propose_directions", directions()).await.unwrap();
 }
 
 /// The person answers the directions in the chat (their pick), which is what lets Sora build

@@ -151,7 +151,7 @@ pub const DESIGN_SYSTEM_PROMPT: &str =
      (agent planning) before you ask the person. When a design decision depends on something you can't \
      sensibly assume (who it's for, the mood, an existing brand), ask with ask_user; otherwise decide, and say \
      what you assumed. Before you propose, read taste-core and styles-index with read_design_skill (your design \
-     library). \
+     library), and any skill of the person's own that fits (read_skill). \
      Offer two to four clearly different directions with propose_directions (never as plain \
      text): each with a name, what it looks like, why it fits this person, what it trades off, its colours as \
      hex values, its fonts and its layout, and mark the one you'd pick. The person sees them as a choice; after \
@@ -160,8 +160,7 @@ pub const DESIGN_SYSTEM_PROMPT: &str =
      decided with post_crew_note so the rest of the crew keeps to it. Look before you propose: search the web \
      for references with web_search and read_web_page when you have them, and when the person has connected \
      tools of their own, see them with list_connected_tools and call what fits with use_connected_tool. When a \
-     search, a page or a connected tool fails, carry on with what you have and mention it only if it matters; \
-     never stop the design for it. Once the person picks a direction you build it as a preview, and the rules for \
+     search, page or connected tool fails, carry on and mention it only if it matters. Once the person picks a direction you build it as a preview, and the rules for \
      each step that follows (building it, changing it, handing it to Koda) are added below as the chat reaches it. \
      Give links exactly as a tool gives them: never invent a link, and never say you made an image. Only the person approves a design: \
      with Approve in the Design Studio, or by telling you so in this chat, which you record with approve_version; \
@@ -664,6 +663,11 @@ pub const FLOW_DIRECTIONS_FIRST: &str = "Not yet: propose directions with propos
      person picks one.";
 pub const FLOW_DIRECTION_NOT_PICKED: &str = "Not yet: the person hasn't picked a direction. Say in a sentence or two how \
      the directions differ and stop; build the preview when they answer.";
+
+/// What a Sora tool answers when she hasn't read the skills its step follows. `{skills}` are the
+/// ones still unread.
+pub const DESIGN_READ_FIRST: &str = "Not yet: read {skills} with read_design_skill first, then do this step again. \
+     They hold the rules this step follows, so work from them rather than from memory.";
 
 /// The task Sora gets when the person approves a version in the Design Studio. `{version}` is it.
 pub const DESIGN_APPROVED_TASK: &str = "The person approved version {version} of the design in the Design Studio. That \

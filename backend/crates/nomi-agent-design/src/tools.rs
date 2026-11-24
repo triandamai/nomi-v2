@@ -205,6 +205,7 @@ impl Tool for ProposeDirections {
 
     async fn execute(&self, conn: &mut PoolConnection<Postgres>, ctx: &ToolContext<'_>, input: Value) -> Result<ToolOutcome, String> {
         let (session_id, agent_session_id, user_id) = (ctx.session_id, ctx.agent_session_id, ctx.user_id);
+        crate::reading::check(&mut **conn, session_id, crate::reading::Step::Directions).await?;
         let set = DesignDirections::parse(&input)?;
         let brief_version = design_brief::latest(&mut **conn, session_id).await.ok().flatten().map(|(version, _)| version);
         let version = design_directions::save(&mut **conn, session_id, agent_session_id, user_id, brief_version, &set).await.map_err(|e| {
@@ -402,6 +403,8 @@ impl Tool for SavePreview {
 
     async fn execute(&self, conn: &mut PoolConnection<Postgres>, ctx: &ToolContext<'_>, input: Value) -> Result<ToolOutcome, String> {
         let (session_id, agent_session_id, user_id) = (ctx.session_id, ctx.agent_session_id, ctx.user_id);
+        let kind = design_artifact::Kind::of(&input)?;
+        crate::reading::check(&mut **conn, session_id, crate::reading::Step::Preview(kind)).await?;
         let sent = design_artifact::parse_file_list(&input)?;
         let remove = design_artifact::removals(&input)?;
         let finished = input.get("finished").and_then(Value::as_bool).unwrap_or(true);
@@ -586,6 +589,7 @@ impl Tool for CreateHandoff {
 
     async fn execute(&self, conn: &mut PoolConnection<Postgres>, ctx: &ToolContext<'_>, input: Value) -> Result<ToolOutcome, String> {
         let (session_id, agent_session_id, user_id) = (ctx.session_id, ctx.agent_session_id, ctx.user_id);
+        crate::reading::check(&mut **conn, session_id, crate::reading::Step::Handoff).await?;
         let unsaved = |e: sqlx::Error| {
             tracing::error!(error = %e, "design handoff: save failed");
             "the handoff couldn't be saved right now".to_string()

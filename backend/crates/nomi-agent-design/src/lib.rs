@@ -1,6 +1,7 @@
 //! Sora, the designer: turns the plan Rena agreed with the person into visual design.
 
 pub mod library;
+pub mod reading;
 pub mod tools;
 
 use nomi_agent_core::ToolContext;
@@ -325,6 +326,12 @@ mod tests {
         for said in ["slide deck", "presentation", "video", "poster"] {
             assert!(description.contains(said), "the classifier is told {said:?} is Sora's");
         }
+    }
+
+    #[test]
+    fn sora_also_reads_the_persons_own_skills_that_fit() {
+        let core = DesignAgent::new().system_prompt();
+        assert!(core.contains("read_skill"), "a person's own skills for her are read too: {core}");
     }
 
     #[test]

@@ -76,7 +76,7 @@ impl Kind {
     }
 
     /// The kind `input` names; a design when it names none.
-    fn of(input: &Value) -> Result<Self, String> {
+    pub fn of(input: &Value) -> Result<Self, String> {
         match text_of(input, "kind") {
             None => Ok(Self::Design),
             Some(name) => Self::ALL
