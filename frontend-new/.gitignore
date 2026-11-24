@@ -27,6 +27,7 @@ __screenshots__
 /src/lib/paraglide
 /project.inlang/cache
 coverage
+.e2e-coverage
 
 # The static gallery (npm run build:gallery)
 /build-gallery

@@ -35,12 +35,21 @@ export default defineConfig({
 			env: backendEnv(),
 		},
 		{
-			command: `node -e "fetch('${MAILPIT_URL}/api/v1/info').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))" && npm run build && node server.js`,
+			command:
+				process.env.E2E_COVERAGE === '1'
+					? `node -e "fetch('${MAILPIT_URL}/api/v1/info').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))" && npm run build && NODE_V8_COVERAGE=${process.env.E2E_COVERAGE_DIR ?? '.e2e-coverage/backend'}/server node server.js`
+					: `node -e "fetch('${MAILPIT_URL}/api/v1/info').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))" && npm run build && node server.js`,
 			// /health: `/` sends a signed-out visitor to sign in.
 			url: `${APP_URL}/health`,
 			reuseExistingServer: !process.env.CI,
 			timeout: 240_000,
-			env: { PORT: APP_PORT, HOST: '127.0.0.1', API_URL: BACKEND_URL, ORIGIN: APP_URL },
+			env: {
+				PORT: APP_PORT,
+				HOST: '127.0.0.1',
+				API_URL: BACKEND_URL,
+				ORIGIN: APP_URL,
+				...(process.env.E2E_COVERAGE === '1' && { E2E_COVERAGE: '1' }),
+			},
 		},
 	],
 });

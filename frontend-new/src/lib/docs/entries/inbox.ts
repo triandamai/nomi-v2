@@ -92,4 +92,22 @@ export default [
 		accessibility: ['The switch is named by the setting’s title.'],
 		related: ['inputs/Toggle.svelte'],
 	},
+	{
+		file: 'inbox/PhoneInboxCard.svelte',
+		summary: 'Something that needs the person, on a phone: its kind and when in mono, the title at 16/500 with a dot while unread, a line of detail, then its pills and a quiet note.',
+		use: ['Needs you in the Inbox on a phone.'],
+		avoid: ['Wider screens: InboxCard.', 'What only happens today: PhoneTimelineRow.'],
+		dos: ['Lead with the inverse pill that does the thing (Open invite, Done); Mark read or Snooze after it.'],
+		accessibility: ['An article named by its title; the unread dot is decoration, so the actions (Mark read) carry the state.'],
+		related: ['inbox/InboxCard.svelte', 'actions/PhonePill.svelte'],
+	},
+	{
+		file: 'inbox/PhoneTimelineRow.svelte',
+		summary: 'One thing in the day on a phone: its time in mono, the title at 15, what it is in mono under it, where it stands (“in 7h 46m”, “Done 06:42”) and a tool at the end.',
+		use: ['Today, the days ahead and Earlier in the Inbox on a phone.'],
+		avoid: ['Wider screens: InboxRow.'],
+		dos: ['Give the end one tool: open it, or ⋯ for a sheet of the rest.'],
+		accessibility: ['A list item; done is in its words (“Done 06:42”), not only its dimming. Its tool is a 44 named button.'],
+		related: ['inbox/InboxRow.svelte', 'mobile/SheetRow.svelte'],
+	},
 ] satisfies ComponentDoc[];

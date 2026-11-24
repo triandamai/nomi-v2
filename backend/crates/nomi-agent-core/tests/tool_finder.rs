@@ -1,5 +1,6 @@
 //! find_tools and create_agent against a real database: the catalog table, word and meaning
 //! matches, who carries a tool, and members made the way Settings › Crew makes them.
+use nomi_agent_core::ToolContext;
 use std::borrow::Cow;
 use std::sync::Arc;
 
@@ -37,7 +38,8 @@ impl Tool for Fake {
     fn keywords(&self) -> &'static [&'static str] {
         self.keywords
     }
-    async fn execute(&self, _: &mut PoolConnection<Postgres>, _: Uuid, _: Uuid, _: Uuid, _: Value) -> Result<ToolOutcome, String> {
+    async fn execute(&self, _: &mut PoolConnection<Postgres>, ctx: &ToolContext<'_>, _: Value) -> Result<ToolOutcome, String> {
+        let (_, _, _) = (ctx.session_id, ctx.agent_session_id, ctx.user_id);
         Ok(ToolOutcome::text(self.name))
     }
 }
@@ -253,4 +255,55 @@ async fn create_agent_makes_a_member_of_the_persons_own(pool: PgPool) {
         sqlx::query(&format!("DELETE FROM {table} WHERE user_id = $1")).bind(user).execute(&mut *conn).await.unwrap();
     }
     sqlx::query("DELETE FROM dynamic_agents WHERE owner_user_id = $1").bind(user).execute(&mut *conn).await.unwrap();
+}
+
+/// A member without records: the generic record tools aren't listed for it.
+struct NoRecords;
+
+#[async_trait]
+impl SubAgent for NoRecords {
+    fn agent_type(&self) -> Cow<'static, str> {
+        "chitchat".into()
+    }
+    fn system_prompt(&self) -> Cow<'static, str> {
+        "test".into()
+    }
+    fn tools(&self) -> Vec<ToolDefinition> {
+        vec![]
+    }
+    async fn execute_tool(&self, _: &mut PoolConnection<Postgres>, _: Uuid, _: Uuid, _: Uuid, _: &str, _: Value) -> Result<ToolOutcome, String> {
+        Err("none".into())
+    }
+    fn intent_label(&self) -> Cow<'static, str> {
+        "chitchat".into()
+    }
+    fn intent_description(&self) -> Cow<'static, str> {
+        "test".into()
+    }
+    fn is_default(&self) -> bool {
+        true
+    }
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn find_tools_hides_records_from_agent_without_records(pool: PgPool) {
+    let user = seed_user(&pool).await;
+    let mut tools: Vec<Box<dyn Tool>> = vec![Box::new(Fake { name: "list_budgets", description: "List the monthly budgets.", keywords: &["records"] })];
+    tools.extend(nomi_agent_core::engine::engine_catalog_tools());
+    let catalog = Arc::new(ToolCatalog::from_tools(tools));
+    let registry = AgentRegistry::new(vec![Box::new(NoRecords)]).with_tool_catalog(catalog.clone());
+    let mut conn = pool.acquire().await.unwrap();
+    let switches = ToolSwitches::load(&mut conn).await;
+
+    let result = tool_finder::find_tools(&mut conn, &registry, &catalog, None, &switches, &NoRecords, user, &json!({"query": "records", "limit": 20}))
+        .await
+        .unwrap();
+    let found = names(&result);
+    assert!(!found.iter().any(|n| n.ends_with("_record") || n == "list_records"), "{found:?}");
+    assert!(found.contains(&"list_budgets".to_string()), "area tools stay findable: {found:?}");
+
+    let web = tool_finder::find_tools(&mut conn, &registry, &catalog, None, &switches, &NoRecords, user, &json!({"query": "web page"})).await.unwrap();
+    let body: Value = serde_json::from_str(&web).unwrap();
+    let page = body["tools"].as_array().unwrap().iter().find(|t| t["name"] == "read_web_page").expect("read_web_page is listed");
+    assert_eq!(page["granted"], true, "every agent has read_web_page");
 }

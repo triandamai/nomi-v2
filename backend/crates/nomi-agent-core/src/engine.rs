@@ -13,13 +13,17 @@ use crate::permissions;
 use crate::personal_crew::Level;
 use crate::registry::AgentRegistry;
 use crate::subagent::SubAgent;
+use crate::tool_catalog::ToolCatalog;
+use nomi_tool::{Approval, ToolContext};
 
 mod activity;
+mod offer;
 mod plans;
 mod tool_batch;
 mod tool_definitions;
 
 pub use activity::*;
+pub use offer::*;
 pub use plans::*;
 pub use tool_batch::*;
 pub use tool_definitions::*;
@@ -39,8 +43,7 @@ pub const REASONING_STYLE: &str = "Keep your private thinking brief and on point
      (about 40 words) on what the person needs, what you'll do, and any catch, in the language you reply in. No \
      preamble, no restating their message, no weighing every option, no drafting the reply there. Your reply is only the answer for \
      the person: never write your thinking, your plan of action, or notes about what they asked in it.";
-pub const COMPLETE_TASK_TOOL_NAME: &str = "complete_task";
-pub const DELEGATE_TOOL_NAME: &str = "delegate_to_agent";
+pub use nomi_tool::tools::{COMPLETE_TASK_TOOL_NAME, DELEGATE_TOOL_NAME};
 pub const RENAME_CHAT_TOOL_NAME: &str = "rename_chat";
 /// What the model hears back after `show`: the view is in the chat, so it needn't say it again.
 const VIEW_SHOWN: &str = "Shown in the chat. Don't repeat what it shows; add only what it doesn't say.";
@@ -50,9 +53,6 @@ pub const ASK_USER_TOOL_NAME: &str = "ask_user";
 /// Most questions one `ask_user` card holds; the person steps through them with Next.
 pub const MAX_QUESTIONS_PER_CARD: usize = 5;
 pub const READ_PLAN_TOOL_NAME: &str = "read_plan";
-pub const CREATE_REMINDER_TOOL_NAME: &str = "create_reminder";
-pub const LIST_REMINDERS_TOOL_NAME: &str = "list_reminders";
-pub const CANCEL_REMINDER_TOOL_NAME: &str = "cancel_reminder";
 pub const FIND_TOOLS_TOOL_NAME: &str = "find_tools";
 pub const CREATE_AGENT_TOOL_NAME: &str = "create_agent";
 
@@ -162,9 +162,6 @@ pub enum LoopOutcome {
     Cancelled,
 }
 
-/// The personality agent's tools that change which personality a chat replies in.
-const PERSONALITY_TOOL_NAMES: [&str; 3] = ["set_personality", "reset_chat_personality", "rollback_personality"];
-
 /// After an agent answers in chat (a reply, or the summary it finished with), queues the exchange
 /// so the memory worker can save anything lasting the person said. Never waits on a model call.
 async fn learn_from_turn(
@@ -248,71 +245,23 @@ async fn run_agent_turn_in_reply(
         own_tools.extend(chat_tools.iter().map(|t| t.name.clone()));
     }
     tools.extend(chat_tools);
-    tools.push(complete_task_tool_definition());
     // The members the person switched off take no work and answer no questions.
     let off = crate::personal_crew::disabled_agent_types(conn, user_id).await;
-    if agent.can_delegate() {
-        let mut targets = registry.delegation_targets_of(agent);
-        targets.retain(|t| !off.contains(t));
-        if !targets.is_empty() {
-            tools.push(delegate_tool_definition(&targets));
-        }
-    }
-    tools.push(crate::views::show_tool_definition());
-    tools.push(rename_chat_tool_definition());
-    tools.extend(crate::background::background_tool_definitions());
-    let mut crew = crate::crew_talk::ask_targets(registry, agent.agent_type().as_ref());
-    crew.retain(|t| !off.contains(t));
-    if !crew.is_empty() {
-        tools.push(crate::crew_talk::ask_agent_tool_definition(&crew));
-    }
-    tools.push(crate::crew_talk::note_tool_definition());
-    if agent.supports_todos() {
-        tools.push(update_todos_tool_definition());
-    }
-    if agent.supports_plans() {
-        tools.push(write_plan_tool_definition());
-    }
-    if agent.asks_questions() {
-        tools.push(ask_user_tool_definition());
-    }
-    if agent.reads_plans() {
-        tools.push(read_plan_tool_definition());
-    }
-    if agent.uses_records() {
-        tools.extend(crate::records::record_tool_definitions());
-    }
-    if agent.supports_reminders() {
-        let mut targets = registry.reminder_target_agent_types();
-        // Sora takes no reminders while she is off for this person.
-        targets.retain(|t| t != crate::crew::DESIGN_AGENT_TYPE || !off.contains(t));
-        tools.push(create_reminder_tool_definition(&targets));
-        tools.push(list_reminders_tool_definition());
-        tools.push(cancel_reminder_tool_definition());
-    }
-    // Looking through the tool catalog, and (Nomi and the supervisor) making crew members with it.
-    if registry.tool_catalog().is_some() {
-        tools.push(find_tools_tool_definition());
-        if agent.creates_crew_members() {
-            tools.push(create_agent_tool_definition());
-        }
-    }
-    // The web tools, and whatever an admin switched off in Admin → Tools.
+    // Whatever an admin switched off in Admin → Tools.
     let switches = crate::tools::ToolSwitches::load(conn).await;
-    if switches.allows(crate::web::WEB_SEARCH_TOOL_NAME) && crate::web::search_setup(conn).await.is_some() {
-        tools.push(crate::web::web_search_tool_definition());
+    // Catalog tools that aren't set up yet (no search provider, no voice key) aren't offered.
+    let mut not_ready = std::collections::HashSet::new();
+    if let Some(catalog) = registry.tool_catalog() {
+        for tool in catalog.in_registration_order().filter(|t| offered_to(*t, agent)) {
+            let name = tool.definition().name;
+            if switches.allows(&name) && !tool.ready(&mut **conn).await {
+                not_ready.insert(name);
+            }
+        }
     }
-    if switches.allows(crate::web::READ_WEB_PAGE_TOOL_NAME) {
-        tools.push(crate::web::read_web_page_tool_definition());
-    }
-    // Saying things aloud, while it's on and has its ElevenLabs key.
-    if switches.allows(crate::voice::SPEAK_TOOL_NAME) && crate::voice::is_ready(conn).await {
-        tools.push(crate::voice::speak_tool_definition());
-    }
-    // Reading on in a file the user attached, whenever the conversation holds one.
-    if crate::attachments::mentions_files(&messages) {
-        tools.push(crate::attachments::read_attachment_tool_definition());
-    }
+    let inputs = OfferInputs { mentions_files: crate::attachments::mentions_files(&messages), not_ready, off, switches };
+    tools.extend(engine_tools_for(agent, registry, &inputs));
+    let switches = inputs.switches;
     tools.retain(|t| own_tools.contains(&t.name) || switches.allows(&t.name));
     // In a project's chat, its tools default to that project: no one asks the person for an id.
     let chat_project = crate::chat_project::of_chat(conn, session_id, user_id).await;
@@ -806,26 +755,26 @@ mod background_engine_tests {
 
     #[test]
     fn crew_tools_list_find_tools_ungated_and_create_agent_gated() {
-        let registry = AgentRegistry::new(vec![Box::new(DummyDefaultAgent)]);
+        let registry = AgentRegistry::new(vec![Box::new(DummyDefaultAgent)]).with_tool_catalog(std::sync::Arc::new(ToolCatalog::from_tools(engine_catalog_tools())));
         let defs = crew_tool_definitions(&registry);
         let names: Vec<&str> = defs.iter().map(|d| d.name.as_str()).collect();
         assert!(names.contains(&FIND_TOOLS_TOOL_NAME) && names.contains(&CREATE_AGENT_TOOL_NAME));
-        assert!(!is_gateable(FIND_TOOLS_TOOL_NAME), "looking through the catalog changes nothing");
-        assert!(is_gateable(CREATE_AGENT_TOOL_NAME), "making a member goes through the person's permission level");
+        assert!(!is_gateable(registry.tool_catalog().map(|c| c.as_ref()), FIND_TOOLS_TOOL_NAME), "looking through the catalog changes nothing");
+        assert!(is_gateable(registry.tool_catalog().map(|c| c.as_ref()), CREATE_AGENT_TOOL_NAME), "making a member goes through the person's permission level");
         assert!(!crate::tools::REQUIRED_TOOLS.contains(&FIND_TOOLS_TOOL_NAME), "an admin can switch it off");
     }
 
     #[test]
     fn crew_tools_include_all_background_task_tools_and_never_gate_them() {
-        let registry = AgentRegistry::new(vec![Box::new(DummyDefaultAgent)]);
+        let registry = AgentRegistry::new(vec![Box::new(DummyDefaultAgent)]).with_tool_catalog(std::sync::Arc::new(ToolCatalog::from_tools(engine_catalog_tools())));
         let defs = crew_tool_definitions(&registry);
         let names: Vec<&str> = defs.iter().map(|t| t.name.as_str()).collect();
         assert!(names.contains(&RUN_BACKGROUND_TASK_TOOL_NAME));
         assert!(names.contains(&LIST_BACKGROUND_TASKS_TOOL_NAME));
         assert!(names.contains(&CANCEL_BACKGROUND_TASK_TOOL_NAME));
 
-        assert!(!is_gateable(RUN_BACKGROUND_TASK_TOOL_NAME));
-        assert!(!is_gateable(LIST_BACKGROUND_TASKS_TOOL_NAME));
-        assert!(!is_gateable(CANCEL_BACKGROUND_TASK_TOOL_NAME));
+        assert!(!is_gateable(registry.tool_catalog().map(|c| c.as_ref()), RUN_BACKGROUND_TASK_TOOL_NAME));
+        assert!(!is_gateable(registry.tool_catalog().map(|c| c.as_ref()), LIST_BACKGROUND_TASKS_TOOL_NAME));
+        assert!(!is_gateable(registry.tool_catalog().map(|c| c.as_ref()), CANCEL_BACKGROUND_TASK_TOOL_NAME));
     }
 }

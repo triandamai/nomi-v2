@@ -25,9 +25,6 @@ export function initViewport(): () => void {
 			document.documentElement.style.setProperty('--viewport-height', `${window.innerHeight}px`);
 			document.documentElement.style.setProperty('--viewport-top', '0px');
 		}
-		if (window.scrollY !== 0 || window.scrollX !== 0) {
-			window.scrollTo(0, 0);
-		}
 	}
 
 	update();
@@ -38,14 +35,29 @@ export function initViewport(): () => void {
 		vv.addEventListener('scroll', update);
 	}
 	window.addEventListener('resize', update);
-	window.addEventListener('scroll', update);
 
 	const onOrientationChange = () => {
 		setTimeout(update, 100);
 	};
 	window.addEventListener('orientationchange', onOrientationChange);
 
-	const onFocus = () => {
+	const onFocus = (event: Event) => {
+		const target = event.target as HTMLElement | null;
+		const isEditable =
+			target instanceof HTMLInputElement ||
+			target instanceof HTMLTextAreaElement ||
+			Boolean(target?.isContentEditable);
+		const isDocumentScrollable = document.documentElement.scrollHeight > window.innerHeight + 50;
+		if (
+			isEditable &&
+			!isDocumentScrollable &&
+			window.visualViewport &&
+			window.visualViewport.height < window.innerHeight
+		) {
+			if (window.scrollY !== 0 || window.scrollX !== 0) {
+				window.scrollTo(0, 0);
+			}
+		}
 		requestAnimationFrame(update);
 		setTimeout(update, 50);
 		setTimeout(update, 250);
@@ -59,7 +71,6 @@ export function initViewport(): () => void {
 			vv.removeEventListener('scroll', update);
 		}
 		window.removeEventListener('resize', update);
-		window.removeEventListener('scroll', update);
 		window.removeEventListener('orientationchange', onOrientationChange);
 		window.removeEventListener('focusin', onFocus);
 		window.removeEventListener('focusout', onFocus);

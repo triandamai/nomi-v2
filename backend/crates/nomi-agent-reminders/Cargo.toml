@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 nomi-agent-core = { path = "../nomi-agent-core" }
+nomi-tools-reminders = { path = "../nomi-tools-reminders" }
 nomi-llm = { path = "../nomi-llm" }
 async-trait = "0.1"
 chrono = { version = "0.4", features = ["serde"] }

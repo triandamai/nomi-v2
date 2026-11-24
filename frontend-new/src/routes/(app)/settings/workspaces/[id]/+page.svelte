@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Folder, Lock, LogOut, Mail, UserMinus, Users } from '@lucide/svelte';
+	import { Ellipsis, Folder, Lock, LogOut, Mail, MailPlus, UserMinus, UserRound, Users } from '@lucide/svelte';
 	import { invalidate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { m } from '$lib/paraglide/messages';
@@ -21,6 +21,16 @@
 	import InviteBox from '$lib/ds/settings/InviteBox.svelte';
 	import PersonRow from '$lib/ds/settings/PersonRow.svelte';
 	import WorkspaceBoundary from '$lib/ds/settings/WorkspaceBoundary.svelte';
+	import { phoneView } from '$lib/phone.svelte';
+	import { phoneScreen } from '$lib/ds/shells/phoneScreen.svelte';
+	import PhoneBackBar from '$lib/ds/chrome/PhoneBackBar.svelte';
+	import LargeTitle from '$lib/ds/chrome/LargeTitle.svelte';
+	import PhoneSettingsGroup from '$lib/ds/settings/PhoneSettingsGroup.svelte';
+	import PhoneFormScreen from '$lib/ds/settings/PhoneFormScreen.svelte';
+	import PhoneButton from '$lib/ds/mobile/PhoneButton.svelte';
+	import BottomSheet from '$lib/ds/overlays/BottomSheet.svelte';
+	import SheetOption from '$lib/ds/overlays/SheetOption.svelte';
+	import ActionSheet from '$lib/ds/overlays/ActionSheet.svelte';
 
 	// Settings › Workspace (App / Settings / Workspace wZm9B): one workspace. Its name (renamed by
 	// owners and admins), its numbers, inviting people (as members or admins), the members with
@@ -107,9 +117,174 @@
 	}
 
 	let leaving = $state(false);
+
+	// On a phone (Flow / Mobile — You & Settings, steps 19 and 20): Invite people first (a sheet:
+	// the address, the role as two choices with what each can do, Send invite in reach), then the
+	// people with their roles: a role the person may change opens a sheet, and Remove asks first;
+	// an open invite offers Copy link and Revoke; Leave comes last. Rename is off ⋯.
+	const guess = () => data.phone;
+	const phone = phoneView(guess());
+	const screen = phoneScreen();
+	$effect(() => {
+		screen.inside = phone.current && renaming;
+		return () => (screen.inside = false);
+	});
+	let inviteOpen = $state(false);
+	let inviteEmail = $state('');
+	let inviteRole = $state<'member' | 'admin'>('member');
+	let person = $state<MemberRow | null>(null);
+	let openInvite = $state<(typeof invites)[number] | null>(null);
+	let more = $state(false);
+	let leaveForm: HTMLFormElement | undefined = $state();
+	const people = $derived(members.length === 1 ? m.workspace_only_you() : m.workspace_members({ count: members.length }));
+
+	async function sendInvite() {
+		const emails = inviteEmail.split(/[\s,;]+/).map((one) => one.trim()).filter(Boolean);
+		if (!emails.length) return void (inviteError = m.workspace_invite_needed());
+		await invite(emails, inviteRole);
+		if (!inviteError) {
+			inviteEmail = '';
+			inviteOpen = false;
+		}
+	}
+
+	async function changeRole(member: MemberRow, role: OrgRole) {
+		person = null;
+		if (role !== member.role) await act('role', { user: member.id, role }, m.workspace_role_changed({ name: member.name, role: roleName(role) }));
+	}
 </script>
 
 <svelte:head><title>{detail.name} · {m.app_name()}</title></svelte:head>
+
+{#if phone.current}
+	<div class="h-full overflow-y-auto">
+		{#if renaming}
+			<PhoneFormScreen backLabel={detail.name} onback={() => (renaming = false)} title={m.workspace_rename_title()} onsubmit={rename}>
+				<TextField label={m.workspace_name()} name="name" bind:value={name} error={nameError} required />
+				{#snippet action()}<PhoneButton label={m.workspace_rename_save()} disabled={saving || !name.trim() || name.trim() === detail.name} onclick={rename} />{/snippet}
+			</PhoneFormScreen>
+		{:else}
+			<PhoneBackBar label={m.workspace_switcher()} href="/settings/workspaces">
+				{#snippet trailing()}
+					{#if manager}
+						<button
+							type="button"
+							aria-label={m.phone_workspace_more({ name: detail.name })}
+							class="inline-flex size-11 cursor-pointer items-center justify-center rounded-full text-text outline-offset-1 focus-visible:outline-2 focus-visible:outline-focus"
+							onclick={() => (more = true)}
+						>
+							<Ellipsis size={22} strokeWidth={1.5} aria-hidden="true" />
+						</button>
+					{/if}
+				{/snippet}
+			</PhoneBackBar>
+			<LargeTitle title={detail.name} />
+			<p class="-mt-1 px-5 pb-3.5 text-phone-sm text-text-3">{people} · {roleName(detail.my_role)}</p>
+			<div class="flex flex-col gap-5 px-4 pb-8">
+				{#if manager}
+					<PhoneSettingsGroup rows={[{ key: 'invite', icon: MailPlus, label: m.workspace_invite_title(), sub: m.phone_workspace_invite_sub(), onclick: () => ((inviteError = undefined), (inviteOpen = true)) }]} />
+				{/if}
+				<PhoneSettingsGroup
+					label={m.workspace_members_title()}
+					note={String(members.length + invites.length)}
+					rows={[
+						...members.map((member) => ({
+							key: member.id,
+							icon: UserRound,
+							label: member.name,
+							sub: member.you ? m.workspace_you() : undefined,
+							meta: roleName(member.role),
+							onclick: member.roleOptions.length || member.canRemove ? () => (person = member) : undefined,
+						})),
+						...(manager
+							? invites.map((one) => ({
+									key: one.code,
+									icon: Mail,
+									label: one.email,
+									sub: `${m.workspace_pending({ role: roleName(one.role) })} · ${one.meta}`,
+									tone: 'warning' as const,
+									onclick: () => (openInvite = one),
+								}))
+							: []),
+					]}
+				/>
+				<PhoneSettingsGroup
+					rows={[
+						{
+							key: 'leave',
+							icon: LogOut,
+							label: m.workspace_leave({ name: detail.name }),
+							sub: canLeave(detail) ? undefined : m.workspace_leave_last_owner(),
+							danger: true,
+							onclick: canLeave(detail) ? () => (leaving = true) : undefined,
+						},
+					]}
+				/>
+				<p class="px-1 text-phone-sm leading-firm text-text-3">{detail.my_role === 'owner' ? m.workspace_ownership_owner() : m.workspace_ownership_other()}</p>
+			</div>
+		{/if}
+	</div>
+
+	<BottomSheet bind:open={inviteOpen} title={m.phone_workspace_invite_to({ name: detail.name })} subtitle={m.workspace_invite_body()}>
+		<form
+			class="phone-form flex flex-col gap-3.5 px-4 pb-2"
+			onsubmit={(event) => {
+				event.preventDefault();
+				void sendInvite();
+			}}
+		>
+			<TextField label={m.workspace_invite_field()} type="email" name="emails" autocomplete="email" bind:value={inviteEmail} error={inviteError} placeholder={m.workspace_invite_placeholder()} />
+			<div class="-mx-4 flex flex-col">
+				<SheetOption label={m.workspace_role_member()} detail={m.workspace_role_member_body()} chosen={inviteRole === 'member'} onclick={() => (inviteRole = 'member')} />
+				<SheetOption label={m.workspace_role_admin()} detail={m.workspace_role_admin_body()} chosen={inviteRole === 'admin'} onclick={() => (inviteRole = 'admin')} />
+			</div>
+			<button type="submit" hidden aria-hidden="true" tabindex="-1"></button>
+			<PhoneButton label={m.workspace_invite_send_one()} disabled={inviting || !inviteEmail.trim()} onclick={() => void sendInvite()} />
+		</form>
+	</BottomSheet>
+
+	<BottomSheet open={person !== null} title={person?.name ?? ''} subtitle={person ? m.phone_workspace_role_sub({ name: person.name }) : undefined} onclose={() => (person = null)}>
+		{#if person}
+			{@const member = person}
+			{#each member.roleOptions as role (role)}
+				<SheetOption label={roleName(role)} chosen={role === member.role} onclick={() => void changeRole(member, role)} />
+			{/each}
+			{#if member.canRemove}
+				<div class="px-4 pt-3 pb-2"><PhoneButton label={m.workspace_remove_named({ name: member.name })} variant="danger" icon={UserMinus} onclick={() => ((removing = member), (person = null))} /></div>
+			{/if}
+		{/if}
+	</BottomSheet>
+	<ActionSheet
+		open={removing !== null}
+		title={m.workspace_remove_title({ name: removing?.name ?? '' })}
+		body={m.workspace_remove_body()}
+		cancel={m.action_cancel()}
+		actions={[{ label: m.workspace_remove(), danger: true, onclick: () => void remove() }]}
+		onclose={() => !busy && (removing = null)}
+	/>
+	<ActionSheet
+		open={openInvite !== null}
+		title={openInvite?.email ?? ''}
+		body={openInvite?.meta}
+		cancel={m.action_cancel()}
+		actions={openInvite
+			? [
+					{ label: m.workspace_copy_link(), onclick: () => openInvite && (void copyLink(openInvite.code), (openInvite = null)) },
+					{ label: m.workspace_revoke(), danger: true, onclick: () => openInvite && (void act('revoke', { code: openInvite.code }, m.workspace_revoked({ email: openInvite.email })), (openInvite = null)) },
+				]
+			: []}
+		onclose={() => (openInvite = null)}
+	/>
+	<ActionSheet bind:open={more} title={detail.name} cancel={m.action_cancel()} actions={[{ label: m.workspace_rename(), onclick: () => ((more = false), startRenaming()) }]} />
+	<form bind:this={leaveForm} method="POST" action="?/leave" hidden></form>
+	<ActionSheet
+		bind:open={leaving}
+		title={m.workspace_leave({ name: detail.name })}
+		body={m.workspace_leave_body()}
+		cancel={m.action_cancel()}
+		actions={[{ label: m.workspace_leave_action(), danger: true, onclick: () => ((leaving = false), leaveForm?.requestSubmit()) }]}
+	/>
+{:else}
 
 <div class="h-full overflow-y-auto">
 	<div class="flex max-w-316 flex-col gap-14 px-4 pt-8 pb-12 lg:flex-row lg:px-12">
@@ -258,3 +433,11 @@
 		{/snippet}
 	</Dialog>
 </form>
+{/if}
+
+<style>
+	/* 16pt on a phone so iOS doesn't zoom into the invite's field. */
+	.phone-form :global(input) {
+		font-size: var(--text-phone);
+	}
+</style>

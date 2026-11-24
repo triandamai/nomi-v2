@@ -40,8 +40,8 @@
 	<meta name="robots" content="noindex" />
 </svelte:head>
 
-<div class="flex min-h-screen flex-col bg-bg">
-	<header class="flex h-14 items-center justify-between border-b border-border px-4 lg:px-8">
+<div class="flex h-dvh flex-col overflow-y-auto bg-bg" style="height: var(--viewport-height, 100dvh);">
+	<header class="flex h-14 shrink-0 items-center justify-between border-b border-border px-4 lg:px-8">
 		<a href="/" class="flex items-center gap-2 rounded-xs outline-offset-2"><Mascot agent="nomi" size={20} /><span class="text-body font-medium text-text">Nomi</span></a>
 		<span class="flex items-center gap-2">
 			<Button label={m.shared_sign_in()} variant="ghost" iconStart={LogIn} href={signIn} />
@@ -95,7 +95,7 @@
 		{/if}
 	</main>
 
-	<footer class="flex items-center border-t border-border px-4 pt-3.5 pb-3.25 lg:px-8">
+	<footer class="flex shrink-0 items-center border-t border-border px-4 pt-3.5 pb-3.25 pb-safe lg:px-8">
 		<span class="font-mono text-label text-text-3">{m.shared_made_with()}</span>
 	</footer>
 </div>

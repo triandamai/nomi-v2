@@ -3336,6 +3336,14 @@ dependencies = [
  "nomi-settings",
  "nomi-storage",
  "nomi-test-support",
+ "nomi-tool",
+ "nomi-tools-attachments",
+ "nomi-tools-background",
+ "nomi-tools-personality",
+ "nomi-tools-records",
+ "nomi-tools-reminders",
+ "nomi-tools-voice",
+ "nomi-tools-web",
  "nomi-usage",
  "regex",
  "reqwest",
@@ -3390,6 +3398,7 @@ dependencies = [
  "nomi-llm",
  "nomi-settings",
  "nomi-test-support",
+ "nomi-tools-health",
  "reqwest",
  "serde",
  "serde_json",
@@ -3423,6 +3432,7 @@ dependencies = [
  "nomi-agent-core",
  "nomi-llm",
  "nomi-test-support",
+ "nomi-tools-money",
  "serde_json",
  "sqlx",
  "tokio",
@@ -3437,6 +3447,7 @@ dependencies = [
  "nomi-agent-core",
  "nomi-llm",
  "nomi-test-support",
+ "nomi-tools-personality",
  "serde_json",
  "sqlx",
  "tokio",
@@ -3472,6 +3483,7 @@ dependencies = [
  "nomi-agent-core",
  "nomi-llm",
  "nomi-test-support",
+ "nomi-tools-reminders",
  "serde",
  "serde_json",
  "sqlx",
@@ -3509,6 +3521,7 @@ dependencies = [
  "nomi-llm",
  "nomi-settings",
  "nomi-test-support",
+ "nomi-tools-workspace",
  "rand 0.8.7",
  "reqwest",
  "serde",
@@ -3813,6 +3826,196 @@ dependencies = [
  "nomi-storage",
  "tokio",
  "uuid",
+]
+
+[[package]]
+name = "nomi-tool"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "nomi-i18n",
+ "nomi-llm",
+ "nomi-realtime",
+ "nomi-settings",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "nomi-tools-attachments"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "nomi-attachments",
+ "nomi-llm",
+ "nomi-storage",
+ "nomi-tool",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "nomi-tools-background"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "nomi-llm",
+ "nomi-realtime",
+ "nomi-tool",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "nomi-tools-health"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "nomi-llm",
+ "nomi-settings",
+ "nomi-test-support",
+ "nomi-tool",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "uuid",
+ "wiremock",
+]
+
+[[package]]
+name = "nomi-tools-money"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "chrono-tz",
+ "nomi-llm",
+ "nomi-test-support",
+ "nomi-tool",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "nomi-tools-personality"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "nomi-llm",
+ "nomi-test-support",
+ "nomi-tool",
+ "serde_json",
+ "sqlx",
+ "thiserror 1.0.69",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "nomi-tools-records"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "nomi-llm",
+ "nomi-tool",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "nomi-tools-reminders"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "chrono-tz",
+ "nomi-llm",
+ "nomi-test-support",
+ "nomi-tool",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "nomi-tools-voice"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "nomi-llm",
+ "nomi-storage",
+ "nomi-tool",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "nomi-tools-web"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "futures-util",
+ "nomi-llm",
+ "nomi-tool",
+ "regex",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "nomi-tools-workspace"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "chrono",
+ "hex",
+ "nomi-i18n",
+ "nomi-llm",
+ "nomi-settings",
+ "nomi-test-support",
+ "nomi-tool",
+ "rand 0.8.7",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "uuid",
+ "wiremock",
 ]
 
 [[package]]

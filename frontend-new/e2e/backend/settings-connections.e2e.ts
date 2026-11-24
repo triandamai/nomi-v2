@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from '../support/test';
 import { createAccount, signInAs } from './support/accounts';
 
 // Settings › Connections against the real backend (App / Settings / Connections OBmgS): nothing

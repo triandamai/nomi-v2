@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './support/test';
 
 // The landing page (/welcome, Figma 170:2766) from the production server: what a visitor sees, and
 // the hero's composer carrying what they typed through sign in to a new chat.
@@ -7,7 +7,7 @@ test('a visitor gets the landing page in their language, without errors', async 
 	await context.addCookies([{ name: 'PARAGLIDE_LOCALE', value: 'id', url: 'http://localhost:4175' }]);
 	const errors: string[] = [];
 	page.on('pageerror', (error) => errors.push(error.message));
-	await page.goto('/welcome');
+	await page.goto('/welcome', { waitUntil: 'networkidle' });
 	await expect(page).toHaveTitle('Nomi: kamu cerita, kru yang kerjain');
 	await expect(page.getByRole('heading', { level: 1, name: 'Kamu cerita. Kru Nomi yang kerjain.' })).toBeVisible();
 	for (const name of ['Semudah kirim chat ke teman.', 'Satu chat, dua belas teman kerja.', 'Mau pindah? Bawa semuanya.', 'Masih penasaran?', 'Mau dibantu apa hari ini?']) {
@@ -22,7 +22,7 @@ test('a visitor gets the landing page in their language, without errors', async 
 });
 
 test('what a visitor types goes to sign in, and on to a new chat with it in the field', async ({ page }) => {
-	await page.goto('/welcome');
+	await page.goto('/welcome', { waitUntil: 'networkidle' });
 	// The hero's composer (the closing call has the same one, empty).
 	const hero = page.locator('section').first();
 	await hero.getByRole('button', { name: 'Prayer time reminders' }).click();
@@ -33,13 +33,13 @@ test('what a visitor types goes to sign in, and on to a new chat with it in the 
 
 test('someone signed in goes to Home', async ({ page, context }) => {
 	await context.addCookies([{ name: 'access_token', value: 'e2e-token', url: 'http://localhost:4175' }]);
-	await page.goto('/welcome');
+	await page.goto('/welcome', { waitUntil: 'networkidle' });
 	await expect(page).toHaveURL('http://localhost:4175/');
 });
 
 test('the FAQ opens one answer at a time, and “Ask Nomi yourself” starts that chat', async ({ page, context }) => {
 	await context.addCookies([{ name: 'PARAGLIDE_LOCALE', value: 'id', url: 'http://localhost:4175' }]);
-	await page.goto('/welcome#tanya');
+	await page.goto('/welcome#tanya', { waitUntil: 'networkidle' });
 	await expect(page.getByText('Sama sekali nggak.', { exact: false })).toBeVisible();
 	await page.getByRole('button', { name: 'Bisa dipakai bareng tim?' }).click();
 	await expect(page.getByText('Buat workspace, undang orang lewat email', { exact: false })).toBeVisible();
@@ -50,7 +50,7 @@ test('the FAQ opens one answer at a time, and “Ask Nomi yourself” starts tha
 
 test('the footer switches the page’s language', async ({ page, context }) => {
 	await context.addCookies([{ name: 'PARAGLIDE_LOCALE', value: 'id', url: 'http://localhost:4175' }]);
-	await page.goto('/welcome');
+	await page.goto('/welcome', { waitUntil: 'networkidle' });
 	await expect(page.getByRole('button', { name: 'Bahasa Indonesia' })).toHaveAttribute('aria-pressed', 'true');
 	await page.getByRole('button', { name: 'English' }).click();
 	await expect(page.getByRole('heading', { level: 1, name: 'You talk. Nomi’s crew gets it done.' })).toBeVisible();
@@ -58,7 +58,7 @@ test('the footer switches the page’s language', async ({ page, context }) => {
 });
 
 test('a visitor at the front door gets the landing page', async ({ page }) => {
-	await page.goto('/');
+	await page.goto('/', { waitUntil: 'networkidle' });
 	await expect(page).toHaveURL('http://localhost:4175/welcome');
 	await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 });

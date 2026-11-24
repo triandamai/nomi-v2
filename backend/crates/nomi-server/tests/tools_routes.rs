@@ -20,7 +20,8 @@ fn test_state(pool: PgPool) -> AppState {
         mqtt_broker_port: nomi_test_support::TEST_MQTT_BROKER_PORT,
         s3: None,
         project_storage: nomi_test_support::test_project_storage(),
-        tool_catalog: std::sync::Arc::new(nomi_agent_core::ToolCatalog::empty()),
+        // The engine's generic tools, which Admin → Tools lists as crew tools; no area tools.
+        tool_catalog: std::sync::Arc::new(nomi_agent_core::ToolCatalog::from_tools(nomi_agent_core::engine::engine_catalog_tools())),
         email_codes: nomi_server::sign_in_codes::EmailCodes::Off,
         push: std::sync::Arc::new(nomi_server::push::NoopPush),
         shipyard: None,

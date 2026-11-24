@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from '../support/test';
 import { api, createAccount, signInAs } from './support/accounts';
 
 // Projects against the real backend (App / Projects JyWON): the first project from a starter, its

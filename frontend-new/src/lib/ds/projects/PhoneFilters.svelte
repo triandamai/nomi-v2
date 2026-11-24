@@ -20,7 +20,7 @@
 	}
 </script>
 
-<div bind:this={group} role="radiogroup" aria-label={label} tabindex="-1" class="flex gap-2 overflow-x-auto px-4 pb-3" {onkeydown}>
+<div bind:this={group} role="radiogroup" aria-label={label} tabindex="-1" class="flex shrink-0 gap-2 overflow-x-auto px-4 pb-3" {onkeydown}>
 	{#each options as option (option.value)}
 		{@const chosen = option.value === value}
 		<button

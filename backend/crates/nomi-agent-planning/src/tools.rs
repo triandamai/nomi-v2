@@ -1,10 +1,10 @@
 //! Rena's tools as `Tool`s.
 
+use nomi_agent_core::ToolContext;
 use async_trait::async_trait;
 use serde_json::Value;
 use sqlx::pool::PoolConnection;
 use sqlx::Postgres;
-use uuid::Uuid;
 
 use nomi_agent_core::relay_ops::{NoRelayOps, SharedRelayOps};
 use nomi_agent_core::{Tool, ToolOutcome};
@@ -37,7 +37,8 @@ impl Tool for CreateProject {
     fn keywords(&self) -> &'static [&'static str] {
         &["app", "website", "build", "new project"]
     }
-    async fn execute(&self, conn: &mut PoolConnection<Postgres>, session_id: Uuid, _agent_session_id: Uuid, user_id: Uuid, input: Value) -> Result<ToolOutcome, String> {
+    async fn execute(&self, conn: &mut PoolConnection<Postgres>, ctx: &ToolContext<'_>, input: Value) -> Result<ToolOutcome, String> {
+        let (session_id, _agent_session_id, user_id) = (ctx.session_id, ctx.agent_session_id, ctx.user_id);
         crate::create_project(conn, session_id, user_id, input, self.relay.as_ref()).await.map(ToolOutcome::text)
     }
 }
@@ -57,7 +58,8 @@ impl Tool for RenameProject {
     fn keywords(&self) -> &'static [&'static str] {
         &["rename project", "change title", "change project name", "company name"]
     }
-    async fn execute(&self, conn: &mut PoolConnection<Postgres>, session_id: Uuid, _agent_session_id: Uuid, user_id: Uuid, input: Value) -> Result<ToolOutcome, String> {
+    async fn execute(&self, conn: &mut PoolConnection<Postgres>, ctx: &ToolContext<'_>, input: Value) -> Result<ToolOutcome, String> {
+        let (session_id, _agent_session_id, user_id) = (ctx.session_id, ctx.agent_session_id, ctx.user_id);
         crate::rename_project(conn, session_id, user_id, input, self.relay.as_ref()).await.map(ToolOutcome::text)
     }
 }

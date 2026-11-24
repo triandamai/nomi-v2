@@ -32,6 +32,17 @@
 	import PageToc from '$lib/ds/settings/PageToc.svelte';
 	import RelatedLinks from '$lib/ds/settings/RelatedLinks.svelte';
 	import SettingsTip from '$lib/ds/settings/SettingsTip.svelte';
+	import { Bell, Clock3, CornerDownLeft, Globe, Languages, Lock, Mail, MessageCircle, Moon, Newspaper, Smartphone, SunMoon, Trash2 } from '@lucide/svelte';
+	import { phoneView } from '$lib/phone.svelte';
+	import { phoneScreen } from '$lib/ds/shells/phoneScreen.svelte';
+	import PhoneBackBar from '$lib/ds/chrome/PhoneBackBar.svelte';
+	import LargeTitle from '$lib/ds/chrome/LargeTitle.svelte';
+	import PhoneSettingsGroup from '$lib/ds/settings/PhoneSettingsGroup.svelte';
+	import PhoneFormScreen from '$lib/ds/settings/PhoneFormScreen.svelte';
+	import PhoneButton from '$lib/ds/mobile/PhoneButton.svelte';
+	import BottomSheet from '$lib/ds/overlays/BottomSheet.svelte';
+	import SheetOption from '$lib/ds/overlays/SheetOption.svelte';
+	import ActionSheet from '$lib/ds/overlays/ActionSheet.svelte';
 
 	// Settings › General (App / Settings / General m7lvY1): the page's groups down a column (880,
 	// 28 apart) beside On this page; every change saves as it's made and goes back if it can't.
@@ -306,6 +317,31 @@
 	const others = $derived((data.devices ?? []).filter((device) => !device.current).length);
 	const resetHref = $derived(`/forgot-password?email=${encodeURIComponent(data.email)}`);
 
+	// On a phone (Flow / Mobile — You & Settings, steps 2–6: EtSi2) General is grouped rows, each
+	// showing what's set: picking opens a sheet, typing (the email, the password) its own screen with
+	// the tab bar out of the way, and Delete account a sheet. The same state and actions as above.
+	const guess = () => data.phone;
+	const phone = phoneView(guess());
+	const screen = phoneScreen();
+	type Sheet = 'language' | 'zone' | 'theme' | 'starter' | 'quiet' | 'google';
+	let sheet = $state<Sheet | null>(null);
+	const closeSheet = (which: Sheet) => () => sheet === which && (sheet = null);
+	$effect(() => {
+		screen.inside = phone.current && (emailOpen || passwordOpen);
+		return () => (screen.inside = false);
+	});
+	let googleForm: HTMLFormElement | undefined = $state();
+	const THEMES = $derived([
+		{ value: 'system', label: m.theme_system() },
+		{ value: 'light', label: m.theme_light() },
+		{ value: 'dark', label: m.theme_dark() },
+	]);
+	const LANGUAGES = $derived([
+		{ value: 'en', label: m.language_en() },
+		{ value: 'id', label: m.language_id() },
+	]);
+	const starterName = $derived(starters.find((option) => option.value === startsWith)?.label ?? 'Nomi');
+
 	// Back from Google: say how adding it went, then take the word off the address.
 	onMount(() => {
 		const linked = page.url.searchParams.get('google') === 'linked';
@@ -319,6 +355,206 @@
 
 <svelte:head><title>{m.settings_general()} · {m.app_name()}</title></svelte:head>
 
+{#if phone.current}
+	<div class="h-full overflow-y-auto">
+		{#if emailOpen}
+			<PhoneFormScreen
+				backLabel={m.settings_general()}
+				onback={() => (emailOpen = false)}
+				title={emailSent ? m.general_email_code_title() : m.general_email_change_title()}
+				sub={emailSent ? m.verify_sub({ email: emailSent.email, minutes: emailSent.minutes }) : m.general_email_change_body()}
+				onsubmit={() => (emailSent ? confirmEmail() : sendEmailCode())}
+			>
+				{#if emailSent}
+					<CodeInput bind:value={emailCode} invalid={emailProblem?.field === 'code'} disabled={emailBusy || !!emailProblem?.ended} autofocus oncomplete={(code) => confirmEmail(code)} />
+					{#if emailProblem}<p role="alert" class="text-phone-sm text-danger">{emailProblem.message}</p>{/if}
+					<span class="flex"><AuthLink label={m.general_email_other()} onclick={() => ((emailSent = null), (emailProblem = undefined))} /></span>
+				{:else}
+					<TextField label={m.general_email_new()} type="email" name="email" autocomplete="email" bind:value={newEmail} error={emailProblem?.field === 'email' ? emailProblem.message : undefined} required />
+					{#if emailProblem && !emailProblem.field}<p role="alert" class="text-phone-sm text-danger">{emailProblem.message}</p>{/if}
+				{/if}
+				{#snippet action()}
+					{#if emailSent}
+						<PhoneButton
+							label={emailProblem?.ended ? m.verify_start_over() : m.general_email_confirm()}
+							disabled={emailBusy || (!emailProblem?.ended && emailCode.length < 6)}
+							onclick={() => (emailProblem?.ended ? ((emailSent = null), (emailProblem = undefined)) : confirmEmail())}
+						/>
+					{:else}
+						<PhoneButton label={m.general_email_send()} disabled={emailBusy || !newEmail.trim()} onclick={sendEmailCode} />
+					{/if}
+				{/snippet}
+			</PhoneFormScreen>
+		{:else if passwordOpen}
+			<PhoneFormScreen
+				backLabel={m.settings_general()}
+				onback={() => (passwordOpen = false)}
+				title={data.methods.password ? m.general_password_change_title() : m.general_password_set_title()}
+				sub={data.methods.password ? m.general_password_change_body() : m.general_password_set_body()}
+				onsubmit={savePassword}
+			>
+				<input type="email" name="username" autocomplete="username" value={data.email} hidden readonly />
+				{#if data.methods.password}
+					<TextField label={m.general_password_current()} type="password" name="current" autocomplete="current-password" bind:value={passwords.current} error={fieldError('current')} required />
+				{/if}
+				<TextField label={m.general_password_new()} type="password" name="next" autocomplete="new-password" helper={m.register_password_help()} bind:value={passwords.next} error={fieldError('next')} required />
+				<TextField label={m.general_password_confirm()} type="password" name="confirm" autocomplete="new-password" bind:value={passwords.confirm} error={fieldError('confirm')} required />
+				{#if passwordError && !passwordError.field}<p role="alert" class="text-phone-sm text-danger">{passwordError.message}</p>{/if}
+				{#if data.methods.password}<span class="flex"><AuthLink label={m.general_password_forgot()} href={resetHref} quiet /></span>{/if}
+				{#snippet action()}
+					<PhoneButton label={m.general_password_save()} disabled={savingPassword} onclick={savePassword} />
+				{/snippet}
+			</PhoneFormScreen>
+		{:else}
+			<PhoneBackBar label={m.nav_you()} href="/settings" />
+			<LargeTitle title={m.settings_general()} />
+			<div class="flex flex-col gap-5 px-4 pt-1 pb-8">
+				<PhoneSettingsGroup
+					label={m.general_account()}
+					rows={[
+						{ key: 'email', icon: Mail, label: m.general_email(), meta: maskEmail(data.email), mono: true, onclick: openEmail },
+						{ key: 'password', icon: Lock, label: m.general_password(), meta: data.methods.password ? m.general_password_change() : m.general_password_add(), onclick: openPassword },
+						...(data.methods.configured || data.methods.google_email
+							? [
+									{
+										key: 'google',
+										icon: Globe,
+										label: m.general_google(),
+										sub: data.methods.google_email ?? undefined,
+										meta: data.methods.google_email ? m.general_connected() : m.general_connect(),
+										busy: busy === 'unlinkGoogle',
+										onclick: () => (data.methods.google_email ? (sheet = 'google') : googleForm?.requestSubmit()),
+									},
+								]
+							: []),
+					]}
+				/>
+				<p class="-mt-3 px-1 text-phone-sm text-text-3">{m.general_google_note()}</p>
+				<PhoneSettingsGroup
+					label={m.general_language_region()}
+					rows={[
+						{ key: 'language', icon: Languages, label: m.general_language(), meta: LANGUAGES.find((option) => option.value === language)?.label, onclick: () => (sheet = 'language') },
+						{ key: 'zone', icon: Clock3, label: m.general_zone(), meta: zone || m.general_zone_choose(), mono: !!zone, onclick: () => (sheet = 'zone') },
+					]}
+				/>
+				<PhoneSettingsGroup label={m.general_appearance()} rows={[{ key: 'theme', icon: SunMoon, label: m.general_theme(), meta: THEMES.find((option) => option.value === theme)?.label, onclick: () => (sheet = 'theme') }]} />
+				<PhoneSettingsGroup
+					label={m.general_chat()}
+					rows={[
+						{ key: 'starter', icon: MessageCircle, label: m.general_starts_with(), meta: starterName, onclick: () => (sheet = 'starter') },
+						{ key: 'enter', icon: CornerDownLeft, label: m.general_enter_sends(), sub: enterSends ? m.general_enter_sends_on() : m.general_enter_sends_off(), toggle: { checked: enterSends, onchange: changeEnterSends } },
+					]}
+				/>
+				<PhoneSettingsGroup
+					label={m.general_notifications()}
+					rows={[
+						...(reminders ? [{ key: 'push', icon: Bell, label: m.general_reminders(), sub: m.general_reminders_body(), toggle: { checked: reminders.push_reminders, onchange: setPush } }] : []),
+						...(emails
+							? [
+									{ key: 'mail', icon: Mail, label: m.general_email(), sub: m.general_email_account(), toggle: { checked: emails.email_account, onchange: (on: boolean) => saveEmails({ email_account: on }) } },
+									{ key: 'news', icon: Newspaper, label: m.general_product_news(), sub: m.general_product_news_body(), toggle: { checked: emails.email_promos, onchange: (on: boolean) => saveEmails({ email_promos: on }) } },
+								]
+							: []),
+						...(reminders
+							? [{ key: 'quiet', icon: Moon, label: m.general_quiet(), meta: reminders.quiet_hours ? `${reminders.quiet_hours.start}–${reminders.quiet_hours.end}` : m.phone_general_off(), mono: !!reminders.quiet_hours, onclick: () => (sheet = 'quiet') }]
+							: []),
+					]}
+				/>
+				{#if !reminders || !emails}<p class="-mt-3 px-1 text-phone-sm text-text-3">{!reminders ? m.general_reminders_unloaded() : m.general_emails_unloaded()}</p>{/if}
+				{#if data.devices}
+					<PhoneSettingsGroup
+						label={m.general_sessions()}
+						rows={[
+							{ key: 'devices', icon: Smartphone, label: data.devices.length === 1 ? m.general_devices_one() : m.general_devices({ count: data.devices.length }), sub: devicesLine(data.devices, time.now, time.timeZone) },
+							...(others > 0
+								? [{ key: 'others', icon: LogOut, label: m.general_sign_out_others(), busy: busy === 'signOutOthers', onclick: () => act('signOutOthers', (done) => m.general_signed_out({ count: Number(done.signedOut ?? others) })) }]
+								: []),
+						]}
+					/>
+				{:else}
+					<p class="px-1 text-phone-sm text-text-3">{m.general_devices_unloaded()}</p>
+				{/if}
+				<PhoneSettingsGroup rows={[{ key: 'delete', icon: Trash2, label: m.general_delete(), danger: true, onclick: openDelete }]} />
+			</div>
+		{/if}
+	</div>
+	<form bind:this={googleForm} method="POST" action="?/linkGoogle" hidden></form>
+
+	<BottomSheet open={sheet === 'language'} title={m.general_language()} subtitle={m.general_language_body()} onclose={closeSheet('language')}>
+		{#each LANGUAGES as option (option.value)}
+			<SheetOption label={option.label} chosen={option.value === language} onclick={() => ((sheet = null), changeLanguage(option.value))} />
+		{/each}
+	</BottomSheet>
+	<BottomSheet open={sheet === 'zone'} title={m.general_zone()} subtitle={m.general_zone_body()} onclose={closeSheet('zone')}>
+		{#each zones as option (option.value)}
+			<SheetOption label={option.label} chosen={option.value === zone} onclick={() => ((sheet = null), (zone = option.value), changeZone(option.value))} />
+		{/each}
+	</BottomSheet>
+	<BottomSheet open={sheet === 'theme'} title={m.general_theme()} subtitle={m.general_theme_body()} onclose={closeSheet('theme')}>
+		{#each THEMES as option (option.value)}
+			<SheetOption label={option.label} chosen={option.value === theme} onclick={() => ((sheet = null), changeTheme(option.value))} />
+		{/each}
+	</BottomSheet>
+	<BottomSheet open={sheet === 'starter'} title={m.general_starts_with()} subtitle={m.general_starts_with_body()} onclose={closeSheet('starter')}>
+		{#each starters as option (option.value)}
+			<SheetOption label={option.label} chosen={option.value === startsWith} onclick={() => ((sheet = null), (startsWith = option.value), changeStarter(option.value))}>
+				{#snippet lead()}<Mascot agent={(option.value && crewOf(option.value)) || 'nomi'} size={20} live={false} />{/snippet}
+			</SheetOption>
+		{/each}
+	</BottomSheet>
+	<BottomSheet open={sheet === 'quiet'} title={m.general_quiet()} subtitle={m.phone_general_quiet_sub()} onclose={closeSheet('quiet')}>
+		<SheetOption label={m.phone_general_off()} chosen={!reminders?.quiet_hours} onclick={() => ((sheet = null), setQuiet(false))} />
+		{#each nights as option (option.value)}
+			<SheetOption label={option.label} chosen={!!reminders?.quiet_hours && option.value === night} onclick={() => ((sheet = null), (night = option.value), setQuiet(true, option.value))} />
+		{/each}
+	</BottomSheet>
+	<ActionSheet
+		open={sheet === 'google'}
+		title={m.general_google()}
+		body={data.methods.google_email ? m.general_google_linked({ email: data.methods.google_email }) : undefined}
+		actions={[{ label: m.general_disconnect(), danger: true, onclick: () => act('unlinkGoogle', () => m.general_google_removed()) }]}
+		cancel={m.action_cancel()}
+		onclose={closeSheet('google')}
+	/>
+	<BottomSheet bind:open={deleteOpen} title={m.general_delete_title()} subtitle={m.general_delete_what()}>
+		<form
+			class="phone-form flex flex-col gap-4 px-4 pb-2"
+			onsubmit={(event) => {
+				event.preventDefault();
+				void closeAccount();
+			}}
+		>
+			{#if soleOwner.length}
+				<div role="alert" class="flex flex-col gap-1.5 rounded-lg bg-warning-bg px-3 py-2.5 text-phone-sm text-text">
+					<p>{m.general_delete_sole_owner()}</p>
+					<ul class="flex flex-col gap-1">
+						{#each soleOwner as org (org.id)}<li><a class="text-text underline underline-offset-2" href="/settings/workspaces/{org.id}">{org.name}</a></li>{/each}
+					</ul>
+				</div>
+			{/if}
+			{#if deleteWith === 'password'}
+				<input type="email" name="username" autocomplete="username" value={data.email} hidden readonly />
+				<TextField label={m.auth_password()} type="password" name="password" autocomplete="current-password" helper={m.general_delete_password_hint()} bind:value={deletePassword} error={deleteProblem?.field === 'password' ? deleteProblem.message : undefined} required />
+				<span class="flex"><AuthLink label={m.general_delete_use_code()} onclick={() => ((deleteWith = 'code'), (deleteProblem = undefined))} /></span>
+			{:else if deleteSent}
+				<p class="text-phone-sm text-text-2">{m.general_delete_code_sent({ email: deleteSent.email, minutes: deleteSent.minutes })}</p>
+				<CodeInput bind:value={deleteCode} invalid={deleteProblem?.field === 'code'} disabled={deleteBusy || !!deleteProblem?.ended} />
+				{#if data.methods.password}<span class="flex"><AuthLink label={m.general_delete_use_password()} onclick={() => ((deleteWith = 'password'), (deleteProblem = undefined))} /></span>{/if}
+			{:else}
+				<p class="text-phone-sm text-text-2">{m.general_delete_code_hint({ email: maskEmail(data.email) })}</p>
+				{#if data.methods.password}<span class="flex"><AuthLink label={m.general_delete_use_password()} onclick={() => ((deleteWith = 'password'), (deleteProblem = undefined))} /></span>{/if}
+			{/if}
+			{#if deleteProblem && deleteProblem.field !== 'password'}<p role="alert" class="text-phone-sm text-danger">{deleteProblem.message}</p>{/if}
+			<button type="submit" hidden aria-hidden="true" tabindex="-1"></button>
+			{#if deleteWith === 'code' && (!deleteSent || deleteProblem?.ended)}
+				<PhoneButton label={m.general_email_send()} disabled={deleteBusy} onclick={sendDeleteCode} />
+			{:else}
+				<PhoneButton label={m.general_delete_confirm()} variant="danger" icon={Trash2} disabled={deleteBusy} onclick={() => closeAccount()} />
+			{/if}
+			<PhoneButton label={m.phone_general_keep()} variant="secondary" onclick={() => (deleteOpen = false)} />
+		</form>
+	</BottomSheet>
+{:else}
 <div bind:this={scroller} onscroll={follow} class="h-full overflow-y-auto">
 	<div class="flex gap-14 px-4 pt-8 pb-10 lg:px-12">
 		<div class="flex max-w-220 min-w-0 flex-1 flex-col gap-7">
@@ -573,7 +809,7 @@
 		<button type="submit" hidden aria-hidden="true" tabindex="-1"></button>
 	</form>
 	{#snippet actions()}
-		<Button variant="secondary" label={m.action_cancel()} onclick={() => (deleteOpen = false)} />
+		<Button variant="secondary" label={m.phone_general_keep()} onclick={() => (deleteOpen = false)} />
 		{#if deleteWith === 'code' && (!deleteSent || deleteProblem?.ended)}
 			<Button variant="inverse" label={m.general_email_send()} loading={deleteBusy} onclick={sendDeleteCode} />
 		{:else}
@@ -581,4 +817,11 @@
 		{/if}
 	{/snippet}
 </Dialog>
+{/if}
 
+<style>
+	/* 16pt on a phone so iOS doesn't zoom into a field as it's focused. */
+	.phone-form :global(input) {
+		font-size: var(--text-phone);
+	}
+</style>

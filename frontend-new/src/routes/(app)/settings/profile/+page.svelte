@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { ArrowDown, ArrowUp, GripVertical, Upload, X } from '@lucide/svelte';
+	import { ArrowDown, ArrowUp, AtSign, ChartColumn, Ellipsis, Globe, GripVertical, Plus, Upload, UserRound, Users, X } from '@lucide/svelte';
 	import { invalidate, invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
 	import { m } from '$lib/paraglide/messages';
@@ -27,6 +27,17 @@
 	import ShowcaseCard from '$lib/ds/profile/ShowcaseCard.svelte';
 	import ShowcaseAdd from '$lib/ds/profile/ShowcaseAdd.svelte';
 	import SaveBar from '$lib/ds/profile/SaveBar.svelte';
+	import { phoneView } from '$lib/phone.svelte';
+	import { phoneScreen } from '$lib/ds/shells/phoneScreen.svelte';
+	import PhoneBackBar from '$lib/ds/chrome/PhoneBackBar.svelte';
+	import PhoneSettingsGroup, { type SettingsRow } from '$lib/ds/settings/PhoneSettingsGroup.svelte';
+	import PhoneFormScreen from '$lib/ds/settings/PhoneFormScreen.svelte';
+	import PhoneButton from '$lib/ds/mobile/PhoneButton.svelte';
+	import BottomSheet from '$lib/ds/overlays/BottomSheet.svelte';
+	import SheetOption from '$lib/ds/overlays/SheetOption.svelte';
+	import ActionSheet from '$lib/ds/overlays/ActionSheet.svelte';
+	import PhoneProfileHeader from '$lib/ds/profile/PhoneProfileHeader.svelte';
+	import PhoneActivity from '$lib/ds/profile/PhoneActivity.svelte';
 
 	// Settings › Profile (App / Settings / Profile U9Gnrg): what the person has done (their numbers,
 	// a year of tokens, the models and crew they use) beside their public profile (photo, name,
@@ -99,7 +110,7 @@
 		!wanted ? m.profile_username_help() : wanted === profile.username ? m.profile_username_yours({ link }) : check?.name === wanted && check.available ? m.profile_username_free({ link }) : m.profile_username_help(),
 	);
 
-	async function save() {
+	async function save(): Promise<boolean> {
 		failed = undefined;
 		saving = true;
 		const result = await pageAction('/settings/profile', 'save', {
@@ -113,11 +124,12 @@
 		if (!result.ok) {
 			failed = { field: result.field, message: result.message };
 			if (result.message && result.field !== 'username') toasts.show({ kind: 'error', title: m.action_failed(), detail: result.message });
-			return;
+			return false;
 		}
 		toasts.show({ kind: 'success', title: m.profile_saved() });
 		await invalidate('app:profile');
 		await invalidate('app:shell');
+		return true;
 	}
 
 	// The photo: chosen, sent as it is to the backend, which keeps it on the profile.
@@ -177,9 +189,211 @@
 			onselect: () => (form.showcase = [...form.showcase, { id: project.id, name: project.name, description: null, status: 'live', deploy_url: null, build_duration_secs: null }]),
 		})),
 	);
+
+	// On a phone (Flow / Mobile — You & Settings, step 7): the person, then Details, Activity, the
+	// public switches and Showcase down one column. Each field opens its own screen with its own
+	// Save; the switches and the showcase save as they change (and go back if they can't), so
+	// there's no unsaved-changes bar. A quarter of activity, not a year: a year is too small to read.
+	const guess = () => data.phone;
+	const phone = phoneView(guess());
+	const screen = phoneScreen();
+	let field = $state<'name' | 'username' | null>(null);
+	let sheet = $state<'photo' | 'add' | null>(null);
+	let tools = $state<number | null>(null);
+	$effect(() => {
+		screen.inside = phone.current && field !== null;
+		return () => (screen.inside = false);
+	});
+
+	const quarter = $derived(heatmap(profile.activity, today, language, 13));
+	const quarterBusiest = $derived(mostActiveDay(quarter.weeks.flat().filter((day) => day !== null), language));
+	const tiles = $derived(statTiles(profile.stats, profile.joined_at, language));
+	const phoneTiles = $derived([tiles[0], tiles.find((tile) => tile.current)].filter((tile) => tile !== undefined));
+	const handle = $derived([profile.username && `@${profile.username}`, m.profile_joined({ date: dayMonth(new Date(profile.joined_at), language, true) })].filter(Boolean).join(' · '));
+
+	/** A switch or the showcase changed: saved now, and put back if it can't be. */
+	async function saveNow() {
+		if (!(await save())) form = saved();
+	}
+
+	function openField(which: 'name' | 'username') {
+		form = saved();
+		failed = undefined;
+		field = which;
+	}
+
+	function closeField() {
+		form = saved();
+		failed = undefined;
+		field = null;
+	}
+
+	async function saveField() {
+		if (saving || fieldUnchanged || (field === 'username' && usernameError)) return;
+		if (await save()) field = null;
+	}
+
+	const fieldUnchanged = $derived(field === 'name' ? form.name.trim() === (profile.display_name ?? '') : wanted === (profile.username ?? ''));
+
+	/** A featured project's sheet: move it, or take it off; saved as it's picked. */
+	function showcaseActions(index: number) {
+		const then = (change: () => void) => () => {
+			tools = null;
+			change();
+			void saveNow();
+		};
+		return [
+			...(index > 0 ? [{ label: m.profile_move_up(), onclick: then(() => move(index, -1)) }] : []),
+			...(index < form.showcase.length - 1 ? [{ label: m.profile_move_down(), onclick: then(() => move(index, 1)) }] : []),
+			{ label: m.profile_remove_feature(), danger: true, onclick: then(() => (form.showcase = form.showcase.filter((_, at) => at !== index))) },
+		];
+	}
+
+	const showcaseRows = $derived<SettingsRow[]>([
+		...form.showcase.map((project, index) => ({
+			key: project.id,
+			icon: Globe,
+			label: project.name,
+			sub: project.build_duration_secs ? m.profile_built({ time: duration(project.build_duration_secs) }) : m.profile_built_plain(),
+			meta: m.profile_live(),
+			tone: 'accent' as const,
+			onclick: () => (tools = index),
+		})),
+		...(form.showcase.length < SHOWCASE_MAX
+			? [
+					candidates.length
+						? { key: 'add', icon: Plus, label: m.profile_showcase_add(), onclick: () => (sheet = 'add') }
+						: { key: 'add', icon: Plus, label: m.profile_showcase_add(), sub: m.profile_showcase_none() },
+				]
+			: []),
+	]);
 </script>
 
 <svelte:head><title>{m.settings_profile()} · {m.app_name()}</title></svelte:head>
+
+{#snippet photoInput()}
+	<input
+		bind:this={picker}
+		type="file"
+		accept="image/png,image/jpeg,image/webp,image/gif"
+		hidden
+		onchange={(event) => {
+			const file = event.currentTarget.files?.[0];
+			event.currentTarget.value = '';
+			if (file) void upload(file);
+		}}
+	/>
+{/snippet}
+
+{#if phone.current}
+	<div class="h-full overflow-y-auto">
+		{#if field}
+			<PhoneFormScreen
+				backLabel={m.settings_profile()}
+				onback={closeField}
+				title={field === 'name' ? m.profile_display_name() : m.profile_username()}
+				sub={field === 'name' ? m.phone_profile_name_sub() : undefined}
+				onsubmit={saveField}
+			>
+				{#if field === 'name'}
+					<TextField label={m.profile_display_name()} name="display_name" bind:value={form.name} autocomplete="name" />
+				{:else}
+					<TextField label={m.profile_username()} name="username" bind:value={form.username} mono autocomplete="username" helper={usernameHelper} error={usernameError} oninput={() => (failed = undefined)} />
+				{/if}
+				{#snippet action()}
+					<PhoneButton label={m.profile_save()} disabled={saving || fieldUnchanged || (field === 'username' && !!usernameError)} onclick={saveField} />
+				{/snippet}
+			</PhoneFormScreen>
+		{:else}
+			<PhoneBackBar label={m.nav_you()} href="/settings">
+				{#snippet trailing()}
+					{#if profile.avatar_url}
+						<button
+							type="button"
+							aria-label={m.phone_profile_more()}
+							class="inline-flex size-11 cursor-pointer items-center justify-center rounded-full text-text outline-offset-1 focus-visible:outline-2 focus-visible:outline-focus"
+							onclick={() => (sheet = 'photo')}
+						>
+							<Ellipsis size={22} strokeWidth={1.5} aria-hidden="true" />
+						</button>
+					{/if}
+				{/snippet}
+			</PhoneBackBar>
+			<PhoneProfileHeader {name} line={handle} src={profile.avatar_url ?? undefined} photo={m.profile_change_photo()} busy={uploading} onphoto={() => picker?.click()} />
+			{@render photoInput()}
+			<div class="flex flex-col gap-5 px-4 pb-8">
+				<PhoneSettingsGroup
+					label={m.phone_profile_details()}
+					rows={[
+						{ key: 'name', icon: UserRound, label: m.profile_display_name(), meta: profile.display_name ?? undefined, onclick: () => openField('name') },
+						{ key: 'username', icon: AtSign, label: m.profile_username(), meta: profile.username ?? undefined, mono: true, onclick: () => openField('username') },
+					]}
+				/>
+				<section aria-labelledby="phone-activity" class="flex flex-col gap-2">
+					<h2 id="phone-activity" class="px-1 font-mono text-label tracking-label text-text-3 uppercase">{m.profile_activity()}</h2>
+					<PhoneActivity
+						tiles={phoneTiles}
+						total={m.phone_profile_weeks({ total: formatTokens(quarter.total) })}
+						weeks={quarter.weeks}
+						note={quarterBusiest ? m.phone_profile_busiest({ day: quarterBusiest }) : undefined}
+					/>
+				</section>
+				<PhoneSettingsGroup
+					label={m.profile_public()}
+					rows={[
+						{
+							key: 'stats',
+							icon: ChartColumn,
+							label: m.profile_show_stats(),
+							sub: m.profile_show_stats_body(),
+							toggle: { checked: form.showStats, disabled: saving, onchange: (on) => ((form.showStats = on), void saveNow()) },
+						},
+						{
+							key: 'crew',
+							icon: Users,
+							label: m.profile_show_crew(),
+							sub: m.profile_show_crew_body(),
+							toggle: { checked: form.showCrew, disabled: saving, onchange: (on) => ((form.showCrew = on), void saveNow()) },
+						},
+					]}
+				/>
+				<div class="flex flex-col gap-2">
+					<PhoneSettingsGroup label={m.profile_showcase()} note={m.profile_showcase_count({ count: form.showcase.length })} rows={showcaseRows} />
+					<p class="px-1 text-phone-sm leading-firm text-text-3">{m.profile_showcase_note()}</p>
+				</div>
+			</div>
+		{/if}
+	</div>
+	<ActionSheet
+		open={sheet === 'photo'}
+		title={m.phone_profile_photo()}
+		cancel={m.action_cancel()}
+		actions={[
+			{ label: m.profile_change_photo(), onclick: () => ((sheet = null), picker?.click()) },
+			{ label: m.profile_remove_photo(), danger: true, onclick: () => ((sheet = null), void removePhoto()) },
+		]}
+		onclose={() => sheet === 'photo' && (sheet = null)}
+	/>
+	<ActionSheet
+		open={tools !== null}
+		title={tools !== null ? (form.showcase[tools]?.name ?? '') : ''}
+		cancel={m.action_cancel()}
+		actions={tools !== null ? showcaseActions(tools) : []}
+		onclose={() => (tools = null)}
+	/>
+	<BottomSheet open={sheet === 'add'} title={m.profile_showcase_add()} onclose={() => sheet === 'add' && (sheet = null)}>
+		{#each addable as project (project.id)}
+			<SheetOption
+				label={project.name}
+				onclick={() => {
+					sheet = null;
+					form.showcase = [...form.showcase, { id: project.id, name: project.name, description: null, status: 'live', deploy_url: null, build_duration_secs: null }];
+					void saveNow();
+				}}
+			/>
+		{/each}
+	</BottomSheet>
+{:else}
 
 <div class="flex h-full flex-col overflow-y-auto xl:flex-row xl:overflow-hidden">
 	<div class="flex min-w-0 flex-1 flex-col gap-6 px-4 pt-7 pb-6 lg:px-8 xl:overflow-y-auto">
@@ -223,17 +437,7 @@
 				<ProfileAvatar {name} src={profile.avatar_url ?? undefined} size={40} />
 				<Button label={m.profile_change_photo()} variant="secondary" iconStart={Upload} loading={uploading} onclick={() => picker?.click()} />
 				{#if profile.avatar_url}<Button label={m.profile_remove_photo()} variant="ghost" onclick={removePhoto} />{/if}
-				<input
-					bind:this={picker}
-					type="file"
-					accept="image/png,image/jpeg,image/webp,image/gif"
-					hidden
-					onchange={(event) => {
-						const file = event.currentTarget.files?.[0];
-						event.currentTarget.value = '';
-						if (file) void upload(file);
-					}}
-				/>
+				{@render photoInput()}
 			</div>
 			<TextField label={m.profile_display_name()} name="display_name" bind:value={form.name} autocomplete="name" />
 			<TextField label={m.profile_username()} name="username" bind:value={form.username} mono autocomplete="username" helper={usernameHelper} error={usernameError} oninput={() => (failed = undefined)} />
@@ -285,3 +489,4 @@
 		</section>
 	</aside>
 </div>
+{/if}

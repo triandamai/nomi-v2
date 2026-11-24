@@ -89,17 +89,21 @@
 <svelte:head><title>{m.chats_title()} · {m.app_name()}</title></svelte:head>
 
 {#if phone.current}
-	<div class="-mx-4 -mt-6 flex flex-col pb-20">
-		<LargeTitle title={m.chats_title()}>
-			{#snippet trailing()}
-				<ThemePickerButton />
-			{/snippet}
-		</LargeTitle>
-		{#if none}
-			<div class="px-4"><EmptyState icon={MessageSquare} title={m.chats_empty_title()} body={m.chats_empty_body()} action={{ label: m.nav_new_chat(), href: '/chat/new' }} /></div>
-		{:else}
-			<div class="px-4 pb-2.5"><PhoneSearch placeholder={m.chats_search()} bind:value={query} /></div>
-			{#if groups.length === 0}
+	<div class="flex h-full flex-col overflow-hidden">
+		<div class="shrink-0 bg-bg">
+			<LargeTitle title={m.chats_title()}>
+				{#snippet trailing()}
+					<ThemePickerButton />
+				{/snippet}
+			</LargeTitle>
+			{#if !none}
+				<div class="px-4 pb-2.5"><PhoneSearch placeholder={m.chats_search()} bind:value={query} /></div>
+			{/if}
+		</div>
+		<div class="flex min-h-0 flex-1 flex-col overflow-y-auto pb-20">
+			{#if none}
+				<div class="px-4"><EmptyState icon={MessageSquare} title={m.chats_empty_title()} body={m.chats_empty_body()} action={{ label: m.nav_new_chat(), href: '/chat/new' }} /></div>
+			{:else if groups.length === 0}
 				<div class="px-4"><EmptyState icon={SearchX} title={m.chats_none_title()} body={m.chats_none_body({ query: query.trim() })} /></div>
 			{:else}
 				{#each groups as group (group.key)}
@@ -119,7 +123,7 @@
 					</section>
 				{/each}
 			{/if}
-		{/if}
+		</div>
 		<div class="fixed right-4 bottom-14"><Fab label={m.nav_new_chat()} icon={SquarePen} iconSize={22} href="/chat/new" /></div>
 		<BottomSheet open={sheet !== null} title={sheet?.title ?? ''} subtitle={sheet?.time} onclose={() => (sheet = null)}>
 			{#if sheet}
