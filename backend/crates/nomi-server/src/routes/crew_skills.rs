@@ -299,7 +299,9 @@ pub async fn update(
         let text = body.text.unwrap_or(current.text);
         let references = body.references.map(references_of).unwrap_or(current_references);
         let skill = validate(&text, references).map_err(skill_error)?;
-        store::replace(&mut conn, claims.sub, &agent_type, id, &skill, None).await.map_err(store_error)?;
+        // An edited link skill is the person's own now: a refresh would overwrite the edit.
+        let origin = (current.origin == Origin::Link).then_some(Origin::Typed);
+        store::replace(&mut conn, claims.sub, &agent_type, id, &skill, None, origin).await.map_err(store_error)?;
     }
     if let Some(enabled) = body.enabled {
         store::set_enabled(&mut conn, claims.sub, &agent_type, id, enabled).await.map_err(internal("failed to save the skill"))?;
@@ -311,13 +313,16 @@ pub async fn update(
 /// `POST /api/agents/:type/skills/:id/refresh`: fetches a link skill again and replaces it.
 pub async fn refresh(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path((agent_type, id)): Path<(String, Uuid)>) -> Result<Json<SavedSkill>, SkillApiError> {
     let (agent_type, _) = member_type(&state, claims.sub, &agent_type).await?;
-    let mut conn = conn(&state).await?;
-    let (current, _) = store::get(&mut conn, claims.sub, &agent_type, id).await.map_err(internal("failed to load the skill"))?.ok_or_else(skill_not_found)?;
+    let current = {
+        // Given back before the fetch, which can take a while: no connection waits on the network.
+        let mut conn = conn(&state).await?;
+        store::get(&mut conn, claims.sub, &agent_type, id).await.map_err(internal("failed to load the skill"))?.ok_or_else(skill_not_found)?.0
+    };
     let Some(url) = current.source_url.filter(|_| current.origin == Origin::Link) else {
         return Err(SkillApiError::Bad("not_a_link_skill", "only a skill imported from a link can be updated from it".to_string()));
     };
     let imported = import::from_link(&url, github_token().as_deref()).await.map_err(import_error)?;
-    let skill = store::replace(&mut conn, claims.sub, &agent_type, id, &imported.skill, Some(&url)).await.map_err(store_error)?;
+    let skill = store::replace(&mut *conn(&state).await?, claims.sub, &agent_type, id, &imported.skill, Some(&url), None).await.map_err(store_error)?;
     Ok(Json(SavedSkill { skill, skipped: imported.skipped }))
 }
 

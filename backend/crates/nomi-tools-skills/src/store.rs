@@ -248,7 +248,7 @@ pub async fn insert(
 }
 
 /// Replaces a skill's text and references; a new name is taken when it is free. `source_url`, when
-/// given, replaces the link it came from.
+/// given, replaces the link it came from; `origin`, when given, replaces how it came in.
 pub async fn replace(
     conn: &mut PgConnection,
     user_id: Uuid,
@@ -256,6 +256,7 @@ pub async fn replace(
     id: Uuid,
     skill: &ParsedSkill,
     source_url: Option<&str>,
+    origin: Option<Origin>,
 ) -> Result<SkillRow, StoreError> {
     let mut tx = conn.begin().await?;
     let current: Option<Option<String>> = sqlx::query_scalar(
@@ -269,8 +270,8 @@ pub async fn replace(
     let Some(current_url) = current else { return Err(StoreError::NotFound) };
     let url = source_url.map(str::to_string).or(current_url);
     sqlx::query(
-        "UPDATE user_agent_skills SET name = $2, description = $3, license = $4, source = $5, text = $6, source_url = $7, updated_at = now() \
-         WHERE id = $1",
+        "UPDATE user_agent_skills SET name = $2, description = $3, license = $4, source = $5, text = $6, source_url = $7, \
+         origin = COALESCE($8, origin), updated_at = now() WHERE id = $1",
     )
     .bind(id)
     .bind(&skill.meta.name)
@@ -279,6 +280,7 @@ pub async fn replace(
     .bind(source_of(skill, url.as_deref()))
     .bind(&skill.text)
     .bind(&url)
+    .bind(origin.map(Origin::as_str))
     .execute(&mut *tx)
     .await?;
     write_references(&mut tx, id, &skill.references).await?;

@@ -85,7 +85,7 @@ async fn another_users_skills_are_invisible(pool: PgPool) {
     assert!(store::index(&mut conn, other, CHEF).await.unwrap().is_empty());
     assert!(!store::set_enabled(&mut conn, other, CHEF, row.id, false).await.unwrap());
     assert!(!store::delete(&mut conn, other, CHEF, row.id).await.unwrap());
-    assert!(matches!(store::replace(&mut conn, other, CHEF, row.id, &skill("menu"), None).await, Err(StoreError::NotFound)));
+    assert!(matches!(store::replace(&mut conn, other, CHEF, row.id, &skill("menu"), None, None).await, Err(StoreError::NotFound)));
     assert!(store::get(&mut conn, me, "sora", row.id).await.unwrap().is_none(), "another member's id isn't this member's");
     assert_eq!(store::list(&mut conn, me, CHEF).await.unwrap().len(), 1);
 }
@@ -109,12 +109,12 @@ async fn replace_renames_when_free_else_name_taken(pool: PgPool) {
     let mut conn = pool.acquire().await.unwrap();
     let menu = store::insert(&mut conn, me, CHEF, &skill("menu"), Origin::Typed, None).await.unwrap();
     store::insert(&mut conn, me, CHEF, &skill("pantry"), Origin::Typed, None).await.unwrap();
-    let renamed = store::replace(&mut conn, me, CHEF, menu.id, &skill("weekly-menu"), None).await.unwrap();
+    let renamed = store::replace(&mut conn, me, CHEF, menu.id, &skill("weekly-menu"), None, None).await.unwrap();
     assert_eq!(renamed.name, "weekly-menu");
     assert_eq!(renamed.id, menu.id);
-    assert!(matches!(store::replace(&mut conn, me, CHEF, menu.id, &skill("pantry"), None).await, Err(StoreError::NameTaken)));
+    assert!(matches!(store::replace(&mut conn, me, CHEF, menu.id, &skill("pantry"), None, None).await, Err(StoreError::NameTaken)));
     let bare = validate("---\nname: weekly-menu\ndescription: Use when planning meals for the week.\n---\nnew", vec![]).unwrap();
-    let replaced = store::replace(&mut conn, me, CHEF, menu.id, &bare, None).await.unwrap();
+    let replaced = store::replace(&mut conn, me, CHEF, menu.id, &bare, None, None).await.unwrap();
     assert!(replaced.reference_names.is_empty(), "references are replaced too");
 }
 

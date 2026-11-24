@@ -10,7 +10,7 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::routing::get;
 use axum::Router;
 use nomi_skills::{SkillError, MAX_SKILL_BYTES};
-use nomi_tools_skills::import::{classify, from_link_with_bases, from_markdown, from_zip, ImportError, LinkKind, MAX_ZIP_ENTRIES};
+use nomi_tools_skills::import::{classify, from_link_with_bases, from_link_with_bases_within, from_markdown, from_zip, redirect_allowed, ImportError, LinkKind, MAX_ZIP_ENTRIES};
 use zip::write::SimpleFileOptions;
 
 const SKILL: &str = "---\nname: menu\ndescription: Use when planning meals for the week.\n---\n# Menu\nBody";
@@ -158,10 +158,14 @@ fn api_body(stub: &Stub, rest: &str, headers: &HeaderMap) -> (StatusCode, String
 
 async fn raw(State(stub): State<Stub>, Path(rest): Path<String>, headers: HeaderMap) -> (StatusCode, String) {
     stub.seen.lock().unwrap().push((format!("raw/{rest}"), headers.get("authorization").map(|v| v.to_str().unwrap().to_string())));
+    if rest == "acme/skills/main/slow/SKILL.md" {
+        tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+    }
     match rest.as_str() {
         "acme/skills/main/menu/SKILL.md" | "acme/skills/v2/menu/SKILL.md" if stub.big_skill => (StatusCode::OK, "x".repeat(MAX_SKILL_BYTES * 2)),
         "acme/skills/main/menu/SKILL.md" | "acme/skills/v2/menu/SKILL.md" => (StatusCode::OK, SKILL.into()),
         "acme/skills/main/menu/references/pantry.md" => (StatusCode::OK, "rice".into()),
+        "acme/skills/main/slow/SKILL.md" => (StatusCode::OK, SKILL.into()),
         _ => (StatusCode::NOT_FOUND, String::new()),
     }
 }
@@ -250,4 +254,29 @@ async fn a_redirect_drops_the_token() {
     let seen = stub.seen.lock().unwrap();
     let landing = seen.iter().find(|(path, _)| path == "raw/acme/landing").expect("the redirect was followed");
     assert_eq!(landing.1, None);
+}
+
+#[tokio::test]
+async fn a_whole_import_has_a_deadline() {
+    let (api_base, raw_base) = serve(Stub::default()).await;
+    let started = std::time::Instant::now();
+    let result = from_link_with_bases_within(
+        "https://raw.githubusercontent.com/acme/skills/main/slow/SKILL.md",
+        None,
+        &api_base,
+        &raw_base,
+        std::time::Duration::from_millis(300),
+    )
+    .await;
+    assert!(matches!(result, Err(ImportError::FetchFailed(_))), "{result:?}");
+    assert!(started.elapsed() < std::time::Duration::from_millis(1200));
+}
+
+#[test]
+fn a_redirect_never_drops_to_http() {
+    let url = |u: &str| reqwest::Url::parse(u).unwrap();
+    assert!(redirect_allowed(&url("https://a.example/x"), &url("https://b.example/y")));
+    assert!(!redirect_allowed(&url("https://a.example/x"), &url("http://b.example/y")));
+    assert!(!redirect_allowed(&url("https://a.example/x"), &url("ftp://b.example/y")));
+    assert!(redirect_allowed(&url("http://127.0.0.1/x"), &url("http://127.0.0.1/y")), "the tests' plain-http stub");
 }

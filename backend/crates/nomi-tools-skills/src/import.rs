@@ -19,8 +19,12 @@ pub const MAX_ZIP_ENTRIES: usize = 64;
 pub const MAX_ZIP_BYTES: u64 = 512 * 1024;
 /// How long one request of a link import may take.
 pub const FETCH_TIMEOUT: Duration = Duration::from_secs(10);
+/// Requests a link import makes besides its references: two folder listings and the SKILL.md.
+const LINK_OVERHEAD_FETCHES: usize = 3;
 /// Requests one link import may make: two folder listings, the SKILL.md and every reference.
-pub const MAX_FETCHES: usize = 3 + MAX_REFERENCES;
+pub const MAX_FETCHES: usize = LINK_OVERHEAD_FETCHES + MAX_REFERENCES;
+/// How long a whole link import may take, every request and redirect included.
+pub const IMPORT_DEADLINE: Duration = Duration::from_secs(30);
 /// The most redirects one request follows.
 const MAX_REDIRECTS: usize = 3;
 /// The most a folder listing may be.
@@ -231,7 +235,11 @@ impl Fetcher {
             let status = response.status();
             if status.is_redirection() {
                 let location = response.headers().get(reqwest::header::LOCATION).and_then(|v| v.to_str().ok()).unwrap_or_default().to_string();
-                url = url.join(&location).map_err(|_| ImportError::FetchFailed("a redirect without a place to go".into()))?;
+                let next = url.join(&location).map_err(|_| ImportError::FetchFailed("a redirect without a place to go".into()))?;
+                if !redirect_allowed(&url, &next) {
+                    return Err(ImportError::FetchFailed("the link redirected away from https".into()));
+                }
+                url = next;
                 // The token is for the API only, never for wherever a redirect leads.
                 token = None;
                 continue;
@@ -259,8 +267,25 @@ async fn read_capped(mut response: reqwest::Response, limit: usize) -> Result<Ve
     Ok(out)
 }
 
+/// Whether a redirect from `from` may go to `to`: only to https (a plain-http hop is allowed only
+/// after one, which only the tests' local stub serves).
+pub fn redirect_allowed(from: &Url, to: &Url) -> bool {
+    to.scheme() == "https" || (from.scheme() == "http" && to.scheme() == "http")
+}
+
 /// `from_link` with GitHub's hosts replaced (`api_base`, `raw_base`): the tests' stub.
 pub async fn from_link_with_bases(url: &str, github_token: Option<&str>, api_base: &str, raw_base: &str) -> Result<Imported, ImportError> {
+    from_link_with_bases_within(url, github_token, api_base, raw_base, IMPORT_DEADLINE).await
+}
+
+/// `from_link_with_bases`, given up after `deadline` in all.
+pub async fn from_link_with_bases_within(url: &str, github_token: Option<&str>, api_base: &str, raw_base: &str, deadline: Duration) -> Result<Imported, ImportError> {
+    tokio::time::timeout(deadline, fetch_link(url, github_token, api_base, raw_base))
+        .await
+        .unwrap_or_else(|_| Err(ImportError::FetchFailed("the link took too long to read".into())))
+}
+
+async fn fetch_link(url: &str, github_token: Option<&str>, api_base: &str, raw_base: &str) -> Result<Imported, ImportError> {
     let kind = classify(url)?;
     let client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())

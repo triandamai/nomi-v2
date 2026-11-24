@@ -214,3 +214,28 @@ async fn deleting_own_member_deletes_its_skills(pool: PgPool) {
     let left: i64 = sqlx::query_scalar("SELECT count(*) FROM user_agent_skills WHERE user_id = $1").bind(me.id).fetch_one(&pool).await.unwrap();
     assert_eq!(left, 0);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn editing_a_link_skill_makes_it_your_own(pool: PgPool) {
+    let app = App::new(pool.clone());
+    let me = app.person("skills-edit-link@nomi.test").await;
+    let id: uuid::Uuid = sqlx::query_scalar(
+        "INSERT INTO user_agent_skills (user_id, agent_type, name, description, text, origin, source_url) \
+         VALUES ($1, $2, 'menu', 'Use when planning meals for the week.', $3, 'link', 'https://example.com/menu.md') RETURNING id",
+    )
+    .bind(me.id)
+    .bind(MEMBER)
+    .bind(skill("menu"))
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let uri = format!("{}/{id}", skills_uri(MEMBER));
+    let (status, body) = app.send("PUT", &uri, &me, json!({ "enabled": false })).await;
+    assert_eq!((status, body["origin"].as_str()), (StatusCode::OK, Some("link")), "switching it off isn't an edit");
+    let (status, body) = app.send("PUT", &uri, &me, json!({ "text": skill("menu") + "\nMy own line." })).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["origin"], "typed", "a refresh would overwrite the edit, so it is the person's own now");
+    assert_eq!(body["source_url"], "https://example.com/menu.md", "where it came from is kept");
+    let (status, body) = app.call("POST", &format!("{uri}/refresh"), Some(&me.token), None).await;
+    assert_eq!((status, body["error"].as_str()), (StatusCode::BAD_REQUEST, Some("not_a_link_skill")));
+}
