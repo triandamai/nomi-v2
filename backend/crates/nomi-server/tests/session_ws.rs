@@ -155,9 +155,9 @@ fn canned_response(text: &str) -> LlmResponse {
 }
 
 /// Claims the next pending turn job, resolves its user_id the same way
-/// backend/src/bin/worker.rs does, runs it through process_turn with a fake provider, and
+/// nomi_worker::worker does, runs it through process_turn with a fake provider, and
 /// publishes TurnCompleted afterwards — mirroring the worker's own success path
-/// (backend/src/bin/worker.rs:91-104), since process_turn itself only publishes on failure.
+/// (nomi_worker::worker), since process_turn itself only publishes on failure.
 async fn run_one_claimed_turn(pool: &PgPool, reply_text: &str) -> Uuid {
     let claimed = queue::claim_next(pool).await.unwrap().unwrap();
     let user_id: Uuid = sqlx::query_scalar("SELECT user_id FROM channel_identities WHERE id = $1")

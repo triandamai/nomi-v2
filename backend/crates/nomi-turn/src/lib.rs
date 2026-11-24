@@ -190,7 +190,7 @@ mod time_limit_tests {
     }
 }
 
-/// The worker's entry point (see backend/src/bin/worker.rs): processes an already-ingested
+/// The worker's entry point (see nomi_worker::worker): processes an already-ingested
 /// message (see nomi_turn::ingest::ingest_inbound_message) — bootstrap and the inbound
 /// message insert have already happened, so this only acquires the session lock and runs
 /// routing/dispatch, threading `mqtt`/`turn_job_id` through for live delta publishing.

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Starts the full local dev stack in one command: Postgres + EMQX (docker compose), the
 # backend (nomi-orchestrator, with the turn-processing worker embedded by default — see
-# RUN_WORKER_INLINE in backend/src/main.rs), and the frontend (vite dev). Ctrl+C stops everything.
+# RUN_WORKER_INLINE in backend/crates/nomi-app/src/bin/nomi-orchestrator.rs), and the frontend (vite dev). Ctrl+C stops everything.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

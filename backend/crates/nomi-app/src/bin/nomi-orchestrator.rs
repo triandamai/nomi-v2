@@ -62,7 +62,7 @@ async fn main() {
     // docs/superpowers/specs/2026-08-11-mqtt-turn-queue-design.md for why the two were split
     // into separate binaries in the first place — that separation still works, this default
     // just avoids requiring it for the common single-instance case).
-    let run_worker_inline = var("RUN_WORKER_INLINE").map(|v| v != "false" && v != "0").unwrap_or(true);
+    let run_worker_inline = nomi_app::worker_inline(var("RUN_WORKER_INLINE").ok().as_deref());
     if run_worker_inline {
         nomi_worker::spawn::spawn_all(nomi_worker::spawn::WorkerContext {
             pool: pool.clone(),

@@ -14,9 +14,9 @@ const POLL_FALLBACK_INTERVAL: Duration = Duration::from_secs(5);
 
 /// Runs the turn-processing worker loop forever: claims pending `turn_jobs` (via LISTEN/NOTIFY
 /// with a polling fallback), runs each through `turn::process_turn`, and publishes the terminal
-/// MQTT envelope. Shared by the standalone `worker` binary (`src/bin/worker.rs`) and, when
-/// `RUN_WORKER_INLINE` isn't set to `false`, a background task spawned by the main server
-/// binary (`src/main.rs`) — see that file for why embedding it there is opt-out rather than a
+/// MQTT envelope. Started by `spawn::spawn_all`, from the standalone `worker` binary and, when
+/// `RUN_WORKER_INLINE` isn't set to `false`, from the server binary (both in `nomi-app`) — see
+/// `nomi-orchestrator.rs` for why embedding it there is opt-out rather than a
 /// separate always-required process for local/single-instance use.
 /// Past the turn time limit, how long a 'processing' job may sit before it's counted as abandoned.
 const ABANDONED_GRACE: std::time::Duration = std::time::Duration::from_secs(120);
