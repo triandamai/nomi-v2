@@ -3280,13 +3280,14 @@
       }
     },
     "read_guide": {
-      "description": "Read one of your coding guides: exact package versions, config files and conventions that are known to work in Nomi. Read the stack's guide before writing a project's first files, the design guide before writing any UI, and the database guide before adding a database. Guides: sveltekit: SvelteKit 3 + Svelte 5: full-stack apps (the default); design: How every project should look: a deliberate modern style, and the generic AI look to avoid; database: Drizzle with Postgres or SQLite, and how the preview runs them (projects not on Relay); relay: Nomi Relay: migrations with row-level security, the nomi-relay client, sign-in, files, live changes and hosted functions (projects on Relay); preview: How Nomi runs the project in the browser, and what can't run there; sandbox: How it differs when the project runs in a sandbox on Nomi's servers; react: React 19 + Vite single-page apps; vue: Vue 3 + Vite single-page apps; astro: Astro 7 content sites with Svelte islands.",
+      "description": "Read one of your coding guides: exact package versions, config files and conventions that are known to work in Nomi. Read the stack's guide before writing a project's first files, the design guide and (in SvelteKit or React) the components guide before writing any UI, and the database guide before adding a database. Guides: sveltekit: SvelteKit 3 + Svelte 5: full-stack apps (the default); design: How every project should look: a deliberate modern style, and the generic AI look to avoid (an approved design from Sora wins over it); components: Building the UI with shadcn-svelte (shadcn/ui in React): setup, theming from the design tokens, adding components without the CLI, and Sora's component names; database: Drizzle with Postgres or SQLite, and how the preview runs them (projects not on Relay); relay: Nomi Relay: migrations with row-level security, the nomi-relay client, sign-in, files, live changes and hosted functions (projects on Relay); preview: How Nomi runs the project in the browser, and what can't run there; sandbox: How it differs when the project runs in a sandbox on Nomi's servers; react: React 19 + Vite single-page apps; vue: Vue 3 + Vite single-page apps; astro: Astro 7 content sites with Svelte islands.",
       "input_schema": {
         "properties": {
           "topic": {
             "enum": [
               "sveltekit",
               "design",
+              "components",
               "database",
               "relay",
               "preview",
