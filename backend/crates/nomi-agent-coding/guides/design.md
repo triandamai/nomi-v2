@@ -4,6 +4,16 @@ Every project ships with a deliberate, modern look, even a two-screen todo app. 
 who opens it should not be able to tell it was generated. Decide the look before writing
 components, write it down as tokens in CSS, then build every screen from those tokens.
 
+## When your brief has an approved design from Sora
+
+The person already chose the look with Sora, so
+that design wins over every rule in this guide, including the "never do these" list below.
+If it has a gradient, a glow, glass, a big centred hero or anything else the list bans, build it
+as designed: its colours, fonts, radii, layout and components, as the handoff and its preview
+show. The list applies only when there is no approved design, and so does picking a direction. Use the rest of this guide only for what the design
+leaves out: states it doesn't show, focus rings, how it works at 375px, real copy. Its tokens
+become the theme's variables (the components guide shows how).
+
 ## What reads as "AI slop" (never do these)
 
 - Purple/indigo-to-pink or blue-to-purple gradients: on the hero, on buttons, on text
@@ -46,7 +56,10 @@ Choose from these (or a clear variation) and stick to it on every screen:
   playful but disciplined. Good for games, events, portfolios, small shops.
 
 ### 2. Tokens first (Tailwind v4 `@theme`)
-Define colour, type and radius once in the main CSS file and use only these utilities after:
+Define colour, type and radius once in the main CSS file and use only these utilities after.
+In a SvelteKit or React project built with shadcn-svelte or shadcn/ui, its variables
+(`--background`, `--foreground`, `--primary`, `--muted`, `--border`, `--radius`…) are these
+tokens: put the values below into them, as the components guide shows. Elsewhere:
 
 ```css
 @import 'tailwindcss';
@@ -112,8 +125,9 @@ Familjen Grotesk + Inter, DM Serif Display + DM Sans. One display face, one text
 - Check contrast: body text and controls must meet WCAG AA in light and dark.
 
 ### 6. Details that make it feel finished
-- Icons: one consistent set of inline SVGs (24px grid, 1.5–2px stroke, `currentColor`), sized to
-  the text next to them. Never emoji.
+- Icons: one consistent set (`@lucide/svelte`, which shadcn-svelte uses, `lucide-react` in React,
+  or inline SVGs on a 24px grid, 1.5–2px stroke, `currentColor`), sized to the text next to them.
+  Never emoji.
 - Every interactive element has hover, `focus-visible` (a 2px accent ring) and disabled states.
 - Empty states say what goes here and offer the action to add the first one. Loading shows the
   shape of what's coming (skeleton rows), not a centred spinner on a blank page. Errors say what
@@ -125,7 +139,9 @@ Familjen Grotesk + Inter, DM Serif Display + DM Sans. One display face, one text
 - A favicon and a proper `<title>`.
 
 ## Before you call complete_task
-Look at what you built against this list: no gradient text or purple gradients, no emoji icons,
+With an approved design, check what you built against that design (it matches, page by page),
+then the parts of this list the design leaves to you: dark mode, 375px, focus states, and empty,
+loading and error states. Without one, look at what you built against this list: no gradient text or purple gradients, no emoji icons,
 no card-in-card, no accent stripes on cards, no "Live"/"New" badges or glowing or pulsing dots, no default indigo/slate, tokens defined in `@theme` and used everywhere, a
 display font loaded, dark mode works, it works at 375px wide, every button has a focus state,
 empty/loading/error states exist. Fix anything that fails before finishing.

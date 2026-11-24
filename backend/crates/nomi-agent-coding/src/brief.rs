@@ -10,7 +10,7 @@ use nomi_llm::{ContentBlock, LlmMessage, LlmRole};
 
 use crate::guides;
 use nomi_agent_core::prompts::{
-    KODA_BRIEF_DESIGN_INTRO, KODA_BRIEF_DESIGN_LEFT_OUT, KODA_BRIEF_DONE_PLAN_BUILT, KODA_BRIEF_DONE_RUNNING, KODA_BRIEF_GUIDE_LEFT_OUT,
+    KODA_BRIEF_DESIGN_COMPONENTS_REACT, KODA_BRIEF_DESIGN_COMPONENTS_SVELTE, KODA_BRIEF_DESIGN_INTRO, KODA_BRIEF_DESIGN_LEFT_OUT, KODA_BRIEF_DONE_PLAN_BUILT, KODA_BRIEF_DONE_RUNNING, KODA_BRIEF_GUIDE_LEFT_OUT,
     KODA_BRIEF_INTRO, KODA_BRIEF_NO_FILES, KODA_BRIEF_NO_PLAN, KODA_BRIEF_PLAN_UNREADABLE, KODA_BRIEF_RELAY_INTRO, KODA_BRIEF_RELAY_NO_TABLES,
     KODA_BRIEF_RELAY_PACKAGES, KODA_BRIEF_RELAY_STARTING, KODA_BRIEF_RELAY_UNREADABLE, KODA_BRIEF_SECRETS,
 };
@@ -169,9 +169,15 @@ fn clip(text: &str, max: usize) -> &str {
 
 /// The approved design as Koda starts from it: Sora's handoff, then the approved preview's own
 /// files (pages first) for the exact markup and styles.
-fn design_section(handoff: &str, artifact_version: i32, files: &[nomi_agent_core::design_artifact::ArtifactFile]) -> String {
+fn design_section(handoff: &str, artifact_version: i32, files: &[nomi_agent_core::design_artifact::ArtifactFile], stack_guide: &str) -> String {
+    // Named, not inlined: the components guide is long and only needed once he writes UI.
+    let components = match stack_guide {
+        "sveltekit" => format!(" {KODA_BRIEF_DESIGN_COMPONENTS_SVELTE}"),
+        "react" => format!(" {KODA_BRIEF_DESIGN_COMPONENTS_REACT}"),
+        _ => String::new(),
+    };
     let mut section = format!(
-        "## The approved design\n{KODA_BRIEF_DESIGN_INTRO}\n\n{}\n\n### The approved preview's files (version {artifact_version})\n",
+        "## The approved design\n{KODA_BRIEF_DESIGN_INTRO}{components}\n\n{}\n\n### The approved preview's files (version {artifact_version})\n",
         handoff.trim()
     );
     let mut ordered: Vec<&nomi_agent_core::design_artifact::ArtifactFile> = files.iter().collect();
@@ -306,11 +312,12 @@ pub async fn task_brief(
         None => brief.push_str(&format!("## Plan\n{KODA_BRIEF_NO_PLAN}\n\n")),
     }
 
+    let stack_guide = guides::guide_for_stack(&stack).unwrap_or("sveltekit");
     // Only while Sora is on and handed a design over: without
     // one the brief is what it always was.
     if let Some((version, package)) = nomi_agent_core::design_handoff::for_builder(&mut **conn, session_id, user_id).await {
         let files = nomi_agent_core::design_artifact::files(&mut **conn, session_id, package.artifact_version).await.unwrap_or_default();
-        brief.push_str(&design_section(&package.to_markdown(version), package.artifact_version, &files));
+        brief.push_str(&design_section(&package.to_markdown(version), package.artifact_version, &files, stack_guide));
     }
 
     let on_relay = crate::relay::backend_of(conn, project_id).await.as_deref() == Some(crate::relay::BACKEND_RELAY);
@@ -319,7 +326,6 @@ pub async fn task_brief(
     }
     let packages = relay.packages().await;
 
-    let stack_guide = guides::guide_for_stack(&stack).unwrap_or("sveltekit");
     let in_sandbox = sandbox.uses_sandbox(project_id).await;
     for topic in guide_topics(stack_guide, on_relay, in_sandbox) {
         if let Some((_, _, content)) = guides::GUIDES.iter().find(|(name, _, _)| *name == topic) {
@@ -426,7 +432,7 @@ mod design_tests {
     #[test]
     fn the_approved_design_is_put_in_the_brief_with_its_pages_first() {
         let files = [file("app.js", "let a = 1"), file("index.html", "<h1>Hi</h1>"), file("styles.css", "h1 { margin: 0 }")];
-        let section = design_section("# Design handoff (version 2)\nApproved preview: version 3", 3, &files);
+        let section = design_section("# Design handoff (version 2)\nApproved preview: version 3", 3, &files, "sveltekit");
         assert!(section.starts_with("## The approved design\nSora handed this over after the person approved it. Build what it describes"), "{section}");
         assert!(section.contains("# Design handoff (version 2)\nApproved preview: version 3\n"));
         assert!(section.contains("### The approved preview's files (version 3)\n#### index.html\n<h1>Hi</h1>\n"), "{section}");
@@ -435,10 +441,30 @@ mod design_tests {
     }
 
     #[test]
+    fn the_design_wins_over_the_design_guides_list() {
+        let section = design_section("# Design handoff (version 1)", 1, &[], "sveltekit");
+        assert!(section.contains("It wins over the design guide too, its 'never do these' list included"), "{section}");
+    }
+
+    #[test]
+    fn a_sveltekit_or_react_build_of_the_design_is_pointed_at_the_components_guide() {
+        for stack in ["sveltekit", "react"] {
+            let section = design_section("# Design handoff (version 1)", 1, &[], stack);
+            let note = section.find("read_guide components").unwrap_or_else(|| panic!("{stack}: {section}"));
+            assert!(note < section.find("# Design handoff").unwrap(), "before the handoff it explains: {section}");
+        }
+        assert!(design_section("# Design handoff (version 1)", 1, &[], "sveltekit").contains("shadcn-svelte"));
+        assert!(design_section("# Design handoff (version 1)", 1, &[], "react").contains("shadcn/ui"));
+        for stack in ["vue", "astro"] {
+            assert!(!design_section("# Design handoff (version 1)", 1, &[], stack).contains("read_guide components"), "{stack} has no kit");
+        }
+    }
+
+    #[test]
     fn files_that_dont_fit_are_named_not_cut() {
         let big = "x".repeat(MAX_DESIGN_FILE_CHARS);
         let files = [file("index.html", "<h1>Hi</h1>"), file("styles.css", &big)];
-        let section = design_section("# Design handoff (version 1)", 1, &files);
+        let section = design_section("# Design handoff (version 1)", 1, &files, "sveltekit");
         assert!(section.contains("#### index.html\n<h1>Hi</h1>"));
         assert!(!section.contains(&big));
         assert!(section.contains("Left out for length: styles.css"), "{section}");
