@@ -261,6 +261,7 @@
         ]
       },
       "own": [
+        "read_design_skill",
         "propose_directions",
         "save_preview",
         "read_preview",
@@ -275,6 +276,7 @@
         "create_handoff": false,
         "list_connected_tools": false,
         "propose_directions": false,
+        "read_design_skill": false,
         "read_preview": false,
         "review_build": false,
         "save_preview": false,
@@ -3239,6 +3241,25 @@
         "type": "object"
       }
     },
+    "read_design_skill": {
+      "description": "Read one skill from your design library: what you know about design (Taste Skill is your rulebook), the canvas format, styles and systems to offer as directions, the components Koda builds from and more. Read what a step needs before you do it, and read it again when an older read was trimmed. A skill may name references: read one with reference. Areas (read index:<area> for its skills):\ndesign (8): the canvas format and how you work\ntaste (10): Taste Skill, your rulebook: house rules, layout, sections, copy, colour, type, checks\nstyles (21): the anti-slop audit, the design loop and named styles to offer as directions\nsystems (5): complete design systems to learn from and start a direction with\nux (10): states, UX laws, accessibility, motion timing, references, critique, brand extraction\ncraft (16): visual modes, polish, motion design and charts\npractice (28): design practice: briefs, reviews, copywriting, platforms, conversion\ncomponents (4): the shadcn-svelte component kit Koda builds from\ndecks (5): slide decks: layouts, themes and how a deck tells a story\nvideo (11): motion graphics and video compositions\nimages (3): images: briefs for generated pictures and how to use them\ntemplates (5): marketing pieces: posters, social cards, documents\nreferences (2): patterns learned from other libraries and how to use references\n\nStart with:\n- taste-core: Read this first: Taste Skill is your design rulebook, and this file gives its nine house rules, the page kinds and what each may carry, the order you work in, the benchmark and the anti-slop principles.\n- styles-index: The named visual styles you can offer as directions, one line each (style → suits → look), plus how to pick 2–4 that are clearly different for a brief; read this before proposing directions, then read the chosen style files.\n- pen-format: Exactly how to write the OpenPencil scene graph the Design Studio draws: the document, every node type and property it understands, tokens and themes, components, the gotchas, and Nomi's rules for ids and size.\n- components-kit: How you build the design system frame the shadcn way: semantic `$token` variables with light and dark values, a radius scale, reusable component frames named `<Component> / <Variant> / <State>`, a pinned state matrix, and instances placed with `ref`.\n- taste-check: The checklist you run on your own canvas before saving each version: first screen, screens and sections, edges, pictures, the right things for the kind, system, contrast, copy, contacts and the phone, each line a thing you can see in the frames.\n- slop-audit: What makes a design read as AI-made, and the audit you run on your own canvas before you save a version: name each suspect element, ask what job it does, delete what has none, and fix the rest with the system you already chose.\n- design-loop: How you work before and between versions: turn the brief into a written spec, lock one system and vary one thing at a time, score each version against a rubric and a target before saving, and borrow principles from references without copying them.",
+      "input_schema": {
+        "properties": {
+          "reference": {
+            "description": "One of the skill's references, by name",
+            "type": "string"
+          },
+          "topic": {
+            "description": "A skill's name, index:<area> for an area's skills, or index for the areas",
+            "type": "string"
+          }
+        },
+        "required": [
+          "topic"
+        ],
+        "type": "object"
+      }
+    },
     "read_file": {
       "description": "Read the current content of a file in the project.",
       "input_schema": {
@@ -4326,6 +4347,10 @@
     },
     "read_attachment": {
       "gateable": false,
+      "quiet": false
+    },
+    "read_design_skill": {
+      "gateable": true,
       "quiet": false
     },
     "read_file": {
