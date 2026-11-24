@@ -65,14 +65,18 @@ impl Tool for ReadDesignSkill {
         ToolDefinition {
             name: READ_DESIGN_SKILL.to_string(),
             description: format!(
-                "Read one skill from your design library, whole: what you know about design (Taste Skill is your rulebook), \
-                 the canvas format, styles to offer as directions, the components Koda builds from and reference patterns. \
-                 Read what the step needs before you do it, and read it again when an older read was trimmed. The skills:\n{}",
-                crate::library::index()
+                "Read one skill from your design library: what you know about design (Taste Skill is your rulebook), \
+                 the canvas format, styles and systems to offer as directions, the components Koda builds from and more. \
+                 Read what a step needs before you do it, and read it again when an older read was trimmed. A skill may \
+                 name references: read one with reference. {}",
+                crate::library::tool_index()
             ),
             input_schema: json!({
                 "type": "object",
-                "properties": {"topic": {"type": "string", "description": "The skill's topic, as listed"}},
+                "properties": {
+                    "topic": {"type": "string", "description": "A skill's name, index:<area> for an area's skills, or index for the areas"},
+                    "reference": {"type": "string", "description": "One of the skill's references, by name"}
+                },
                 "required": ["topic"]
             }),
         }
