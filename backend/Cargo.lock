@@ -3964,6 +3964,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "nomi-tools-skills"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "nomi-skills",
+ "serde",
+ "sqlx",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "nomi-tools-voice"
 version = "0.1.0"
 dependencies = [
