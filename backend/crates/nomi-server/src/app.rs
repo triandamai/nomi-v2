@@ -227,6 +227,17 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/agents/:type/soul/versions", get(crate::routes::crew_settings::soul_versions))
         .route("/api/agents/:type/soul/rollback", post(crate::routes::crew_settings::rollback_soul))
         .route("/api/agents/:type/activity", get(crate::routes::crew_settings::activity))
+        .route("/api/agents/:type/skills", get(crate::routes::crew_skills::list).post(crate::routes::crew_skills::create))
+        .route(
+            "/api/agents/:type/skills/upload",
+            post(crate::routes::crew_skills::upload).layer(axum::extract::DefaultBodyLimit::max(nomi_tools_skills::import::MAX_ZIP_BYTES as usize)),
+        )
+        .route("/api/agents/:type/skills/import", post(crate::routes::crew_skills::import_link))
+        .route(
+            "/api/agents/:type/skills/:id",
+            get(crate::routes::crew_skills::get_one).put(crate::routes::crew_skills::update).delete(crate::routes::crew_skills::delete),
+        )
+        .route("/api/agents/:type/skills/:id/refresh", post(crate::routes::crew_skills::refresh))
         .route("/api/home", get(home_routes::home_summary))
         .route("/api/home/updates", get(home_routes::updates_page))
         .route("/api/home/today", get(home_routes::today_page))

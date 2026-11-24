@@ -28,14 +28,14 @@ const ACTIVITY_LIMIT: i64 = 50;
 const ACTIVITY_WINDOW_DAYS: i32 = 30;
 
 /// A crew member as these routes see it: who it is, and the tools a person can set levels for.
-struct Member {
-    agent_type: String,
+pub(crate) struct Member {
+    pub(crate) agent_type: String,
     name: String,
     is_default: bool,
     /// Its own (a person's own member), so it can be deleted.
     is_own: bool,
     tools: Vec<ToolDefinition>,
-    agent: Arc<dyn SubAgent>,
+    pub(crate) agent: Arc<dyn SubAgent>,
 }
 
 fn not_found() -> ApiError {
@@ -44,7 +44,7 @@ fn not_found() -> ApiError {
 
 /// The member `agent_type` names, when `user_id` has it in their crew: a built-in one, an admin's
 /// member for everyone, or one of their own.
-async fn member(state: &AppState, user_id: Uuid, agent_type: &str) -> Result<Member, ApiError> {
+pub(crate) async fn member(state: &AppState, user_id: Uuid, agent_type: &str) -> Result<Member, ApiError> {
     let registry = crate::build_agent_registry(&state.pool, state.project_storage.clone(), state.tool_catalog.clone());
     if let Some(agent) = registry.find(agent_type) {
         let mut tools = agent.tools();
@@ -601,6 +601,8 @@ pub async fn delete_member(
         "user_agent_permissions",
         "user_agent_souls",
         "user_agent_soul_versions",
+        // Its skills' references go with them (ON DELETE CASCADE).
+        "user_agent_skills",
     ] {
         sqlx::query(&format!(
             "DELETE FROM {table} WHERE user_id = $1 AND agent_type = $2"
