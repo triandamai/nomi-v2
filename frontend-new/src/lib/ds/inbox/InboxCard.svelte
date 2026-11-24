@@ -28,10 +28,10 @@
 	<SourceTile {agent} />
 	<div class="flex min-w-0 flex-1 flex-col gap-0.75">
 		<p class="flex min-w-0 items-center gap-2">
-			<span id="{id}-title" class="min-w-0 text-ui font-medium text-text">{title}</span>
+			<span id="{id}-title" class="min-w-0 break-words text-ui font-medium text-text">{title}</span>
 			{#if tag}<span class="shrink-0 font-mono text-label text-text-3">{tag}</span>{/if}
 		</p>
-		{#if caption}<p class="text-caption text-text-3">{caption}</p>{/if}
+		{#if caption}<p class="line-clamp-4 break-words text-caption text-text-3">{caption}</p>{/if}
 		{#if actions || note}
 			<div class="flex flex-wrap items-center gap-2 pt-1.5">
 				{@render actions?.()}

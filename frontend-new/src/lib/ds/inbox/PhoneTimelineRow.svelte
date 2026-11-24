@@ -8,12 +8,12 @@
 	let { time, title, meta, state: standing, done = false, tools }: Props = $props();
 </script>
 
-<li class="flex items-start gap-3 border-b border-border py-2.5">
+<li class="flex min-w-0 items-start gap-3 border-b border-border py-2.5">
 	<span class={['shrink-0 pt-px font-mono text-ui', done ? 'text-text-3' : 'text-text']}>{time}</span>
 	<span class="flex min-w-0 flex-1 flex-col gap-0.5">
-		<span class={['text-body', done ? 'text-text-2' : 'text-text']}>{title}</span>
+		<span class={['line-clamp-4 break-words text-body', done ? 'text-text-2' : 'text-text']}>{title}</span>
 		{#if meta}<span class="truncate font-mono text-label text-text-3">{meta}</span>{/if}
 	</span>
-	{#if standing}<span class={['shrink-0 pt-0.5 font-mono text-label', done ? 'text-accent' : 'text-text-3']}>{standing}</span>{/if}
+	{#if standing}<span class={['max-w-32 shrink-0 truncate pt-0.5 font-mono text-label', done ? 'text-accent' : 'text-text-3']}>{standing}</span>{/if}
 	{#if tools}<span class="-my-1 flex shrink-0 items-center">{@render tools()}</span>{/if}
 </li>

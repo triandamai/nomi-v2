@@ -10,6 +10,8 @@ import Agenda from './Agenda.svelte';
 import PreferenceRow from './PreferenceRow.svelte';
 import QuickReminder from './QuickReminder.svelte';
 import InboxFixture from './InboxFixture.svelte';
+import PhoneInboxCard from './PhoneInboxCard.svelte';
+import PhoneTimelineRow from './PhoneTimelineRow.svelte';
 import { tokenBackground, tokenColor } from '../test-utils';
 
 // The Inbox's pieces (App / Inbox BFoiZ): the feed's cards and rows, the now line, the section
@@ -156,5 +158,49 @@ describe('PreferenceRow', () => {
 		await toggle.click();
 		expect(onchange).toHaveBeenCalledWith(false);
 		expect(box(page.getByText('Email account changes').element().parentElement!.parentElement!).height).toBe(35);
+	});
+});
+
+describe('mobile inbox truncation and overflow', () => {
+	it('clamps PhoneInboxCard body at 4 lines and wraps long unbreakable URLs without horizontal overflow', async () => {
+		const wrapper = document.createElement('div');
+		wrapper.style.width = '358px';
+		wrapper.style.overflowX = 'auto';
+		document.body.appendChild(wrapper);
+
+		const longBody = `${'Line of content with details. '.repeat(20)}https://very-long-unbreakable-subdomain-for-storefront-deployment-test.apps.nomi.build/really/long/path`;
+		await render(PhoneInboxCard, {
+			target: wrapper,
+			props: {
+				kind: 'deploy',
+				when: '15 Nov',
+				title: 'Storefront is live',
+				body: longBody,
+				unread: true,
+			},
+		});
+
+		const body = wrapper.querySelector('p')!;
+		expect(getComputedStyle(body).webkitLineClamp).toBe('4');
+		expect(wrapper.scrollWidth).toBeLessThanOrEqual(wrapper.clientWidth);
+	});
+
+	it('prevents long PhoneTimelineRow state text from causing horizontal overflow', async () => {
+		const wrapper = document.createElement('ul');
+		wrapper.style.width = '358px';
+		wrapper.style.overflowX = 'auto';
+		document.body.appendChild(wrapper);
+
+		await render(PhoneTimelineRow, {
+			target: wrapper,
+			props: {
+				time: '15 Nov',
+				title: 'Published storefront',
+				meta: 'deploy',
+				state: 'Published. It is live at https://very-long-unbreakable-subdomain-for-storefront-deployment-test.apps.nomi.build',
+			},
+		});
+
+		expect(wrapper.scrollWidth).toBeLessThanOrEqual(wrapper.clientWidth);
 	});
 });
