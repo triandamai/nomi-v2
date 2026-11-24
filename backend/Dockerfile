@@ -17,6 +17,6 @@ COPY --from=builder /app/target/release/nomi-orchestrator /usr/local/bin/nomi-or
 # Runtime configuration (DATABASE_URL, JWT_SECRET, SETTINGS_ENCRYPTION_KEY,
 # MQTT_BROKER_HOST, MQTT_BROKER_PORT, RUN_WORKER_INLINE) is supplied by the
 # deployment environment, never baked into the image — see
-# crates/nomi-server/src/main.rs for the full list this binary reads.
+# crates/nomi-app/src/bin/nomi-orchestrator.rs for the full list this binary reads.
 EXPOSE 8080
 CMD ["nomi-orchestrator"]

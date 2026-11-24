@@ -75,7 +75,7 @@ pub async fn check_in(
     };
     let (mut files_version, mut runs, in_sandbox) = {
         let mut conn = state.pool.acquire().await.map_err(internal)?;
-        match crate::sandbox_worker::sandbox_check_in(&mut conn, project_id, claims.sub, query.runtime.as_deref(), config.as_ref()).await.map_err(internal)? {
+        match crate::sandbox_manager::sandbox_check_in(&mut conn, project_id, claims.sub, query.runtime.as_deref(), config.as_ref()).await.map_err(internal)? {
             Some(version) => (version, Vec::new(), true),
             None => {
                 let (version, runs) = runtime::check_in(&mut conn, project_id).await.map_err(internal)?;

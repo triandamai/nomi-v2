@@ -1,0 +1,120 @@
+use std::env::var;
+
+use nomi_settings as settings;
+
+#[tokio::main]
+async fn main() {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "info,nomi_orchestrator=info,nomi_server=info,nomi_turn=info,nomi_agent_core=info,tower_http=info".into()),
+        )
+        .init();
+
+    let database_url = var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let jwt_secret = var("JWT_SECRET").expect("JWT_SECRET must be set");
+    let settings_key = settings::crypto::parse_key(
+        &var("SETTINGS_ENCRYPTION_KEY").expect("SETTINGS_ENCRYPTION_KEY must be set"),
+    )
+    .expect("SETTINGS_ENCRYPTION_KEY must be 64 hex characters (32 bytes)");
+    let mqtt_broker_host = var("MQTT_BROKER_HOST").unwrap_or_else(|_| "localhost".to_string());
+    let mqtt_broker_port: u16 = var("MQTT_BROKER_PORT")
+        .ok()
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(1883);
+
+    let pool = sqlx::PgPool::connect(&database_url).await.expect("failed to connect to database");
+    tracing::info!("connected to database");
+    sqlx::migrate!("../../migrations").run(&pool).await.expect("failed to run migrations");
+    tracing::info!("migrations up to date");
+
+    let http_client = nomi_server::http_client();
+
+    // Admin → Configuration is read from here on; the environment fills what isn't saved there.
+    nomi_settings::config::install(pool.clone());
+    let s3 = nomi_server::configuration::storage().await;
+    if s3.is_some() {
+        tracing::info!("S3 storage configured for avatars, attachments and project files");
+    } else {
+        tracing::info!("no file storage set (Admin → Configuration or S3_*) — avatar upload disabled, attachments and project files kept on disk");
+    }
+
+    // Notifications are emailed through the same SMTP settings as sign-in codes.
+    nomi_server::notifications::init_mailer(nomi_mail::configured());
+    nomi_server::public_url::warn_if_unknown();
+    nomi_server::project_events::init(&mqtt_broker_host, mqtt_broker_port);
+    nomi_server::user_events::init(&mqtt_broker_host, mqtt_broker_port);
+    // Which of each person's devices are on, from what their apps' connections say on MQTT.
+    tokio::spawn(nomi_server::presence::run(pool.clone(), mqtt_broker_host.clone(), mqtt_broker_port));
+    // Inbox items and chat replies reach phones by FCM / APNs when those are configured.
+    let push = nomi_server::push::from_env(http_client.clone());
+    nomi_server::push::init(push.clone());
+
+    // Chat attachments go to the same bucket as avatars, or to disk without one.
+    nomi_storage::blob::init_attachment_store(s3.clone());
+
+    let project_storage = nomi_storage::build_project_store(s3.clone());
+
+    // Embedded by default so a single `cargo run` (or single production instance) is enough to
+    // process turns — no separate `cargo run --bin worker` process required. Set
+    // RUN_WORKER_INLINE=false to disable this and run the worker as its own process(es) instead,
+    // e.g. for horizontal worker scaling independent of HTTP server instances (see
+    // docs/superpowers/specs/2026-08-11-mqtt-turn-queue-design.md for why the two were split
+    // into separate binaries in the first place — that separation still works, this default
+    // just avoids requiring it for the common single-instance case).
+    let run_worker_inline = nomi_app::worker_inline(var("RUN_WORKER_INLINE").ok().as_deref());
+    if run_worker_inline {
+        nomi_worker::spawn::spawn_all(nomi_worker::spawn::WorkerContext {
+            pool: pool.clone(),
+            mqtt_host: mqtt_broker_host.clone(),
+            mqtt_port: mqtt_broker_port,
+            client_id_prefix: "nomi-orchestrator",
+            s3: s3.clone(),
+            settings_key,
+            http_client: http_client.clone(),
+            database_url: database_url.clone(),
+            project_storage: project_storage.clone(),
+        });
+        tracing::info!("embedded worker enabled (set RUN_WORKER_INLINE=false to disable)");
+    } else {
+        tracing::info!("embedded worker disabled (RUN_WORKER_INLINE=false); run `cargo run --bin worker` separately");
+    }
+
+    let tool_catalog = nomi_server::build_tool_catalog(project_storage.clone());
+    nomi_server::sync_tool_catalog(&pool, &tool_catalog, settings_key, http_client.clone()).await;
+
+    if let Some(config) = nomi_shipyard::ShipyardConfig::from_env() {
+        tokio::spawn(nomi_server::shipyard::catch_up_loop(pool.clone(), http_client.clone(), config.clone()));
+        tokio::spawn(nomi_server::relay_backend::sleep_loop(pool.clone(), http_client.clone(), config.clone(), settings_key));
+        tokio::spawn(nomi_server::shipyard::register_webhook_on_start(pool.clone(), http_client.clone(), config, settings_key));
+    }
+
+    let state = nomi_server::app::AppState {
+        pool,
+        jwt_secret,
+        http_client,
+        settings_key,
+        mqtt_broker_host,
+        mqtt_broker_port,
+        s3,
+        project_storage,
+        tool_catalog,
+        email_codes: nomi_server::sign_in_codes::EmailCodes::from_env(),
+        shipyard: nomi_shipyard::ShipyardConfig::from_env(),
+        push,
+    };
+    let app = nomi_server::app::build_router(state);
+
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await.expect("failed to bind to port 8080");
+    match nomi_agent_workspace::connection::GoogleConfig::current().await {
+        // Both must be listed exactly under the Google OAuth client's authorized redirect URIs.
+        Some(google) => tracing::info!(
+            sign_in_redirect_uri = %google.signin_redirect_uri,
+            workspace_redirect_uri = %google.redirect_uri,
+            "Google sign-in and Workspace enabled"
+        ),
+        None => tracing::info!("Google not configured (Admin → Configuration → Google, or GOOGLE_*)"),
+    }
+    tracing::info!("listening on 0.0.0.0:8080");
+    axum::serve(listener, app).await.expect("server error");
+}

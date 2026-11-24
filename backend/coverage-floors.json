@@ -53,6 +53,10 @@
       "lines": 94,
       "functions": 88
     },
+    "nomi-app": {
+      "lines": 1,
+      "functions": 15
+    },
     "nomi-attachments": {
       "lines": 92,
       "functions": 93
@@ -124,6 +128,10 @@
     "nomi-usage": {
       "lines": 94,
       "functions": 92
+    },
+    "nomi-worker": {
+      "lines": 68,
+      "functions": 72
     }
   }
 }

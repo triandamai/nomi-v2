@@ -19,6 +19,9 @@ use uuid::Uuid;
 use crate::configuration::SandboxConfig;
 use crate::sandbox_store::{self as store, Desired, SandboxRow, State};
 
+/// The provider name stored on a project's sandbox row.
+pub const PROVIDER_NAME: &str = "boat";
+
 /// How long a resumed or created sandbox may take to report running before the attempt is retried.
 const RESUME_READY_TIMEOUT: Duration = Duration::from_secs(120);
 /// How long to wait between checks while a sandbox is coming up.
@@ -26,9 +29,9 @@ const READY_POLL_INTERVAL: Duration = Duration::from_secs(1);
 /// How long to wait before looking again at a sandbox that is still stopping.
 const STOPPING_RECHECK: Duration = Duration::from_secs(5);
 /// The first wait after a failed attempt; it doubles with each further failure.
-pub(crate) const RETRY_BASE: Duration = Duration::from_secs(5);
+pub const RETRY_BASE: Duration = Duration::from_secs(5);
 /// The longest wait between attempts.
-pub(crate) const RETRY_CAP: Duration = Duration::from_secs(900);
+pub const RETRY_CAP: Duration = Duration::from_secs(900);
 /// Real failures in a row after which the row goes to `error` and the page falls back to the
 /// browser. Waits and rate limits never count.
 pub const MAX_ATTEMPTS: i32 = 5;
@@ -41,7 +44,7 @@ pub const STUCK_AFTER: Duration = Duration::from_secs(20 * 60);
 /// disks for at least 14 days; the next start rebuilds from the project's files.
 pub const EXPIRY_WARN: Duration = Duration::from_secs(10 * 24 * 60 * 60);
 /// The label every sandbox carries, set to its project's id.
-pub(crate) const PROJECT_LABEL: &str = "nomi-project";
+pub const PROJECT_LABEL: &str = "nomi-project";
 /// The longest time before its auto-stop at which the liveness pass pushes a running sandbox's
 /// deadline out again. The auto-stop itself is the admin's `auto_stop_secs`; a short one (a
 /// provider's free trial allows two hours at most) is extended from its halfway point instead,
@@ -485,7 +488,7 @@ impl SandboxManager {
     /// Queue a sandbox for deletion at the provider, when a delete just now didn't work.
     async fn enqueue_deletion(&self, project_id: Uuid, id: &SandboxId) {
         let queued = sqlx::query("INSERT INTO sandbox_deletions (provider, sandbox_id, project_id) VALUES ($1, $2, $3) ON CONFLICT (sandbox_id) DO NOTHING")
-            .bind(crate::sandbox_worker::PROVIDER_NAME)
+            .bind(PROVIDER_NAME)
             .bind(&id.0)
             .bind(project_id)
             .execute(&self.pool)
@@ -1083,6 +1086,34 @@ async fn close_session(conn: &mut sqlx::PgConnection, project_id: Uuid) -> Resul
         .execute(conn)
         .await?;
     Ok(done.rows_affected())
+}
+
+/// The page checking in. `page_runtime` is what the page says it runs: only the sandbox page
+/// (`SandboxRuntime`) sends `runtime=sandbox`; the browser runtime (WebContainer, also the
+/// fallback and the person's "run in my browser" choice) sends nothing and gets `None`, so the
+/// caller does the WebContainer check-in exactly as before and the page claims Koda's commands.
+///
+/// For the sandbox page this returns the files version and never claims commands (they run in the
+/// sandbox). It asks for the sandbox to be running only while the sandbox may be used
+/// (`routes::project_sandbox::availability`: switch on, rollout, owner's allowance, no cooldown);
+/// otherwise it starts nothing and doesn't keep a running sandbox alive, which then idles out.
+/// It never marks the browser runner online, so Koda can tell the two pages apart.
+pub async fn sandbox_check_in(
+    conn: &mut sqlx::PgConnection,
+    project_id: Uuid,
+    user_id: Uuid,
+    page_runtime: Option<&str>,
+    config: Option<&SandboxConfig>,
+) -> Result<Option<i64>, sqlx::Error> {
+    if page_runtime != Some(crate::routes::project_sandbox::RUNTIME_SANDBOX) {
+        return Ok(None);
+    }
+    let found = crate::routes::project_sandbox::availability(conn, project_id, Some(user_id), config).await?;
+    // An open page keeps the sandbox awake only once there is a build to preview.
+    if found.is_some_and(|a| a.runtime == crate::routes::project_sandbox::RUNTIME_SANDBOX && a.available) && nomi_agent_coding::runtime::build_state(conn, project_id).await?.ready_to_preview() {
+        store::want_running(conn, project_id, PROVIDER_NAME).await?;
+    }
+    Ok(Some(nomi_agent_coding::runtime::files_version(conn, project_id).await?))
 }
 
 #[cfg(test)]
