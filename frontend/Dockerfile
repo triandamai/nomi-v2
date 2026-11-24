@@ -3,16 +3,16 @@
 FROM node:22-bookworm-slim AS builder
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
 COPY . .
 # The release tag (e.g. v1.2.3), passed by .github/workflows/release.yml. It's built into the
 # app (shown in the UI, sent to the backend as X-Client-Version). Without it, the build is
 # labelled with package.json's version plus "-dev" (the image has no git history).
 ARG APP_VERSION=""
 ENV APP_VERSION=${APP_VERSION}
-RUN npm run build
+RUN npm run build && find build -name '*.map' -delete
 
-FROM node:22-bookworm-slim AS runtime
+FROM node:22-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 ENV BODY_SIZE_LIMIT=Infinity
@@ -22,7 +22,8 @@ ENV APP_VERSION=${APP_VERSION}
 COPY package.json package-lock.json ./
 # --ignore-scripts: `prepare` compiles messages and syncs SvelteKit with dev tools, which the
 # runtime image neither has nor needs (the build is copied in below).
-RUN npm ci --omit=dev --ignore-scripts
+# Cache mount keeps /root/.npm out of the final image layer.
+RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev --ignore-scripts --no-audit --no-fund
 COPY --from=builder /app/build ./build
 COPY server.js ./server.js
 COPY ws-proxy ./ws-proxy

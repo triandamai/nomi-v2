@@ -3,7 +3,7 @@
 FROM node:22-bookworm-slim AS builder
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
 COPY . .
 # The release tag (e.g. v1.2.3). It's built into the app and sent to the backend as
 # X-Client-Version. Without it, the build is labelled with package.json's version plus "-dev"
@@ -14,9 +14,9 @@ ENV APP_VERSION=${APP_VERSION}
 # from GitHub by CI (release-notes.js). Without them the app has no notes to show.
 ARG RELEASE_NOTES=""
 ENV RELEASE_NOTES=${RELEASE_NOTES}
-RUN npm run build
+RUN npm run build && find build -name '*.map' -delete
 
-FROM node:22-bookworm-slim AS runtime
+FROM node:22-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 ENV BODY_SIZE_LIMIT=Infinity
@@ -24,9 +24,10 @@ ENV BODY_SIZE_LIMIT=Infinity
 ARG APP_VERSION=""
 ENV APP_VERSION=${APP_VERSION}
 COPY package.json package-lock.json ./
-# Only the relay's own dependency (ws): the app itself is bundled into build/. --ignore-scripts:
-# `prepare` needs the dev tools, which the runtime neither has nor needs.
-RUN npm ci --omit=dev --ignore-scripts
+# Server runtime dependencies (ws for ws-proxy, marked/sanitize-html/shiki/open-pencil for SSR).
+# --ignore-scripts: `prepare` needs the dev tools, which the runtime neither has nor needs.
+# Cache mount keeps /root/.npm out of the final image layer.
+RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev --ignore-scripts --no-audit --no-fund
 COPY --from=builder /app/build ./build
 COPY server.js ./server.js
 COPY ws-proxy ./ws-proxy

@@ -14,3 +14,5 @@ pen/export
 scripts
 e2e
 build-gallery
+coverage
+.e2e-coverage

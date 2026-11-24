@@ -3,3 +3,13 @@ build
 .svelte-kit
 .git
 *.log
+src/lib/paraglide
+project.inlang/cache
+coverage
+test-results
+playwright-report
+.env
+.env.*
+!.env.example
+e2e
+scripts
