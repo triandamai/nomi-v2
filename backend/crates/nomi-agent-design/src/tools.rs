@@ -86,7 +86,7 @@ impl Tool for ReadDesignSkill {
         &["design", "taste", "library", "skill"]
     }
 
-    async fn execute(&self, _conn: &mut PoolConnection<Postgres>, _session_id: Uuid, _agent_session_id: Uuid, _user_id: Uuid, input: Value) -> Result<ToolOutcome, String> {
+    async fn execute(&self, _conn: &mut PoolConnection<Postgres>, _ctx: &ToolContext<'_>, input: Value) -> Result<ToolOutcome, String> {
         crate::library::read_design_skill(&input).map(ToolOutcome::text)
     }
 }
