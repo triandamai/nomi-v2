@@ -384,6 +384,22 @@ impl<'a> Shipyard<'a> {
         serde_json::from_value(data).map_err(|e| ShipyardError::Unavailable(format!("unexpected publish response: {e}")))
     }
 
+    /// Publishes by handing Shipyard a pre-signed GET URL to the source archive via
+    /// `application/json`, so large payloads stream directly from object storage.
+    pub async fn publish_from_url(&self, org: &str, app: &str, env: &str, manifest: &Value, source_url: &str) -> Result<PublishAccepted, ShipyardError> {
+        let body = json!({
+            "source_url": source_url,
+            "manifest": manifest,
+        });
+        let request = self
+            .http
+            .post(self.url(&format!("{}/publish", Self::env_path(org, app, env))))
+            .timeout(Duration::from_secs(300))
+            .json(&body);
+        let data = self.send(request, &self.config.key).await?;
+        serde_json::from_value(data).map_err(|e| ShipyardError::Unavailable(format!("unexpected publish response: {e}")))
+    }
+
     /// Publishes a zip of static files, served by Shipyard as they are (no build, no container).
     pub async fn static_publish(&self, org: &str, publish: &StaticPublish<'_>, artifact: Vec<u8>) -> Result<StaticPublished, ShipyardError> {
         let part = reqwest::multipart::Part::bytes(artifact)
@@ -779,6 +795,39 @@ mod tests {
         let body = String::from_utf8_lossy(&received.body);
         assert!(body.contains("name=\"manifest\""));
         assert!(body.contains("name=\"source\""));
+    }
+
+    #[tokio::test]
+    async fn publish_from_url_sends_json_with_source_url_and_manifest() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/orgs/org-1/apps/todo-abc/envs/production/publish"))
+            .and(header("authorization", "Bearer ship_int_manage"))
+            .and(header("content-type", "application/json"))
+            .respond_with(ResponseTemplate::new(202).set_body_json(json!({
+                "data": { "publish_id": "p2", "status": "running", "url": "https://todo.apps.dev", "warnings": [] },
+                "error": null
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let http = reqwest::Client::new();
+        let config = config(&server.uri());
+        let manifest = json!({
+            "services": [{ "name": "web", "kind": "web", "port": 3000 }],
+            "domain": { "hostname": "todo.nomi.app" }
+        });
+        let source_url = "https://my-bucket.s3.amazonaws.com/projects/publishes/1/2.zip?X-Amz-Signature=abc";
+        let accepted = Shipyard::new(&http, &config)
+            .publish_from_url("org-1", "todo-abc", "production", &manifest, source_url)
+            .await
+            .unwrap();
+        assert_eq!(accepted.publish_id, "p2");
+        assert_eq!(accepted.url.as_deref(), Some("https://todo.apps.dev"));
+        let received = &server.received_requests().await.unwrap()[0];
+        let parsed: Value = serde_json::from_slice(&received.body).unwrap();
+        assert_eq!(parsed["source_url"], source_url);
+        assert_eq!(parsed["manifest"], manifest);
     }
 
     #[tokio::test]

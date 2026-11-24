@@ -384,7 +384,16 @@ async fn send_publish(
     .await
     .map_err(internal("failed to record the publish"))?;
 
-    match client.publish(&target.org_key(), app, environment, &manifest, Some(source)).await {
+    let publish_result = match state.project_storage().presign_get(&source_key, std::time::Duration::from_secs(900)).await {
+        Ok(Some(source_url)) => client.publish_from_url(&target.org_key(), app, environment, &manifest, &source_url).await,
+        Ok(None) => client.publish(&target.org_key(), app, environment, &manifest, Some(source)).await,
+        Err(e) => {
+            tracing::warn!(%source_key, error = %e, "failed to presign publish archive; falling back to multipart upload");
+            client.publish(&target.org_key(), app, environment, &manifest, Some(source)).await
+        }
+    };
+
+    match publish_result {
         Ok(accepted) => {
             sqlx::query("UPDATE project_publishes SET shipyard_publish_id = $2, url = $3 WHERE id = $1")
                 .bind(id)

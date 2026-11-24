@@ -6,9 +6,10 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
+use std::time::Duration;
 
 use crate::blob::{BlobError, BlobStore};
-use crate::S3Config;
+use crate::{PresignError, S3Config};
 
 const S3_PREFIX: &str = "projects/";
 
@@ -28,6 +29,8 @@ struct ProjectStoreInner {
 pub enum ProjectStoreError {
     #[error(transparent)]
     Blob(#[from] BlobError),
+    #[error(transparent)]
+    Presign(#[from] PresignError),
     #[error("filesystem error: {0}")]
     Io(#[from] std::io::Error),
     #[error("file content was not valid utf-8: {0}")]
@@ -95,6 +98,21 @@ impl ProjectStore {
         };
         blob.put_bytes(&full_key, bytes, content_type).await?;
         Ok(())
+    }
+
+    /// Returns a pre-signed GET URL for `key` when backed by S3, or `Ok(None)` when on disk.
+    pub async fn presign_get(&self, key: &str, ttl: Duration) -> Result<Option<String>, ProjectStoreError> {
+        let s3 = {
+            let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
+            match &inner.blob {
+                BlobStore::S3(s3) => Some(s3.clone()),
+                BlobStore::Disk(_) => None,
+            }
+        };
+        match s3 {
+            Some(s3) => Ok(Some(s3.presign_get(&format!("{S3_PREFIX}{key}"), ttl).await?)),
+            None => Ok(None),
+        }
     }
 
     /// `Ok(None)` when there's no such file.
