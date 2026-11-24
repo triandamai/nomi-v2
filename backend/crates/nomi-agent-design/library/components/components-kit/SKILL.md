@@ -29,7 +29,7 @@ Define each as a `$variable` with one value per theme (light, dark). Name them e
 | `$color-accent` / `$color-accent-foreground` | Hover wash, active tab, highlighted menu row |
 | `$color-destructive` | Errors, delete actions, invalid borders |
 | `$color-border` | Hairlines and card outlines |
-| `$color-input` | Field borders |
+| `$color-input` | Field borders: 3:1 on the grounds fields sit on (a hairline border is usually about 1.3:1, too faint) |
 | `$color-ring` | Focus ring |
 | `$color-chart-1` … `$color-chart-5` | Data series, in that order |
 | `$color-sidebar`, `$color-sidebar-foreground`, `$color-sidebar-primary`, `$color-sidebar-primary-foreground`, `$color-sidebar-accent`, `$color-sidebar-accent-foreground`, `$color-sidebar-border`, `$color-sidebar-ring` | App sidebar rail |
@@ -99,7 +99,7 @@ Every interactive primitive shows its states side by side, pinned, with a captio
 |---|---|
 | Default | Resting tokens |
 | Hover | Fill one step darker or `$color-accent` wash (ghost, outline, menu rows) |
-| Focus | Focus-visible: 3 px `$color-ring` outline at about 50% alpha outside the control, plus a `$color-ring` border on fields |
+| Focus | Focus-visible: a 2px `$color-ring` ring at full strength, 2px clear of the control (as taste-app-screens), plus a `$color-ring` border on fields; any lighter ring must still measure 3:1 |
 | Active | Pressed: slightly darker than hover; no scale on canvas (note "press scale" for Koda if wanted) |
 | Disabled | Whole control at about 50% opacity, no hover |
 | Error | Fields only: `$color-destructive` border, `$color-destructive` ring at low alpha, message below in `$color-destructive` |

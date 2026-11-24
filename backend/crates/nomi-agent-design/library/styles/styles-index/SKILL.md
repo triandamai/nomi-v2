@@ -28,6 +28,11 @@ The named visual styles you can offer as directions, one line each (style → su
 | `style-field-guide` | Nurseries, farms, eco-tours, coffee origin, honey | Pale sage paper, thin big Lexend, vertical guides, specimen-captioned figures |
 | `style-product-proof-saas` | SaaS landing pages, admin apps, Nomi-built tools | Friction headline + dense honest product stage, black buttons, blue state |
 | `style-tech-green-dark` | Small-team dashboards, monitoring, IT services | Three-step black panels, mono codes, green only for live and active |
+| `craft-style-minimalist` | Consultants, notaries, studios, small tools | Warm paper, serif, hairlines, pastel status chips |
+| `craft-style-soft` | Villas, spas, clinics, consumer apps | Cream, double-bezel cards, pill buttons with a nested arrow |
+| `craft-style-industrial-brutalist` | Bengkel, printers, hardware, data tools | Visible 1px grid, giant type, one hazard red |
+
+More systems to start a direction from are in the `systems` area (read `index:systems`).
 
 Companion files: `style-details` (numbering, container lines, brackets, chamfers, shadow recipes, icons), `pattern-landing-pricing` (page structure and pricing), `slop-audit`, `design-loop`.
 

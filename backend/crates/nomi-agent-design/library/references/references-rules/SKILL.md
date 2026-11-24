@@ -42,6 +42,7 @@ People share screenshots, sites they like, competitors, Instagram posts, a menu 
 - Their own material (logo, photos, prices, menu, brand colours) is theirs: use it directly and exactly, and keep prices and names as given.
 - A competitor's site is a reference for what to beat, not a template.
 - If a reference conflicts with usability (low contrast, tiny text), keep the mood and fix the problem, and say why in one line.
+- read_web_page gives text only: ask for screenshots for colours, logo and photos. Label every fact as provided, observed or inferred, and sort what you take into Keep, Change and Do not copy (`reference-contract`); measure a brand from its own material (`brand-extract`).
 
 ## Connected reference tools
 

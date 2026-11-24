@@ -69,6 +69,21 @@ Go through every screen frame at 1440, 768 and 390. Fix every miss, then check a
 - [ ] No invented phone or WhatsApp number; stand-in email only on `.example`, never printed.
 - [ ] "Petunjuk arah" only with a street; "Lihat area" with a district only; no map link with only a town.
 
+## States and the whole site (from ux-states and ux-accessibility)
+- [ ] Every list, table and form has its state frames beside it (loading, empty on first use, empty with no results, error, an edge case) at 390.
+- [ ] Every interactive component has a Focus frame; the ring measures 3:1 against the ground and against the unfocused look.
+- [ ] The footer links Kebijakan privasi and Syarat layanan; every page has a way back (no dead ends); a helpful 404 in the site's own look.
+- [ ] Form validation is drawn (email, required fields, formats), and a "Langsung ke isi" skip link exists for keyboard users.
+- [ ] Cookie consent only where the law requires it, as a bottom bar (Taste bans popups).
+
+## Plan and first screen (from practice-plan-design-review and practice-frontend-skill)
+- [ ] The plan passes the seven hard rejections and the seven yes/no checks; a plan scores as its weakest pass, and 8 or more means ready to draw.
+- [ ] The nav counts in the first screen: nav plus hero fit in 900 at 1440.
+
+## App screens and motion
+- [ ] App screens: the density dials on plan line 2 and every state drawn (`craft-taste-variants`).
+- [ ] Every motion note passes the checklist in `craft-motion-notes`.
+
 ## Tablet and phone
 - [ ] At 768 splits stack text first, panel cards take the full row, no row half empty, each section still 1 or 2 screens.
 - [ ] At 390 one column (or 165 two-up tiles), buttons full width, the menu a full-screen sheet; a place has the phone action bar.

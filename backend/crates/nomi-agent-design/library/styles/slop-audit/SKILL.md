@@ -62,6 +62,7 @@ Default to subtraction.
 - Several focal points per viewport, none dominant.
 
 ### Composition and space
+- One of the three predictable looks picked by default, with no reason from the brief: cream + serif + terracotta, near-black + neon, or broadsheet hairlines + italic serif + tiny tracked mono. Cards with a coloured left border. Drawn "people working" illustrations.
 - Every section has the same vertical padding regardless of content. Vary it: 64–96px for reading sections, 40–56px for dense lists.
 - Headings sit closer to the previous section than to their own content.
 - One column runs far longer than its partner and leaves a dead block.
@@ -97,6 +98,7 @@ Default to subtraction.
 - Shadows on everything; shadows that are muddy, wide and unrelated to any elevation model.
 - Dark mode as black plus neon instead of a full tonal ramp (page, panel, raised, stroke, text, muted).
 - Colour as the only signal of state; add an icon, label or weight change.
+- Inter, an indigo accent or a purple gradient on a client who has a brand means the brand was guessed: trace every brand value to a source (`brand-extract`).
 - On this canvas there are no gradients or blur. Do not fake them with stacks of semi-transparent rectangles.
 
 ### Imagery and icons
@@ -124,6 +126,8 @@ Default to subtraction.
 - Prices with no unit or period ("Rp 249.000" — per bulan? per sesi?).
 - Empty states with marketing copy instead of the next action.
 - Lorem ipsum, "Your Name", English filler on an Indonesian site.
+- Meta labels on sections ("Bagian 01", "Section 02"), fake system markers and ASCII framing, and chart data you invented.
+- Microcopy tells from `craft-microcopy`: filler intensifiers, hedges, "seamless", exclamation marks on routine actions.
 
 ## High-signal clusters
 
