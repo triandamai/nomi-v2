@@ -302,6 +302,15 @@ mod tests {
     }
 
     #[test]
+    fn each_stage_points_sora_at_the_skills_it_needs() {
+        for said in ["ux-states", "design-critique"] {
+            assert!(DESIGN_PREVIEW_RULES.contains(said), "her preview rules say {said:?}");
+        }
+        assert!(DESIGN_CHANGE_RULES.contains("reference-contract"), "a reference the person sends goes through the contract");
+        assert!(DESIGN_HANDOFF_RULES.contains("systems-schema"), "the handoff writes the design system down the DESIGN.md way");
+    }
+
+    #[test]
     fn the_old_bans_are_gone_so_taste_decides() {
         for ban in ["no gradient text", "no glowing dots", "no emoji as icons", "no coloured stripe", "no uppercase eyebrow", "no three identical feature cards"] {
             assert!(!DESIGN_PREVIEW_RULES.contains(ban), "{ban:?} is Taste's call now");

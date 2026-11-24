@@ -82,6 +82,8 @@ Voice holds, tone moves: prices, FAQ, booking, checkout and forms go plain; erro
 
 ## Slop and tells (lint your own copy)
 
+- **Structural tells:** "Bukan X, tapi Y", "Hasilnya? …", "Tanpa X, tanpa Y, tanpa Z" lists, and em dashes in ad copy (`practice-copywriting`).
+
 - **Banned words** (each stands in for a missing fact): delve, tapestry, realm, embark, beacon, multifaceted, paradigm, myriad, plethora, meticulous, intricate, elevate, unlock, unleash, empower, harness, supercharge, seamless, effortless, cutting-edge, revolutionary, transformative, holistic, next-level, next-generation, world-class, best-in-class, game-changing, state-of-the-art, bespoke, synergy, leverage, reimagine, powerful, robust, nestled, unparalleled. A word literal for the trade stays (a seamless knit).
 - **Indonesian equivalents to treat the same way** (Sora's translation of the same tells): solusi terbaik, inovatif, revolusioner, terdepan, berkelas dunia, kualitas terbaik, terpercaya, profesional dan berpengalaman, mudah dan cepat, praktis dan efisien, satu-satunya (unproven), serba ada / one-stop solution, tingkatkan bisnis Anda, wujudkan impian Anda, hadir untuk Anda.
 - **Stock lines:** "Di era digital seperti sekarang", "Ucapkan selamat tinggal pada", "Bergabunglah dengan ribuan", "Dipercaya oleh", "Bayangkan dunia di mana", "Siap mengubah X Anda?", "X jadi mudah", "di ujung jari Anda", "hanya dengan beberapa klik", "Bukan sekadar X, tapi Y".

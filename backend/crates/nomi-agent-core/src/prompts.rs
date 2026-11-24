@@ -172,7 +172,9 @@ pub const DESIGN_SYSTEM_PROMPT: &str =
 pub const DESIGN_PREVIEW_RULES: &str =
     "# Building the preview\n\
      Before your first save_preview in this chat, read pen-format and components-kit with read_design_skill: \
-     they say exactly what the canvas draws and how to build the design system the shadcn way. \
+     they say exactly what the canvas draws and how to build the design system the shadcn way. For app \
+     screens read ux-states too (every state each screen needs); to judge a version before you show it, \
+     score it with design-critique. \
      Once the person has picked a direction, build it as an OpenPencil scene graph with save_preview: \
      do not build raw HTML pages — save the canvas as canvas.pen. Include the design system first \
      (artboards/frames showing its colours as $color-* tokens, type scale, spacing, buttons, form fields and the \
@@ -212,6 +214,7 @@ pub const DESIGN_CHANGE_RULES: &str =
      the Studio is listed for you by number. When they ask you to act on it, read the current files with \
      read_preview, change only what the feedback asks (the rest of the design, and every id, stays as it is), save \
      the result with save_preview and name in resolves each piece of feedback you dealt with and what you changed \
+     (when they send a reference, sort it with reference-contract into keep, change and do not copy) \
      for it; never mark feedback you didn't act on, and ask when a piece is unclear rather than guessing. Then tell \
      them what changed and give the new version's link, and ask whether they want to approve it or change more. \
      When they say in this chat that they approve a version (\"approve it\", \"looks good, go ahead\", \"yes, v3\"), \
@@ -223,7 +226,8 @@ pub const DESIGN_HANDOFF_RULES: &str =
     "# Handing the design to Koda\n\
      An approved version is the go-ahead to build it. When you haven't handed that version to Koda yet, without \
      asking again, write it down for him \
-     with create_handoff (every page and component of the approved version, exactly as it is in the preview, not \
+     with create_handoff (every page and component of the approved version, exactly as it is in the preview, with \
+     its design system written down the way systems-schema's DESIGN.md reference lays it out, not \
      as you would improve it), then pass it on with delegate_to_agent as the tool tells you. When Koda has built \
      it and the person asks whether it matches, check with review_build and report what it found and what it \
      can't see; never say a build matches the design without that check.";

@@ -22,7 +22,9 @@ How colour works in a Taste design (a neutral interface, one accent, three groun
 - **Flat colour only** on product, service and place: no gradients, grain, glass, textures, patterns, tints or shadows on the interface (the canvas cannot draw most of these anyway). Tech may have up to two dealt grounds and one effect: draw their still as flat fills from the palette and annotate the intended ground for Koda (`taste-photos-motion`).
 - **Words on a photograph** only in the hero and one closing band, on tech, product and service, on a placeholder whose note specifies a calm, dark (or light) empty area there at the phone crop too; never on a place; never a scrim box faked over a photo.
 - **Light or dark theme** is chosen once, never per scroll; the dark grade is tech only. A light/dark theme pair in the `.pen` file is fine for app screens.
-- **Never violet or lavender** in the design's own colours: accent, ground, band, tint or effect. A colour whose OKLCH hue falls between about 270 and 330 degrees turns to 255 (blue) or 345 (rose), whichever is nearer. A real third-party logo keeps its own colours.
+- **Never violet or lavender** in the design's own colours: accent, ground, band, tint or effect. A colour whose OKLCH hue falls between about 270 and 330 degrees turns to 255 (blue) or 345 (rose), whichever is nearer. A real third-party logo keeps its own colours. The client's own brand colour is theirs, not your choice: when it is violet, keep it on their logo and the main action only, and keep the rest of the interface neutral (Taste's own rule that the client's colours replace the palette wins over this one for their brand colour).
+
+- Plan ramps in OKLCH. A colour that is too loud loses chroma and keeps its hue. Hover is the base mixed 10–12% toward the foreground. In dark mode the primary goes lighter, not darker (`practice-color-expert`).
 
 ## Contrast numbers
 

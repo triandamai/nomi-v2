@@ -19,6 +19,8 @@ Taste 2.5 is written for company sites. Where it says nothing about app screens,
 
 - **Top bar or sidebar:** opaque fill, one 1px hairline in `$color-border`, no blur, shadow or floating pill; the same on every screen. Sidebar items one or two words, 4-8 of them, the current one marked by a 2px bar or a `$color-accent` row, never by a coloured icon set.
 - **Phone:** a bottom bar of 4-5 items at 56+ tall, or the action bar (one 342x48 primary, or two 165x48). Content 342 wide at x 24. Every tap target 44 tall and 8+ apart.
+- **Phone patterns:** the bottom nav has 3–5 items, each labelled; one floating labelled button at most; a toast sits above the bar for 3–5 s with "Urungkan"; undo beats a confirm dialog; ask for sign-in after people have looked around; onboarding is three screens or fewer. Keep controls out of Android's gesture zones (bottom 20, sides 24). The tab bar and top bar are composed parts (shadcn has neither): name them as such in the handoff (`practice-apple-hig`, `practice-platform-design`).
+- **Buttons stay enabled:** check on submit and show the error by its field; when a button must be disabled, say why right beside it.
 - **Page head:** the screen title as the h1 on the left edge (28-32 on desktop app screens, 24 on a phone; a site's 72px hero size is for marketing pages), one grey line under it only when it adds a fact, the one primary action on the right edge.
 
 ## Dashboards and lists
@@ -38,6 +40,7 @@ Taste 2.5 is written for company sites. Where it says nothing about app screens,
 - One status line under the button ("Mengirim…", then the result). Success only after a real send; never a modal "Terima kasih!".
 - The button names the action, word for word the main action ("Kirim permintaan booking"); a line under the form says when the reply comes.
 - Focus: a 2px ring in `$color-ring`, 2px off the control. Inputs stroke `$color-input`.
+- Long app forms (sign-up, checkout, settings) may also check a field once it is left, then re-check as they type; never while it is first being typed. Short site forms keep the check on submit (`ux-states`).
 
 ## Checkout and payment
 
@@ -51,6 +54,7 @@ Taste 2.5 is written for company sites. Where it says nothing about app screens,
 - Every list and dashboard gets an empty-state frame: one line of what will appear and when ("Belum ada pesanan. Pesanan pertama muncul di sini begitu pelanggan membayar."), one action. This is where the register's voice is welcome.
 - Loading: the layout at rest with its frames, never a spinner alone in an empty screen.
 - 404: one plain line and the way back.
+- Three kinds of empty: first use, no results (echo the search, offer "Hapus filter"), and cleared. An error says what happened, why, and what to do, and keeps what was typed (`ux-states`).
 
 ## App screens inside a marketing page
 

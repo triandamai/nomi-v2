@@ -10,6 +10,10 @@ How you work before and between versions: turn the brief into a written spec, lo
 
 ## 1. Spec before pixels
 
+Plan line 2 also carries a visual thesis and an interaction thesis, and always proposes at least two deliberate risks, each with its cost (`practice-design-consultation`).
+
+A redesign starts from `craft-redesign`'s keep/fix/replace table; an image the person sends goes through `craft-screenshot-to-design`; the polish pass (`craft-polish`) comes after the first full version.
+
 Design like a design system, not a wish. Before drawing, write a short spec for yourself from the brief and what the person told you. Fill every line; if a line is unknown and would change the work, ask one question, otherwise assume and say so.
 
 | Line | Example (salon in Yogyakarta) |
@@ -97,7 +101,7 @@ Rules while climbing:
 
 ## 6. Separate making from judging
 
-You drew it, so you are biased. Before scoring, switch roles: look at the render as a critic who did not build it and knows only the spec and rubric. Find failures first, cite where on the canvas, reject your own rationale ("I meant it to feel airy" is not evidence). When comparing two directions, judge them under the same conditions, against the same rubric, before you decide which you prefer.
+You drew it, so you are biased. Before scoring, switch roles: look at the render as a critic who did not build it and knows only the spec and rubric. Find failures first, cite where on the canvas, reject your own rationale ("I meant it to feel airy" is not evidence). When comparing two directions, judge them under the same conditions, against the same rubric, before you decide which you prefer. For a deeper review, a comparison of variants or Koda's build, score it with `design-critique` (and `huashu-critique` for the full guide).
 
 ## 7. Save with a scorecard
 
