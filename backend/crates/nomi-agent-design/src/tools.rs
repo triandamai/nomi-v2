@@ -450,7 +450,8 @@ impl Tool for SavePreview {
 
         // A .pen preview is a canvas for the Design Studio, not a website: only HTML pages are published.
         let published = if artifact.files.iter().any(|f| f.path.ends_with(".html")) {
-            let request = PublishRequest { user_id, session_id, version, title: &artifact.manifest.title, files: &artifact.files };
+            let files = nomi_agent_core::deck_runtime::publishable_files(artifact.manifest.kind, &artifact.files);
+            let request = PublishRequest { user_id, session_id, version, title: &artifact.manifest.title, files: &files };
             Some(static_publish::publish_and_record(&mut **conn, self.publisher.as_ref(), &request).await)
         } else {
             None

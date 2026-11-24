@@ -12,6 +12,7 @@ pub mod crew;
 pub mod crew_talk;
 pub mod delegation;
 pub mod design_approval;
+pub mod deck_runtime;
 pub mod design_artifact;
 pub mod design_brief;
 pub mod design_directions;

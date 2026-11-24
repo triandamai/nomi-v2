@@ -6,6 +6,9 @@ source: "https://github.com/heygen-com/hyperframes @574b5e3d3bbf526809d268a6728f
 ---
 # Video with HyperFrames
 
+> **In Nomi: CSS `@keyframes` or WAAPI, not GSAP.** GSAP's standard licence (Webflow) bars tools that let people make animations through a visual interface, which may include the Design Studio, so until that is cleared Nomi's compositions don't load GSAP. Where this skill says GSAP, use the CSS `@keyframes` or WAAPI runtime from `video-hyperframes-composition`'s lint-and-runtimes reference (finite iterations, `fill-mode: both`, `data-start` on the element), which the renderer seeks the same way.
+
+
 HyperFrames turns HTML into video. The renderer never plays your page: it seeks one paused timeline to each frame's time, takes a screenshot, and FFmpeg encodes the frames. The same files give the same MP4 every time. That only works when everything on screen depends on timeline time alone.
 
 How it works in Nomi:
