@@ -1,5 +1,6 @@
 //! Sora, the designer: turns the plan Rena agreed with the person into visual design.
 
+pub mod library;
 pub mod tools;
 
 use nomi_agent_core::ToolContext;
@@ -279,7 +280,33 @@ mod tests {
     #[test]
     fn soras_own_tools_are_directions_previews_and_the_persons_connected_tools() {
         let names: Vec<String> = DesignAgent::new().tools().into_iter().map(|t| t.name).collect();
-        assert_eq!(names, [tools::PROPOSE_DIRECTIONS, tools::SAVE_PREVIEW, tools::READ_PREVIEW, tools::APPROVE_VERSION, tools::CREATE_HANDOFF, tools::REVIEW_BUILD, tools::LIST_CONNECTED_TOOLS, tools::USE_CONNECTED_TOOL]);
+        assert_eq!(names, [tools::READ_DESIGN_SKILL, tools::PROPOSE_DIRECTIONS, tools::SAVE_PREVIEW, tools::READ_PREVIEW, tools::APPROVE_VERSION, tools::CREATE_HANDOFF, tools::REVIEW_BUILD, tools::LIST_CONNECTED_TOOLS, tools::USE_CONNECTED_TOOL]);
+    }
+
+    #[test]
+    fn sora_reads_her_design_library_without_asking() {
+        let sora = DesignAgent::new();
+        assert!(!sora.tool_needs_approval(tools::READ_DESIGN_SKILL), "reading her own library changes nothing");
+        let tool = sora.tools().into_iter().find(|t| t.name == tools::READ_DESIGN_SKILL).unwrap();
+        assert!(tool.description.contains(&library::index()), "the tool lists every skill she can read");
+    }
+
+    #[test]
+    fn sora_studies_taste_before_directions_and_the_canvas_format_before_drawing() {
+        let core = DesignAgent::new().system_prompt();
+        assert!(core.contains("read_design_skill") && core.contains("taste-core") && core.contains("styles-index"), "{core}");
+        for said in ["read_design_skill", "pen-format", "components-kit", "taste-check"] {
+            assert!(DESIGN_PREVIEW_RULES.contains(said), "her preview rules say {said:?}");
+        }
+        assert!(DESIGN_PREVIEW_RULES.contains("Taste wins"), "where her craft notes and Taste differ, Taste decides");
+    }
+
+    #[test]
+    fn the_old_bans_are_gone_so_taste_decides() {
+        for ban in ["no gradient text", "no glowing dots", "no emoji as icons", "no coloured stripe", "no uppercase eyebrow", "no three identical feature cards"] {
+            assert!(!DESIGN_PREVIEW_RULES.contains(ban), "{ban:?} is Taste's call now");
+            assert!(!DESIGN_SYSTEM_PROMPT.contains(ban), "{ban:?} is Taste's call now");
+        }
     }
 
     #[test]
