@@ -523,3 +523,28 @@ async fn plans_carry_prices_and_referral_and_auto_renew_work(pool: PgPool) {
     let (status, _) = call(&router, "POST", "/api/billing/quote", json!({ "plan_id": plan.id, "months": 1, "code": "NOSUCH" }), &ben).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
+
+/// Two processes run the billing loop (a server and a standalone worker, or several workers):
+/// while one holds the pass, the other bills nobody, so no one is invoiced twice.
+#[sqlx::test(migrations = "../../migrations")]
+async fn a_billing_pass_waits_out_another_processs_pass(pool: PgPool) {
+    let _turn = with_gateway(Some(HOOK_TOKEN)).await;
+    let plan = paid_plan(&pool).await;
+    let cfg = usage_billing::BillingConfig::default();
+    let user: Uuid = sqlx::query_scalar("INSERT INTO users DEFAULT VALUES RETURNING id").fetch_one(&pool).await.unwrap();
+    let q = usage_billing::quote(&pool, user, plan.id, 1, None, &cfg).await.unwrap();
+    let payment = usage_billing::create_payment(&pool, user, &q, usage_billing::KIND_NEW, INVOICE_HOURS).await.unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    usage_billing::activate(&mut tx, payment.id, None, None, &cfg).await.unwrap();
+    tx.commit().await.unwrap();
+    sqlx::query("UPDATE user_subscriptions SET paid_until = now() + interval '2 days' WHERE user_id = $1").bind(user).execute(&pool).await.unwrap();
+
+    let mut other = pool.acquire().await.unwrap();
+    sqlx::query("SELECT pg_advisory_lock($1)").bind(nomi_worker::billing_worker::PASS_LOCK).execute(&mut *other).await.unwrap();
+    let summary = nomi_worker::billing_worker::run_once(&pool, Utc::now()).await.unwrap();
+    assert_eq!((summary.invoiced, summary.reminded, summary.ended), (0, 0, 0));
+
+    sqlx::query("SELECT pg_advisory_unlock($1)").bind(nomi_worker::billing_worker::PASS_LOCK).execute(&mut *other).await.unwrap();
+    let summary = nomi_worker::billing_worker::run_once(&pool, Utc::now()).await.unwrap();
+    assert_eq!(summary.invoiced, 1);
+}

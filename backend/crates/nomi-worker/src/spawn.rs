@@ -77,3 +77,17 @@ pub fn spawn_all(ctx: WorkerContext) -> Vec<&'static str> {
         })
         .collect()
 }
+
+/// Runs every loop until the first one ends (returns or panics), and gives its name. The
+/// standalone worker exits then, so whatever supervises it starts a fresh process.
+pub async fn first_to_end(loops: Vec<(&'static str, BoxFuture<'static, ()>)>) -> &'static str {
+    let mut running = tokio::task::JoinSet::new();
+    for (name, run) in loops {
+        running.spawn(async move {
+            // A panic still names its loop: it's caught here instead of only in the JoinError.
+            let _ = std::panic::AssertUnwindSafe(run).catch_unwind().await;
+            name
+        });
+    }
+    running.join_next().await.and_then(Result::ok).unwrap_or("none")
+}

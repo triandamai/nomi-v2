@@ -60,3 +60,16 @@ fn every_worker_module_is_a_loop() {
         assert!(LOOPS.contains(&name), "{module} maps to {name}, which spawn_all doesn't start");
     }
 }
+
+/// The standalone worker exits (and is restarted) when any loop ends, as it did when the turn
+/// loop was its main future: a crashed loop never leaves a process that silently does nothing.
+#[tokio::test]
+async fn the_first_loop_to_end_is_reported_even_when_it_panics() {
+    use futures_util::FutureExt;
+    let crashing = async { panic!("the loop crashed") };
+    let loops = vec![
+        ("forever", std::future::pending::<()>().boxed()),
+        ("crashes", crashing.boxed()),
+    ];
+    assert_eq!(nomi_worker::spawn::first_to_end(loops).await, "crashes");
+}

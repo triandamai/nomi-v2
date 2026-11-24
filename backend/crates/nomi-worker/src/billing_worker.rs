@@ -17,6 +17,10 @@ const SECONDS_PER_HOUR: u64 = 3600;
 /// How often the worker looks.
 const INTERVAL: Duration = Duration::from_secs(SECONDS_PER_HOUR);
 
+/// The Postgres advisory lock one billing pass holds ("nomibill"), so that when several processes
+/// run this loop (a server and a standalone worker, or several workers) no one is invoiced twice.
+pub const PASS_LOCK: i64 = 0x6e6f_6d69_6269_6c6c;
+
 /// What one pass did.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct Summary {
@@ -37,8 +41,19 @@ pub async fn run(pool: PgPool) {
     }
 }
 
-/// One pass at `now`.
+/// One pass at `now`, unless another process is in the middle of one: then nothing.
 pub async fn run_once(pool: &PgPool, now: DateTime<Utc>) -> Result<Summary, sqlx::Error> {
+    let mut lock = pool.acquire().await?;
+    let held: bool = sqlx::query_scalar("SELECT pg_try_advisory_lock($1)").bind(PASS_LOCK).fetch_one(&mut *lock).await?;
+    if !held {
+        return Ok(Summary::default());
+    }
+    let result = pass(pool, now).await;
+    sqlx::query("SELECT pg_advisory_unlock($1)").bind(PASS_LOCK).execute(&mut *lock).await?;
+    result
+}
+
+async fn pass(pool: &PgPool, now: DateTime<Utc>) -> Result<Summary, sqlx::Error> {
     let cfg = billing::config().await;
     let gateway = server_billing::gateway().await;
     let mut summary = Summary::default();

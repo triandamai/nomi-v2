@@ -43,8 +43,9 @@ async fn main() {
     nomi_server::push::init(nomi_server::push::from_env(http_client.clone()));
     nomi_server::public_url::warn_if_unknown();
 
-    // Every loop, as the server runs them inline.
-    nomi_worker::spawn::spawn_all(nomi_worker::spawn::WorkerContext {
+    // Every loop, as the server runs them inline. When one ends (a crash, a lost LISTEN), the
+    // process exits so its supervisor starts a fresh one.
+    let ended = nomi_worker::spawn::first_to_end(nomi_worker::spawn::loops(nomi_worker::spawn::WorkerContext {
         pool,
         mqtt_host: mqtt_broker_host,
         mqtt_port: mqtt_broker_port,
@@ -54,6 +55,8 @@ async fn main() {
         http_client,
         database_url,
         project_storage,
-    });
-    std::future::pending::<()>().await;
+    }))
+    .await;
+    tracing::error!(worker_loop = ended, "worker: a loop stopped; exiting so the worker restarts");
+    std::process::exit(1);
 }
