@@ -6,6 +6,9 @@ source: "https://github.com/heygen-com/hyperframes @574b5e3d3bbf526809d268a6728f
 ---
 # The composition format
 
+> **In Nomi: CSS `@keyframes` or WAAPI, not GSAP.** GSAP's standard licence (Webflow) bars tools that let people make animations through a visual interface, which may include the Design Studio, so until that is cleared Nomi's compositions don't load GSAP. Where this skill says GSAP, use the CSS `@keyframes` or WAAPI runtime from `video-hyperframes-composition`'s lint-and-runtimes reference (finite iterations, `fill-mode: both`, `data-start` on the element), which the renderer seeks the same way.
+
+
 A composition is a normal HTML document. Data attributes declare the canvas, what shows when, and the scene files. A paused GSAP timeline, registered on `window`, holds the motion. The renderer seeks that timeline to `frame / fps` for every frame, so whatever you write must look right when it is seeked straight to any time, in any order.
 
 ## Files in a video version

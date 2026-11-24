@@ -81,6 +81,7 @@ async fn the_studio_lists_a_chats_previews_for_the_people_who_can_open_it(pool: 
     assert_eq!(previews.iter().map(|p| (p["version"].as_i64().unwrap(), p["direction_id"].as_str().unwrap())).collect::<Vec<_>>(), [(1, "editorial"), (2, "swiss")]);
     let newest = &previews[1];
     assert_eq!(newest["title"], "Bread, daily");
+    assert_eq!(newest["kind"], "design", "the Studio is told what kind of thing each version is");
     assert_eq!(newest["pages"], json!([{"path": "index.html", "title": "Home"}, {"path": "menu/index.html", "title": "Menu"}]));
     assert_eq!(newest["elements"][0], json!({"id": "hero", "kind": "section", "label": "Hero", "pages": ["index.html"]}));
     assert_eq!(newest["published_url"], json!(null));
@@ -166,6 +167,29 @@ async fn a_versions_files_are_served_by_name_into_a_sandbox_with_no_sign_in(pool
 
     for missing in [format!("/api/design/preview/{token}/nope.html"), format!("/api/design/preview/{}/index.html", "0".repeat(design_artifact::PREVIEW_TOKEN_CHARS)), "/api/design/preview/short/index.html".to_string()] {
         assert_eq!(fetch(&app, &missing).await.0, StatusCode::NOT_FOUND, "{missing}");
+    }
+}
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn every_preview_serves_the_deck_runtime_beside_its_own_files(pool: PgPool) {
+    let app = App::new(pool.clone());
+    let ada = app.person("ada@acme.test").await;
+    let session_id = chat_of(&pool, &ada).await;
+    save(&pool, session_id, &ada, &preview("editorial", "Fresh at six")).await;
+    let mut conn = pool.acquire().await.unwrap();
+    let token = design_artifact::list(&mut conn, session_id).await.unwrap()[0].preview_token.clone();
+    drop(conn);
+
+    let (status, headers, body) = fetch(&app, &format!("/api/design/preview/{token}/_runtime/html-ppt/runtime.js")).await;
+    assert_eq!((status, headers["content-type"].to_str().unwrap()), (StatusCode::OK, "text/javascript; charset=utf-8"));
+    assert!(body.contains("BroadcastChannel"), "the deck runtime itself");
+    assert!(headers["content-security-policy"].to_str().unwrap().starts_with("sandbox"), "fenced in like the preview's own files");
+    let (status, headers, _) = fetch(&app, &format!("/api/design/preview/{token}/_runtime/html-ppt/themes/academic-paper.css")).await;
+    assert_eq!((status, headers["content-type"].to_str().unwrap()), (StatusCode::OK, "text/css; charset=utf-8"));
+    let (status, _, licence) = fetch(&app, &format!("/api/design/preview/{token}/_runtime/html-ppt/LICENSE")).await;
+    assert!(status == StatusCode::OK && licence.contains("MIT License"));
+    for missing in [format!("/api/design/preview/{token}/_runtime/html-ppt/nope.js"), format!("/api/design/preview/{}/_runtime/html-ppt/runtime.js", "0".repeat(design_artifact::PREVIEW_TOKEN_CHARS))] {
+        assert_eq!(fetch(&app, &missing).await.0, StatusCode::NOT_FOUND, "{missing}: only a real version's address serves it");
     }
 }
 

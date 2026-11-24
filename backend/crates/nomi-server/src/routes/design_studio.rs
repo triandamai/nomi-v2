@@ -13,7 +13,7 @@ use axum::{
 use chrono::{DateTime, Utc};
 use nomi_agent_core::crew::DESIGN_AGENT_TYPE;
 use nomi_agent_core::design_approval::{self, Approval};
-use nomi_agent_core::design_artifact::{self, Element, Page, ENTRY_PAGE, PREVIEW_TOKEN_CHARS};
+use nomi_agent_core::design_artifact::{self, Element, Kind, Page, ENTRY_PAGE, PREVIEW_TOKEN_CHARS};
 use nomi_agent_core::design_directions::{self, Direction};
 use nomi_agent_core::design_feedback::{self, Feedback, NewFeedback, MAX_OPEN_PER_CHAT};
 use nomi_auth::extractor::AuthClaims;
@@ -50,6 +50,8 @@ pub struct StudioPreview {
     pub version: i32,
     pub direction_id: String,
     pub title: String,
+    /// What it is: a design, a deck, a video or an asset.
+    pub kind: Kind,
     pub pages: Vec<Page>,
     pub elements: Vec<Element>,
     pub preview_token: String,
@@ -104,6 +106,7 @@ pub async fn list(State(state): State<AppState>, AuthClaims(claims): AuthClaims,
                 version: stored.version,
                 direction_id: stored.manifest.direction_id,
                 title: stored.manifest.title,
+                kind: stored.manifest.kind,
                 pages: stored.manifest.pages,
                 elements: stored.manifest.elements,
                 preview_token: stored.preview_token,
@@ -223,6 +226,7 @@ pub async fn publish(
         (manifest, design_artifact::files(&mut conn, session_id, version).await.map_err(unavailable)?)
     };
     // No connection is held through the upload, which can take minutes.
+    let files = nomi_agent_core::deck_runtime::publishable_files(manifest.kind, &files);
     let request = nomi_agent_core::static_publish::PublishRequest { user_id: claims.sub, session_id, version, title: &manifest.title, files: &files };
     let publisher = crate::static_publisher::ShipyardStaticPublisher::shared(state.pool.clone());
     let published = nomi_agent_core::static_publish::publish(publisher.as_ref(), &request).await;
@@ -272,7 +276,13 @@ async fn serve(state: &AppState, token: &str, requested: &str) -> Response {
     }
     let path = file_path(requested);
     let file = match state.pool.acquire().await {
-        Ok(mut conn) => design_artifact::file_by_token(&mut conn, token, &path).await,
+        // The deck runtime is served beside every version's own files (`deck_runtime::PREFIX`).
+        Ok(mut conn) => match nomi_agent_core::deck_runtime::file(&path) {
+            Some(text) => design_artifact::token_exists(&mut conn, token).await.map(|exists| {
+                exists.then(|| (design_artifact::content_type_of(&path).unwrap_or("text/plain; charset=utf-8").to_string(), text.to_string()))
+            }),
+            None => design_artifact::file_by_token(&mut conn, token, &path).await,
+        },
         Err(e) => Err(e),
     };
     let (content_type, content) = match file {

@@ -56,6 +56,38 @@ impl ElementKind {
     }
 }
 
+/// What a preview is: a site or app design on the canvas, a slide deck, a video composition, or a
+/// marketing asset (a poster, a social card).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Kind {
+    #[default]
+    Design,
+    Deck,
+    Video,
+    Asset,
+}
+
+impl Kind {
+    pub const ALL: [(&'static str, Kind); 4] = [("design", Self::Design), ("deck", Self::Deck), ("video", Self::Video), ("asset", Self::Asset)];
+
+    pub fn name(self) -> &'static str {
+        Self::ALL.iter().find(|(_, kind)| *kind == self).map(|(name, _)| *name).unwrap_or_default()
+    }
+
+    /// The kind `input` names; a design when it names none.
+    fn of(input: &Value) -> Result<Self, String> {
+        match text_of(input, "kind") {
+            None => Ok(Self::Design),
+            Some(name) => Self::ALL
+                .iter()
+                .find(|(known, _)| known.eq_ignore_ascii_case(name))
+                .map(|(_, kind)| *kind)
+                .ok_or_else(|| format!("kind is design, deck, video or asset, not \"{name}\"")),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Page {
     pub path: String,
@@ -83,6 +115,9 @@ pub struct ArtifactFile {
 pub struct Manifest {
     /// The direction (`design_directions::Direction::id`) the preview is of.
     pub direction_id: String,
+    /// What it is; versions saved before kinds existed are designs.
+    #[serde(default)]
+    pub kind: Kind,
     pub title: String,
     pub pages: Vec<Page>,
     pub elements: Vec<Element>,
@@ -224,6 +259,28 @@ fn check_whole(files: &[ArtifactFile]) -> Result<(), String> {
     Ok(())
 }
 
+/// What a deck or a video must have to be one; designs and assets are checked as pages or canvases.
+fn check_kind(kind: Kind, files: &[ArtifactFile]) -> Result<(), String> {
+    let entry = || files.iter().find(|f| f.path == ENTRY_PAGE).map(|f| f.content.as_str());
+    match kind {
+        Kind::Design | Kind::Asset => Ok(()),
+        Kind::Deck => {
+            let html = entry().ok_or_else(|| format!("a deck is HTML: its slides go in {ENTRY_PAGE}"))?;
+            if !(html.contains("class=\"deck\"") && html.contains("class=\"slide\"")) {
+                return Err(format!("{ENTRY_PAGE} needs a <div class=\"deck\"> holding one <section class=\"slide\"> per slide (read decks-runtime-notes)"));
+            }
+            Ok(())
+        }
+        Kind::Video => {
+            let html = entry().ok_or_else(|| format!("a video is a composition: its root goes in {ENTRY_PAGE}"))?;
+            if !(html.contains("data-composition-id") && html.contains("data-duration")) {
+                return Err(format!("{ENTRY_PAGE} needs a root element with data-composition-id, data-start, data-width, data-height and data-duration (read video-hyperframes-composition)"));
+            }
+            Ok(())
+        }
+    }
+}
+
 /// Collects descendant nodes from an OpenPencil `.pen` frame into `elements` on `page_path`.
 fn collect_pen_elements(
     file_path: &str,
@@ -337,14 +394,18 @@ impl DesignArtifact {
         if direction_id != slug(&direction_id) {
             return Err(format!("direction_id must be a direction's id, like \"{}\"", slug(&direction_id)));
         }
+        let kind = Kind::of(input)?;
+        check_kind(kind, &files)?;
         let mut pages = Vec::new();
         let mut elements: Vec<Element> = Vec::new();
-        for file in files.iter().filter(|f| is_html(&f.path)) {
+        // A video's scenes are fragments mounted by its root, so only the root is a page.
+        let pages_of = |path: &str| is_html(path) && (kind != Kind::Video || path == ENTRY_PAGE);
+        for file in files.iter().filter(|f| pages_of(&f.path)) {
             if !has_viewport(&file.content) {
                 return Err(format!("{} has no viewport meta tag, so it wouldn't adapt to a phone", file.path));
             }
             let ids = ids_in(&file.path, &file.content)?;
-            if ids.is_empty() {
+            if ids.is_empty() && kind != Kind::Video {
                 return Err(format!("{} has no {ID_ATTRIBUTE} attributes: give each section and component one", file.path));
             }
             for id in ids {
@@ -369,7 +430,7 @@ impl DesignArtifact {
                 element.label = label;
             }
         }
-        Ok(Self { manifest: Manifest { direction_id, title, pages, elements }, files })
+        Ok(Self { manifest: Manifest { direction_id, kind, title, pages, elements }, files })
     }
 
     /// Keeps what `earlier` said an element is (its kind and label) for every element this version
@@ -418,11 +479,17 @@ pub fn artifact_input_schema() -> Value {
         "properties": {
             "direction_id": {"type": "string", "description": "The id of the direction this is a preview of"},
             "title": {"type": "string", "description": "What this version is, in a few words"},
+            "kind": {
+                "type": "string",
+                "enum": Kind::ALL.iter().map(|(name, _)| *name).collect::<Vec<_>>(),
+                "description": "What you made: design (a site or app, canvas.pen), deck (slides: index.html with a deck of slides), \
+                                video (a composition: index.html and its scenes) or asset (a poster or social card). design when left out"
+            },
             "files": {
                 "type": "array",
                 "minItems": 1,
                 "maxItems": MAX_FILES,
-                "description": "Every file of the preview, whole: canvas.pen (OpenPencil scene graph). Relative lowercase paths",
+                "description": "Every file of the preview, whole: canvas.pen (OpenPencil scene graph) for a design; HTML, CSS and JS for a deck or a video. Relative lowercase paths",
                 "items": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}, "required": ["path", "content"]}
             },
             "elements": {
@@ -576,6 +643,11 @@ pub async fn file_by_token(conn: &mut PgConnection, token: &str, path: &str) -> 
     .await
 }
 
+/// Whether a version is served under `token`.
+pub async fn token_exists(conn: &mut PgConnection, token: &str) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM design_artifacts WHERE preview_token = $1)").bind(token).fetch_one(conn).await
+}
+
 /// One file of one version: what it is served as, and its content.
 pub async fn file(conn: &mut PgConnection, session_id: Uuid, version: i32, path: &str) -> Result<Option<(String, String)>, sqlx::Error> {
     sqlx::query_as(
@@ -622,6 +694,60 @@ mod tests {
         let mut input = preview();
         input["files"].as_array_mut().unwrap().push(json!({"path": path, "content": content}));
         input
+    }
+
+    fn deck_html(slides: &str) -> String {
+        page("Pitch Roti Pagi", &format!("<div class=\"deck\">{slides}</div>"))
+    }
+
+    fn kind_input(kind: &str, files: Value) -> Value {
+        json!({"direction_id": "editorial", "title": "First pass", "kind": kind, "files": files})
+    }
+
+    #[test]
+    fn a_preview_says_what_kind_of_thing_it_is_and_old_ones_are_designs() {
+        assert_eq!(DesignArtifact::parse(&preview()).unwrap().manifest.kind, Kind::Design, "no kind means a design");
+        let old: Manifest = serde_json::from_value(json!({"direction_id": "a", "title": "t", "pages": [], "elements": []})).unwrap();
+        assert_eq!(old.kind, Kind::Design, "versions saved before kinds read as designs");
+        let unknown = DesignArtifact::parse(&kind_input("poem", json!([{"path": "index.html", "content": home()}]))).unwrap_err();
+        assert!(unknown.contains("design, deck, video or asset"), "{unknown}");
+    }
+
+    #[test]
+    fn save_preview_offers_the_kinds() {
+        let schema = artifact_input_schema();
+        assert_eq!(schema["properties"]["kind"]["enum"], json!(["design", "deck", "video", "asset"]));
+    }
+
+    #[test]
+    fn a_deck_is_html_slides_in_a_deck() {
+        let slides = "<section class=\"slide\" data-design-id=\"cover\" data-title=\"Cover\"><h1>Roti Pagi</h1></section>\
+                      <section class=\"slide\" data-design-id=\"menu\"><h2>Menu</h2></section>";
+        let deck = DesignArtifact::parse(&kind_input("deck", json!([{"path": "index.html", "content": deck_html(slides)}]))).unwrap();
+        assert_eq!(deck.manifest.kind, Kind::Deck);
+        assert_eq!(deck.manifest.elements.len(), 2);
+        let no_slides = DesignArtifact::parse(&kind_input("deck", json!([{"path": "index.html", "content": page("x", "<div class=\"deck\" data-design-id=\"d\"></div>")}]))).unwrap_err();
+        assert!(no_slides.contains("section class=\"slide\""), "{no_slides}");
+        let pen_only = DesignArtifact::parse(&kind_input("deck", json!([{"path": "canvas.pen", "content": "{}"}]))).unwrap_err();
+        assert!(pen_only.contains("index.html"), "a deck is HTML: {pen_only}");
+    }
+
+    #[test]
+    fn a_video_is_a_composition_whose_scenes_are_fragments() {
+        let root = "<!doctype html><html><head><meta name=\"viewport\" content=\"width=1080, height=1920\"><title>Promo</title></head>\
+                    <body><div id=\"root\" data-composition-id=\"main\" data-start=\"0\" data-width=\"1080\" data-height=\"1920\" data-duration=\"10\">\
+                    <div id=\"intro\" data-composition-id=\"intro\" data-composition-src=\"compositions/intro.html\" data-start=\"0\" data-duration=\"4\"></div>\
+                    </div></body></html>";
+        let scene = "<template id=\"intro-template\"><div data-composition-id=\"intro\" data-width=\"1080\" data-height=\"1920\"><h1>Roti Pagi</h1></div></template>";
+        let video = DesignArtifact::parse(&kind_input("video", json!([
+            {"path": "index.html", "content": root},
+            {"path": "compositions/intro.html", "content": scene}
+        ])))
+        .unwrap();
+        assert_eq!(video.manifest.kind, Kind::Video);
+        assert_eq!(video.manifest.pages.iter().map(|p| p.path.as_str()).collect::<Vec<_>>(), ["index.html"], "the root is the one page; scenes are its parts");
+        let no_root = DesignArtifact::parse(&kind_input("video", json!([{"path": "index.html", "content": home()}]))).unwrap_err();
+        assert!(no_root.contains("data-composition-id") && no_root.contains("data-duration"), "{no_root}");
     }
 
     #[test]

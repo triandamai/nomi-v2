@@ -1,0 +1,19 @@
+/* Nomi bridge: maps html-ppt's theme variables to the design tokens a Sora deck defines
+   (--color-*, --font-*), for a deck drawn in the person's own design system instead of a
+   named theme. Link it after base.css and after the :root block that defines the tokens. */
+:root {
+  --bg: var(--color-background);
+  --bg-soft: var(--color-muted);
+  --surface: var(--color-card);
+  --surface-2: var(--color-muted);
+  --border: var(--color-border);
+  --border-strong: var(--color-input);
+  --text-1: var(--color-foreground);
+  --text-2: var(--color-muted-foreground);
+  --text-3: var(--color-muted-foreground);
+  --accent: var(--color-primary);
+  --accent-ink: var(--color-primary-foreground);
+  --bad: var(--color-destructive);
+  --font-sans: var(--font-body);
+  --font-display: var(--font-heading);
+}

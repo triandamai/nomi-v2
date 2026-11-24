@@ -214,7 +214,9 @@ impl SubAgent for DesignAgent {
 
     fn intent_description(&self) -> Cow<'static, str> {
         Cow::Borrowed(
-            "the user wants design work on a site or app: its look and feel, visual directions to choose from, layout, colours, fonts, or feedback on how a design looks",
+            "the user wants design work: the look and feel of a site or app (visual directions, layout, colours, fonts, \
+             feedback on how a design looks), or a slide deck or presentation, a short video or motion graphic, \
+             or a poster or social card",
         )
     }
 
@@ -309,6 +311,20 @@ mod tests {
         }
         assert!(DESIGN_CHANGE_RULES.contains("reference-contract"), "a reference the person sends goes through the contract");
         assert!(DESIGN_HANDOFF_RULES.contains("systems-schema"), "the handoff writes the design system down the DESIGN.md way");
+    }
+
+    #[test]
+    fn sora_makes_decks_and_videos_as_well_as_designs() {
+        let rules = DESIGN_PREVIEW_RULES;
+        for said in ["kind", "deck", "decks-html-ppt", "decks-storytelling", "video", "video-hyperframes", "video-hyperframes-composition", "@keyframes"] {
+            assert!(rules.contains(said), "her preview rules say {said:?}");
+        }
+        assert!(rules.contains("never GSAP"), "compositions stay off GSAP until its licence is cleared");
+        assert!(rules.contains("raw HTML for a site or app"), "the no-raw-HTML rule is for sites and apps only");
+        let description = DesignAgent::new().intent_description();
+        for said in ["slide deck", "presentation", "video", "poster"] {
+            assert!(description.contains(said), "the classifier is told {said:?} is Sora's");
+        }
     }
 
     #[test]
