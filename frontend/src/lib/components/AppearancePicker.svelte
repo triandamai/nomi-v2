@@ -3,7 +3,7 @@
 	import { enhance } from '$app/forms';
 	import { DEFAULT_THEME, MODES, THEMES } from '$lib/appearance';
 	import BottomSheet from '$lib/components/m3/BottomSheet.svelte';
-	import { rememberAppearance } from '$lib/appearanceCookie';
+	import { rememberAppearance, syncThemeColor } from '$lib/appearanceCookie';
 	import type { AccentColor, Preferences, Theme } from '$lib/types';
 
 	// Light/dark mode and the colour theme. Used on Preferences and in the admin console: both save
@@ -32,6 +32,7 @@
 	function show(nextMode: Theme, nextTheme: AccentColor) {
 		document.documentElement.dataset.theme = nextMode;
 		document.documentElement.dataset.color = nextTheme;
+		syncThemeColor(nextMode, nextTheme);
 		rememberAppearance(nextMode, nextTheme);
 	}
 

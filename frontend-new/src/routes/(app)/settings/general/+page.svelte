@@ -16,7 +16,7 @@
 	import { agentTypeOf, crewOf } from '$lib/adapters/shell';
 	import { mentionOptions } from '$lib/adapters/chat';
 	import Mascot from '$lib/ds/agents/Mascot.svelte';
-	import type { Theme } from '$lib/theme';
+	import { applyTheme, type Theme } from '$lib/theme';
 	import { toasts } from '$lib/ds/overlays/toasts.svelte';
 	import Button from '$lib/ds/actions/Button.svelte';
 	import AuthLink from '$lib/ds/auth/AuthLink.svelte';
@@ -89,10 +89,6 @@
 	}
 
 	let theme = $derived<Theme>(data.preferences.theme);
-	function applyTheme(next: Theme) {
-		if (next === 'system') delete document.documentElement.dataset.theme;
-		else document.documentElement.dataset.theme = next;
-	}
 	async function changeTheme(next: string) {
 		const before = theme;
 		theme = next as Theme;

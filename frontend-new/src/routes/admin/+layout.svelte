@@ -5,7 +5,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { getLocale } from '$lib/paraglide/runtime';
 	import { VERSION_LABEL } from '$lib/version';
-	import type { Theme } from '$lib/theme';
+	import { applyTheme, type Theme } from '$lib/theme';
 	import { navGroups, pageForPath, type PageKey } from '$lib/admin/access';
 	import { GROUP_LABELS, PAGE_LABELS, levelLabel } from '$lib/admin/labels';
 	import AppShell from '$lib/ds/shells/AppShell.svelte';
@@ -82,11 +82,6 @@
 	async function send(path: string, body: unknown): Promise<boolean> {
 		const response = await fetch(path, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null);
 		return Boolean(response?.ok && !response.redirected);
-	}
-
-	function applyTheme(next: Theme) {
-		if (next === 'system') delete document.documentElement.dataset.theme;
-		else document.documentElement.dataset.theme = next;
 	}
 
 	async function changeTheme(next: Theme) {

@@ -14,6 +14,7 @@
 	import { componentDocs } from '$lib/docs/entries';
 	import { PATTERNS, SHEETS } from '$lib/docs/patterns';
 	import { docHref } from '$lib/docs/href';
+	import { applyTheme, parseTheme } from '$lib/theme';
 
 	let { children } = $props();
 
@@ -85,15 +86,13 @@
 		}
 	});
 	$effect(() => {
-		const root = document.documentElement;
-		if (theme === 'dark' || theme === 'light') root.dataset.theme = theme;
-		else delete root.dataset.theme;
+		applyTheme(parseTheme(theme));
 		try {
 			localStorage.setItem('nomi-ds-theme', theme);
 		} catch {
 			// Storage can be off (private windows, previews): the choice lasts for this page.
 		}
-		return () => delete root.dataset.theme;
+		return () => applyTheme('system');
 	});
 </script>
 
