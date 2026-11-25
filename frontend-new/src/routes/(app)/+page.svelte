@@ -15,6 +15,9 @@
 	import { phoneView } from '$lib/phone.svelte';
 	import PhoneAskCard from '$lib/ds/thread/PhoneAskCard.svelte';
 	import PhoneHomeHero from '$lib/ds/thread/PhoneHomeHero.svelte';
+	import ComposerFile from '$lib/ds/thread/ComposerFile.svelte';
+	import { ComposerUploads, type Chip } from '$lib/chat/uploads.svelte';
+	import { blockedReason, composeMessage, extensionOf, formatBytes, kindLabel, progressParts } from '$lib/chat/attachments';
 	import BottomSheet from '$lib/ds/overlays/BottomSheet.svelte';
 	import SheetOption from '$lib/ds/overlays/SheetOption.svelte';
 	import Mascot from '$lib/ds/agents/Mascot.svelte';
@@ -62,6 +65,33 @@
 
 	const crewMembers = $derived(crew.filter((option) => option.kind === 'crew').map((option) => ({ agent: option.agent, name: option.name })));
 
+	// Files on a phone (the + in the ask card): each uploads the moment it's picked, as in a chat, and
+	// the ready ones go with the first message as reference tags after its text. One that failed or
+	// was refused holds Send until it's retried or removed.
+	let picker: HTMLInputElement | undefined = $state();
+	let fileLive = $state('');
+	const uploads = new ComposerUploads({
+		announce: ({ kind, name }) => (fileLive = kind === 'uploaded' ? m.files_live_uploaded({ name }) : kind === 'failed' ? m.files_live_failed({ name }) : m.files_live_rejected({ name })),
+		discard: (id) => void fetch(`/attachments/${id}`, { method: 'DELETE', keepalive: true }).catch(() => undefined),
+	});
+	const REASONS = { connection_lost: m.files_reason_connection_lost, server_error: m.files_reason_server_error, storage_full: m.files_reason_storage_full, too_large: m.files_reason_too_large, rejected: m.files_reason_server_error };
+
+	function chipDetail(chip: Chip): string {
+		if (chip.status === 'uploading') {
+			const progress = m.files_progress(progressParts(chip.progress ?? 0, chip.size));
+			return chip.again ? m.files_again({ progress }) : progress;
+		}
+		if (chip.status === 'failed') return m.files_upload_failed({ reason: REASONS[chip.failure ?? 'server_error']() });
+		if (chip.status === 'rejected') return extensionOf(chip.name) ? m.files_rejected({ ext: extensionOf(chip.name) }) : m.files_rejected_plain();
+		return `${kindLabel({ name: chip.name, kind: chip.uploaded?.kind ?? '' })} · ${formatBytes(chip.size)}`;
+	}
+
+	function pickFiles(event: Event & { currentTarget: HTMLInputElement }) {
+		const files = event.currentTarget.files;
+		if (files?.length) uploads.add([...files]);
+		event.currentTarget.value = '';
+	}
+
 	/** Puts a prompt in the field to finish, as Add reminder and Start a plan do. */
 	function ask(prompt: string) {
 		draft = prompt;
@@ -76,9 +106,13 @@
 	async function start(text: string) {
 		if (busy) return;
 		busy = true;
-		const started = await startChat(to.name === NOMI.name ? text : withMention(text, to.name), modelKey);
+		const body = composeMessage(text, uploads.uploaded.map((file) => file.reference));
+		const started = await startChat(to.name === NOMI.name ? body : withMention(body, to.name), modelKey);
 		busy = false;
-		if (started.kind === 'opened') return void goto(started.href);
+		if (started.kind === 'opened') {
+			uploads.clear();
+			return void goto(started.href);
+		}
 		draft = text;
 		if (started.kind === 'offline') toasts.show({ kind: 'error', title: m.home_start_failed(), detail: m.home_start_offline() });
 		else if (started.kind === 'signed_out') header.signedOutDraft = text;
@@ -90,7 +124,7 @@
 
 {#if phone.current}
 	<!-- Nomi and the greeting over a fading grid, the starters, and the ask card held at the foot
-	     above the tab bar, its + opening a new chat (AGENTS.md §9). -->
+	     above the tab bar, its + attaching files (AGENTS.md §9). -->
 	<div class="-mx-4 -mt-6 -mb-6 flex min-h-full flex-col">
 		<div class="flex flex-1 flex-col justify-center">
 			<PhoneHomeHero {title} intro={m.home_intro()} />
@@ -108,13 +142,27 @@
 				model={modelLabel}
 				{busy}
 				roomy
-				start={{ label: m.nav_new_chat(), href: '/chat/new' }}
+				onattach={() => picker?.click()}
+				attached={uploads.uploaded.length > 0}
+				blocked={blockedReason(uploads.chips) !== null || uploads.chips.some((chip) => chip.status === 'uploading')}
 				onsend={start}
 				onto={() => (sheet = 'to')}
 				onmodel={() => (sheet = 'model')}
-			/>
+			>
+				{#snippet files()}
+					{#if uploads.chips.length > 0}
+						<div class="flex items-center gap-1.5 overflow-x-auto pt-1.5 pr-1.5">
+							{#each uploads.chips as chip (chip.key)}
+								<ComposerFile name={chip.name} status={chip.status} detail={chipDetail(chip)} progress={chip.progress} thumb={chip.thumb} phone onretry={() => uploads.retry(chip.key)} onremove={() => uploads.remove(chip.key)} />
+							{/each}
+						</div>
+					{/if}
+				{/snippet}
+			</PhoneAskCard>
 		</div>
 	</div>
+	<input bind:this={picker} type="file" multiple hidden onchange={pickFiles} />
+	<p class="sr-only" aria-live="polite">{fileLive}</p>
 	<BottomSheet open={sheet === 'to'} title={m.phone_home_to_title()} onclose={() => sheet === 'to' && (sheet = null)}>
 		<SheetOption label="Nomi" chosen={to.name === NOMI.name} onclick={() => ((to = NOMI), (sheet = null))}>
 			{#snippet lead()}<Mascot agent="nomi" size={20} live={false} />{/snippet}
