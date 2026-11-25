@@ -14,7 +14,7 @@ async function reminders(account: Account): Promise<Reminder[]> {
 	return [...list.upcoming, ...list.past];
 }
 
-test('Home on a phone: the greeting, the ask card starting a chat, who it goes to, and the crew', async ({ page, context }) => {
+test('Home on a phone: the greeting, the ask card starting a chat, who it goes to, and its + opening a new chat', async ({ page, context }) => {
 	const account = await createAccount();
 	await signInAs(context, account);
 	await page.goto('/', { waitUntil: 'networkidle' });
@@ -22,7 +22,7 @@ test('Home on a phone: the greeting, the ask card starting a chat, who it goes t
 	await expect(page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Home' })).toHaveAttribute('aria-current', 'page');
 	await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 	await expect(page.getByRole('banner')).toBeHidden();
-	await expect(page.getByRole('navigation', { name: 'Your crew' }).getByRole('link').first()).toHaveAttribute('href', '/settings/crew');
+	await expect(page.getByRole('link', { name: 'New chat' })).toHaveAttribute('href', '/chat/new');
 
 	// Who it goes to is a sheet; Nomi is there and chosen.
 	await page.getByRole('button', { name: /^Send to .+, change$/ }).click();

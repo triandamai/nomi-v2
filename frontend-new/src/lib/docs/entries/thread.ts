@@ -430,12 +430,21 @@ export default [
 	},
 	{
 		file: 'thread/PhoneAskCard.svelte',
-		summary: 'Home’s ask card on a phone: the field at 16pt, who it goes to as a pill with their mascot, the model in mono, and Send, filled once there’s something to send.',
-		use: ['Home on a phone, under the greeting.'],
+		summary: 'Home’s ask card on a phone: the field at 16pt, who it goes to as a pill with their mascot, the model in mono, and Send, filled once there’s something to send. `roomy` gives three lines to write in; `start` puts a + at the front of the row.',
+		use: ['Home on a phone, held at the foot above the tab bar (`roomy`, with `start` opening a new chat).'],
 		avoid: ['A chat: it has the phone composer.', 'Wider screens: ChatComposer.'],
 		dos: ['Open a sheet from the To pill and the model to change them; the card holds no menus of its own.'],
 		accessibility: ['The field is named by its placeholder; the To pill says who it goes to and that it changes it; Send is a named button, 44 under a finger.'],
 		related: ['thread/ChatComposer.svelte', 'overlays/BottomSheet.svelte', 'overlays/SheetOption.svelte'],
+	},
+	{
+		file: 'thread/PhoneHomeHero.svelte',
+		summary: 'The top of Home on a phone: Nomi at 96 over the greeting and a line on what to do, centred, on a grid that fades out under them.',
+		use: ['Home on a phone, above the starters.'],
+		avoid: ['Wider screens: Greeting.', 'Any other screen: it names itself with its large title.'],
+		content: ['The greeting by the time of day and their first name (“Morning, Mario.”); the line says what to do, not what Nomi is.'],
+		accessibility: ['The greeting is the page’s h1; the grid is decoration, hidden from assistive tech.'],
+		related: ['chrome/Greeting.svelte', 'thread/PhoneAskCard.svelte', 'thread/Starters.svelte'],
 	},
 	{
 		file: 'thread/PhoneTodayList.svelte',

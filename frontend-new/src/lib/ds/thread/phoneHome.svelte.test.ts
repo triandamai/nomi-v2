@@ -5,6 +5,7 @@ import { AlarmClock, Inbox } from '@lucide/svelte';
 import PhoneAskCard from './PhoneAskCard.svelte';
 import PhoneTodayList from './PhoneTodayList.svelte';
 import PhoneCrewRow from './PhoneCrewRow.svelte';
+import PhoneHomeHero from './PhoneHomeHero.svelte';
 import { tokenBackground } from '../test-utils';
 
 // Home on a phone (Flow / Mobile — Home, Inbox & You, step 1 dl13j): the ask card, Today as rows,
@@ -34,6 +35,33 @@ describe('PhoneAskCard', () => {
 		expect(onto).toHaveBeenCalledOnce();
 		await page.getByRole('button', { name: /deepseek-flash/ }).click();
 		expect(onmodel).toHaveBeenCalledOnce();
+	});
+});
+
+describe('PhoneAskCard, roomy', () => {
+	it('has room to write and a + at the start of its row that starts a new chat', async () => {
+		await page.viewport(390, 844);
+		await render(PhoneAskCard, { value: '', placeholder: 'Ask Nomi', to: { agent: 'nomi', name: 'Nomi' }, model: 'Gemini 3.6 Flash', onsend: () => {}, roomy: true, start: { label: 'New chat', href: '/chat/new' } });
+		expect(box(page.getByPlaceholder('Ask Nomi').element()).height).toBeGreaterThanOrEqual(64);
+		const plus = page.getByRole('link', { name: 'New chat' });
+		await expect.element(plus).toHaveAttribute('href', '/chat/new');
+		const row = plus.element().parentElement!;
+		expect(row.firstElementChild).toBe(plus.element());
+		expect(Math.round(box(plus.element()).width)).toBe(36);
+	});
+});
+
+describe('PhoneHomeHero', () => {
+	it('is Nomi at 96 over the greeting and the line under it, centred, over a grid that fades out', async () => {
+		await page.viewport(390, 844);
+		const { container } = await render(PhoneHomeHero, { props: { title: 'Morning, Mario.', intro: 'What should we get done?' } });
+		expect(container.querySelector('svg')?.getAttribute('width')).toBe('96');
+		const title = page.getByRole('heading', { level: 1, name: 'Morning, Mario.' }).element();
+		expect(getComputedStyle(title).textAlign).toBe('center');
+		expect(getComputedStyle(page.getByText('What should we get done?').element()).textAlign).toBe('center');
+		const grid = container.querySelector('[data-home-grid]')!;
+		expect(grid.getAttribute('aria-hidden')).toBe('true');
+		expect(getComputedStyle(grid).maskImage).toContain('linear-gradient');
 	});
 });
 
