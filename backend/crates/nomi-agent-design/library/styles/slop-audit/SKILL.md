@@ -102,7 +102,7 @@ Default to subtraction.
 - On this canvas there are no gradients or blur. Do not fake them with stacks of semi-transparent rectangles.
 
 ### Imagery and icons
-- A photo placeholder with no caption. Every placeholder names the photo it stands for, e.g. "Foto: Siti Rahayu memotong rambut pelanggan, cahaya jendela".
+- A photo placeholder with no internal canvas note. Every placeholder frame names the photo it stands for inside the frame (`Photo · Siti Rahayu cutting a customer's hair, window light`), never as a visible caption or description under an image on the page (`taste-core` rule 1).
 - Abstract shapes posing as an illustration with no link to the business.
 - A fake dashboard, browser window or phone mockup that shows nothing true about the product.
 - A rounded-square icon tile above every feature heading.
@@ -161,6 +161,27 @@ Precise names keep revisions surgical:
 - "Replace the icon tiles with the real menu photos, captioned placeholders for now."
 - "Make the status static; there is no live data."
 - "Adapt the pricing block to the page's radius, palette and type."
+
+## `.pen` canvas aesthetic & anti-wireframe craft
+
+OpenPencil draws flat solid fills (no CSS gradients or backdrop blur). Without deliberate art direction, flat vector frames collapse into grey wireframes. Before saving, verify every artboard uses these aesthetic levers:
+
+- **One unmistakable focal anchor per viewport:** Lead with one dominant element — oversized tight-tracked display type (`56–72px`, weight `400–500`, tracking `-2%` to `-4%`), a 55–65% visual/product stage, or a high-contrast dark/brand chapter band. Never give three boxes equal visual weight.
+- **Tonal layering over border soup:** Build depth with 3-step tonal grounds (`$color-background` → `$color-muted` → `$color-card` or `$color-inverse`) and 35–45% open negative space. Delete `1px` borders around groups that proximity and ground contrast already separate.
+- **Asymmetric rhythm & intentional scale:** Prefer 5:7 or 4:8 splits over mechanical 50/50 columns. Pair a large display headline or wide visual stage with quiet, compact body copy (max 62ch). Never repeat the same section structure twice in a row.
+- **Tinted, art-directed placeholders (never dead grey):** Fill photo frames with a warm or cool hue-tinted `$color-placeholder` derived from the palette (never `#cccccc` or `#e5e7eb`). Inside software/app frames, draw real UI chrome with realistic local data, rows, and values — never empty boxes.
+- **Disciplined hairline and radius language:** Hairlines use the ink at 12–15% alpha (`$color-border`), never default Tailwind `#e5e7eb`. Commit to one corner-radius character: crisp editorial (`0–4px`) or cohesive product (`8–12px`), never arbitrary `16–24px` pills on every rectangle.
+
+## Hard bans & direct replacements
+
+| AI slop reflex (delete or reject) | Direct replacement |
+|---|---|
+| Centered hero + pill eyebrow + 2 buttons + 3 identical icon-in-tinted-square cards | Asymmetric split or editorial headline + real product/photo stage + varied section rhythm |
+| `#ffffff` + `#6366f1` indigo/violet + `#f3f4f6` grey, or `#000000` + neon purple glow | Trade-grounded palette from `taste-color`; 90–95% neutral interface, one disciplined accent |
+| Tracked uppercase eyebrow (`0.15em`) above every `h2` | Let `h2` scale, weight, and top spacing carry hierarchy; drop the eyebrow |
+| Cards inside cards, coloured left-border strips, "Most Popular" badge, pulsing live dot on static pages | Single-layer tonal panels or hairline-ruled rows; static factual labels |
+| Stock AI copy ("Elevate", "Seamless", "Next-gen", "All-in-one", "Supercharge", "Solusi terbaik", "Tingkatkan bisnis Anda") | Plain category nouns, concrete facts from the brief, specific verb + object CTAs |
+| Invented proof (`4.9/5`, `10,000+ users`, fake `"Trusted by"` logo strips, synthetic testimonials) | Verifiable facts given by the person, or omit the block entirely |
 
 ## Boundaries
 

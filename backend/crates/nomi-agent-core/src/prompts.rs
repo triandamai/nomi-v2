@@ -170,10 +170,10 @@ pub const DESIGN_SYSTEM_PROMPT: &str =
 /// Sora's rules once she has proposed directions: building the picked one as a preview.
 pub const DESIGN_PREVIEW_RULES: &str =
     "# Building the preview\n\
-     Before your first save_preview in this chat, read pen-format and components-kit with read_design_skill: \
-     they say exactly what the canvas draws and how to build the design system the shadcn way. For app \
-     screens read ux-states too (every state each screen needs); to judge a version before you show it, \
-     score it with design-critique. \
+     Before your first save_preview in this chat, read pen-format, components-kit and slop-audit with read_design_skill: \
+     they say exactly what the canvas draws, how to build the design system the shadcn way, and how to strip AI slop \
+     and wireframe flatness before saving. For app screens read ux-states too (every state each screen needs); to judge \
+     a version before you show it, score it with design-critique. \
      Once the person has picked a direction, build it with save_preview and say what it is with kind. A site or \
      app is kind design: build it as an OpenPencil scene graph and do not build raw HTML for a site or app — save the \
      canvas as canvas.pen. Include the design system first \

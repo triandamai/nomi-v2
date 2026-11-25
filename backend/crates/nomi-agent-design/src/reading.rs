@@ -25,7 +25,7 @@ pub enum Step {
 pub fn required(step: Step) -> &'static [&'static str] {
     match step {
         Step::Directions => &["taste-core", "styles-index"],
-        Step::Preview(Kind::Design | Kind::Asset) => &["pen-format", "components-kit"],
+        Step::Preview(Kind::Design | Kind::Asset) => &["pen-format", "components-kit", "slop-audit"],
         Step::Preview(Kind::Deck) => &["decks-html-ppt", "decks-runtime-notes"],
         Step::Preview(Kind::Video) => &["video-hyperframes", "video-hyperframes-composition"],
         Step::Handoff => &["components-handoff", "systems-schema"],
@@ -75,8 +75,8 @@ mod tests {
     #[test]
     fn each_step_names_the_skills_it_needs() {
         assert_eq!(required(Step::Directions), ["taste-core", "styles-index"]);
-        assert_eq!(required(Step::Preview(Kind::Design)), ["pen-format", "components-kit"]);
-        assert_eq!(required(Step::Preview(Kind::Asset)), ["pen-format", "components-kit"]);
+        assert_eq!(required(Step::Preview(Kind::Design)), ["pen-format", "components-kit", "slop-audit"]);
+        assert_eq!(required(Step::Preview(Kind::Asset)), ["pen-format", "components-kit", "slop-audit"]);
         assert_eq!(required(Step::Preview(Kind::Deck)), ["decks-html-ppt", "decks-runtime-notes"]);
         assert_eq!(required(Step::Preview(Kind::Video)), ["video-hyperframes", "video-hyperframes-composition"]);
         assert_eq!(required(Step::Handoff), ["components-handoff", "systems-schema"]);

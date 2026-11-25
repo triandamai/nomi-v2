@@ -73,6 +73,15 @@ On every "other" page: photographs, flat colour, type, real icons, the hero entr
 - figma.com and x.ai for company sites; Linear, Cursor and Vercel for showing software big in one app window; Figure and 1X for a product shown big; Daunt Books, Prufrock, Bourke Street Bakery, Gail's, Tartine for a place (learn the feel, never copy).
 - Put your design beside them: does it read as a professional company's site? Nothing tilted, staggered, cut or overlapping? Is the hero the work itself, not a mood?
 
+## Aesthetic elevation (beyond "clean")
+
+Clean is the floor, not the ceiling. A design that avoids errors can still look anonymous. Make every project unmistakable:
+
+- **One trade-authentic visual signature:** Commit to one deliberate signature that belongs to this business — an oversized tight-tracked serif headline, a stark monochrome hairline ledger, a full-bleed photographic chapter, or a crisp dark technical product stage. Never "clean but forgettable".
+- **Negative space as a material:** Target 35–45% open breathing room per viewport. When a screen feels crowded or lifeless, subtract a border, eyebrow, badge or secondary box and widen the margins before adding decoration.
+- **Scale contrast and asymmetry:** Pair one dominant element (display headline or large visual stage) with quiet, compact supporting text. Vary section rhythm down the page so no two neighbouring screens share the same grid.
+- **Art-directed depth on flat fills:** Because the `.pen` canvas draws solid fills, create richness through 3-step tonal grounds, hue-tinted photo placeholders, crisp low-alpha hairlines, and real local data inside UI mockups — never flat grey wireframes.
+
 ## Anti-slop principles
 
 - **Show the real thing on every screen:** the product, the place, the people, the client's real UI. A section with no picture is allowed only for a price list, FAQ, specs table, booking form or one statement moment, and two of those are never neighbours.

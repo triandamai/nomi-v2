@@ -299,7 +299,7 @@ mod tests {
     fn sora_studies_taste_before_directions_and_the_canvas_format_before_drawing() {
         let core = DesignAgent::new().system_prompt();
         assert!(core.contains("read_design_skill") && core.contains("taste-core") && core.contains("styles-index"), "{core}");
-        for said in ["read_design_skill", "pen-format", "components-kit", "taste-check"] {
+        for said in ["read_design_skill", "pen-format", "components-kit", "slop-audit", "taste-check"] {
             assert!(DESIGN_PREVIEW_RULES.contains(said), "her preview rules say {said:?}");
         }
         assert!(DESIGN_PREVIEW_RULES.contains("Taste wins"), "where her craft notes and Taste differ, Taste decides");
