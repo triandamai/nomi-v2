@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { deviceHref, DEVICE_PATHS, devicePath, diffManifest, parentDir, previewEnv, toFileTree, wantsDevice, watchExit } from './device';
+import { deviceHref, DEVICE_PATHS, devicePath, diffManifest, needsForcedInstall, parentDir, previewEnv, toFileTree, wantsDevice, watchExit } from './device';
 
 describe('device run', () => {
 	it('asks for the device run on the workspace page only', () => {
@@ -55,5 +55,15 @@ describe('device run', () => {
 		const slow = watchExit(never, { lastOutputAt: () => clock, settled: async () => false, quietMs: 10, timeoutMs: 20, pollMs: 1, now: () => (clock += 5) });
 		await expect(slow).resolves.toBe('timeout');
 		await expect(watchExit(Promise.resolve(0), { lastOutputAt: () => 0, settled: async () => false, quietMs: 1, timeoutMs: 1 })).resolves.toBe(0);
+	});
+
+	it('retries npm install with --force only when npm refuses a package with EBADPLATFORM', () => {
+		const refused = 'npm error code EBADPLATFORM\nnpm error notsup Unsupported platform for @rolldown/binding-wasm32-wasi@1.2.19: wanted {"cpu":"wasm32"} (current: {"cpu":"x64"})';
+		expect(needsForcedInstall(1, refused)).toBe(true);
+		expect(needsForcedInstall(1, refused, ['install', 'zod'])).toBe(true);
+		expect(needsForcedInstall(1, refused, ['install', '--force'])).toBe(false);
+		expect(needsForcedInstall(1, 'npm error code ERESOLVE')).toBe(false);
+		expect(needsForcedInstall(0, refused)).toBe(false);
+		expect(needsForcedInstall(null, refused)).toBe(false);
 	});
 });

@@ -1,6 +1,6 @@
 import type { WebContainer, WebContainerProcess } from '@webcontainer/api';
 import { m } from '$lib/paraglide/messages';
-import { diffManifest, parentDir, previewEnv, toFileTree, watchExit, type ManifestEntry, type RelayPreviewAccess } from './device';
+import { diffManifest, needsForcedInstall, parentDir, previewEnv, toFileTree, watchExit, type ManifestEntry, type RelayPreviewAccess } from './device';
 import type { SandboxPhase } from './sandbox';
 import { appendOutput, capLog } from './terminal';
 
@@ -214,7 +214,11 @@ export class DeviceRuntime {
 		}
 		if (!this.#relayLoaded) this.#relayLoaded = await this.#loadRelayAccess();
 		this.phase = 'starting';
-		const install = await this.#run('npm', ['install'], { quietMs: INSTALL_QUIET_MS, settled: () => this.#installed() });
+		const installWatch = { quietMs: INSTALL_QUIET_MS, settled: () => this.#installed() };
+		let install = await this.#run('npm', ['install'], installWatch);
+		if (needsForcedInstall(install.code, install.output)) {
+			install = await this.#run('npm', ['install', '--force'], installWatch);
+		}
 		const installed = install.code === 0 || install.hung === true;
 		await this.#check(installed, install.output);
 		if (!installed) return this.#fail(m.device_install_failed());
@@ -240,9 +244,12 @@ export class DeviceRuntime {
 	async #runForKoda(run: ClaimedRun) {
 		const install = run.command === 'npm' && (run.args[0] === 'install' || run.args[0] === 'i');
 		const timeoutMs = run.timeout_seconds ? Math.max(RUN_MIN_MS, run.timeout_seconds * MS_PER_SECOND - RUN_MARGIN_MS) : COMMAND_TIMEOUT_MS;
-		const result = await this.#run(run.command, run.args, install ? { quietMs: INSTALL_QUIET_MS, settled: () => this.#installed(), timeoutMs } : { timeoutMs })
-			.then((done) => (done.hung ? { code: 0, output: done.output } : done))
-			.catch((problem) => ({ code: null, output: String(problem) }));
+		const watch = install ? { quietMs: INSTALL_QUIET_MS, settled: () => this.#installed(), timeoutMs } : { timeoutMs };
+		let outcome = await this.#run(run.command, run.args, watch).catch((problem) => ({ code: null as number | null, output: String(problem), hung: false }));
+		if (install && needsForcedInstall(outcome.code, outcome.output, run.args)) {
+			outcome = await this.#run(run.command, [...run.args, '--force'], watch).catch((problem) => ({ code: null as number | null, output: String(problem), hung: false }));
+		}
+		const result = outcome.hung ? { code: 0, output: outcome.output } : outcome;
 		await this.#api(`runtime/runs/${run.id}`, { method: 'POST', body: JSON.stringify({ exit_code: result.code, output: result.output.slice(-OUTPUT_TAIL) }) }).catch(() => null);
 		// New packages need the dev server restarted to be picked up.
 		if (install) await this.#startDev();
