@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
 	DEVICE_WIDTHS,
 	PREVIEW_SOURCE,
@@ -32,6 +32,7 @@ import {
 	type StudioFeedback,
 	type StudioPreview,
 	isPenPreview,
+	loadPenDocument,
 	mergePenDocuments,
 	penUrl,
 	toolForKey,
@@ -233,6 +234,30 @@ describe('the .pen canvas', () => {
 		);
 		expect(merged.themes).toEqual({ theme: ['light', 'dark', 'contrast'], density: ['compact', 'comfy'] });
 		expect(JSON.parse(mergePenDocuments([pen('home')]) as string).themes).toBeUndefined();
+	});
+
+	it('loads a version\'s .pen files into one document', async () => {
+		const fetchFn = vi.fn(async (url: string) => new Response(url.endsWith('a.pen') ? pen('home') : pen('menu')));
+		const loaded = await loadPenDocument({ ...base, pages: [], pen_files: ['a.pen', 'b.pen'] }, fetchFn);
+		expect(fetchFn).toHaveBeenCalledWith('/design-preview/ab/a.pen');
+		if (loaded.state !== 'ready') throw new Error(`expected ready, got ${loaded.state}`);
+		expect(JSON.parse(loaded.json).children.map((c: { id: string }) => c.id)).toEqual(['home', 'menu']);
+	});
+
+	it('says a .pen file could not be reached, with its status', async () => {
+		const missing = await loadPenDocument({ ...base, pages: [], pen_files: ['a.pen', 'b.pen'] }, async (url: string) =>
+			url.endsWith('b.pen') ? new Response('not found', { status: 404 }) : new Response(pen('home'))
+		);
+		expect(missing).toEqual({ state: 'failed', reason: 'unreachable', status: 404 });
+		const offline = await loadPenDocument({ ...base, pages: [], pen_files: ['a.pen'] }, async () => {
+			throw new TypeError('Failed to fetch');
+		});
+		expect(offline).toEqual({ state: 'failed', reason: 'unreachable', status: null });
+	});
+
+	it('says the .pen files are unreadable when none is a document with frames', async () => {
+		const loaded = await loadPenDocument({ ...base, pages: [], pen_files: ['a.pen'] }, async () => new Response('{}'));
+		expect(loaded).toEqual({ state: 'failed', reason: 'unreadable', status: null });
 	});
 
 	it('draws a version on the canvas unless it is made of HTML pages', () => {

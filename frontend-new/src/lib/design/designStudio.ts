@@ -157,6 +157,36 @@ export function mergePenDocuments(contents: string[]): string | null {
 	});
 }
 
+/** Where a version's `.pen` canvas stands: still coming, ready to draw, or why it can't be drawn. */
+export type PenLoad =
+	| { state: 'loading' }
+	| { state: 'ready'; json: string }
+	| { state: 'failed'; reason: 'unreachable' | 'unreadable'; status: number | null };
+
+/**
+ * A version's `.pen` files as one document. A file that doesn't arrive makes the whole canvas
+ * unreachable (with the answer's status, when there was one), so a part of the design is never
+ * drawn as if it were all of it; files that arrive without frames make it unreadable.
+ */
+export async function loadPenDocument(
+	preview: StudioPreview,
+	fetchFn: (url: string) => Promise<Response> = fetch
+): Promise<Exclude<PenLoad, { state: 'loading' }>> {
+	const contents: string[] = [];
+	for (const path of preview.pen_files ?? []) {
+		let answer: Response;
+		try {
+			answer = await fetchFn(penUrl(preview, path));
+		} catch {
+			return { state: 'failed', reason: 'unreachable', status: null };
+		}
+		if (!answer.ok) return { state: 'failed', reason: 'unreachable', status: answer.status };
+		contents.push(await answer.text());
+	}
+	const json = mergePenDocuments(contents);
+	return json ? { state: 'ready', json } : { state: 'failed', reason: 'unreadable', status: null };
+}
+
 /** Whether a version is drawn from `.pen` files rather than shown as HTML pages. */
 export function isPenPreview(preview: StudioPreview | null): boolean {
 	if (!preview) return false;

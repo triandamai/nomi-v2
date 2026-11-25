@@ -16,7 +16,8 @@ import {
 	type StudioElement,
 	type StudioElementKind,
 	type StudioPin,
-	type StudioPreview
+	type StudioPreview,
+	isPenPreview
 } from './designStudio';
 
 export interface StudioCanvasFrame {
@@ -68,6 +69,8 @@ export interface StudioSceneModel {
 	pageNodeIds: Map<string, string>;
 	variables: StudioTokenVariable[];
 	lintIssues: StudioLintIssue[];
+	/** The version's `.pen` file arrived but couldn't be read, so nothing of it is drawn. */
+	penUnreadable: boolean;
 }
 
 export interface StudioHitResult {
@@ -955,25 +958,30 @@ export function buildStudioSceneModel(options: {
 	device?: Device;
 	rawPenJson?: string | null;
 }): StudioSceneModel {
-	const built = buildStudioPenDocument(options);
-	const penJson = options.rawPenJson?.trim() || JSON.stringify(built.doc);
-	let graph: SceneGraph;
+	// A .pen version is drawn only from its own file. Until that file is here, or when it can't be
+	// read, the canvas holds nothing of the version rather than boxes standing in for its parts.
+	const penVersion = isPenPreview(options.preview);
+	const built = buildStudioPenDocument(penVersion ? { ...options, preview: null, directions: [] } : options);
+	const raw = options.rawPenJson?.trim() || null;
+	let graph: SceneGraph | null = null;
 	let penDocument: PenDocument = built.doc;
-	let normalizedPenJson = penJson;
+	let normalizedPenJson = JSON.stringify(built.doc);
+	let penUnreadable = false;
 
-	if (options.rawPenJson?.trim()) {
+	if (raw) {
 		try {
-			const parsed = JSON.parse(options.rawPenJson) as Record<string, unknown>;
+			const parsed = JSON.parse(raw) as Record<string, unknown>;
 			normalizeRawPenDocument(parsed, built.doc.variables, options.activeDirection, options.device ?? 'desktop');
-			normalizedPenJson = JSON.stringify(parsed);
+			const json = JSON.stringify(parsed);
+			graph = parsePenFile(json);
+			normalizedPenJson = json;
 			penDocument = parsed as unknown as PenDocument;
-			graph = parsePenFile(normalizedPenJson);
 		} catch {
-			graph = parsePenFile(JSON.stringify(built.doc));
+			penUnreadable = true;
 		}
-	} else {
-		graph = parsePenFile(penJson);
 	}
+	graph ??= parsePenFile(normalizedPenJson);
+	const fromRaw = raw !== null && !penUnreadable;
 
 	const pages = graph.getPages(false);
 	const pageId = pages[0]?.id ?? graph.rootId;
@@ -985,7 +993,7 @@ export function buildStudioSceneModel(options: {
 	const pageNodeIds = new Map(built.pageNodeIds);
 
 	// If loaded from rawPenJson, also index every top-level frame and child node in the parsed SceneGraph
-	if (options.rawPenJson?.trim()) {
+	if (fromRaw) {
 		const topFrames = graph.getChildren(pageId);
 		topFrames.forEach((frame, idx) => {
 			const pagePath = pageOfFrame(options.preview, frame, idx)?.path ?? frame.id;
@@ -1090,7 +1098,8 @@ export function buildStudioSceneModel(options: {
 		elementNodeIds,
 		pageNodeIds,
 		variables,
-		lintIssues
+		lintIssues,
+		penUnreadable
 	};
 }
 
