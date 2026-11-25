@@ -5,7 +5,7 @@
 	import { page } from '$app/state';
 	import { m } from '$lib/paraglide/messages';
 	import { getLocale } from '$lib/paraglide/runtime';
-	import { THEME_COLOR, shareMeta } from '$lib/seo/seo';
+	import { shareMeta } from '$lib/seo/seo';
 
 	let { children } = $props();
 
@@ -29,8 +29,6 @@
 </script>
 
 <svelte:head>
-	<meta name="theme-color" content={THEME_COLOR.light} media="(prefers-color-scheme: light)" />
-	<meta name="theme-color" content={THEME_COLOR.dark} media="(prefers-color-scheme: dark)" />
 	{#each tags as tag (tag.name ?? tag.property)}
 		<meta name={tag.name} property={tag.property} content={tag.content} />
 	{/each}

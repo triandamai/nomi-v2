@@ -21,6 +21,7 @@
 	import SearchDialog from '$lib/components/SearchDialog.svelte';
 	import IconSearch from '$lib/components/icons/IconSearch.svelte';
 	import { searchDialog } from '$lib/searchDialog.svelte';
+	import { syncThemeColor } from '$lib/appearanceCookie';
 	import type { LayoutData } from './$types';
 
 	let { data, children }: { data: LayoutData; children: Snippet } = $props();
@@ -80,6 +81,7 @@
 	$effect(() => {
 		document.documentElement.dataset.theme = data.preferences.theme;
 		document.documentElement.dataset.color = data.preferences.accent_color;
+		syncThemeColor(data.preferences.theme, data.preferences.accent_color);
 	});
 </script>
 

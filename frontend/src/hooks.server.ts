@@ -3,7 +3,7 @@ import type { Handle, HandleFetch } from '@sveltejs/kit';
 import { isApiRequest, refreshSession } from '$lib/server/api';
 import { APP_VERSION, CLIENT_VERSION_HEADER } from '$lib/version';
 import { paraglideMiddleware } from '$lib/paraglide/server';
-import { APPEARANCE_COOKIE, appearanceAttributes, parseAppearance } from '$lib/appearanceCookie';
+import { APPEARANCE_COOKIE, appearanceAttributes, parseAppearance, themeColorMeta } from '$lib/appearanceCookie';
 import { DEVICE_COOKIE, DEVICE_ID_HEADER } from '$lib/device';
 import { ensureDeviceId } from '$lib/server/device';
 
@@ -14,10 +14,13 @@ const i18n: Handle = ({ event, resolve }) =>
 		return resolve(event, {
 			// The language, and the person's theme so the first frame is already in their colours.
 			// The cookie is read as the page renders, after the layout has refreshed it.
-			transformPageChunk: ({ html }) =>
-				html
+			transformPageChunk: ({ html }) => {
+				const appearance = parseAppearance(event.cookies.get(APPEARANCE_COOKIE));
+				return html
 					.replace('%paraglide.lang%', locale)
-					.replace('%nomi.appearance%', appearanceAttributes(parseAppearance(event.cookies.get(APPEARANCE_COOKIE)))),
+					.replace('%nomi.appearance%', appearanceAttributes(appearance))
+					.replace('%nomi.theme-color%', themeColorMeta(appearance));
+			},
 		});
 	});
 

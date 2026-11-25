@@ -18,7 +18,7 @@
 	import { SHORTCUT_KEYS, isTyping, shortcutFor } from '$lib/shortcuts';
 	import { APP_VERSION, VERSION_LABEL } from '$lib/version';
 	import { markSeen } from '$lib/releaseNotes';
-	import type { Theme } from '$lib/theme';
+	import { applyTheme, type Theme } from '$lib/theme';
 	import AppShell from '$lib/ds/shells/AppShell.svelte';
 	import { setPanelPlacement } from '$lib/ds/shells/panelPlacement';
 	import { setMainLayout } from '$lib/ds/shells/mainLayout';
@@ -247,11 +247,6 @@
 	async function send(path: string, method: 'PUT' | 'POST', body: unknown): Promise<Response | null> {
 		const response = await fetch(path, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null);
 		return response && !response.redirected ? response : null;
-	}
-
-	function applyTheme(next: Theme) {
-		if (next === 'system') delete document.documentElement.dataset.theme;
-		else document.documentElement.dataset.theme = next;
 	}
 
 	/** Applied at once; saved with the person's preferences; put back if that fails. */

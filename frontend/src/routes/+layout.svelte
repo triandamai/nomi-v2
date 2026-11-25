@@ -32,8 +32,6 @@
 	<link rel="icon" href="/favicon-48.png" type="image/png" sizes="48x48" />
 	<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 	<link rel="manifest" href="/site.webmanifest" />
-	<meta name="theme-color" content="#f4f7f2" media="(prefers-color-scheme: light)" />
-	<meta name="theme-color" content="#0d1511" media="(prefers-color-scheme: dark)" />
 	<meta name="description" content={DESCRIPTION} />
 
 	<meta property="og:type" content="website" />
