@@ -5,6 +5,7 @@ import { AlarmClock, Inbox } from '@lucide/svelte';
 import PhoneAskCard from './PhoneAskCard.svelte';
 import PhoneTodayList from './PhoneTodayList.svelte';
 import PhoneCrewRow from './PhoneCrewRow.svelte';
+import PhoneHomeHero from './PhoneHomeHero.svelte';
 import { tokenBackground } from '../test-utils';
 
 // Home on a phone (Flow / Mobile — Home, Inbox & You, step 1 dl13j): the ask card, Today as rows,
@@ -34,6 +35,45 @@ describe('PhoneAskCard', () => {
 		expect(onto).toHaveBeenCalledOnce();
 		await page.getByRole('button', { name: /deepseek-flash/ }).click();
 		expect(onmodel).toHaveBeenCalledOnce();
+	});
+});
+
+describe('PhoneAskCard, roomy', () => {
+	it('has room to write and a + at the start of its row that attaches a file', async () => {
+		await page.viewport(390, 844);
+		const onattach = vi.fn();
+		await render(PhoneAskCard, { value: '', placeholder: 'Ask Nomi', to: { agent: 'nomi', name: 'Nomi' }, model: 'Gemini 3.6 Flash', onsend: () => {}, roomy: true, onattach });
+		expect(box(page.getByPlaceholder('Ask Nomi').element()).height).toBeGreaterThanOrEqual(64);
+		const plus = page.getByRole('button', { name: 'Attach a file' });
+		expect(plus.element().parentElement!.firstElementChild).toBe(plus.element());
+		expect(Math.round(box(plus.element()).width)).toBe(36);
+		await plus.click();
+		expect(onattach).toHaveBeenCalledOnce();
+	});
+
+	it('sends with files and no text, and holds Send while a file is blocked', async () => {
+		await page.viewport(390, 844);
+		const onsend = vi.fn();
+		const { rerender } = await render(PhoneAskCard, { value: '', placeholder: 'Ask Nomi', to: { agent: 'nomi', name: 'Nomi' }, onsend, onattach: () => {}, attached: true });
+		const send = page.getByRole('button', { name: 'Send', exact: true });
+		await send.click();
+		expect(onsend).toHaveBeenCalledWith('');
+		await rerender({ value: 'Read this', attached: true, blocked: true });
+		await expect.element(send).toBeDisabled();
+	});
+});
+
+describe('PhoneHomeHero', () => {
+	it('is Nomi at 96 over the greeting and the line under it, centred, over a grid that fades out', async () => {
+		await page.viewport(390, 844);
+		const { container } = await render(PhoneHomeHero, { props: { title: 'Morning, Mario.', intro: 'What should we get done?' } });
+		expect(container.querySelector('svg')?.getAttribute('width')).toBe('96');
+		const title = page.getByRole('heading', { level: 1, name: 'Morning, Mario.' }).element();
+		expect(getComputedStyle(title).textAlign).toBe('center');
+		expect(getComputedStyle(page.getByText('What should we get done?').element()).textAlign).toBe('center');
+		const grid = container.querySelector('[data-home-grid]')!;
+		expect(grid.getAttribute('aria-hidden')).toBe('true');
+		expect(getComputedStyle(grid).maskImage).toContain('linear-gradient');
 	});
 });
 

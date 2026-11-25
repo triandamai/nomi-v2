@@ -12,14 +12,12 @@
 	import ChatComposer, { type Recipient } from '$lib/ds/thread/ChatComposer.svelte';
 	import Starters from '$lib/ds/thread/Starters.svelte';
 	import TodayStrip, { type TodayColumnProps } from '$lib/ds/thread/TodayStrip.svelte';
-	import { AlarmClock, Inbox, ListChecks, SquarePen } from '@lucide/svelte';
-	import Fab from '$lib/ds/chrome/Fab.svelte';
-	import ThemePickerButton from '$lib/ds/chrome/ThemePickerButton.svelte';
-	import { getLocale } from '$lib/paraglide/runtime';
 	import { phoneView } from '$lib/phone.svelte';
 	import PhoneAskCard from '$lib/ds/thread/PhoneAskCard.svelte';
-	import PhoneTodayList, { type TodayRow } from '$lib/ds/thread/PhoneTodayList.svelte';
-	import PhoneCrewRow from '$lib/ds/thread/PhoneCrewRow.svelte';
+	import PhoneHomeHero from '$lib/ds/thread/PhoneHomeHero.svelte';
+	import ComposerFile from '$lib/ds/thread/ComposerFile.svelte';
+	import { ComposerUploads, type Chip } from '$lib/chat/uploads.svelte';
+	import { blockedReason, composeMessage, extensionOf, formatBytes, kindLabel, progressParts } from '$lib/chat/attachments';
 	import BottomSheet from '$lib/ds/overlays/BottomSheet.svelte';
 	import SheetOption from '$lib/ds/overlays/SheetOption.svelte';
 	import Mascot from '$lib/ds/agents/Mascot.svelte';
@@ -30,8 +28,8 @@
 	// left out when the backend can't sum it up.
 	let { data } = $props();
 
-	// On a phone Home is its own screen (Flow / Mobile — Home, Inbox & You, step 1 dl13j): the date and
-	// the greeting, the ask card, Today as rows, the starters, and the crew. One layout or the other.
+	// On a phone Home is its own screen: Nomi and the greeting, the starters, and the ask card at the
+	// foot (the person's layout over the pen's dl13j, AGENTS.md §9). One layout or the other.
 	const guess = () => data.phone;
 	const phone = phoneView(guess());
 	let sheet = $state<'to' | 'model' | null>(null);
@@ -65,26 +63,34 @@
 			: [],
 	);
 
-	// Today on a phone: each column as a row, opening where its things are.
-	const TODAY_ICONS = { out: Inbox, reminders: AlarmClock, plans: ListChecks } as const;
-	const todayRows = $derived<TodayRow[]>(
-		data.home
-			? todayColumns(data.home, time.timeZone).map((column) => ({
-					icon: TODAY_ICONS[column.key as keyof typeof TODAY_ICONS] ?? Inbox,
-					title: column.title,
-					detail: column.body,
-					count: column.count,
-					href: 'href' in column.action && column.action.href ? column.action.href : column.key === 'reminders' ? '/inbox' : '/chats',
-				}))
-			: [],
-	);
-	// "WED 21 OCT · 08:14": the day, the date and the month, then the time.
-	const today = $derived.by(() => {
-		const parts = new Intl.DateTimeFormat(getLocale(), { weekday: 'short', day: 'numeric', month: 'short', timeZone: time.timeZone }).formatToParts(time.now);
-		const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((one) => one.type === type)?.value.replace('.', '') ?? '';
-		return `${part('weekday')} ${part('day')} ${part('month')} · ${timeOf(time.now, time.timeZone)}`;
-	});
 	const crewMembers = $derived(crew.filter((option) => option.kind === 'crew').map((option) => ({ agent: option.agent, name: option.name })));
+
+	// Files on a phone (the + in the ask card): each uploads the moment it's picked, as in a chat, and
+	// the ready ones go with the first message as reference tags after its text. One that failed or
+	// was refused holds Send until it's retried or removed.
+	let picker: HTMLInputElement | undefined = $state();
+	let fileLive = $state('');
+	const uploads = new ComposerUploads({
+		announce: ({ kind, name }) => (fileLive = kind === 'uploaded' ? m.files_live_uploaded({ name }) : kind === 'failed' ? m.files_live_failed({ name }) : m.files_live_rejected({ name })),
+		discard: (id) => void fetch(`/attachments/${id}`, { method: 'DELETE', keepalive: true }).catch(() => undefined),
+	});
+	const REASONS = { connection_lost: m.files_reason_connection_lost, server_error: m.files_reason_server_error, storage_full: m.files_reason_storage_full, too_large: m.files_reason_too_large, rejected: m.files_reason_server_error };
+
+	function chipDetail(chip: Chip): string {
+		if (chip.status === 'uploading') {
+			const progress = m.files_progress(progressParts(chip.progress ?? 0, chip.size));
+			return chip.again ? m.files_again({ progress }) : progress;
+		}
+		if (chip.status === 'failed') return m.files_upload_failed({ reason: REASONS[chip.failure ?? 'server_error']() });
+		if (chip.status === 'rejected') return extensionOf(chip.name) ? m.files_rejected({ ext: extensionOf(chip.name) }) : m.files_rejected_plain();
+		return `${kindLabel({ name: chip.name, kind: chip.uploaded?.kind ?? '' })} · ${formatBytes(chip.size)}`;
+	}
+
+	function pickFiles(event: Event & { currentTarget: HTMLInputElement }) {
+		const files = event.currentTarget.files;
+		if (files?.length) uploads.add([...files]);
+		event.currentTarget.value = '';
+	}
 
 	/** Puts a prompt in the field to finish, as Add reminder and Start a plan do. */
 	function ask(prompt: string) {
@@ -100,9 +106,13 @@
 	async function start(text: string) {
 		if (busy) return;
 		busy = true;
-		const started = await startChat(to.name === NOMI.name ? text : withMention(text, to.name), modelKey);
+		const body = composeMessage(text, uploads.uploaded.map((file) => file.reference));
+		const started = await startChat(to.name === NOMI.name ? body : withMention(body, to.name), modelKey);
 		busy = false;
-		if (started.kind === 'opened') return void goto(started.href);
+		if (started.kind === 'opened') {
+			uploads.clear();
+			return void goto(started.href);
+		}
 		draft = text;
 		if (started.kind === 'offline') toasts.show({ kind: 'error', title: m.home_start_failed(), detail: m.home_start_offline() });
 		else if (started.kind === 'signed_out') header.signedOutDraft = text;
@@ -113,15 +123,17 @@
 <svelte:head><title>{m.app_name()}</title></svelte:head>
 
 {#if phone.current}
-	<div class="-mx-4 -mt-6 flex flex-col pb-24">
-		<div class="flex items-start gap-3 px-5 pt-1.5 pb-3.5">
-			<div class="flex min-w-0 flex-1 flex-col gap-1">
-				<p class="font-mono text-label tracking-label text-text-3 uppercase">{today}</p>
-				<h1 class="text-phone-large font-semibold tracking-phone-large text-text">{title}</h1>
-			</div>
-			<ThemePickerButton />
+	<!-- Nomi and the greeting over a fading grid, the starters, and the ask card held at the foot
+	     above the tab bar, its + attaching files (AGENTS.md §9). -->
+	<div class="-mx-4 -mt-6 -mb-6 flex min-h-full flex-col">
+		<div class="flex flex-1 flex-col justify-center">
+			<PhoneHomeHero {title} intro={m.home_intro()} />
+			{#if picks.length > 0}
+				<!-- Starters brings its own TRY label. -->
+				<div class="px-4 pb-6"><Starters items={picks} onpick={(index) => start(picks[index].text)} /></div>
+			{/if}
 		</div>
-		<div class="px-4 pb-4.5">
+		<div class="sticky bottom-0 bg-bg px-4 pt-2 pb-4">
 			<PhoneAskCard
 				bind:value={draft}
 				bind:field
@@ -129,31 +141,28 @@
 				{to}
 				model={modelLabel}
 				{busy}
+				roomy
+				onattach={() => picker?.click()}
+				attached={uploads.uploaded.length > 0}
+				blocked={blockedReason(uploads.chips) !== null || uploads.chips.some((chip) => chip.status === 'uploading')}
 				onsend={start}
 				onto={() => (sheet = 'to')}
 				onmodel={() => (sheet = 'model')}
-			/>
+			>
+				{#snippet files()}
+					{#if uploads.chips.length > 0}
+						<div class="flex items-center gap-1.5 overflow-x-auto pt-1.5 pr-1.5">
+							{#each uploads.chips as chip (chip.key)}
+								<ComposerFile name={chip.name} status={chip.status} detail={chipDetail(chip)} progress={chip.progress} thumb={chip.thumb} phone onretry={() => uploads.retry(chip.key)} onremove={() => uploads.remove(chip.key)} />
+							{/each}
+						</div>
+					{/if}
+				{/snippet}
+			</PhoneAskCard>
 		</div>
-		{#if todayRows.length > 0}
-			<div class="flex items-center px-5 pb-2">
-				<h2 class="flex-1 font-mono text-label tracking-label text-text-3 uppercase">{m.phone_home_today()}</h2>
-				<span class="font-mono text-label text-text-3">{m.phone_home_updated({ time: timeOf(data.loadedAt, time.timeZone) })}</span>
-			</div>
-			<div class="px-4 pb-5"><PhoneTodayList label={m.phone_home_today()} rows={todayRows} /></div>
-		{/if}
-		{#if picks.length > 0}
-			<!-- Starters brings its own TRY label. -->
-			<div class="px-4 pb-5"><Starters items={picks} onpick={(index) => start(picks[index].text)} /></div>
-		{/if}
-		{#if crewMembers.length > 0}
-			<div class="flex items-center px-5 pb-2">
-				<h2 class="flex-1 font-mono text-label tracking-label text-text-3 uppercase">{m.phone_home_crew()}</h2>
-				<span class="font-mono text-label text-text-3">{data.crew.summary.label}</span>
-			</div>
-			<div class="px-4"><PhoneCrewRow label={m.phone_home_crew()} members={crewMembers} href="/settings/crew" /></div>
-		{/if}
 	</div>
-	<div class="fixed right-4 bottom-14"><Fab label={m.nav_new_chat()} icon={SquarePen} iconSize={22} href="/chat/new" /></div>
+	<input bind:this={picker} type="file" multiple hidden onchange={pickFiles} />
+	<p class="sr-only" aria-live="polite">{fileLive}</p>
 	<BottomSheet open={sheet === 'to'} title={m.phone_home_to_title()} onclose={() => sheet === 'to' && (sheet = null)}>
 		<SheetOption label="Nomi" chosen={to.name === NOMI.name} onclick={() => ((to = NOMI), (sheet = null))}>
 			{#snippet lead()}<Mascot agent="nomi" size={20} live={false} />{/snippet}

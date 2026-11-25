@@ -5,6 +5,9 @@ import { seedNotification } from './support/seed';
 // Home, Inbox and You on a phone against the real backend (Flow / Mobile — Home, Inbox & You):
 // each tab's own screen with its large title, and what it does.
 
+const PDF = Buffer.from(
+	'%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj 2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj 3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>endobj 4 0 obj<</Length 44>>stream\nBT /F1 12 Tf 20 100 Td (Oct) Tj ET\nendstream endobj 5 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF',
+);
 const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
 test.use({ viewport: { width: 390, height: 844 }, userAgent: IPHONE, hasTouch: true });
 
@@ -14,15 +17,18 @@ async function reminders(account: Account): Promise<Reminder[]> {
 	return [...list.upcoming, ...list.past];
 }
 
-test('Home on a phone: the greeting, the ask card starting a chat, who it goes to, and the crew', async ({ page, context }) => {
+test('Home on a phone: the greeting, the ask card starting a chat, who it goes to, and its + attaching a file', async ({ page, context }) => {
 	const account = await createAccount();
+	// The greeting names whoever is signed in, by their first name.
+	expect((await api(account, '/api/profile', { method: 'PUT', body: JSON.stringify({ display_name: 'Budi Santoso' }) })).ok).toBe(true);
 	await signInAs(context, account);
 	await page.goto('/', { waitUntil: 'networkidle' });
 
+	await expect(page.getByRole('heading', { level: 1 })).toHaveText(/\bBudi\.$/);
+	await expect(page.getByRole('heading', { level: 1 })).not.toContainText('Santoso');
 	await expect(page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Home' })).toHaveAttribute('aria-current', 'page');
 	await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 	await expect(page.getByRole('banner')).toBeHidden();
-	await expect(page.getByRole('navigation', { name: 'Your crew' }).getByRole('link').first()).toHaveAttribute('href', '/settings/crew');
 
 	// Who it goes to is a sheet; Nomi is there and chosen.
 	await page.getByRole('button', { name: /^Send to .+, change$/ }).click();
@@ -30,6 +36,13 @@ test('Home on a phone: the greeting, the ask card starting a chat, who it goes t
 	await expect(sheet.getByRole('button', { name: 'Nomi' })).toBeVisible();
 	await sheet.getByRole('button', { name: 'Nomi' }).click();
 	await expect(sheet).toHaveCount(0);
+
+	// The + attaches a file, uploaded before the message goes.
+	const chooser = page.waitForEvent('filechooser');
+	await page.getByRole('button', { name: 'Attach a file' }).click();
+	await (await chooser).setFiles({ name: 'bca-oct-2026.pdf', mimeType: 'application/pdf', buffer: PDF });
+	await expect(page.getByText('bca-oct-2026.pdf')).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeEnabled();
 
 	// Asking starts a chat and opens it.
 	await page.getByPlaceholder('Ask Nomi, or hand something to the crew…').fill('What can I build in 10 minutes?');

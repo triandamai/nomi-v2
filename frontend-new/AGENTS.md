@@ -404,9 +404,13 @@ leaves out what v2 or the backend can't do yet, rather than draw it dead:
   desktop row does; its subtitle is when the chat last moved, not the pen's "14 messages · Dana"
   (the list says neither how many messages nor who answered: BACKEND_TODO.md).
 - Home, Inbox and You on a phone (Flow / Mobile — Home, Inbox & You M4PZDC, light C6xDTg) are the
-  pen's screens, each with its own large title in place of the top bar. Home: the date in mono, the
-  greeting, `PhoneAskCard` (who it goes to and the model open bottom sheets), Today as
-  `PhoneTodayList` rows, the starters, `PhoneCrewRow`, and New chat floating as on Chats. The Inbox:
+  pen's screens, each with its own large title in place of the top bar. Home is not the pen's
+  (2026-11-25, the person's own layout): `PhoneHomeHero` (Nomi at 96, the greeting and the line under
+  it, centred on a fading grid), the starters, and `PhoneAskCard` held at the foot above the tab bar,
+  `roomy` and with a + in front that attaches files (uploaded as picked, as in a chat, and sent as
+  the first message's reference tags); the pen's date, Today rows (`PhoneTodayList`), crew row
+  (`PhoneCrewRow`) and New chat floating are left off. Who it goes to and the model still open
+  bottom sheets. The Inbox:
   Mark all read beside the title, the line under it (the desktop's meta, or "Nothing needs you · N
   coming up today"), `PhoneFilters`, Needs you as `PhoneInboxCard`s with phone pills, the day as
   `PhoneTimelineRow`s (⋯ opens a sheet of the desktop row's menu), then the week ahead, because a
