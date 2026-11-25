@@ -2660,6 +2660,7 @@
 	"memory_manage": "Kelola",
 	"memory_saved": "Tersimpan di memori: {fact}",
 	"memory_used": "Dari memori: {fact}",
+	"memory_used_folded": "Dari memori: {fact} dan {count} lainnya",
 	"msg_edit": "Edit pesan",
 	"msg_edited": "diubah · {time}",
 	"msg_files": "File terlampir",
