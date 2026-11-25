@@ -39,7 +39,7 @@
 				],
 				"Navigation, identity & status": [
 					["Nav", 0, 60, 520, 441],
-					["Identity", 544, 60, 928, 242],
+					["Identity", 544, 60, 928, 225],
 					["Status", 0, 525, 1472, 150]
 				],
 				"Conversation & build": [
