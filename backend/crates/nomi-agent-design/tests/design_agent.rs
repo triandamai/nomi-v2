@@ -136,8 +136,8 @@ async fn chat(pool: &PgPool) -> (Uuid, Uuid) {
 }
 
 /// Every skill a step asks Sora to have read (`nomi_agent_design::reading`).
-const EVERY_REQUIRED_SKILL: [&str; 10] = [
-    "taste-core", "styles-index", "pen-format", "components-kit", "decks-html-ppt", "decks-runtime-notes",
+const EVERY_REQUIRED_SKILL: [&str; 11] = [
+    "taste-core", "styles-index", "pen-format", "components-kit", "slop-audit", "decks-html-ppt", "decks-runtime-notes",
     "video-hyperframes", "video-hyperframes-composition", "components-handoff", "systems-schema",
 ];
 

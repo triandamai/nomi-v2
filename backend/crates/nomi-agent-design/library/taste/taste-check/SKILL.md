@@ -89,8 +89,12 @@ Go through every screen frame at 1440, 768 and 390. Fix every miss, then check a
 - [ ] At 390 one column (or 165 two-up tiles), buttons full width, the menu a full-screen sheet; a place has the phone action bar.
 - [ ] Nothing past 390 sideways, nothing on top of anything else.
 
-## Your eyes
+## Your eyes (aesthetic & anti-slop final gate)
 - [ ] Beside figma.com and x.ai it reads as a professional company's site, made for this client.
 - [ ] The hero is the work itself, not a mood; the page shows the real thing on every screen.
+- [ ] **Squint test (25% zoom):** every viewport has one unmistakable focal anchor and 35–45% open breathing room — no wall of equal-weight boxes.
+- [ ] **Swap test:** changing the business name would break the fit; the palette, typography, and signature belong to this trade, not a generic SaaS template.
+- [ ] **Subtraction test:** every remaining border, badge, eyebrow, and card wrapper has a job you can name; anything decorative was deleted.
+- [ ] **Anti-wireframe test:** photo placeholders use hue-tinted `$color-placeholder` fills with internal `Photo · …` notes, and software frames contain realistic local data — zero dead `#cccccc` grey boxes.
 
 Adapted from Taste Skill 2.5.1 (MIT, © 2026 Leonxlnx).
