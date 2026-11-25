@@ -350,6 +350,10 @@ hard. Add to this list instead of deviating silently.
   two-dot face, as frontend's twin draws them), not the pen's flat "Mascot / <name>" frames, by
   choice so both apps show the crew alike. The pen's version is kept in
   `src/lib/rollback/PenMascot.svelte` (with `agents/mascots.ts`) to roll back to.
+- Crew rows (`CrewRow`, and `CrewPanel`'s row for a member without a mascot) keep what a member does
+  on one line, cut short with an ellipsis and whole on hover, so a long description never doubles a
+  row's height. The pen's Identity board wraps Dana's "Transactions, budgets, subscriptions" onto
+  two lines at 300 wide; `pen/bounds.json` holds that board at 225 high (the pen's 242) for it.
 - Inline prose uses the font's own spaces; the pen draws inline examples as frames 4px apart.
 - A wrapped user bubble can be up to 2px wider than the pen's (CSS sizes a wrapped block to its
   max width, not its longest line).
