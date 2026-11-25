@@ -40,4 +40,15 @@ describe('CrewRow', () => {
 		expect(getComputedStyle(page.getByText('Transactions, budgets, subscriptions').element()).color).toBe(tokenColor('nm-text-3'));
 		expect(getComputedStyle(page.getByText('idle').element()).fontFamily).toContain('Geist Mono');
 	});
+
+	it('keeps what they do on one line, cut short with an ellipsis, and the whole of it on hover', async () => {
+		const role = 'Budgets, transactions, subscriptions, bills, savings goals and the monthly money check-in';
+		const { container } = await render(CrewRow, { agent: 'dana', name: 'Dana', role });
+		(container.firstElementChild as HTMLElement).style.width = '240px';
+		const line = page.getByText(role).element() as HTMLElement;
+		const style = getComputedStyle(line);
+		expect([style.whiteSpace, style.overflow, style.textOverflow]).toEqual(['nowrap', 'hidden', 'ellipsis']);
+		expect(line.getBoundingClientRect().height).toBeLessThan(20);
+		expect(line.getAttribute('title')).toBe(role);
+	});
 });

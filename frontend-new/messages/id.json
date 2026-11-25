@@ -3715,5 +3715,6 @@
 	"studio_pen_unreachable": "Nomi tidak bisa mengambil berkas kanvas versi ini, jadi belum ada yang digambar.",
 	"studio_pen_unreadable": "Berkas kanvas versi ini tidak bisa dibaca, jadi belum ada yang digambar. Minta Sora menyimpan versi ini lagi.",
 	"studio_pen_status": "HTTP {status}",
-	"studio_pen_retry": "Coba lagi"
+	"studio_pen_retry": "Coba lagi",
+	"memory_used_folded": "Dari memori: {fact} dan {count} lainnya"
 }

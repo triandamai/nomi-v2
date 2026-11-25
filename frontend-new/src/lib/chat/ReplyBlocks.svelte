@@ -381,7 +381,7 @@
 			{#if block.text}<figcaption class="text-caption text-text-3">{block.text}</figcaption>{/if}
 		</figure>
 	{:else if block.kind === 'memory_used'}
-		{#each block.facts as fact (fact)}<MemoryUsed {fact} />{/each}
+		{#if block.facts.length > 0}<MemoryUsed fact={block.facts[0]} more={block.facts.slice(1)} />{/if}
 	{:else if block.kind === 'memory_saved'}
 		<!-- Saved to memory (crHO0): Edit opens it in Settings › Memory, Undo forgets it at once. -->
 		{#each block.facts as fact, index (fact)}

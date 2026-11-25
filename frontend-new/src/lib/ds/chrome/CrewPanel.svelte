@@ -34,7 +34,7 @@
 						<span aria-hidden="true" class="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-surface-2 text-ui font-semibold text-text-2">{member.name.charAt(0).toUpperCase()}</span>
 						<span class="flex min-w-0 flex-1 flex-col gap-0.5">
 							<span class="text-ui font-medium text-text">{member.name}</span>
-							<span class="text-caption leading-cozy text-text-3">{member.role}</span>
+							<span class="truncate text-caption leading-cozy text-text-3" title={member.role}>{member.role}</span>
 						</span>
 						{#if member.state}<span class="font-mono text-label text-text-3">{member.state}</span>{/if}
 					</div>
