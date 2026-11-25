@@ -430,8 +430,8 @@ export default [
 	},
 	{
 		file: 'thread/PhoneAskCard.svelte',
-		summary: 'Home’s ask card on a phone: the field at 16pt, who it goes to as a pill with their mascot, the model in mono, and Send, filled once there’s something to send. `roomy` gives three lines to write in; `start` puts a + at the front of the row.',
-		use: ['Home on a phone, held at the foot above the tab bar (`roomy`, with `start` opening a new chat).'],
+		summary: 'Home’s ask card on a phone: the field at 16pt, who it goes to as a pill with their mascot, the model in mono, and Send, filled once there’s something to send. `roomy` gives three lines to write in; `onattach` puts a + at the front of the row for files, drawn under the field.',
+		use: ['Home on a phone, held at the foot above the tab bar (`roomy`, with the + attaching files).'],
 		avoid: ['A chat: it has the phone composer.', 'Wider screens: ChatComposer.'],
 		dos: ['Open a sheet from the To pill and the model to change them; the card holds no menus of its own.'],
 		accessibility: ['The field is named by its placeholder; the To pill says who it goes to and that it changes it; Send is a named button, 44 under a finger.'],

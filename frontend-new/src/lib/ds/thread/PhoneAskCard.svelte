@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages';
 	import { ArrowUp, Plus } from '@lucide/svelte';
+	import type { Snippet } from 'svelte';
 	import type { CrewId } from '../agents/crew';
 	import Mascot from '../agents/Mascot.svelte';
 	import Icon from '../foundations/Icon.svelte';
@@ -10,7 +11,8 @@
 	// it goes to (a 32 pill with their mascot), the model in mono, and Send (36, round), the accent once
 	// there's something to send. Each control keeps a 44 touch area drawn outside it, so the card stays the
 	// pen's 98 high. Home asks for more (`roomy`): room for three lines before the row, and a 36 square
-	// + at its start (`start`) that opens a new chat, where the person's layout has no New chat floating.
+	// + at its start that attaches files (`onattach`), drawn under the field (`files`) as they upload.
+	// With files ready a message may go without text; `blocked` holds Send while one failed.
 	type Props = {
 		value?: string;
 		field?: HTMLTextAreaElement;
@@ -23,11 +25,17 @@
 		onmodel?: () => void;
 		/** Three lines' room to write before the row. */
 		roomy?: boolean;
-		/** A + at the start of the row: where it goes and what it's called. */
-		start?: { label: string; href: string };
+		/** The + at the start of the row: opens the file picker. Not drawn without it. */
+		onattach?: () => void;
+		/** Files are attached and ready: the message may go without text. */
+		attached?: boolean;
+		/** A file failed or was refused: Send stays off until it's retried or removed. */
+		blocked?: boolean;
+		/** The files, under the field. */
+		files?: Snippet;
 	};
-	let { value = $bindable(''), field = $bindable(), placeholder, to, model, busy = false, onsend, onto, onmodel, roomy = false, start }: Props = $props();
-	const ready = $derived(value.trim().length > 0 && !busy);
+	let { value = $bindable(''), field = $bindable(), placeholder, to, model, busy = false, onsend, onto, onmodel, roomy = false, onattach, attached = false, blocked = false, files }: Props = $props();
+	const ready = $derived((value.trim().length > 0 || attached) && !blocked && !busy);
 
 	function send() {
 		if (ready) onsend(value.trim());
@@ -49,9 +57,10 @@
 			}
 		}}
 	></textarea>
+	{@render files?.()}
 	<div class="flex items-center gap-2">
-		{#if start}
-			<a href={start.href} aria-label={start.label} class="relative inline-flex size-9 shrink-0 items-center justify-center rounded-md text-text-2 outline -outline-offset-1 outline-border-strong focus-visible:outline-2 focus-visible:outline-focus before:absolute before:-inset-1"><Icon icon={Plus} size={18} /></a>
+		{#if onattach}
+			<button type="button" aria-label={m.composer_attach()} class="relative inline-flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-md text-text-2 outline -outline-offset-1 outline-border-strong focus-visible:outline-2 focus-visible:outline-focus before:absolute before:-inset-1" onclick={onattach}><Icon icon={Plus} size={18} /></button>
 		{/if}
 		<button type="button" aria-label={m.phone_home_to({ name: to.name })} class="inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-full bg-surface-2 px-2.5 text-phone-sm text-text outline-offset-2 focus-visible:outline-2 focus-visible:outline-focus relative before:absolute before:-inset-y-1.5 before:inset-x-0" onclick={onto}>
 			<Mascot agent={to.agent} size={20} />
