@@ -16,9 +16,13 @@ async function reminders(account: Account): Promise<Reminder[]> {
 
 test('Home on a phone: the greeting, the ask card starting a chat, who it goes to, and its + opening a new chat', async ({ page, context }) => {
 	const account = await createAccount();
+	// The greeting names whoever is signed in, by their first name.
+	expect((await api(account, '/api/profile', { method: 'PUT', body: JSON.stringify({ display_name: 'Budi Santoso' }) })).ok).toBe(true);
 	await signInAs(context, account);
 	await page.goto('/', { waitUntil: 'networkidle' });
 
+	await expect(page.getByRole('heading', { level: 1 })).toHaveText(/\bBudi\.$/);
+	await expect(page.getByRole('heading', { level: 1 })).not.toContainText('Santoso');
 	await expect(page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Home' })).toHaveAttribute('aria-current', 'page');
 	await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 	await expect(page.getByRole('banner')).toBeHidden();
