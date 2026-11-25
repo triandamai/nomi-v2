@@ -56,6 +56,19 @@ describe('Memory and connections', () => {
 		expect(onmanage).toHaveBeenCalledOnce();
 	});
 
+	it('folds several remembered facts into one line that opens to show them all', async () => {
+		await render(MemoryUsed, { fact: 'Sari is vegetarian', more: ['You live in Bandung', 'Payday is the 25th', 'You prefer trains'] });
+		const toggle = page.getByRole('button', { name: 'From memory: Sari is vegetarian and 3 more' });
+		await expect.element(toggle).toHaveAttribute('aria-expanded', 'false');
+		expect(document.body.textContent).not.toContain('You live in Bandung');
+
+		await toggle.click();
+		await expect.element(toggle).toHaveAttribute('aria-expanded', 'true');
+		await expect.element(page.getByText('You live in Bandung')).toBeVisible();
+		await expect.element(page.getByText('Payday is the 25th')).toBeVisible();
+		await expect.element(page.getByText('You prefer trains')).toBeVisible();
+	});
+
 	it('says when it saved something new, which you can edit or undo', async () => {
 		const onedit = vi.fn();
 		const onundo = vi.fn();

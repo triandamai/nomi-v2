@@ -775,7 +775,9 @@ export default [
     dos: [
       'Write the fact as it reads after "From memory:": "Sari is vegetarian".',
       "Offer Manage, so the person can change what is remembered.",
+      "Pass every fact an answer used: the first shows, the rest fold into \"and 3 more\", which opens to list them.",
     ],
+    donts: ["Stack a line per memory under one answer."],
     related: ["chat/MemorySaved.svelte"],
   },
   {

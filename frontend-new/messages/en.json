@@ -3715,5 +3715,6 @@
 	"studio_pen_unreachable": "Nomi couldn’t fetch this version’s canvas file, so nothing of it is drawn.",
 	"studio_pen_unreadable": "This version’s canvas file couldn’t be read, so nothing of it is drawn. Ask Sora to save the version again.",
 	"studio_pen_status": "HTTP {status}",
-	"studio_pen_retry": "Try again"
+	"studio_pen_retry": "Try again",
+	"memory_used_folded": "From memory: {fact} and {count} more"
 }

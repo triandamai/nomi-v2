@@ -2660,6 +2660,7 @@
 	"memory_manage": "Manage",
 	"memory_saved": "Saved to memory: {fact}",
 	"memory_used": "From memory: {fact}",
+	"memory_used_folded": "From memory: {fact} and {count} more",
 	"msg_edit": "Edit message",
 	"msg_edited": "edited · {time}",
 	"msg_files": "Attached files",
