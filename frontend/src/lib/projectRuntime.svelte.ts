@@ -9,7 +9,7 @@
 import { payloadSize } from '$lib/code/fileBytes';
 import { WebContainer, type WebContainerProcess } from '@webcontainer/api';
 import { m } from '$lib/paraglide/messages';
-import { appendOutput, capLog, cleanOutput, diffManifest, parentDir, previewEnv, scriptsOf, toFileTree, watchExit, type ManifestEntry, type RelayPreviewAccess } from '$lib/projectRuntime';
+import { appendOutput, capLog, cleanOutput, diffManifest, needsForcedInstall, parentDir, previewEnv, scriptsOf, toFileTree, watchExit, type ManifestEntry, type RelayPreviewAccess } from '$lib/projectRuntime';
 
 export type RuntimePhase =
 	| 'unsupported'
@@ -311,7 +311,11 @@ export class ProjectRuntime {
 			this.#relayLoaded = await this.#loadRelayAccess();
 		}
 		this.phase = 'installing';
-		const install = await this.#run('npm', ['install'], { quietMs: INSTALL_QUIET_MS, settled: () => this.#installed() });
+		const installWatch = { quietMs: INSTALL_QUIET_MS, settled: () => this.#installed() };
+		let install = await this.#run('npm', ['install'], installWatch);
+		if (needsForcedInstall(install.code, install.output)) {
+			install = await this.#run('npm', ['install', '--force'], installWatch);
+		}
 		const installed = install.code === 0 || install.hung === true;
 		if (!installed) {
 			this.#fail('npm install failed. See the terminal.');
@@ -365,9 +369,11 @@ export class ProjectRuntime {
 			: check
 				? { quietMs: 8000, settled: async () => true, timeoutMs }
 				: { timeoutMs };
-		const result = await this.#run(run.command, run.args, watch)
-			.then((r) => (r.hung ? { code: 0, output: `${r.output}\n(finished; the process didn't exit, so Nomi stopped it)` } : r))
-			.catch((e) => ({ code: null, output: String(e) }));
+		let outcome = await this.#run(run.command, run.args, watch).catch((e) => ({ code: null as number | null, output: String(e), hung: false }));
+		if (install && needsForcedInstall(outcome.code, outcome.output, run.args)) {
+			outcome = await this.#run(run.command, [...run.args, '--force'], watch).catch((e) => ({ code: null as number | null, output: String(e), hung: false }));
+		}
+		const result = outcome.hung ? { code: 0, output: `${outcome.output}\n(finished; the process didn't exit, so Nomi stopped it)` } : outcome;
 		this.running = null;
 		await this.#api(`runtime/runs/${run.id}`, { method: 'POST', body: JSON.stringify({ exit_code: result.code, output: result.output }) }).catch(() => null);
 		// New packages need the dev server restarted to be picked up.

@@ -13,7 +13,7 @@ use nomi_agent_coding::runtime::{finish_run, parse_command, ClaimedRun, OUTPUT_K
 use nomi_sandbox::{ExecOutput, SandboxId};
 use uuid::Uuid;
 
-use crate::sandbox_devserver::preview_env;
+use crate::sandbox_devserver::{needs_forced_install, preview_env};
 use crate::sandbox_steps::ServerSteps;
 use crate::sandbox_sync::{shell_quote, PROJECT_DIR};
 
@@ -174,16 +174,34 @@ impl ServerSteps {
 
     /// Run one command to its end. The exit code is `None` when it never got one.
     async fn run_one(&self, sandbox: &SandboxId, run: &ClaimedRun, env: &[(&'static str, String)]) -> (Option<i32>, String) {
-        let words = match validate(run) {
+        let mut words = match validate(run) {
             Ok(words) => words,
             Err(why) => return (None, why),
         };
-        let line = command_line(&words, env);
-        let result = if self.run_timeout <= MAX_EXEC { self.provider.exec(sandbox, &line, self.run_timeout).await.map(|out| (out.exit_code, combined(&out))) } else { self.run_detached(sandbox, &line).await };
-        match result {
+        let done = self.exec_words(sandbox, &words, env).await;
+        if let Ok((exit_code, output)) = &done {
+            if is_unforced_npm_install(&words) && needs_forced_install(*exit_code, output) {
+                words.push("--force".to_string());
+                return match self.exec_words(sandbox, &words, env).await {
+                    Ok((None, out)) => (None, format!("{out}{STOPPED_NOTE}")),
+                    Ok(retried) => retried,
+                    Err(e) => (None, format!("the sandbox couldn't run it: {e}")),
+                };
+            }
+        }
+        match done {
             Ok((None, output)) => (None, format!("{output}{STOPPED_NOTE}")),
             Ok(done) => done,
             Err(e) => (None, format!("the sandbox couldn't run it: {e}")),
+        }
+    }
+
+    async fn exec_words(&self, sandbox: &SandboxId, words: &[String], env: &[(&'static str, String)]) -> Result<(Option<i32>, String), nomi_sandbox::SandboxError> {
+        let line = command_line(words, env);
+        if self.run_timeout <= MAX_EXEC {
+            self.provider.exec(sandbox, &line, self.run_timeout).await.map(|out| (out.exit_code, combined(&out)))
+        } else {
+            self.run_detached(sandbox, &line).await
         }
     }
 
@@ -223,5 +241,29 @@ fn keep_end(text: &mut String) {
             cut += 1;
         }
         text.drain(..cut);
+    }
+}
+
+fn is_unforced_npm_install(words: &[String]) -> bool {
+    words.first().is_some_and(|w| w == "npm")
+        && words.get(1).is_some_and(|w| w == "install" || w == "i")
+        && !words.iter().any(|w| w == "--force" || w == "-f")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn words(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| (*s).to_string()).collect()
+    }
+
+    #[test]
+    fn recognizes_unforced_npm_install_commands() {
+        assert!(is_unforced_npm_install(&words(&["npm", "install"])));
+        assert!(is_unforced_npm_install(&words(&["npm", "i", "zod"])));
+        assert!(!is_unforced_npm_install(&words(&["npm", "install", "--force"])));
+        assert!(!is_unforced_npm_install(&words(&["npm", "install", "-f"])));
+        assert!(!is_unforced_npm_install(&words(&["npm", "run", "build"])));
     }
 }

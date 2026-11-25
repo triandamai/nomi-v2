@@ -61,7 +61,7 @@ fn install_command(forced: bool) -> String {
 /// Whether a failed install should be tried again with `--force`. Every starter lists Rolldown's
 /// WebAssembly binding, which the browser's runtime needs and which npm refuses on the sandbox's
 /// own processor; forced, npm installs it beside the native one and the project runs on either.
-fn needs_forced_install(exit_code: Option<i32>, output: &str) -> bool {
+pub(crate) fn needs_forced_install(exit_code: Option<i32>, output: &str) -> bool {
     exit_code.is_some_and(|code| code != 0) && output.contains(WRONG_PLATFORM)
 }
 

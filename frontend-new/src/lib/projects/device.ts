@@ -131,3 +131,13 @@ export function watchExit(exit: Promise<number>, watch: ExitWatch): Promise<numb
 		timer = setTimeout(poll, pollMs);
 	});
 }
+
+/**
+ * Whether a failed `npm install` should be tried again with `--force`. Starters list Rolldown's
+ * WebAssembly binding (`@rolldown/binding-wasm32-wasi`), which declares `cpu: ["wasm32"]`; npm
+ * refuses it with `EBADPLATFORM` because WebContainer reports `x64`. Forced, npm installs it and
+ * Vite 8 / Rolldown runs.
+ */
+export function needsForcedInstall(code: number | null, output: string, args: readonly string[] = []): boolean {
+	return code !== null && code !== 0 && output.includes('EBADPLATFORM') && !args.includes('--force') && !args.includes('-f');
+}
