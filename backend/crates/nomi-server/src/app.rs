@@ -558,6 +558,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/projects/:id/typing", post(crate::routes::project_presence::typing))
         .route("/api/projects/:id/cursor", post(crate::routes::project_presence::cursor))
         .route("/api/sessions/:id/queue", get(crate::routes::turn_queue::list))
+        .route("/api/sessions/:id/queue/:job_id", delete(crate::routes::turn_queue::remove))
         .route("/api/sessions/:id/queue/:job_id/first", post(crate::routes::turn_queue::move_first))
         .route("/api/projects/:id/activity", get(crate::routes::project_activity::list))
         .route("/api/projects/:id/access", put(crate::routes::project_members::set_access))

@@ -60,4 +60,22 @@ describe('Asks in line', () => {
 		await page.getByRole('button', { name: "Do Sari's first" }).click();
 		expect(onfirst).toHaveBeenCalledWith(2);
 	});
+
+	it('lets waiting asks be removed while keeping the running ask non-removable', async () => {
+		const onremove = vi.fn();
+		await render(AsksInLine, {
+			asks: [
+				{ text: 'Rename the shop', who: sari, state: 'running' },
+				{ text: 'Make the Pre-order button green', who: mario, state: 'next' },
+				{ text: 'Add a Makanan section', who: sari, state: 'queued' },
+			],
+			onremove,
+		});
+		const buttons = page.getByRole('button', { name: 'Remove from queue' });
+		expect(buttons.elements()).toHaveLength(2);
+		await buttons.nth(0).click();
+		expect(onremove).toHaveBeenCalledWith(1);
+		await buttons.nth(1).click();
+		expect(onremove).toHaveBeenCalledWith(2);
+	});
 });

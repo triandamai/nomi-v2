@@ -210,6 +210,12 @@ describe('a project’s workspace', () => {
 		const late = at((call) => (call.url.endsWith('/first') ? new Response('that ask isn’t waiting any more', { status: 409 }) : json({ id: 'p1', session_id: 's1' })), { id: 'p1', job: 'j1' });
 		const refused = await queueAsk.POST(late.event as never);
 		expect([refused.status, await refused.json()]).toEqual([409, { message: 'that ask isn’t waiting any more' }]);
+		const removed = at(answer, { id: 'p1', job: 'j2' });
+		expect(await (await queueAsk.DELETE(removed.event as never)).json()).toEqual(line);
+		expect(removed.api.calls[1]).toMatchObject({ method: 'DELETE', url: 'http://api.test/api/sessions/s1/queue/j2' });
+		const busy = at((call) => (call.method === 'DELETE' ? new Response('that ask isn’t waiting any more', { status: 409 }) : json({ id: 'p1', session_id: 's1' })), { id: 'p1', job: 'j1' });
+		const cantRemove = await queueAsk.DELETE(busy.event as never);
+		expect([cantRemove.status, await cantRemove.json()]).toEqual([409, { message: 'that ask isn’t waiting any more' }]);
 	});
 	it('passes on the requests to publish', async () => {
 		const rows = { requests: [{ id: 'r1', status: 'pending' }] };

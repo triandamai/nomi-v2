@@ -2942,6 +2942,7 @@
 	"queue_hint_short": "Satu perubahan sekali jalan, jadi suntingan tidak bertabrakan.",
 	"queue_meta": "satu perubahan sekali jalan",
 	"queue_next": "Berikutnya",
+	"queue_remove": "Hapus dari antrean",
 	"queue_title": "{count} permintaan dalam antrean",
 	"queue_title_one": "1 permintaan dalam antrean",
 	"role_build": "Bisa membangun",

@@ -2626,6 +2626,8 @@
 	"queue_ask_next": "{name} · next",
 	"queue_ask_waiting": "{name} · waiting",
 	"queue_move_failed": "That ask couldn’t be moved",
+	"queue_remove": "Remove from queue",
+	"queue_remove_failed": "That ask couldn’t be removed",
 	"publish_ask": "Ask to publish",
 	"publish_asked": "Asked to publish",
 	"publish_asked_toast": "Asked the project’s admins to publish",

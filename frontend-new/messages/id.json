@@ -2626,6 +2626,8 @@
 	"queue_ask_next": "{name} · berikutnya",
 	"queue_ask_waiting": "{name} · menunggu",
 	"queue_move_failed": "Permintaan itu tidak bisa dipindahkan",
+	"queue_remove": "Hapus dari antrean",
+	"queue_remove_failed": "Permintaan itu tidak bisa dihapus",
 	"publish_ask": "Minta dipublikasikan",
 	"publish_asked": "Sudah minta dipublikasikan",
 	"publish_asked_toast": "Permintaan publikasi dikirim ke admin proyek",

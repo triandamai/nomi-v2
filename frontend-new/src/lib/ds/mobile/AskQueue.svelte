@@ -1,16 +1,18 @@
 <script lang="ts">
-	import { ArrowUpDown, LoaderCircle } from '@lucide/svelte';
+	import { ArrowUpDown, LoaderCircle, X } from '@lucide/svelte';
 	import { m } from '$lib/paraglide/messages';
+	import IconButton from '../actions/IconButton.svelte';
 	import Icon from '../foundations/Icon.svelte';
 	import Mascot from '../agents/Mascot.svelte';
 	import PeerAvatar from '../build/PeerAvatar.svelte';
 	import PhoneButton from './PhoneButton.svelte';
 
 	// Mobile / Request Queue: two people, one Koda, one change at a time, on a phone. Each ask with
-	// who asked and where it is; the next one can go first with a thumb-sized button.
+	// who asked and where it is; waiting asks can be removed, the running one cannot, and the next
+	// one can go first with a thumb-sized button.
 	type Ask = { text: string; who: { name: string; initials: string; peer?: 1 | 2 }; state: 'running' | 'next' | 'queued'; meta?: string };
-	type Props = { asks: Ask[]; onfirst?: (index: number) => void };
-	let { asks, onfirst }: Props = $props();
+	type Props = { asks: Ask[]; onfirst?: (index: number) => void; onremove?: (index: number) => void };
+	let { asks, onfirst, onremove }: Props = $props();
 
 	const next = $derived(asks.findIndex((ask) => ask.state === 'next'));
 </script>
@@ -30,6 +32,8 @@
 				</span>
 				{#if ask.state === 'running'}
 					<span class="inline-flex shrink-0 animate-spin text-text-2 motion-reduce:animate-none"><Icon icon={LoaderCircle} size={18} /></span>
+				{:else if onremove}
+					<IconButton icon={X} label={m.queue_remove()} variant="ghost" onclick={() => onremove(index)} />
 				{/if}
 			</li>
 		{/each}

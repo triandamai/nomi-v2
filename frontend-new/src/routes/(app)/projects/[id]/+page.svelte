@@ -143,7 +143,12 @@
 				</div>
 			{/each}
 			{#if ws.line.length > 1}
-				<AsksInLine asks={ws.line} first={ws.movable >= 0 ? ws.movable : undefined} onfirst={(index) => void ws.letFirst(index)} />
+				<AsksInLine
+					asks={ws.line}
+					first={ws.movable >= 0 ? ws.movable : undefined}
+					onfirst={(index) => void ws.letFirst(index)}
+					onremove={ws.viewer ? undefined : (index) => void ws.removeAsk(index)}
+				/>
 			{/if}
 		</div>
 	{/if}

@@ -102,3 +102,31 @@ pub async fn move_first(
     let asks = queue_of(&state.pool, claims.sub, session_id).await.map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to load the queue"))?;
     Ok(Json(Queue { asks }))
 }
+
+/// `DELETE /api/sessions/:id/queue/:job_id`: remove a waiting ask from the line. Anyone who can
+/// write in the chat may remove a waiting ask; an ask already running can't be removed.
+pub async fn remove(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Path((session_id, job_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<Queue>, (StatusCode, &'static str)> {
+    super::sessions::authorize_session_access(&state.pool, claims.sub, session_id).await?;
+    super::sessions::refuse_project_viewer(&state.pool, claims.sub, session_id).await?;
+    let removed = sqlx::query(
+        "UPDATE turn_jobs SET status = 'cancelled', completed_at = now(), error = 'Removed from queue' \
+         WHERE id = $2 AND session_id = $1 AND status = 'pending'",
+    )
+    .bind(session_id)
+    .bind(job_id)
+    .execute(&state.pool)
+    .await
+    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to remove the ask"))?;
+    if removed.rows_affected() == 0 {
+        return Err((StatusCode::CONFLICT, "that ask isn't waiting any more"));
+    }
+    if let Some(publisher) = crate::project_events::publisher() {
+        let _ = publisher.try_publish_to(&format!("chat/{session_id}/stream"), &nomi_realtime::StreamEnvelope::QueueChanged);
+    }
+    let asks = queue_of(&state.pool, claims.sub, session_id).await.map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to load the queue"))?;
+    Ok(Json(Queue { asks }))
+}
