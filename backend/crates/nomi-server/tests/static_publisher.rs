@@ -57,7 +57,10 @@ async fn a_preview_goes_to_the_chats_organization_and_gets_its_pinned_address(po
 
     let requests = server.received_requests().await.unwrap();
     assert_eq!(requests[0].method.as_str(), "PUT", "the organization is made sure of first");
-    assert_eq!(requests[0].body_json::<serde_json::Value>().unwrap(), json!({"name": "Roti Pagi"}));
+    assert_eq!(
+        requests[0].body_json::<serde_json::Value>().unwrap(),
+        json!({"name": "Roti Pagi", "quota": {"max_projects": -1, "max_members": -1, "max_orgs": -1}})
+    );
     let upload = &requests[1].body;
     let body = String::from_utf8_lossy(upload).to_string();
     assert!(body.contains(&format!("name=\"project_slug\"\r\n\r\n{}", project_slug(session_id))), "{body}");

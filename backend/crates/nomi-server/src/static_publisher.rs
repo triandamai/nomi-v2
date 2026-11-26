@@ -72,7 +72,8 @@ impl StaticPublisher for ShipyardStaticPublisher {
         let org_key = org_id.to_string();
 
         let client = Shipyard::new(&self.http, &self.config);
-        client.put_org(&org_key, &org_name).await.map_err(|e| e.to_string())?;
+        let quota = crate::shipyard::org_quota_patch(&self.pool, org_id).await.ok();
+        client.put_org_with_quota(&org_key, &org_name, quota.as_ref()).await.map_err(|e| e.to_string())?;
         if let Err(e) = sqlx::query("UPDATE organizations SET shipyard_synced_at = now() WHERE id = $1").bind(org_id).execute(&self.pool).await {
             tracing::warn!(error = %e, "design preview: couldn't note the organization is on Shipyard");
         }

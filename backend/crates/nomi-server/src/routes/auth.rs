@@ -189,6 +189,7 @@ pub async fn register(
             _ => (StatusCode::INTERNAL_SERVER_ERROR, "registration failed"),
         })?;
     super::orgs::announce_signup_joins(&state.pool, user_id).await;
+    crate::shipyard::spawn_sync_user_orgs_quota(state.pool.clone(), state.http_client.clone(), state.shipyard.clone(), user_id);
 
     // A new account confirms its email with a code before it's signed in. If sending fails, the
     // account still exists: signing in sends a new code.
