@@ -105,3 +105,39 @@ pub async fn announce(pool: &PgPool, mqtt: &MqttPublisher, session_id: Uuid, use
         let _ = mqtt.publish_to_user(user_id, &envelope).await;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn waiting_on_maps_all_blocking_block_kinds() {
+        assert_eq!(waiting_on(&json!({ "kind": "questions" })), Some("question"));
+        assert_eq!(waiting_on(&json!({ "kind": "approval_request", "status": "pending" })), Some("approval"));
+        assert_eq!(waiting_on(&json!({ "kind": "approval_request", "status": "approved" })), None);
+        assert_eq!(waiting_on(&json!({ "kind": "workspace_connect" })), Some("connect"));
+        assert_eq!(waiting_on(&json!({ "kind": "connector_connect" })), Some("connect"));
+        assert_eq!(waiting_on(&json!({ "kind": "view", "view": "decision" })), Some("question"));
+        assert_eq!(waiting_on(&json!({ "kind": "view", "view": "form" })), Some("question"));
+        assert_eq!(waiting_on(&json!({ "kind": "view", "view": "card" })), None);
+        assert_eq!(waiting_on(&json!({ "kind": "table" })), None);
+    }
+
+    #[test]
+    fn settled_envelope_converts_chat_activity_only() {
+        let activity = UserEnvelope::ChatActivity {
+            session_id: Uuid::nil(),
+            title: Some("App".into()),
+            project_id: None,
+            outcome: "waiting".into(),
+            waiting: Some("question".into()),
+            agent: Some("Sora".into()),
+        };
+        assert!(matches!(
+            settled_envelope(&activity),
+            Some(StreamEnvelope::ChatSettled { outcome, waiting: Some(w), agent: Some(a) })
+                if outcome == "waiting" && w == "question" && a == "Sora"
+        ));
+    }
+}

@@ -90,6 +90,8 @@ mod tests {
         let names: Vec<String> = tools.iter().map(|t| t.definition().name).collect();
         assert_eq!(names, crate::BACKGROUND_TOOL_NAMES);
         for t in &tools {
+            assert_eq!(t.group(), GROUP);
+            assert!(!t.keywords().is_empty());
             assert_eq!(t.approval(), Approval::Never);
             assert_eq!(t.auto_offer(), AutoOffer::Everyone);
             assert!(!t.posts_activity());
