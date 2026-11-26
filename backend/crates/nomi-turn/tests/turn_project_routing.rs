@@ -76,3 +76,22 @@ async fn in_other_chats_a_build_request_goes_to_rena_even_mid_conversation(pool:
     let projects: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM projects").fetch_one(&pool).await.unwrap();
     assert_eq!(projects, 0, "only the web has project chats");
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn asking_to_build_over_project_limit_explains_and_starts_no_project(pool: PgPool) {
+    sqlx::query("UPDATE plans SET max_projects = 0 WHERE is_default").execute(&pool).await.unwrap();
+    let provider = FakeLlmProvider::success(reply("money"));
+    let embedder = FakeEmbeddingProvider::success(dummy_embedding());
+    let catalog: Arc<ToolCatalog> = Arc::new(ToolCatalog::empty());
+
+    let outcome = handle_inbound_message(
+        &pool, None, &provider, &embedder, &registry(), &catalog, "web", "dm", "chat-limit", "web-user-limit",
+        "Create a web app to track my habits", None,
+    )
+    .await
+    .unwrap();
+    assert!(outcome.reply.contains("Upgrade your plan"), "{}", outcome.reply);
+    assert!(outcome.message_id.is_some());
+    let projects: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM projects").fetch_one(&pool).await.unwrap();
+    assert_eq!(projects, 0);
+}
