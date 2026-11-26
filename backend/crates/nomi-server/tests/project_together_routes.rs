@@ -295,3 +295,66 @@ async fn a_request_to_publish_holds_the_ask_it_follows_and_the_files_changed_sin
     let (status, _) = request(t.router.clone(), "POST", &format!("/api/projects/{}/deploy/requests", t.project_id), Some(&t.ben), Some(json!({ "job_id": Uuid::new_v4() }))).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
+
+#[sqlx::test(migrations = "../../migrations")]
+async fn attachments_are_accessible_to_project_members_in_shared_chat(pool: PgPool) {
+    let t = team(&pool).await;
+    let session = project_session(&pool, t.project_id).await;
+    let ana_id = user_id(&pool, "ana@acme.test").await;
+
+    let file_id = Uuid::new_v4();
+    let key = format!("test/attachments/{file_id}");
+    let content = b"screenshot png content".to_vec();
+    nomi_storage::blob::attachment_store()
+        .put_bytes(&key, content.clone(), "image/png")
+        .await
+        .unwrap();
+
+    sqlx::query(
+        "INSERT INTO attachments (id, user_id, session_id, name, mime, kind, size_bytes, storage_key, status) \
+         VALUES ($1, $2, $3, 'screenshot.png', 'image/png', 'image', $4, $5, 'ready')",
+    )
+    .bind(file_id)
+    .bind(ana_id)
+    .bind(session)
+    .bind(content.len() as i64)
+    .bind(&key)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    // Ben is a project member and can retrieve the attachment info and content
+    let (status, info) = request(t.router.clone(), "GET", &format!("/api/attachments/{file_id}"), Some(&t.ben), None).await;
+    assert_eq!(status, StatusCode::OK, "{info}");
+    assert_eq!(info["name"], "screenshot.png");
+    assert_eq!(info["id"], file_id.to_string());
+
+    let (status, bytes) = {
+        let req = Request::builder()
+            .method("GET")
+            .uri(format!("/api/attachments/{file_id}/content"))
+            .header("authorization", format!("Bearer {}", t.ben))
+            .body(Body::empty())
+            .unwrap();
+        let resp = t.router.clone().oneshot(req).await.unwrap();
+        (resp.status(), resp.into_body().collect().await.unwrap().to_bytes().to_vec())
+    };
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(bytes, content);
+
+    // Cy is not in the organization/project and cannot see the attachment
+    let (status, _) = request(t.router.clone(), "GET", &format!("/api/attachments/{file_id}"), Some(&t.cy), None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let (status, _) = {
+        let req = Request::builder()
+            .method("GET")
+            .uri(format!("/api/attachments/{file_id}/content"))
+            .header("authorization", format!("Bearer {}", t.cy))
+            .body(Body::empty())
+            .unwrap();
+        let resp = t.router.oneshot(req).await.unwrap();
+        (resp.status(), resp.into_body().collect().await.unwrap().to_bytes().to_vec())
+    };
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}

@@ -22,8 +22,8 @@
 	// file a 200 card [8,10] in the border stroke with its 28 tile (the file's icon, or the lock when
 	// viewers can't open it), the name in mono over its meta; a picture its photo. On a phone (`phone`)
 	// a column, 6 apart, of 240 cards [10,12] with the 14 corners and a 32 tile.
-	type Props = { files: SentFileItem[]; phone?: boolean };
-	let { files, phone = false }: Props = $props();
+	type Props = { files: SentFileItem[]; phone?: boolean; align?: 'start' | 'end' };
+	let { files, phone = false, align = 'end' }: Props = $props();
 
 	const grid = $derived(files.length > 1);
 	const allImages = $derived(files.length > 0 && files.every((file) => Boolean(file.image) && !file.locked));
@@ -43,7 +43,11 @@
 	aria-label={m.files_sent_files()}
 	class={[
 		grid ? 'grid grid-cols-2' : 'flex',
-		grid ? (phone ? 'w-full max-w-72 gap-1.5' : 'w-102 max-w-full gap-2') : phone ? 'flex-col items-end gap-1.5' : 'flex-wrap items-end justify-end gap-2',
+		grid
+			? (phone ? 'w-full max-w-72 gap-1.5' : 'w-102 max-w-full gap-2')
+			: phone
+				? (align === 'start' ? 'flex-col items-start gap-1.5' : 'flex-col items-end gap-1.5')
+				: (align === 'start' ? 'flex-wrap items-start justify-start gap-2' : 'flex-wrap items-end justify-end gap-2'),
 	]}
 >
 	{#each files as file, index (index)}

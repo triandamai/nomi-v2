@@ -380,9 +380,38 @@ async fn find_own(state: &AppState, user_id: Uuid, id: Uuid) -> Result<StoredFil
     .ok_or((StatusCode::NOT_FOUND, "file not found"))
 }
 
+/// An attached file: the owner's, or anyone's who can open the chat session the file was sent in.
+async fn find_accessible(state: &AppState, user_id: Uuid, id: Uuid) -> Result<StoredFile, ApiError> {
+    sqlx::query_as::<_, StoredFile>(
+        "SELECT a.name, a.mime, a.kind, a.size_bytes, a.storage_key, a.preview_key, a.status, a.message_id, a.details, a.extracted_text, a.replaces_attachment_id, a.made_by \
+         FROM attachments a \
+         WHERE a.id = $1 \
+           AND ( \
+             a.user_id = $2 \
+             OR ( \
+               a.session_id IS NOT NULL \
+               AND EXISTS ( \
+                 SELECT 1 FROM sessions s \
+                 WHERE s.id = a.session_id \
+                   AND ( \
+                     s.user_id = $2 \
+                     OR EXISTS (SELECT 1 FROM projects p WHERE p.id = chat_project(s.id) AND can_open_project(p.id, $2)) \
+                   ) \
+               ) \
+             ) \
+           )",
+    )
+    .bind(id)
+    .bind(user_id)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "failed to load file"))?
+    .ok_or((StatusCode::NOT_FOUND, "file not found"))
+}
+
 /// `GET /api/attachments/:id`: what Nomi knows about the file, for the chat's file chips.
 pub async fn get_attachment(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(id): Path<Uuid>) -> Result<Json<serde_json::Value>, ApiError> {
-    let file = find_own(&state, claims.sub, id).await?;
+    let file = find_accessible(&state, claims.sub, id).await?;
     // How reading it came to: null while it is still being read.
     let read = nomi_attachments::read_result::read_result(&file.status, file.extracted_text.as_deref(), &file.details);
     Ok(Json(json!({
@@ -427,9 +456,9 @@ fn content_disposition(name: &str, inline: bool) -> HeaderValue {
     HeaderValue::from_str(&format!("{disposition}; filename=\"{ascii}\"; filename*=UTF-8''{encoded}")).unwrap_or(HeaderValue::from_static("attachment"))
 }
 
-/// `GET /api/attachments/:id/content`: the file itself, to its owner only.
+/// `GET /api/attachments/:id/content`: the file itself, to its owner or chat session members.
 pub async fn get_content(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(id): Path<Uuid>, headers: HeaderMap) -> Result<Response, ApiError> {
-    let file = find_own(&state, claims.sub, id).await?;
+    let file = find_accessible(&state, claims.sub, id).await?;
     stored_file_response(&file.name, &file.mime, &file.storage_key, &headers).await
 }
 
@@ -461,7 +490,7 @@ pub(crate) async fn stored_file_response(name: &str, mime: &str, storage_key: &s
 
 /// `GET /api/attachments/:id/preview`: an image's small JPEG.
 pub async fn get_preview(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path(id): Path<Uuid>) -> Result<Response, ApiError> {
-    let file = find_own(&state, claims.sub, id).await?;
+    let file = find_accessible(&state, claims.sub, id).await?;
     let key = file.preview_key.ok_or((StatusCode::NOT_FOUND, "no preview"))?;
     let bytes = nomi_storage::blob::attachment_store()
         .get_bytes(&key)
@@ -476,13 +505,13 @@ pub async fn get_preview(State(state): State<AppState>, AuthClaims(claims): Auth
 }
 
 /// `GET /api/attachments/:id/pages/:n`: page `n` (from 1) of a PDF or image as an image, to its
-/// owner only, so the viewer can draw citation highlights over it. 404 past the last page.
+/// owner or chat members, so the viewer can draw citation highlights over it. 404 past the last page.
 /// Nothing in the workspace draws a PDF page without a system library (pdfium, poppler), so a
 /// page is served from the preview image ingestion stored (an image's own page 1); any other
 /// page is 501 `{"error":"page_render_unavailable"}`.
 pub async fn get_page(State(state): State<AppState>, AuthClaims(claims): AuthClaims, Path((id, n)): Path<(Uuid, i64)>) -> Response {
     use nomi_attachments::made::{page_plan, PagePlan};
-    let file = match find_own(&state, claims.sub, id).await {
+    let file = match find_accessible(&state, claims.sub, id).await {
         Ok(file) => file,
         Err(refusal) => return refusal.into_response(),
     };
