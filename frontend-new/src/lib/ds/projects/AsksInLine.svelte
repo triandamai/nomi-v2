@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { Users } from '@lucide/svelte';
+	import { Users, X } from '@lucide/svelte';
 	import { m } from '$lib/paraglide/messages';
 	import Button from '../actions/Button.svelte';
+	import IconButton from '../actions/IconButton.svelte';
 	import Mascot from '../agents/Mascot.svelte';
 	import Status from '../status/Status.svelte';
 	import Tag from '../status/Tag.svelte';
@@ -19,8 +20,10 @@
 		/** The index of the ask that can go first; none when it's left out. */
 		first?: number;
 		onfirst?: (index: number) => void;
+		/** Removes a waiting (`next` or `queued`) ask; a `running` ask can never be removed. */
+		onremove?: (index: number) => void;
 	};
-	let { asks, first, onfirst }: Props = $props();
+	let { asks, first, onfirst, onremove }: Props = $props();
 
 	const movable = $derived(first !== undefined && first >= 0 && first < asks.length ? asks[first] : null);
 </script>
@@ -42,8 +45,13 @@
 				</span>
 				{#if ask.state === 'running'}
 					<Status kind="working" agent="koda" label={m.build_working({ name: 'Koda' })} />
-				{:else if ask.state === 'next'}
-					<Tag kind="neutral" label={m.queue_next()} />
+				{:else}
+					{#if ask.state === 'next'}
+						<Tag kind="neutral" label={m.queue_next()} />
+					{/if}
+					{#if onremove}
+						<IconButton icon={X} iconSize={14} label={m.queue_remove()} variant="ghost" onclick={() => onremove(index)} />
+					{/if}
 				{/if}
 			</li>
 		{/each}

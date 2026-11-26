@@ -187,9 +187,16 @@ async fn asks_wait_in_line_and_one_can_be_moved_up(pool: PgPool) {
     sqlx::query("UPDATE turn_jobs SET status = 'completed' WHERE id = $1").bind(ids[0]).execute(&pool).await.unwrap();
     assert_eq!(nomi_turn::queue::claim_next(&pool).await.unwrap().unwrap().text, "Add opening hours");
 
-    // The running one can't move.
+    // The running one can't move or be removed.
     let (status, _) = request(t.router.clone(), "POST", &format!("/api/sessions/{session}/queue/{}/first", ids[0]), Some(&t.ben), None).await;
     assert_eq!(status, StatusCode::CONFLICT);
+    let (status, _) = request(t.router.clone(), "DELETE", &format!("/api/sessions/{session}/queue/{}", ids[2]), Some(&t.ben), None).await;
+    assert_eq!(status, StatusCode::CONFLICT, "the newly claimed ask is processing and cannot be removed");
+
+    // A waiting ask can be removed from the queue.
+    let (status, after_remove) = request(t.router.clone(), "DELETE", &format!("/api/sessions/{session}/queue/{}", ids[1]), Some(&t.ben), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(order(&after_remove), vec![("Add opening hours".into(), "running".into())]);
 }
 
 #[sqlx::test(migrations = "../../migrations")]

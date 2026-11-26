@@ -715,6 +715,15 @@ export class Workspace {
 		toasts.show({ kind: 'error', title: m.queue_move_failed(), detail: body?.message || undefined });
 		void this.loadQueue();
 	}
+	async removeAsk(index: number) {
+		const ask = this.asks[index];
+		if (!ask || ask.state === 'running' || this.viewer) return;
+		const response = await fetch(`/projects/${this.project.id}/queue/${encodeURIComponent(ask.id)}`, { method: 'DELETE' }).catch(() => null);
+		const body = response ? ((await response.json().catch(() => null)) as { asks?: QueuedAsk[]; message?: string } | null) : null;
+		if (response?.ok && body?.asks) return void (this.asks = body.asks);
+		toasts.show({ kind: 'error', title: m.queue_remove_failed(), detail: body?.message || undefined });
+		void this.loadQueue();
+	}
 
 	// ── Requests to publish ───────────────────────────────────────────────────────────────────
 	readonly me = $derived(this.people?.me ?? null);

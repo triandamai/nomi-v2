@@ -108,18 +108,27 @@ describe('Together on a phone', () => {
 		expect(getComputedStyle(bubble).backgroundColor).toBe(tokenBackground('nm-peer-1-bg'));
 	});
 
-	it('queues asks and lets the next one go first', async () => {
+	it('queues asks, lets the next one go first, and removes only waiting asks', async () => {
 		const onfirst = vi.fn();
+		const onremove = vi.fn();
 		await render(AskQueue, {
 			asks: [
 				{ text: 'Make the Pre-order button green', who: { name: 'Mario', initials: 'MP' }, state: 'running', meta: 'Mario · running · 00:21' },
 				{ text: 'Add a Makanan section with nasi uduk', who: sari, state: 'next', meta: 'Sari · next' },
+				{ text: 'Change the phone number', who: { name: 'Mario', initials: 'MP' }, state: 'queued', meta: 'Mario · waiting' },
 			],
 			onfirst,
+			onremove,
 		});
-		await expect.element(page.getByText('2 asks in line')).toBeVisible();
+		await expect.element(page.getByText('3 asks in line')).toBeVisible();
 		await page.getByRole('button', { name: 'Let Sari go first' }).click();
 		expect(onfirst).toHaveBeenCalledWith(1);
+		const removeButtons = page.getByRole('button', { name: 'Remove from queue' });
+		expect(removeButtons.elements()).toHaveLength(2);
+		await removeButtons.nth(0).click();
+		expect(onremove).toHaveBeenCalledWith(1);
+		await removeButtons.nth(1).click();
+		expect(onremove).toHaveBeenCalledWith(2);
 	});
 
 	it('asks to publish a teammate’s ready change', async () => {

@@ -191,6 +191,10 @@ describe('a project’s workspace on the server', () => {
 		]);
 		const gone = eventWith((call) => (call.url.endsWith('/first') ? new Response('that ask isn’t waiting any more', { status: 409 }) : json({ id: 'p1', session_id: 's1' })));
 		expect(await workspace.moveFirst(gone.event, 'p1', 'j1')).toEqual({ ok: false, status: 409, message: 'that ask isn’t waiting any more' });
+		expect(await workspace.removeQueuedAsk(event, 'p1', 'j 1')).toEqual({ ok: true, asks: line.asks });
+		expect(backend.calls.at(-1)).toMatchObject({ method: 'DELETE', url: 'http://api.test/api/sessions/s1/queue/j%201' });
+		const running = eventWith((call) => (call.method === 'DELETE' ? new Response('that ask isn’t waiting any more', { status: 409 }) : json({ id: 'p1', session_id: 's1' })));
+		expect(await workspace.removeQueuedAsk(running.event, 'p1', 'j1')).toEqual({ ok: false, status: 409, message: 'that ask isn’t waiting any more' });
 		expect(await workspace.loadQueue(eventWith(() => new Response('', { status: 404 })).event, 'p1')).toBeNull();
 	});
 	it('reads the requests to publish, asks, and answers one, passing the backend’s reason on', async () => {

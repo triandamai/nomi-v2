@@ -293,6 +293,21 @@ export async function moveFirst(event: ApiEvent, id: string, jobId: string): Pro
 	return { ok: true, asks: ((await response.json()) as { asks: QueuedAsk[] }).asks };
 }
 
+/** Removes a waiting ask from the line; the line as it is now, or why not. */
+export async function removeQueuedAsk(event: ApiEvent, id: string, jobId: string): Promise<({ ok: true } & { asks: QueuedAsk[] }) | Exclude<Sent, { ok: true }>> {
+	const session = await chatOf(event, id);
+	if (!session) return { ok: false, status: 404, message: '' };
+	let response: Response;
+	try {
+		response = await apiFetch(event, `/api/sessions/${encodeURIComponent(session)}/queue/${encodeURIComponent(jobId)}`, { method: 'DELETE' });
+	} catch (error) {
+		if (isRedirect(error)) throw error;
+		return { ok: false, status: 503, message: '' };
+	}
+	if (!response.ok) return { ok: false, status: response.status, message: (await response.text()).trim().slice(0, 300) };
+	return { ok: true, asks: ((await response.json()) as { asks: QueuedAsk[] }).asks };
+}
+
 /** The project's requests to publish, open ones first; null where they can't be read. */
 export async function loadRequests(event: ApiEvent, id: string): Promise<{ requests: PublishRequestRow[] } | null> {
 	const response = await call(event, `${at(id)}/deploy/requests`);

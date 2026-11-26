@@ -419,7 +419,11 @@
 		{/each}
 		{#if queue.length > 1}
 			<!-- AskQueue's button sits on the ask that's next: it's offered only when that one is a teammate's behind yours. -->
-			<AskQueue asks={queue} onfirst={ws.movable >= 0 && ws.movable === queue.findIndex((ask) => ask.state === 'next') ? (index) => void ws.letFirst(index) : undefined} />
+			<AskQueue
+				asks={queue}
+				onfirst={ws.movable >= 0 && ws.movable === queue.findIndex((ask) => ask.state === 'next') ? (index) => void ws.letFirst(index) : undefined}
+				onremove={ws.viewer ? undefined : (index) => void ws.removeAsk(index)}
+			/>
 		{/if}
 	</div>
 {/snippet}

@@ -2942,6 +2942,7 @@
 	"queue_hint_short": "One change at a time, so edits never collide.",
 	"queue_meta": "one change at a time",
 	"queue_next": "Next",
+	"queue_remove": "Remove from queue",
 	"queue_title": "{count} asks in line",
 	"queue_title_one": "1 ask in line",
 	"role_build": "Can build",
