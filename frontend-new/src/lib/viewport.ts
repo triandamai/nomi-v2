@@ -14,6 +14,19 @@
 export function initViewport(): () => void {
 	if (typeof window === 'undefined') return () => {};
 
+	function isAppLayout(): boolean {
+		return Boolean(
+			document.querySelector('[data-app-shell], [data-phone-workspace], [data-workspace-shell]') ||
+			document.activeElement?.closest('[data-app-shell], [data-phone-workspace], [data-workspace-shell], [style*="--viewport-height"]')
+		);
+	}
+
+	function resetWindowScroll() {
+		if (window.scrollY !== 0 || window.scrollX !== 0) {
+			window.scrollTo(0, 0);
+		}
+	}
+
 	function update() {
 		const vv = window.visualViewport;
 		if (vv) {
@@ -24,6 +37,10 @@ export function initViewport(): () => void {
 		} else {
 			document.documentElement.style.setProperty('--viewport-height', `${window.innerHeight}px`);
 			document.documentElement.style.setProperty('--viewport-top', '0px');
+		}
+
+		if (isAppLayout()) {
+			resetWindowScroll();
 		}
 	}
 
@@ -36,6 +53,13 @@ export function initViewport(): () => void {
 	}
 	window.addEventListener('resize', update);
 
+	const onWindowScroll = () => {
+		if (isAppLayout()) {
+			resetWindowScroll();
+		}
+	};
+	window.addEventListener('scroll', onWindowScroll);
+
 	const onOrientationChange = () => {
 		setTimeout(update, 100);
 	};
@@ -47,15 +71,18 @@ export function initViewport(): () => void {
 			target instanceof HTMLInputElement ||
 			target instanceof HTMLTextAreaElement ||
 			Boolean(target?.isContentEditable);
-		const isDocumentScrollable = document.documentElement.scrollHeight > window.innerHeight + 50;
-		if (
-			isEditable &&
-			!isDocumentScrollable &&
-			window.visualViewport &&
-			window.visualViewport.height < window.innerHeight
-		) {
-			if (window.scrollY !== 0 || window.scrollX !== 0) {
-				window.scrollTo(0, 0);
+		if (isEditable) {
+			if (isAppLayout()) {
+				resetWindowScroll();
+			} else {
+				const isDocumentScrollable = document.documentElement.scrollHeight > window.innerHeight + 50;
+				if (
+					!isDocumentScrollable &&
+					window.visualViewport &&
+					window.visualViewport.height < window.innerHeight
+				) {
+					resetWindowScroll();
+				}
 			}
 		}
 		requestAnimationFrame(update);
@@ -71,6 +98,7 @@ export function initViewport(): () => void {
 			vv.removeEventListener('scroll', update);
 		}
 		window.removeEventListener('resize', update);
+		window.removeEventListener('scroll', onWindowScroll);
 		window.removeEventListener('orientationchange', onOrientationChange);
 		window.removeEventListener('focusin', onFocus);
 		window.removeEventListener('focusout', onFocus);

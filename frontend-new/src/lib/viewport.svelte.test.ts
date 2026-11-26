@@ -107,4 +107,31 @@ describe('initViewport browser', () => {
 		cleanup();
 		scrollToSpy.mockRestore();
 	});
+
+	it('resets window scroll on app shell layouts when window scrolls or visualViewport updates', () => {
+		const scrollToSpy = vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+
+		const shell = document.createElement('div');
+		shell.setAttribute('data-app-shell', '');
+		document.body.appendChild(shell);
+
+		Object.defineProperty(window, 'scrollY', {
+			value: 200,
+			configurable: true,
+			writable: true
+		});
+
+		const cleanup = initViewport();
+
+		expect(scrollToSpy).toHaveBeenCalledWith(0, 0);
+
+		scrollToSpy.mockClear();
+
+		window.dispatchEvent(new Event('scroll'));
+		expect(scrollToSpy).toHaveBeenCalledWith(0, 0);
+
+		document.body.removeChild(shell);
+		cleanup();
+		scrollToSpy.mockRestore();
+	});
 });

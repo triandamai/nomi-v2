@@ -182,11 +182,18 @@
 						findMention();
 						grow();
 					}}
-					onclick={findMention}
+					onclick={() => {
+						findMention();
+						if (typeof window !== 'undefined' && (window.scrollY !== 0 || window.scrollX !== 0)) {
+							window.scrollTo(0, 0);
+						}
+					}}
 					onfocus={() => {
 						focused = true;
 						if (typeof window !== 'undefined') {
 							requestAnimationFrame(() => window.scrollTo(0, 0));
+							setTimeout(() => window.scrollTo(0, 0), 50);
+							setTimeout(() => window.scrollTo(0, 0), 250);
 						}
 					}}
 					onblur={() => {
