@@ -518,6 +518,7 @@ pub async fn write_file(
     Ok(ToolOutcome {
         display_text: format!("📝 Wrote `{path}`"),
         block: Some(ContentBlock::FileWrite { project_id, path: path.to_string(), content: content.to_string(), previous_content }),
+        media: Vec::new(),
     })
 }
 
@@ -537,7 +538,7 @@ pub async fn add_attachment(
     bump_files_version(conn, project_id).await.map_err(|e| e.to_string())?;
     // A text file shows as a file card with its content; a binary one only as the line saying it was added.
     let block = as_text(bytes).map(|content| ContentBlock::FileWrite { project_id, path: path.to_string(), content, previous_content });
-    Ok(ToolOutcome { display_text: format!("📎 Added {name} as `{path}`"), block })
+    Ok(ToolOutcome { display_text: format!("📎 Added {name} as `{path}`"), block, media: Vec::new() })
 }
 
 pub async fn write_files(
@@ -581,6 +582,7 @@ pub async fn write_files(
         display_text: format!("📝 Wrote {} files: {list}", written.len()),
         // Every file of the batch reaches the chat, not only a summary line.
         block: Some(ContentBlock::FileWrites { project_id, files: written }),
+        media: Vec::new(),
     })
 }
 
@@ -615,6 +617,7 @@ pub async fn edit_file(
     Ok(ToolOutcome {
         display_text: format!("✏️ Edited `{path}`"),
         block: Some(ContentBlock::FileWrite { project_id, path: path.to_string(), content: updated, previous_content: Some(current) }),
+        media: Vec::new(),
     })
 }
 
@@ -651,6 +654,7 @@ pub async fn delete_file(
     Ok(ToolOutcome {
         display_text: format!("🗑️ Deleted `{path}`"),
         block: Some(ContentBlock::FileDelete { project_id, path: path.to_string(), previous_content }),
+        media: Vec::new(),
     })
 }
 

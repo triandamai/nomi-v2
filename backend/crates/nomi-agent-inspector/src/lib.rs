@@ -291,7 +291,7 @@ impl SubAgent for InspectorAgent {
                 if allowed(conn, project_id, READ_LOGS).await {
                     return Ok(ToolOutcome::text(nomi_llm::redact::redacted(logs.join("\n"))));
                 }
-                Ok(ToolOutcome { display_text: blind_log_summary(&logs), block: Some(log_table(&logs)) })
+                Ok(ToolOutcome { display_text: blind_log_summary(&logs), block: Some(log_table(&logs)), media: Vec::new() })
             }
             LIST_TABLES => {
                 let tables = ops.tables(user_id, project_id, source_of(&input)?).await?;
@@ -309,9 +309,9 @@ impl SubAgent for InspectorAgent {
                 let sql = input.get("sql").and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty()).ok_or("sql is required")?;
                 let result = ops.query(user_id, project_id, source_of(&input)?, sql).await?;
                 if allowed(conn, project_id, READ_DATA).await {
-                    return Ok(ToolOutcome { display_text: rows_for_model(&result), block: None });
+                    return Ok(ToolOutcome { display_text: rows_for_model(&result), block: None, media: Vec::new() });
                 }
-                Ok(ToolOutcome { display_text: blind_rows_summary(&result), block: Some(rows_table(&result)) })
+                Ok(ToolOutcome { display_text: blind_rows_summary(&result), block: Some(rows_table(&result)), media: Vec::new() })
             }
             REQUEST_ACCESS => {
                 let permission = input.get("permission").and_then(Value::as_str).unwrap_or_default();

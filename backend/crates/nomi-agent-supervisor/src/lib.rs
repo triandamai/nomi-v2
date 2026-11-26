@@ -91,7 +91,7 @@ async fn stop_agents_tool(conn: &mut PoolConnection<Postgres>, session_id: Uuid,
     let text = stop::describe(&report, &target, target_name.as_deref(), locale);
     // What was stopped shows as a card, task by task, when anything was.
     let block = (!report.tasks.is_empty()).then(|| nomi_agent_core::content_block::ContentBlock::Stopped { tasks: report.tasks.clone() });
-    Ok(nomi_agent_core::ToolOutcome { display_text: text, block })
+    Ok(nomi_agent_core::ToolOutcome { display_text: text, block, media: Vec::new() })
 }
 
 pub struct SupervisorAgent;

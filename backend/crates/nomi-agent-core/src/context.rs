@@ -84,6 +84,10 @@ pub fn compact_tool_results(messages: &mut [LlmMessage], budget_chars: usize, ke
                     }
                 }
                 ContentBlock::ToolUse { input, .. } => trimmed += trim_input(input),
+                ContentBlock::Media { name, .. } => {
+                    *block = ContentBlock::Text { text: format!("[{TRIMMED_MARK} earlier image: {name}]") };
+                    trimmed += 1;
+                }
                 _ => {}
             }
         }

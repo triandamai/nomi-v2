@@ -48,7 +48,7 @@ impl Tool for RunBackgroundTask {
     background_properties!();
     async fn execute(&self, conn: &mut PoolConnection<Postgres>, ctx: &ToolContext<'_>, input: Value) -> Result<ToolOutcome, String> {
         let (display_text, card) = crate::start_background_task(conn, ctx.mqtt, ctx.session_id, ctx.user_id, ctx.agent_type, &input).await?;
-        Ok(ToolOutcome { display_text, block: Some(card) })
+        Ok(ToolOutcome { display_text, block: Some(card), media: Vec::new() })
     }
 }
 

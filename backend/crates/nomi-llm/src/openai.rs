@@ -81,11 +81,16 @@ impl OpenAiProvider {
                 }
             }
 
+            messages.extend(tool_result_messages);
             if !text_parts.is_empty() || !media_parts.is_empty() || !tool_calls.is_empty() {
                 let mut msg = json!({ "role": role_to_str(&m.role) });
                 msg["content"] = if !media_parts.is_empty() {
                     // Files go as content parts after the text.
-                    let mut parts = vec![json!({ "type": "text", "text": text_parts.join("") })];
+                    let mut parts = Vec::new();
+                    let joined = text_parts.join("");
+                    if !joined.is_empty() {
+                        parts.push(json!({ "type": "text", "text": joined }));
+                    }
                     parts.extend(media_parts);
                     json!(parts)
                 } else if !text_parts.is_empty() {
@@ -98,7 +103,6 @@ impl OpenAiProvider {
                 }
                 messages.push(msg);
             }
-            messages.extend(tool_result_messages);
         }
 
         let tools: Vec<serde_json::Value> = request

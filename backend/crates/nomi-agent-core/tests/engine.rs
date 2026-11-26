@@ -58,6 +58,7 @@ impl SubAgent for TestAgent {
                 Ok(ToolOutcome {
                     display_text: format!("Said it aloud: {text}"),
                     block: Some(nomi_agent_core::ContentBlock::Voice { url: "/voice/u/1.mp3".to_string(), text, voice: None }),
+                    media: Vec::new(),
                 })
             }
             other => Err(format!("unknown tool: {other}")),

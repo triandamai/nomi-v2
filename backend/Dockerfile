@@ -10,7 +10,7 @@ RUN cargo build --release --bin nomi-orchestrator
 
 FROM debian:bookworm-slim AS runtime
 RUN apt-get update \
-	&& apt-get install -y --no-install-recommends ca-certificates \
+	&& apt-get install -y --no-install-recommends ca-certificates fonts-dejavu-core \
 	&& rm -rf /var/lib/apt/lists/*
 COPY --from=builder /app/target/release/nomi-orchestrator /usr/local/bin/nomi-orchestrator
 
