@@ -291,8 +291,8 @@
 		<PhoneTerminal label={m.pb_log_title()} lines={failure.tail.length ? failure.tail.map((text) => ({ kind: 'out' as const, text })) : [{ kind: 'out', text: m.sandbox_terminal_empty() }]} />
 	{:else if screen === 'design'}
 		<NavBar title={m.workspace_design()} who={{ agent: 'sora', name: m.pb_read_only() }} onback={() => (screen = null)} />
-		<div class="min-h-0 flex-1 overflow-y-auto px-4 pt-4 pb-5">
-			{#if ws.hasDesign && data.design}
+		{#if ws.hasDesign && data.design}
+			<div class="flex min-h-0 flex-1 flex-col overflow-hidden">
 				<DesignCanvas
 					sessionId={ws.project.session_id}
 					directions={data.design.directions ?? null}
@@ -304,14 +304,16 @@
 						await invalidate('app:workspace-project');
 					}}
 				/>
-			{:else}
+			</div>
+		{:else}
+			<div class="min-h-0 flex-1 overflow-y-auto px-4 pt-4 pb-5">
 				<EmptyState
 					icon={Palette}
 					title={ws.buildingOrPublished ? m.workspace_no_design_artifact_title() : m.workspace_no_design_title()}
 					body={ws.buildingOrPublished ? m.workspace_no_design_artifact_body() : m.workspace_no_design_body()}
 				/>
-			{/if}
-		</div>
+			</div>
+		{/if}
 	{:else}
 		<PhoneWorkspaceNav project={ws.project.name} status={statusLine} live={Boolean(ws.liveUrl)} {pill} onback={() => void goto('/projects')} onmenu={() => open('tools')} />
 		<WorkspaceSwitch value={tab} previewCount={changes || undefined} onchange={(next) => (ws.workspaceView = next === 'chat' ? 'chat' : 'pane')} />
