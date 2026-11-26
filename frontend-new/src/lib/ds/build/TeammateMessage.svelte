@@ -12,7 +12,7 @@
 
 <article class="flex w-full gap-2.5">
 	<PeerAvatar initials={who.initials} peer={who.peer} />
-	<div class="flex min-w-0 flex-1 flex-col gap-1.5">
+	<div class="flex min-w-0 flex-1 flex-col gap-1">
 		<p class="flex flex-wrap items-center gap-2">
 			<span class={['text-ui font-medium', who.peer === 1 ? 'text-peer-1' : who.peer === 2 ? 'text-peer-2' : 'text-text']}>{who.name}</span>
 			{#if time}<span class="font-mono text-label text-text-3">{time}</span>{/if}
