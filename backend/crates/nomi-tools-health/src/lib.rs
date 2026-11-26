@@ -161,6 +161,7 @@ fn connect_card(reason: &str, text: &str) -> ToolOutcome {
             reason: reason.to_string(),
             agent_type: Some(HEALTH_AGENT_TYPE.to_string()),
         }),
+        media: Vec::new(),
     }
 }
 
@@ -219,7 +220,7 @@ impl HealthClient {
                     }
                     None => None,
                 };
-                Ok(ToolOutcome { display_text: text, block })
+                Ok(ToolOutcome { display_text: text, block, media: Vec::new() })
             }
             Err(HevyError::KeyRejected) => {
                 connection::set_expired(conn, user_id, connection::HEVY, true).await;

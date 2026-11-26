@@ -11,7 +11,7 @@ pub mod tools;
 pub mod views;
 
 pub use catalog::{find_tool, tool_definitions, Tool, ToolCatalog, ToolInfo};
-pub use content_block::{ContentBlock, ToolOutcome};
+pub use content_block::{ContentBlock, ToolMedia, ToolOutcome};
 pub use context::{Approval, AutoOffer, OfferContext, ToolContext};
 
 #[cfg(test)]

@@ -2,6 +2,7 @@
 
 pub mod library;
 pub mod reading;
+pub mod render;
 pub mod tools;
 
 use nomi_agent_core::ToolContext;
@@ -283,7 +284,7 @@ mod tests {
     #[test]
     fn soras_own_tools_are_directions_previews_and_the_persons_connected_tools() {
         let names: Vec<String> = DesignAgent::new().tools().into_iter().map(|t| t.name).collect();
-        assert_eq!(names, [tools::READ_DESIGN_SKILL, tools::PROPOSE_DIRECTIONS, tools::SAVE_PREVIEW, tools::READ_PREVIEW, tools::APPROVE_VERSION, tools::CREATE_HANDOFF, tools::REVIEW_BUILD, tools::LIST_CONNECTED_TOOLS, tools::USE_CONNECTED_TOOL]);
+        assert_eq!(names, [tools::READ_DESIGN_SKILL, tools::PROPOSE_DIRECTIONS, tools::SAVE_PREVIEW, tools::READ_PREVIEW, tools::SCREENSHOT_PREVIEW, tools::APPROVE_VERSION, tools::CREATE_HANDOFF, tools::REVIEW_BUILD, tools::LIST_CONNECTED_TOOLS, tools::USE_CONNECTED_TOOL]);
     }
 
     #[test]
@@ -299,7 +300,7 @@ mod tests {
     fn sora_studies_taste_before_directions_and_the_canvas_format_before_drawing() {
         let core = DesignAgent::new().system_prompt();
         assert!(core.contains("read_design_skill") && core.contains("taste-core") && core.contains("styles-index"), "{core}");
-        for said in ["read_design_skill", "pen-format", "components-kit", "slop-audit", "taste-check"] {
+        for said in ["read_design_skill", "pen-format", "components-kit", "slop-audit", "taste-check", "screenshot_preview"] {
             assert!(DESIGN_PREVIEW_RULES.contains(said), "her preview rules say {said:?}");
         }
         assert!(DESIGN_PREVIEW_RULES.contains("Taste wins"), "where her craft notes and Taste differ, Taste decides");

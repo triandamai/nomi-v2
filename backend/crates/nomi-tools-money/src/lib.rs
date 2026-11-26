@@ -239,7 +239,7 @@ impl Logged {
 pub async fn log_transaction_outcome(conn: &mut sqlx::PgConnection, user_id: Uuid, input: &Value, session_id: Uuid) -> Result<nomi_tool::ToolOutcome, String> {
     let logged = log_transaction(conn, user_id, input, "agent", Some(session_id)).await?;
     let locale = nomi_tool::locale::user_locale(conn, user_id).await;
-    Ok(nomi_tool::ToolOutcome { display_text: logged.summary(), block: Some(nomi_tool::ContentBlock::View(logged.card(locale))) })
+    Ok(nomi_tool::ToolOutcome { display_text: logged.summary(), block: Some(nomi_tool::ContentBlock::View(logged.card(locale))), media: Vec::new() })
 }
 
 /// Records money spent or received in the Money agent's own table, with its items. `source` is

@@ -267,28 +267,45 @@ pub struct StoppedTask {
     pub background_task_id: Option<Uuid>,
 }
 
+/// A media attachment (such as a rendered PNG screenshot) returned by a tool for the model to
+/// inspect visually in the next turn. Never stored in `messages.content_blocks`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ToolMedia {
+    pub media_type: String,
+    /// Base64-encoded bytes.
+    pub data: String,
+    pub name: String,
+}
+
 impl ToolOutcome {
     /// A tool's result shown as a view, with the view's plain text as the message's text.
     pub fn view(view: crate::views::View) -> Self {
-        Self { display_text: view.plain_text(), block: Some(ContentBlock::View(view.trimmed())) }
+        Self { display_text: view.plain_text(), block: Some(ContentBlock::View(view.trimmed())), media: Vec::new() }
     }
 }
 
 /// What `SubAgent::execute_tool` returns on success — `display_text` is the plain-text mirror
 /// stored in `messages.content` (and used for anything that reads `content` directly: search,
 /// memory extraction, notifications); `block` is the structured widget, when this call warrants
-/// one. Most tools return `block: None`.
+/// one. Most tools return `block: None`. `media` carries optional images for the model to see.
 #[derive(Debug, Clone)]
 pub struct ToolOutcome {
     pub display_text: String,
     pub block: Option<ContentBlock>,
+    pub media: Vec<ToolMedia>,
 }
 
 impl ToolOutcome {
     /// Convenience for the common case (no block) — most agents' tools just wrap their existing
     /// return string in this.
     pub fn text(display_text: impl Into<String>) -> Self {
-        Self { display_text: display_text.into(), block: None }
+        Self { display_text: display_text.into(), block: None, media: Vec::new() }
+    }
+
+    /// Attaches one or more media items (e.g. PNG screenshots) for the model to inspect.
+    pub fn with_media(mut self, media: Vec<ToolMedia>) -> Self {
+        self.media = media;
+        self
     }
 }
 

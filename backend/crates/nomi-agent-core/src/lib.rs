@@ -60,7 +60,7 @@ pub mod working_memory;
 pub use background::{
     CANCEL_BACKGROUND_TASK_TOOL_NAME, LIST_BACKGROUND_TASKS_TOOL_NAME, RUN_BACKGROUND_TASK_TOOL_NAME,
 };
-pub use content_block::{ApprovalStatus, ContentBlock, FileWriteEntry, TableColumn, TableVariant, TodoItem, TodoStatus, ToolOutcome};
+pub use content_block::{ApprovalStatus, ContentBlock, FileWriteEntry, TableColumn, TableVariant, TodoItem, TodoStatus, ToolMedia, ToolOutcome};
 pub use dynamic_agent::{DynamicAgent, DynamicAgentRow};
 pub use engine::{
     crew_tool_definitions, resolve_tool_batch, run_agent_turn, LoopOutcome, ToolBatchOutcome,

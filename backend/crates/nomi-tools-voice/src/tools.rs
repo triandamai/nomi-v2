@@ -46,7 +46,7 @@ impl Tool for Speak {
     }
     async fn execute(&self, conn: &mut PoolConnection<Postgres>, ctx: &ToolContext<'_>, input: Value) -> Result<ToolOutcome, String> {
         let (display_text, block) = crate::speak(conn, ctx.user_id, &input, self.copy.done).await?;
-        Ok(ToolOutcome { display_text, block: Some(block) })
+        Ok(ToolOutcome { display_text, block: Some(block), media: Vec::new() })
     }
 }
 

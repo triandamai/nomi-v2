@@ -212,8 +212,13 @@ pub const DESIGN_PREVIEW_RULES: &str =
      short content, a first-time user. Use real, local sample content (names, prices in Rupiah, dates like \
      26 Jul 2026), never lorem ipsum. Keep components consistent: one button style per role, one radius scale, \
      one shadow scale. Before you save a version, check it with taste-check and slop-audit as a reviewer would \
-     (hierarchy, spacing rhythm, contrast, states, mobile) and fix what you find; when you present it, say in a line or two the \
-     main decisions and why.";
+     (hierarchy, spacing rhythm, contrast, states, mobile) and fix what you find. Right after save_preview finishes, \
+     NEVER present a .pen design blind: call screenshot_preview (first on the full canvas overview, then on each key \
+     screen and any complex component/hero element by id, and in dark theme if the document has one) and actually look \
+     at the rendered PNGs. Fix any layout diagnostics (overlaps, overflows, collapsed nodes, unresolved tokens) AND any \
+     visual flaws you see (cramped spacing, weak typography contrast, unbalanced cards, misaligned elements, generic \
+     flatness) with a follow-up save_preview, then re-screenshot to confirm the fix before giving the Design Studio \
+     link to the person. When you present it, say in a line or two the main decisions and why.";
 
 /// Sora's rules once a preview exists: changing it from what the person asked, and pointing them to Approve.
 pub const DESIGN_CHANGE_RULES: &str =
@@ -224,7 +229,9 @@ pub const DESIGN_CHANGE_RULES: &str =
      read_preview, change only what the feedback asks (the rest of the design, and every id, stays as it is), save \
      the result with save_preview and name in resolves each piece of feedback you dealt with and what you changed \
      (when they send a reference, sort it with reference-contract into keep, change and do not copy) \
-     for it; never mark feedback you didn't act on, and ask when a piece is unclear rather than guessing. Then tell \
+     for it; never mark feedback you didn't act on, and ask when a piece is unclear rather than guessing. After \
+     save_preview, call screenshot_preview on the changed screen(s) and element(s) to visually verify your fix before \
+     replying. Then tell \
      them what changed and give the new version's link, and ask whether they want to approve it or change more. \
      When they say in this chat that they approve a version (\"approve it\", \"looks good, go ahead\", \"yes, v3\"), \
      record it with approve_version, quoting their words exactly; they can also press Approve in the Design \

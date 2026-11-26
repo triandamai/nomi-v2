@@ -68,6 +68,7 @@ impl DeepSeekProvider {
                 }
             }
 
+            messages.extend(tool_result_messages);
             if !text_parts.is_empty() || !tool_calls.is_empty() {
                 let mut msg = json!({ "role": role_to_str(&m.role) });
                 msg["content"] = if !text_parts.is_empty() {
@@ -80,7 +81,6 @@ impl DeepSeekProvider {
                 }
                 messages.push(msg);
             }
-            messages.extend(tool_result_messages);
         }
 
         let tools: Vec<serde_json::Value> = request

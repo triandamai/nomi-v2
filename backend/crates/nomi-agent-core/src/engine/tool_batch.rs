@@ -314,6 +314,7 @@ pub(super) async fn resolve_tool_batch_in_reply(
 
             // What the posted message says, when it isn't the tool result itself (`show`).
             let mut posted_text: Option<String> = None;
+            let mut tool_media: Vec<crate::content_block::ToolMedia> = Vec::new();
             let (result_text, is_error, rich_block) = if !own_tools.contains(name) && !switches.allows(name) {
                 (format!("The {name} tool is switched off. Don't call it again; do without it."), true, None)
             } else if name.as_str() == COMPLETE_TASK_TOOL_NAME {
@@ -421,7 +422,10 @@ pub(super) async fn resolve_tool_batch_in_reply(
                 let (agent_type, agent_name) = (agent.agent_type(), agent.display_name());
                 let ctx = ToolContext { session_id, agent_session_id, user_id, agent_type: agent_type.as_ref(), agent_name: agent_name.as_ref(), mqtt, builtin_skills: agent.builtin_skills() };
                 match tool.execute(conn, &ctx, input.clone()).await {
-                    Ok(outcome) => (outcome.display_text, false, outcome.block),
+                    Ok(outcome) => {
+                        tool_media = outcome.media;
+                        (outcome.display_text, false, outcome.block)
+                    }
                     Err(err) => (err, true, None),
                 }
             } else if levels.get(name.as_str()) == Some(&Level::Never) {
@@ -429,7 +433,10 @@ pub(super) async fn resolve_tool_batch_in_reply(
             } else if let Some((_, approved)) = already_decided.iter().find(|(decided_id, _)| decided_id == id) {
                 if *approved {
                     match execute_agent_tool(conn, registry, agent, session_id, agent_session_id, user_id, name, input.clone()).await {
-                        Ok(outcome) => (outcome.display_text, false, outcome.block),
+                        Ok(outcome) => {
+                            tool_media = outcome.media;
+                            (outcome.display_text, false, outcome.block)
+                        }
                         Err(err) => (describe_tool_error(name, input, &err, locale), true, None),
                     }
                 } else {
@@ -444,7 +451,10 @@ pub(super) async fn resolve_tool_batch_in_reply(
                 (USER_DENIED_RESULT.to_string(), true, None)
             } else {
                 match execute_agent_tool(conn, registry, agent, session_id, agent_session_id, user_id, name, input.clone()).await {
-                    Ok(outcome) => (outcome.display_text, false, outcome.block),
+                    Ok(outcome) => {
+                        tool_media = outcome.media;
+                        (outcome.display_text, false, outcome.block)
+                    }
                     Err(err) => (describe_tool_error(name, input, &err, locale), true, None),
                 }
             };
@@ -480,6 +490,13 @@ pub(super) async fn resolve_tool_batch_in_reply(
             }
 
             tool_results.push(ContentBlock::ToolResult { tool_use_id: id.clone(), content: result_text, is_error });
+            for item in tool_media {
+                tool_results.push(ContentBlock::Media {
+                    media_type: item.media_type,
+                    data: item.data,
+                    name: item.name,
+                });
+            }
         }
     }
 

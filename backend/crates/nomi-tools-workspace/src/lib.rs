@@ -125,6 +125,7 @@ fn connect_card(reason: &str, service: &str, text: String) -> ToolOutcome {
             services: vec![service.to_string()],
             agent_type: Some(WORKSPACE_AGENT_TYPE.to_string()),
         }),
+        media: Vec::new(),
     }
 }
 
@@ -160,7 +161,7 @@ impl WorkspaceClient {
             Ok(value) => {
                 let locale = nomi_tool::locale::user_locale(conn, user_id).await;
                 let block = result_card(name, &input, &value, locale).map(ContentBlock::View);
-                Ok(ToolOutcome { display_text: value.to_string(), block })
+                Ok(ToolOutcome { display_text: value.to_string(), block, media: Vec::new() })
             }
             Err(GoogleError::Unauthorized) => {
                 connection::mark_expired(conn, user_id).await;

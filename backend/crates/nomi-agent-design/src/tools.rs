@@ -19,13 +19,14 @@ use nomi_agent_core::design_review::{self, Review, SharedProjectSource};
 use nomi_agent_core::design_brief;
 use nomi_agent_core::static_publish::{self, PublishRequest, Published, SharedStaticPublisher};
 use nomi_agent_core::design_directions::{self, DesignDirections};
-use nomi_agent_core::{ContentBlock, Tool, ToolOutcome, View};
+use nomi_agent_core::{ContentBlock, Tool, ToolMedia, ToolOutcome, View};
 use nomi_llm::ToolDefinition;
 
 pub const READ_DESIGN_SKILL: &str = "read_design_skill";
 pub const PROPOSE_DIRECTIONS: &str = "propose_directions";
 pub const SAVE_PREVIEW: &str = "save_preview";
 pub const READ_PREVIEW: &str = "read_preview";
+pub const SCREENSHOT_PREVIEW: &str = "screenshot_preview";
 pub const CREATE_HANDOFF: &str = "create_handoff";
 pub const REVIEW_BUILD: &str = "review_build";
 pub const APPROVE_VERSION: &str = "approve_version";
@@ -212,7 +213,7 @@ impl Tool for ProposeDirections {
             tracing::error!(error = %e, "design directions: save failed");
             "the directions couldn't be saved right now".to_string()
         })?;
-        Ok(ToolOutcome { display_text: proposed_message(version, brief_version, &set), block: Some(ContentBlock::View(View::Decision(set.to_decision()))) })
+        Ok(ToolOutcome { display_text: proposed_message(version, brief_version, &set), block: Some(ContentBlock::View(View::Decision(set.to_decision()))), media: Vec::new() })
     }
 }
 
@@ -365,6 +366,124 @@ impl Tool for ReadPreview {
         let path = input.get("path").and_then(Value::as_str).map(str::trim).filter(|v| !v.is_empty());
         read_message(version, &manifest, &files, path).map(ToolOutcome::text)
     }
+}
+
+/// `screenshot_preview`: renders the .pen preview (full overview, one screen, or a single element)
+/// to a PNG image and returns it alongside layout diagnostics so Sora can visually inspect her work.
+pub struct ScreenshotPreview;
+
+#[async_trait]
+impl Tool for ScreenshotPreview {
+    fn definition(&self) -> ToolDefinition {
+        ToolDefinition {
+            name: SCREENSHOT_PREVIEW.to_string(),
+            description: "Render a PNG screenshot of your saved .pen preview so you can visually inspect what you designed \
+                          instead of designing blind. Pass target='all' (or omit) for the full canvas overview, a screen id \
+                          or name (e.g. 'menu-phone', 'design-system') to inspect a full screen, or any element id (e.g. \
+                          'hero-section', 'button-primary') to zoom in on a single component or section. Also returns layout \
+                          bounding boxes and automatic visual diagnostics (overlaps, overflows, missing fills, unresolved tokens). \
+                          Always call this after save_preview and fix anything that looks cramped, misaligned, or generic before \
+                          presenting to the user."
+                .to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "target": {
+                        "type": "string",
+                        "description": "What to screenshot: omit or 'all' for every screen on the canvas, a screen id/name for one artboard, or any element id to zoom in on that component/section"
+                    },
+                    "version": {
+                        "type": "integer",
+                        "description": "The preview version to screenshot; defaults to the newest saved version"
+                    },
+                    "theme": {
+                        "type": "string",
+                        "enum": ["light", "dark"],
+                        "description": "Optional theme override ('light' or 'dark') to inspect the target in that theme"
+                    }
+                }
+            }),
+        }
+    }
+
+    fn group(&self) -> &'static str {
+        GROUP
+    }
+
+    fn keywords(&self) -> &'static [&'static str] {
+        &["design", "preview", "screenshot", "inspect", "visual"]
+    }
+
+    async fn execute(&self, conn: &mut PoolConnection<Postgres>, ctx: &ToolContext<'_>, input: Value) -> Result<ToolOutcome, String> {
+        let session_id = ctx.session_id;
+        let unread = |e: sqlx::Error| {
+            tracing::error!(error = %e, "design preview: screenshot read failed");
+            "the preview couldn't be read right now".to_string()
+        };
+        let asked = input.get("version").and_then(Value::as_i64).and_then(|v| i32::try_from(v).ok());
+        let version = match asked {
+            Some(version) => {
+                design_artifact::version(&mut **conn, session_id, version)
+                    .await
+                    .map_err(unread)?
+                    .ok_or_else(|| format!("this chat has no preview version {version}"))?;
+                version
+            }
+            None => design_artifact::latest(&mut **conn, session_id)
+                .await
+                .map_err(unread)?
+                .map(|(v, _)| v)
+                .ok_or_else(|| format!("there is no preview in this chat yet: build one with {SAVE_PREVIEW}"))?,
+        };
+        let files = design_artifact::files(&mut **conn, session_id, version).await.map_err(unread)?;
+        let file_refs: Vec<(&str, &str)> = files.iter().map(|f| (f.path.as_str(), f.content.as_str())).collect();
+        let target = input.get("target").and_then(Value::as_str);
+        let theme = input.get("theme").and_then(Value::as_str);
+
+        let shot = crate::render::render_pen_screenshot(&file_refs, target, theme)?;
+        let summary = screenshot_message(version, &shot);
+        let slug = target
+            .map(str::trim)
+            .filter(|t| !t.is_empty())
+            .unwrap_or("all")
+            .chars()
+            .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c.to_ascii_lowercase() } else { '-' })
+            .collect::<String>();
+        Ok(ToolOutcome::text(summary).with_media(vec![ToolMedia {
+            media_type: "image/png".to_string(),
+            data: shot.png_base64,
+            name: format!("preview-v{version}-{slug}.png"),
+        }]))
+    }
+}
+
+fn screenshot_message(version: i32, shot: &crate::render::RenderedScreenshot) -> String {
+    let mut out = format!(
+        "Screenshot of preview version {version} — {} ({}, {}×{} px, {} theme).",
+        shot.target_label, shot.target_kind, shot.width, shot.height, shot.theme
+    );
+    if !shot.screens.is_empty() {
+        let list: Vec<String> = shot
+            .screens
+            .iter()
+            .map(|s| format!("`{}` ({}, {:.0}×{:.0}, {})", s.id, s.name, s.width, s.height, s.theme))
+            .collect();
+        out.push_str(&format!("\nScreens: {}", list.join(", ")));
+    }
+    if shot.diagnostics.is_empty() {
+        out.push_str("\nLayout diagnostics: none (no overlaps, overflows, collapsed nodes, or unresolved tokens detected).");
+    } else {
+        out.push_str("\nLayout diagnostics (fix these):");
+        for d in &shot.diagnostics {
+            out.push_str(&format!("\n- {d}"));
+        }
+    }
+    out.push_str(
+        "\nInspect the attached PNG image closely for visual hierarchy, spacing, alignment, contrast, typography scale, \
+         and polish. If anything looks cramped, unbalanced, clipped, or generic, update canvas.pen with save_preview and \
+         re-screenshot before presenting to the user.",
+    );
+    out
 }
 
 /// `save_preview`: checks the files, saves them as the chat's next preview version, and
@@ -682,6 +801,7 @@ pub fn own_tools(mcp: &SharedMcpOps, publisher: &SharedStaticPublisher, source: 
         Box::new(ProposeDirections),
         Box::new(SavePreview { publisher: publisher.clone() }),
         Box::new(ReadPreview),
+        Box::new(ScreenshotPreview),
         Box::new(ApproveVersion),
         Box::new(CreateHandoff),
         Box::new(ReviewBuild { source: source.clone() }),

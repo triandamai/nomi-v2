@@ -378,8 +378,30 @@ mod encoding_tests {
         let body = gpt.body_for_test(&request("audio/mpeg"));
         assert_eq!(body["messages"][0]["content"][1]["input_audio"]["format"], "mp3");
 
-        let gemini = GeminiProvider::new(client, "k".into(), "gemini-2.5-flash".into(), "http://x".into());
+        let gemini = GeminiProvider::new(client.clone(), "k".into(), "gemini-2.5-flash".into(), "http://x".into());
         let body = gemini.body_for_test(&request("video/mp4"));
         assert_eq!(body["contents"][0]["parts"][1]["inline_data"]["mime_type"], "video/mp4");
+
+        // A tool result accompanied by a screenshot emits the tool message before the user image.
+        let tool_and_img = LlmRequest {
+            system: None,
+            messages: vec![LlmMessage {
+                role: LlmRole::User,
+                content: vec![
+                    ContentBlock::ToolResult { tool_use_id: "call_1".into(), content: "Screenshot ready".into(), is_error: false },
+                    ContentBlock::Media { media_type: "image/png".into(), data: "iVBORw0KGgo=".into(), name: "preview.png".into() },
+                ],
+            }],
+            tools: vec![],
+            max_tokens: 10,
+            enable_reasoning: false,
+            reasoning_effort: ReasoningEffort::default(),
+        };
+        let body = gpt.body_for_test(&tool_and_img);
+        assert_eq!(body["messages"][0]["role"], "tool");
+        assert_eq!(body["messages"][0]["tool_call_id"], "call_1");
+        assert_eq!(body["messages"][1]["role"], "user");
+        assert_eq!(body["messages"][1]["content"][0]["type"], "image_url");
+        assert_eq!(body["messages"][1]["content"][0]["image_url"]["url"], "data:image/png;base64,iVBORw0KGgo=");
     }
 }
