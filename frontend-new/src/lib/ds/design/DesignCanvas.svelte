@@ -5,6 +5,8 @@
 	import Icon from '$lib/ds/foundations/Icon.svelte';
 	import OpenPencilViewer, { type CanvasPin } from '$lib/ds/design/OpenPencilViewer.svelte';
 	import { buildStudioSceneModel, type StudioHitResult } from '$lib/design/openPencilCanvas';
+	import { connectChat } from '$lib/chat/events';
+	import { applyChatEventToSora, createSoraTracker, type SoraCanvasActivity } from '$lib/design/soraActivity';
 	import {
 		CANVAS_ARTBOARD_WIDTHS,
 		DEVICE_WIDTHS,
@@ -57,6 +59,7 @@
 		wanted = null,
 		embedded = false,
 		onrefresh,
+		soraActivity: forcedSoraActivity = null,
 	}: {
 		sessionId: string;
 		directions?: StudioDirectionSet | null;
@@ -69,10 +72,32 @@
 		embedded?: boolean;
 		/** Loads what there is now; the page reloads itself when not given. */
 		onrefresh?: () => Promise<void>;
+		/** Optional override of Sora's live activity (used by tests or parent workspaces). */
+		soraActivity?: SoraCanvasActivity | null;
 	} = $props();
 	const data = $derived({ sessionId, directions, previews, wanted });
 	// frontend-new proxies the Studio's API under the chat (chatRoutes.ts).
 	const apiBase = $derived(`/chat/${sessionId}/api/design`);
+
+	let soraTracker = $state(createSoraTracker());
+	const soraActivity = $derived<SoraCanvasActivity | null>(forcedSoraActivity ?? (soraTracker.state.active ? soraTracker.state : null));
+
+	$effect(() => {
+		const id = sessionId;
+		if (!id || typeof WebSocket === 'undefined') return;
+		return connectChat({
+			sessionId: id,
+			handlers: {
+				opened: () => {},
+				lost: () => {},
+				event(ev) {
+					const next = applyChatEventToSora(soraTracker, ev);
+					soraTracker = next;
+					if (next.shouldRefresh) void refresh();
+				},
+			},
+		});
+	});
 
 	const ENTRY_PAGE = 'index.html';
 	// The most characters in one piece of feedback (design_feedback::MAX_BODY_CHARS).
@@ -258,6 +283,24 @@
 			clearSelection();
 			return;
 		}
+		const target = event.target as HTMLElement | null;
+		const tag = target?.tagName?.toLowerCase();
+		if (tag === 'input' || tag === 'textarea' || tag === 'select' || target?.isContentEditable) return;
+		if (event.key === '+' || event.key === '=') {
+			event.preventDefault();
+			zoomIn();
+			return;
+		}
+		if (event.key === '-') {
+			event.preventDefault();
+			zoomOut();
+			return;
+		}
+		if (event.key === '0') {
+			event.preventDefault();
+			fitCanvas();
+			return;
+		}
 		const next = toolForKey(event);
 		if (next) pickTool(next);
 	}
@@ -374,12 +417,24 @@
 		}
 	}
 
+	function zoomAroundCenter(next: number) {
+		if (canvasEngine === 'openpencil' && stageEl && next !== zoom) {
+			const cx = (stageEl.clientWidth || 800) / 2;
+			const cy = (stageEl.clientHeight || 600) / 2;
+			const worldX = (cx - panX) / zoom;
+			const worldY = (cy - panY) / zoom;
+			panX = cx - worldX * next;
+			panY = cy - worldY * next;
+		}
+		zoom = next;
+	}
+
 	function zoomIn() {
-		zoom = zoomStep(zoom, 'in');
+		zoomAroundCenter(zoomStep(zoom, 'in'));
 	}
 
 	function zoomOut() {
-		zoom = zoomStep(zoom, 'out');
+		zoomAroundCenter(zoomStep(zoom, 'out'));
 	}
 
 	function fitCanvas() {
@@ -395,21 +450,56 @@
 		panY = 0;
 	}
 
+	const framePointers = new Map<number, { x: number; y: number }>();
+	let framePinch: { dist: number; midX: number; midY: number; zoom: number; panX: number; panY: number } | null = null;
+
 	function startCanvasPan(event: PointerEvent) {
-		if (event.button !== 0 && event.button !== 1) return;
+		if (event.pointerType === 'mouse' && event.button !== 0 && event.button !== 1) return;
 		const target = event.target as HTMLElement | null;
 		if (target?.closest('button, a, input, textarea, select, iframe, [data-part="pin-popover"]')) return;
+		viewportEl?.setPointerCapture(event.pointerId);
+		framePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+		if (framePointers.size >= 2) {
+			const [a, b] = [...framePointers.values()];
+			framePinch = {
+				dist: Math.max(1, Math.hypot(b.x - a.x, b.y - a.y)),
+				midX: (a.x + b.x) / 2,
+				midY: (a.y + b.y) / 2,
+				zoom,
+				panX,
+				panY,
+			};
+			isPanning = false;
+			panOrigin = null;
+			return;
+		}
 		isPanning = true;
 		panOrigin = { x: event.clientX, y: event.clientY, panX, panY };
 	}
 
 	function moveCanvasPan(event: PointerEvent) {
+		if (framePointers.has(event.pointerId)) {
+			framePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+		}
+		if (framePinch && framePointers.size >= 2) {
+			const [a, b] = [...framePointers.values()];
+			const dist = Math.max(1, Math.hypot(b.x - a.x, b.y - a.y));
+			const midX = (a.x + b.x) / 2;
+			const midY = (a.y + b.y) / 2;
+			zoom = clampZoom(framePinch.zoom * (dist / framePinch.dist));
+			panX = framePinch.panX + (midX - framePinch.midX);
+			panY = framePinch.panY + (midY - framePinch.midY);
+			return;
+		}
 		if (!isPanning || !panOrigin) return;
 		panX = panOrigin.panX + (event.clientX - panOrigin.x);
 		panY = panOrigin.panY + (event.clientY - panOrigin.y);
 	}
 
-	function endCanvasPan() {
+	function endCanvasPan(event: PointerEvent) {
+		if (viewportEl?.hasPointerCapture(event.pointerId)) viewportEl.releasePointerCapture(event.pointerId);
+		framePointers.delete(event.pointerId);
+		if (framePointers.size < 2) framePinch = null;
 		isPanning = false;
 		panOrigin = null;
 	}
@@ -675,6 +765,7 @@
 					bind:panX
 					bind:panY
 					bind:inspectorOpen
+					{soraActivity}
 					pins={canvasPins}
 					selectedNodeId={selection?.id ?? null}
 					onhit={handleOpenPencilHit}
@@ -708,7 +799,7 @@
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
 				<div
 					bind:this={viewportEl}
-					class={['relative flex-1 overflow-hidden p-12', tool === 'move' && 'cursor-grab active:cursor-grabbing']}
+					class={['relative flex-1 touch-none overflow-hidden p-12 select-none', tool === 'move' && 'cursor-grab active:cursor-grabbing']}
 					data-testid="spatial-canvas-viewport"
 					onpointerdown={startCanvasPan}
 					onpointermove={moveCanvasPan}
@@ -806,10 +897,10 @@
 					</button>
 				{/each}
 				<span class="mx-1 h-6 w-px bg-border" aria-hidden="true"></span>
-				<button type="button" class="inline-flex size-9 cursor-pointer items-center justify-center rounded-sm text-text-2 hover:bg-surface-2 hover:text-text max-sm:hidden" aria-label={m.studio_zoom_out()} title={m.studio_zoom_out()} onclick={zoomOut}><Icon icon={ZoomOut} size={16} /></button>
-				<span class="min-w-11 text-center font-mono text-label text-text-2 tabular-nums" data-testid="canvas-zoom-label">{zoomLabel(zoom)}</span>
-				<button type="button" class="inline-flex size-9 cursor-pointer items-center justify-center rounded-sm text-text-2 hover:bg-surface-2 hover:text-text max-sm:hidden" aria-label={m.studio_zoom_in()} title={m.studio_zoom_in()} onclick={zoomIn}><Icon icon={ZoomIn} size={16} /></button>
-				<button type="button" class="inline-flex size-9 cursor-pointer items-center justify-center rounded-sm text-text-2 hover:bg-surface-2 hover:text-text max-md:size-11" aria-label={m.studio_zoom_fit()} title={m.studio_zoom_fit()} onclick={fitCanvas}><Icon icon={Maximize2} size={14} /></button>
+				<button type="button" class="inline-flex size-9 cursor-pointer items-center justify-center rounded-sm text-text-2 hover:bg-surface-2 hover:text-text max-md:size-10" aria-label={m.studio_zoom_out()} title={m.studio_zoom_out()} onclick={zoomOut}><Icon icon={ZoomOut} size={16} /></button>
+				<span class="min-w-10 text-center font-mono text-label text-text-2 tabular-nums" data-testid="canvas-zoom-label">{zoomLabel(zoom)}</span>
+				<button type="button" class="inline-flex size-9 cursor-pointer items-center justify-center rounded-sm text-text-2 hover:bg-surface-2 hover:text-text max-md:size-10" aria-label={m.studio_zoom_in()} title={m.studio_zoom_in()} onclick={zoomIn}><Icon icon={ZoomIn} size={16} /></button>
+				<button type="button" class="inline-flex size-9 cursor-pointer items-center justify-center rounded-sm text-text-2 hover:bg-surface-2 hover:text-text max-md:size-10" aria-label={m.studio_zoom_fit()} title={m.studio_zoom_fit()} onclick={fitCanvas}><Icon icon={Maximize2} size={14} /></button>
 				{#if canvasEngine === 'openpencil'}
 					<span class="mx-1 h-6 w-px bg-border" aria-hidden="true"></span>
 					<button

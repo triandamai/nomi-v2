@@ -194,4 +194,34 @@ describe('DesignCanvas', () => {
 			vi.unstubAllGlobals();
 		}
 	});
+
+	it('keeps zoom controls usable on mobile viewports and supports +/- keyboard zoom', async () => {
+		await page.viewport(390, 844);
+		render(DesignCanvas, { sessionId: 's1', directions, previews, feedback: [], approval: null });
+
+		await expect.element(page.getByRole('button', { name: 'Zoom in' })).toBeVisible();
+		await expect.element(page.getByRole('button', { name: 'Zoom out' })).toBeVisible();
+		await page.getByRole('button', { name: 'Zoom in' }).click();
+		await expect.element(page.getByTestId('canvas-zoom-label')).toHaveTextContent('125%');
+
+		window.dispatchEvent(new KeyboardEvent('keydown', { key: '-' }));
+		await expect.element(page.getByTestId('canvas-zoom-label')).toHaveTextContent('100%');
+	});
+
+	it('shows Sora live cursor on the vector canvas while Sora is actively working', async () => {
+		await page.viewport(1280, 800);
+		render(DesignCanvas, {
+			sessionId: 's1',
+			directions,
+			previews: [],
+			feedback: [],
+			approval: null,
+			soraActivity: { active: true, label: 'Drawing hero-section', targetId: 'hero-section', tool: 'save_preview', tick: 2 },
+		});
+
+		const cursor = page.getByTestId('sora-live-cursor');
+		await expect.element(cursor).toBeVisible();
+		await expect.element(cursor).toHaveTextContent('Sora');
+		await expect.element(cursor).toHaveTextContent('Drawing hero-section');
+	});
 });
