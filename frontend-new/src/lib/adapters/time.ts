@@ -27,6 +27,16 @@ function zone(timeZone: string | undefined): string {
 	}
 }
 
+/**
+ * Picks the time zone for greetings and timestamps. `'UTC'` is the database's default whenever a
+ * preferences row is created for another setting (theme, language, project workspace), so when the
+ * browser reports a real local zone, prefer it over an un-chosen `'UTC'` default.
+ */
+export function resolveTimeZone(saved: string | null | undefined, browser: string | undefined): string | undefined {
+	if (saved && saved !== 'UTC') return saved;
+	return browser || saved || undefined;
+}
+
 /** How long ago `iso` was, in the sidebar's short mono form: now, 5m, 2h, 3d, 2w, then "2 Aug". */
 export function ago(iso: string, now: Date, timeZone?: string): string {
 	const elapsed = now.getTime() - Date.parse(iso);

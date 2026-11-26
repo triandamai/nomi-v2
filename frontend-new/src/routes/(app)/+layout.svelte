@@ -5,7 +5,7 @@
 	import { navigating, page } from '$app/state';
 	import { m } from '$lib/paraglide/messages';
 	import { getLocale } from '$lib/paraglide/runtime';
-	import { stamp } from '$lib/adapters/time';
+	import { resolveTimeZone, stamp } from '$lib/adapters/time';
 	import { chatCrewRows } from '$lib/adapters/chat';
 	import { ChatHeader, setChatHeader } from '$lib/chat/header.svelte';
 	import { later } from '$lib/chat/later';
@@ -188,7 +188,7 @@
 	const loadedAt = () => new Date(data.now);
 	let now = $state(loadedAt());
 	let browserZone = $state<string | undefined>();
-	const timeZone = $derived(data.timeZone ?? browserZone);
+	const timeZone = $derived(resolveTimeZone(data.timeZone, browserZone));
 	setClock({
 		get now() {
 			return now;
@@ -441,9 +441,15 @@
 	});
 
 	onMount(() => {
-		browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-		now = new Date();
+		const syncClock = () => {
+			if (document.visibilityState === 'hidden') return;
+			browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+			now = new Date();
+		};
+		syncClock();
 		const tick = setInterval(() => (now = new Date()), 15_000);
+		document.addEventListener('visibilitychange', syncClock);
+		window.addEventListener('focus', syncClock);
 		// A chat deleted with time to undo goes at once when the app is left.
 		const away = () => later.flush();
 		window.addEventListener('pagehide', away);
@@ -483,6 +489,8 @@
 		});
 		return () => {
 			clearInterval(tick);
+			document.removeEventListener('visibilitychange', syncClock);
+			window.removeEventListener('focus', syncClock);
 			window.removeEventListener('pagehide', away);
 			shell.cancel();
 			stop();

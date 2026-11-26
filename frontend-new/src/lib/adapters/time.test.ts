@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ago, dayPart, greeting, stamp } from './time';
+import { ago, dayPart, greeting, resolveTimeZone, stamp } from './time';
 
 const now = new Date('2026-10-21T08:14:30Z');
 const before = (ms: number) => new Date(now.getTime() - ms).toISOString();
@@ -60,5 +60,22 @@ describe('stamp', () => {
 
 	it('names the day and month in Indonesian', () => {
 		expect(stamp(now, 'id', 'Asia/Jakarta')).toBe('Rab, 21 Okt 2026 · 15:14');
+	});
+});
+
+describe('resolveTimeZone', () => {
+	it('prefers the browser time zone over the un-chosen UTC database default', () => {
+		expect(resolveTimeZone('UTC', 'Asia/Jakarta')).toBe('Asia/Jakarta');
+		expect(resolveTimeZone(null, 'Asia/Jakarta')).toBe('Asia/Jakarta');
+		expect(resolveTimeZone(undefined, 'Asia/Jakarta')).toBe('Asia/Jakarta');
+		// At 12:30 WIB (05:30 UTC), resolving to browser zone greets as midday, not morning.
+		const noonWib = new Date('2026-10-21T05:30:00Z');
+		expect(dayPart(noonWib, resolveTimeZone('UTC', 'Asia/Jakarta'))).toBe('midday');
+	});
+
+	it('keeps an explicitly saved non-UTC time zone and falls back to UTC before hydration', () => {
+		expect(resolveTimeZone('America/New_York', 'Asia/Jakarta')).toBe('America/New_York');
+		expect(resolveTimeZone('UTC', undefined)).toBe('UTC');
+		expect(resolveTimeZone(null, undefined)).toBeUndefined();
 	});
 });
