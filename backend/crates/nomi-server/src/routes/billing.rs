@@ -14,11 +14,11 @@ use uuid::Uuid;
 use nomi_auth::extractor::AuthClaims;
 use nomi_payment::xendit::client::CALLBACK_TOKEN_HEADER;
 use nomi_payment::{PaymentError, PaymentProviderKind, PaymentStatus, WebhookEvent};
-use nomi_usage::billing::{self, Payment, PaymentListItem, Quote, QuoteError, Term, STATUS_CANCELLED, STATUS_PENDING};
+use nomi_usage::billing::{self, Payment, PaymentListItem, Quote, QuoteError, Term, STATUS_CANCELLED, STATUS_PAID, STATUS_PENDING};
 use nomi_usage::plans::{self, PlanRow};
 
 use crate::app::AppState;
-use crate::billing::{self as server_billing, CheckoutError, Gateway};
+use crate::billing::{self as server_billing, CheckoutError, Gateway, Settled};
 use crate::routes::deploy::ApiError;
 
 fn internal<E: std::fmt::Display>(e: E) -> ApiError {
@@ -85,6 +85,9 @@ pub async fn checkout(State(state): State<AppState>, AuthClaims(claims): AuthCla
     let quote = billing::quote(&state.pool, claims.sub, req.plan_id, req.months, code.as_deref(), &cfg).await.map_err(quote_error)?;
     let gateway = server_billing::gateway().await;
     let payment = server_billing::start_payment(&state.pool, claims.sub, &quote, billing::KIND_NEW, &cfg, gateway.as_ref()).await.map_err(checkout_error)?;
+    if payment.status == STATUS_PAID {
+        crate::shipyard::spawn_sync_user_orgs_quota(state.pool.clone(), state.http_client.clone(), state.shipyard.clone(), claims.sub);
+    }
     Ok(Json(CheckoutResponse::from(&payment)))
 }
 
@@ -98,8 +101,12 @@ async fn refresh(state: &AppState, payment: &Payment, gateway: &Gateway) {
     let Some(invoice_id) = payment.provider_invoice_id.as_deref() else { return };
     match gateway.client.get_invoice(invoice_id).await {
         Ok(invoice) => {
-            if let Err(e) = server_billing::apply_status(&state.pool, payment, &invoice.status, invoice.amount, invoice.paid_at, invoice.payment_method.as_deref()).await {
-                tracing::error!(error = %e, payment_id = %payment.id, "couldn't apply an invoice's status");
+            match server_billing::apply_status(&state.pool, payment, &invoice.status, invoice.amount, invoice.paid_at, invoice.payment_method.as_deref()).await {
+                Ok(Settled::Activated) => {
+                    crate::shipyard::spawn_sync_user_orgs_quota(state.pool.clone(), state.http_client.clone(), state.shipyard.clone(), payment.user_id);
+                }
+                Ok(_) => {}
+                Err(e) => tracing::error!(error = %e, payment_id = %payment.id, "couldn't apply an invoice's status"),
             }
         }
         Err(e) => tracing::warn!(error = %e, payment_id = %payment.id, "couldn't read an invoice"),
@@ -273,6 +280,9 @@ async fn settle(state: &AppState, event: WebhookEvent) -> Result<Json<Value>, Ap
     }
     let status: PaymentStatus = event.status;
     let method = server_billing::method_label(event.payment_method.as_deref(), event.payment_channel.as_deref());
-    server_billing::apply_status(&state.pool, &payment, &status, event.amount, event.paid_at, method.as_deref()).await.map_err(internal)?;
+    let settled = server_billing::apply_status(&state.pool, &payment, &status, event.amount, event.paid_at, method.as_deref()).await.map_err(internal)?;
+    if settled == Settled::Activated {
+        crate::shipyard::spawn_sync_user_orgs_quota(state.pool.clone(), state.http_client.clone(), state.shipyard.clone(), payment.user_id);
+    }
     Ok(Json(json!({ "ok": true })))
 }

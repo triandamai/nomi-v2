@@ -99,6 +99,23 @@ pub struct ShipyardConfig {
     pub webhook_secret: Option<String>,
 }
 
+/// Quota overrides synced from Nomi to Shipyard (`-1` means unlimited in Shipyard, `>= 1` is a finite cap).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct OrgQuotaPatch {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_projects: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_members: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_orgs: Option<i32>,
+}
+
+impl OrgQuotaPatch {
+    pub fn is_empty(&self) -> bool {
+        self.max_projects.is_none() && self.max_members.is_none() && self.max_orgs.is_none()
+    }
+}
+
 fn env(name: &str) -> Option<String> {
     std::env::var(name).ok().map(|v| v.trim().to_string()).filter(|v| !v.is_empty())
 }
@@ -334,7 +351,27 @@ impl<'a> Shipyard<'a> {
 
     /// Creates the organization, or updates its name. Idempotent.
     pub async fn put_org(&self, org: &str, name: &str) -> Result<Value, ShipyardError> {
-        self.call(reqwest::Method::PUT, &format!("/orgs/{}", seg(org)), Some(json!({ "name": name }))).await
+        self.put_org_with_quota(org, name, None).await
+    }
+
+    /// Creates the organization, or updates its name and optional quota overrides. Idempotent.
+    pub async fn put_org_with_quota(&self, org: &str, name: &str, quota: Option<&OrgQuotaPatch>) -> Result<Value, ShipyardError> {
+        let mut body = json!({ "name": name });
+        if let Some(quota) = quota.filter(|q| !q.is_empty()) {
+            body["quota"] = serde_json::to_value(quota).map_err(|e| ShipyardError::Unavailable(e.to_string()))?;
+        }
+        self.call(reqwest::Method::PUT, &format!("/orgs/{}", seg(org)), Some(body)).await
+    }
+
+    /// Reads the organization's current plan, quota limits, and usage.
+    pub async fn get_org_quota(&self, org: &str) -> Result<Value, ShipyardError> {
+        self.call(reqwest::Method::GET, &format!("/orgs/{}/quota", seg(org)), None).await
+    }
+
+    /// Updates quota limits for the organization (`-1` means unlimited in Shipyard).
+    pub async fn put_org_quota(&self, org: &str, quota: &OrgQuotaPatch) -> Result<Value, ShipyardError> {
+        let body = json!({ "quota": quota });
+        self.call(reqwest::Method::PUT, &format!("/orgs/{}/quota", seg(org)), Some(body)).await
     }
 
     /// The organization and its apps with their environments.

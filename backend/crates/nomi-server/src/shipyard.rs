@@ -7,12 +7,49 @@ use serde_json::Value;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use nomi_shipyard::{Shipyard, ShipyardConfig, ShipyardError};
+use nomi_shipyard::{OrgQuotaPatch, Shipyard, ShipyardConfig, ShipyardError};
 
 use crate::notifications::{self, Kind, Notice};
 
 /// The path Shipyard posts its events to on Nomi's web app (forwarded to `/api/hooks/shipyard`).
 pub const WEBHOOK_PATH: &str = "/hooks/shipyard";
+
+/// Translates a Nomi limit (`None` = unlimited, `Some(n)`) into Shipyard's quota value
+/// (`-1` = unlimited, `>= 1` = finite cap; Shipyard rejects `0`).
+pub fn shipyard_limit(limit: Option<i32>) -> i32 {
+    match limit {
+        None => -1,
+        Some(n) => n.max(1),
+    }
+}
+
+/// Builds a Shipyard [`OrgQuotaPatch`] from a user's Nomi plan entitlements.
+pub fn quota_patch_from_entitlements(entitlements: &nomi_usage::entitlements::Entitlements) -> OrgQuotaPatch {
+    OrgQuotaPatch {
+        max_projects: Some(shipyard_limit(entitlements.max_projects)),
+        max_members: Some(shipyard_limit(entitlements.max_org_members)),
+        max_orgs: Some(shipyard_limit(entitlements.max_orgs)),
+    }
+}
+
+/// Computes the Shipyard quota patch for `org_id` from its owner's current Nomi plan
+/// (falling back to the default plan when the organization has no owner recorded).
+pub async fn org_quota_patch(pool: &PgPool, org_id: Uuid) -> Result<OrgQuotaPatch, sqlx::Error> {
+    let owner: Option<Uuid> = sqlx::query_scalar(
+        "SELECT COALESCE( \
+            (SELECT user_id FROM memberships WHERE org_id = $1 AND role = 'owner' AND status = 'active' ORDER BY created_at LIMIT 1), \
+            (SELECT created_by FROM organizations WHERE id = $1) \
+        )",
+    )
+    .bind(org_id)
+    .fetch_one(pool)
+    .await?;
+    let entitlements = match owner {
+        Some(user_id) => nomi_usage::entitlements::for_user(pool, user_id).await?,
+        None => nomi_usage::entitlements::Entitlements::from_plan(&nomi_usage::plans::default_plan(pool).await?),
+    };
+    Ok(quota_patch_from_entitlements(&entitlements))
+}
 
 /// What a project is on Shipyard.
 #[derive(Debug, Clone, sqlx::FromRow)]
@@ -46,10 +83,11 @@ pub async fn load_target(pool: &PgPool, project_id: Uuid) -> Result<Option<Proje
     .await
 }
 
-/// Makes sure the project's organization and app exist on Shipyard and returns the app's key.
-/// Both calls are idempotent, so this runs before every publish.
+/// Makes sure the project's organization (with up-to-date project quota) and app exist on Shipyard
+/// and returns the app's key. Both calls are idempotent, so this runs before every publish.
 pub async fn ensure_app(pool: &PgPool, client: &Shipyard<'_>, target: &ProjectTarget) -> Result<String, EnsureError> {
-    client.put_org(&target.org_key(), &target.org_name).await?;
+    let quota = org_quota_patch(pool, target.org_id).await?;
+    client.put_org_with_quota(&target.org_key(), &target.org_name, Some(&quota)).await?;
     sqlx::query("UPDATE organizations SET shipyard_synced_at = now() WHERE id = $1")
         .bind(target.org_id)
         .execute(pool)
@@ -694,14 +732,157 @@ pub async fn catch_up_loop(pool: PgPool, http: reqwest::Client, config: Shipyard
     }
 }
 
-/// Keeps the organization's name on Shipyard in step with Nomi, when it's there.
+/// Creates or updates the organization on Shipyard with both its name and its owner's current
+/// plan quota. Returns `Ok(false)` when the organization does not exist (or was deleted).
+pub async fn sync_org(pool: &PgPool, client: &Shipyard<'_>, org_id: Uuid) -> Result<bool, EnsureError> {
+    let name: Option<String> = sqlx::query_scalar("SELECT name FROM organizations WHERE id = $1 AND deleted_at IS NULL")
+        .bind(org_id)
+        .fetch_optional(pool)
+        .await?;
+    let Some(name) = name else { return Ok(false) };
+    let quota = org_quota_patch(pool, org_id).await?;
+    client.put_org_with_quota(&org_id.to_string(), &name, Some(&quota)).await?;
+    sqlx::query("UPDATE organizations SET shipyard_synced_at = now() WHERE id = $1").bind(org_id).execute(pool).await?;
+    Ok(true)
+}
+
+/// Keeps the organization's name and quota on Shipyard in step with Nomi, when it's there.
 pub async fn sync_org_name(pool: &PgPool, client: &Shipyard<'_>, org_id: Uuid) -> Result<bool, EnsureError> {
     let row: Option<(String, Option<chrono::DateTime<chrono::Utc>>)> =
         sqlx::query_as("SELECT name, shipyard_synced_at FROM organizations WHERE id = $1").bind(org_id).fetch_optional(pool).await?;
     let Some((name, Some(_))) = row else { return Ok(false) };
-    client.put_org(&org_id.to_string(), &name).await?;
+    let quota = org_quota_patch(pool, org_id).await?;
+    client.put_org_with_quota(&org_id.to_string(), &name, Some(&quota)).await?;
     sqlx::query("UPDATE organizations SET shipyard_synced_at = now() WHERE id = $1").bind(org_id).execute(pool).await?;
     Ok(true)
+}
+
+/// Syncs the Shipyard quota for every active organization owned by `user_id` (for plan upgrades,
+/// downgrades, and new signups). Already-synced orgs use `PUT /orgs/:org/quota`; orgs not yet on
+/// Shipyard are provisioned with their display name and quota via `PUT /orgs/:org`.
+pub async fn sync_user_orgs_quota(pool: &PgPool, client: &Shipyard<'_>, user_id: Uuid) {
+    let entitlements = match nomi_usage::entitlements::for_user(pool, user_id).await {
+        Ok(e) => e,
+        Err(e) => {
+            tracing::warn!(error = %e, %user_id, "couldn't load entitlements to sync Shipyard org quotas");
+            return;
+        }
+    };
+    let quota = quota_patch_from_entitlements(&entitlements);
+    let orgs: Vec<(Uuid, String, Option<chrono::DateTime<chrono::Utc>>)> = match sqlx::query_as(
+        "SELECT o.id, o.name, o.shipyard_synced_at \
+         FROM organizations o \
+         JOIN memberships m ON m.org_id = o.id \
+         WHERE m.user_id = $1 AND m.role = 'owner' AND m.status = 'active' AND o.deleted_at IS NULL",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await
+    {
+        Ok(orgs) => orgs,
+        Err(e) => {
+            tracing::warn!(error = %e, %user_id, "couldn't list user's organizations for Shipyard quota sync");
+            return;
+        }
+    };
+    for (org_id, name, synced_at) in orgs {
+        let key = org_id.to_string();
+        if synced_at.is_some() {
+            if let Err(e) = client.put_org_quota(&key, &quota).await {
+                tracing::warn!(error = ?e, %org_id, %user_id, "couldn't sync organization quota to Shipyard");
+            }
+        } else {
+            match client.put_org_with_quota(&key, &name, Some(&quota)).await {
+                Ok(_) => {
+                    if let Err(e) = sqlx::query("UPDATE organizations SET shipyard_synced_at = now() WHERE id = $1").bind(org_id).execute(pool).await {
+                        tracing::warn!(error = %e, %org_id, "couldn't note organization synced to Shipyard");
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(error = ?e, %org_id, %user_id, "couldn't provision organization with quota on Shipyard");
+                }
+            }
+        }
+    }
+}
+
+/// Syncs Shipyard quotas for all already-synced organizations whose owner is currently on `plan_id`
+/// (called when an admin updates a plan's limits).
+pub async fn sync_plan_orgs_quota(pool: &PgPool, client: &Shipyard<'_>, plan_id: Uuid) {
+    let plan = match nomi_usage::plans::get_plan(pool, plan_id).await {
+        Ok(Some(plan)) => plan,
+        Ok(None) => return,
+        Err(e) => {
+            tracing::warn!(error = %e, %plan_id, "couldn't load plan for Shipyard quota sync");
+            return;
+        }
+    };
+    let quota = quota_patch_from_entitlements(&nomi_usage::entitlements::Entitlements::from_plan(&plan));
+    let org_ids: Vec<Uuid> = match if plan.is_default {
+        sqlx::query_scalar(
+            "SELECT DISTINCT o.id \
+             FROM organizations o \
+             JOIN memberships m ON m.org_id = o.id AND m.role = 'owner' AND m.status = 'active' \
+             LEFT JOIN user_subscriptions s ON s.user_id = m.user_id \
+             WHERE o.shipyard_synced_at IS NOT NULL AND o.deleted_at IS NULL \
+               AND (s.plan_id IS NULL OR s.plan_id = $1)",
+        )
+        .bind(plan_id)
+        .fetch_all(pool)
+        .await
+    } else {
+        sqlx::query_scalar(
+            "SELECT DISTINCT o.id \
+             FROM organizations o \
+             JOIN memberships m ON m.org_id = o.id AND m.role = 'owner' AND m.status = 'active' \
+             JOIN user_subscriptions s ON s.user_id = m.user_id \
+             WHERE o.shipyard_synced_at IS NOT NULL AND o.deleted_at IS NULL \
+               AND s.plan_id = $1",
+        )
+        .bind(plan_id)
+        .fetch_all(pool)
+        .await
+    } {
+        Ok(ids) => ids,
+        Err(e) => {
+            tracing::warn!(error = %e, %plan_id, "couldn't list organizations on plan for Shipyard quota sync");
+            return;
+        }
+    };
+    for org_id in org_ids {
+        if let Err(e) = client.put_org_quota(&org_id.to_string(), &quota).await {
+            tracing::warn!(error = ?e, %org_id, %plan_id, "couldn't sync plan quota change to Shipyard");
+        }
+    }
+}
+
+/// Spawns a best-effort background task to create/update `org_id` (name + quota) on Shipyard.
+pub fn spawn_sync_org(pool: PgPool, http: reqwest::Client, config: Option<ShipyardConfig>, org_id: Uuid) {
+    let Some(config) = config else { return };
+    tokio::spawn(async move {
+        let client = Shipyard::new(&http, &config);
+        if let Err(e) = sync_org(&pool, &client, org_id).await {
+            tracing::warn!(error = ?e, %org_id, "couldn't sync organization to Shipyard");
+        }
+    });
+}
+
+/// Spawns a best-effort background task to sync Shipyard quotas for all orgs owned by `user_id`.
+pub fn spawn_sync_user_orgs_quota(pool: PgPool, http: reqwest::Client, config: Option<ShipyardConfig>, user_id: Uuid) {
+    let Some(config) = config else { return };
+    tokio::spawn(async move {
+        let client = Shipyard::new(&http, &config);
+        sync_user_orgs_quota(&pool, &client, user_id).await;
+    });
+}
+
+/// Spawns a best-effort background task to sync Shipyard quotas for synced orgs on `plan_id`.
+pub fn spawn_sync_plan_orgs_quota(pool: PgPool, http: reqwest::Client, config: Option<ShipyardConfig>, plan_id: Uuid) {
+    let Some(config) = config else { return };
+    tokio::spawn(async move {
+        let client = Shipyard::new(&http, &config);
+        sync_plan_orgs_quota(&pool, &client, plan_id).await;
+    });
 }
 
 #[cfg(test)]
@@ -754,5 +935,33 @@ mod tests {
         assert_eq!(own_endpoint(&endpoints, None).unwrap()["id"], "b");
         assert!(own_endpoint(&json!([{ "id": "a", "url": "https://ops.example/hooks/shipyard-x" }]), None).is_none());
         assert!(own_endpoint(&json!([]), None).is_none());
+    }
+
+    #[test]
+    fn shipyard_limit_translates_unlimited_and_clamps_zero() {
+        assert_eq!(shipyard_limit(None), -1);
+        assert_eq!(shipyard_limit(Some(0)), 1);
+        assert_eq!(shipyard_limit(Some(-5)), 1);
+        assert_eq!(shipyard_limit(Some(12)), 12);
+    }
+
+    #[test]
+    fn quota_patch_from_entitlements_maps_all_org_limits() {
+        let entitlements = nomi_usage::entitlements::Entitlements {
+            max_projects: None,
+            max_orgs: Some(5),
+            max_org_members: Some(0),
+            max_custom_crew: None,
+            max_storage_mb: None,
+            custom_domain: true,
+            sandbox_size: None,
+            all_models: true,
+            model_ids: vec![],
+            plan_name: "Pro".into(),
+        };
+        assert_eq!(
+            quota_patch_from_entitlements(&entitlements),
+            OrgQuotaPatch { max_projects: Some(-1), max_members: Some(1), max_orgs: Some(5) }
+        );
     }
 }

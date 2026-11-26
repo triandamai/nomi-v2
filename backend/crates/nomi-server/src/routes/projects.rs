@@ -912,7 +912,8 @@ async fn move_shipyard_app(state: &AppState, project_id: Uuid, from_org: Uuid, t
         .fetch_one(&state.pool)
         .await
         .map_err(internal)?;
-    shipyard.put_org(&to_org.to_string(), &to_name).await.map_err(crate::routes::deploy::shipyard_error)?;
+    let quota = crate::shipyard::org_quota_patch(&state.pool, to_org).await.map_err(internal)?;
+    shipyard.put_org_with_quota(&to_org.to_string(), &to_name, Some(&quota)).await.map_err(crate::routes::deploy::shipyard_error)?;
     sqlx::query("UPDATE organizations SET shipyard_synced_at = now() WHERE id = $1").bind(to_org).execute(&state.pool).await.map_err(internal)?;
     match shipyard.transfer_app(&from_org.to_string(), &app, &to_org.to_string(), None).await {
         Ok(moved) => {

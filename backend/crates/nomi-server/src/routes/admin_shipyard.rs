@@ -478,7 +478,8 @@ pub async fn sync_org(State(state): State<AppState>, AuthClaims(claims): AuthCla
         .await
         .map_err(internal("failed to load organization"))?
         .ok_or((StatusCode::NOT_FOUND, "organization not found".to_string()))?;
-    client.put_org(&org_id.to_string(), &name).await.map_err(shipyard_error)?;
+    let quota = crate::shipyard::org_quota_patch(&state.pool, org_id).await.map_err(internal("failed to load organization quota"))?;
+    client.put_org_with_quota(&org_id.to_string(), &name, Some(&quota)).await.map_err(shipyard_error)?;
     sqlx::query("UPDATE organizations SET shipyard_synced_at = now() WHERE id = $1")
         .bind(org_id)
         .execute(&state.pool)

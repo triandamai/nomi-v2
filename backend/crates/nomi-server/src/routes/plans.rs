@@ -159,7 +159,10 @@ pub async fn admin_update(
     require(&claims, "write")?;
     let input = input.validate().map_err(|m| (StatusCode::BAD_REQUEST, m))?;
     match plans::update_plan(&state.pool, id, &input).await {
-        Ok(Some(plan)) => Ok(Json(plan)),
+        Ok(Some(plan)) => {
+            crate::shipyard::spawn_sync_plan_orgs_quota(state.pool.clone(), state.http_client.clone(), state.shipyard.clone(), plan.id);
+            Ok(Json(plan))
+        }
         Ok(None) => Err((StatusCode::NOT_FOUND, "plan not found")),
         Err(e) if unique_violation(&e) => Err((StatusCode::CONFLICT, "another plan already uses that slug")),
         Err(e) => Err(internal(e)),
@@ -288,6 +291,9 @@ pub async fn admin_put_subscription(
     let change = SubscriptionChange { plan_id: req.plan_id, quota_override: req.quota_override, override_until: req.override_until, note: req.note.clone() };
     plans::change_subscription(&state.pool, user_id, &change, claims.sub).await.map_err(internal)?;
     let after = plans::subscription_for(&state.pool, user_id).await.map_err(internal)?;
+    if before.plan.id != after.plan.id {
+        crate::shipyard::spawn_sync_user_orgs_quota(state.pool.clone(), state.http_client.clone(), state.shipyard.clone(), user_id);
+    }
 
     notify_change(&state.pool, user_id, &before, &after, req.note.as_deref()).await.map_err(internal)?;
     Ok(Json(load_user_subscription(&state, user_id).await?))

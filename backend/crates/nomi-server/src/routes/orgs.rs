@@ -287,6 +287,8 @@ pub async fn create_org(
     tx.commit()
         .await
         .map_err(internal("failed to create organization"))?;
+    // Provision the org and its owner's project quota on Shipyard in the background.
+    crate::shipyard::spawn_sync_org(state.pool.clone(), state.http_client.clone(), state.shipyard.clone(), id);
     let member_avatars = member_avatars(&state.pool, id)
         .await
         .map_err(internal("failed to create organization"))?;

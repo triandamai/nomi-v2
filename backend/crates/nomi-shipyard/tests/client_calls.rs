@@ -1,9 +1,9 @@
 //! Every Shipyard client call against a fake Shipyard: the path and method each one uses, the
 //! envelope it reads, and how errors come back.
 
-use nomi_shipyard::{DomainName, MetricsRange, MetricsStep, Shipyard, ShipyardConfig, ShipyardError};
+use nomi_shipyard::{DomainName, MetricsRange, MetricsStep, OrgQuotaPatch, Shipyard, ShipyardConfig, ShipyardError};
 use serde_json::json;
-use wiremock::matchers::{any, method, path};
+use wiremock::matchers::{any, body_json, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn ok(data: serde_json::Value) -> ResponseTemplate {
@@ -120,4 +120,54 @@ fn app_slugs_are_short_and_safe() {
     assert!(slug.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'), "{slug}");
     std::env::remove_var("SHIPYARD_URL");
     let _ = ShipyardConfig::from_env();
+}
+
+#[tokio::test]
+async fn org_quota_endpoints_send_expected_paths_and_bodies() {
+    let server = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .and(path("/orgs/org-1"))
+        .and(body_json(json!({
+            "name": "Acme",
+            "quota": { "max_projects": 25, "max_members": -1 }
+        })))
+        .respond_with(ok(json!({ "id": "s1" })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("PUT"))
+        .and(path("/orgs/org-1/quota"))
+        .and(body_json(json!({
+            "quota": { "max_projects": -1, "max_members": 10, "max_orgs": 5 }
+        })))
+        .respond_with(ok(json!({ "max_projects": -1 })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/orgs/org-1/quota"))
+        .respond_with(ok(json!({ "max_projects": -1 })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let cfg = config(&server);
+    let http = reqwest::Client::new();
+    let s = Shipyard::new(&http, &cfg);
+
+    s.put_org_with_quota(
+        "org-1",
+        "Acme",
+        Some(&OrgQuotaPatch { max_projects: Some(25), max_members: Some(-1), max_orgs: None }),
+    )
+    .await
+    .unwrap();
+    s.put_org_quota(
+        "org-1",
+        &OrgQuotaPatch { max_projects: Some(-1), max_members: Some(10), max_orgs: Some(5) },
+    )
+    .await
+    .unwrap();
+    let quota = s.get_org_quota("org-1").await.unwrap();
+    assert_eq!(quota["max_projects"], -1);
 }
