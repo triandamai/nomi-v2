@@ -137,10 +137,13 @@ pub const CUT_OFF_RETRY: &str = "Your last response hit the output limit before 
      nothing in it ran. Continue from where you were, in smaller steps: at most a few files or a few hundred lines per \
      tool call, and split long files across write_file then edit_file calls.";
 
-/// Sora's advice after a cut-off: her previews are saved with save_preview, not written file by file.
+/// Sora's advice after a cut-off: her previews are saved with save_preview, not written file by file,
+/// and her handoff can't be split, so it is written shorter.
 pub const DESIGN_CUT_OFF_RETRY: &str = "Your last response hit the output limit before it finished, so it was discarded \
      and nothing in it ran. Continue from where you were in smaller pieces: send a few files per save_preview call with \
-     finished set to false, keep each file to a few hundred lines, and set finished to true only on the last call.";
+     finished set to false, keep each file to a few hundred lines, and set finished to true only on the last call. If it was \
+     create_handoff, which goes in one call, write it shorter: one short line per entry, components only for the parts that \
+     repeat, and leave out what the preview already shows plainly.";
 
 pub const DESIGN_SYSTEM_PROMPT: &str =
     "You are Sora, the designer in Nomi's crew. You work out how a site or app should look and feel before Koda \
