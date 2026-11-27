@@ -1,6 +1,15 @@
 package ai.nomi.designsystem.ds
 
 import ai.nomi.designsystem.component.NomiAvatar
+import ai.nomi.designsystem.component.computeInitials
+import androidx.compose.foundation.border
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.runtime.remember
+import androidx.compose.ui.semantics.hideFromAccessibility
+import androidx.compose.ui.text.style.TextOverflow
+import kotlin.math.roundToInt
 import ai.nomi.designsystem.component.NomiButton
 import ai.nomi.designsystem.component.NomiButtonVariant
 import ai.nomi.designsystem.component.nomiFocusRing
@@ -62,116 +71,162 @@ fun DsBareIcon(icon: NomiGlyph, label: String, onClick: () -> Unit, modifier: Mo
     ) { DsIcon(icon, size, tint) }
 }
 
-/** Who is speaking, and when (mono: "15:37 · 4m 12s"). */
+// Design System / Nomi → Identity and Status (frontend-new `ds/identity`, `ds/status`), in dp.
+private val BylineGap = 8.dp
+private val BylineMascot = 20.dp
+private val AvatarSize = 28.dp
+private val CrewRowMascot = 32.dp
+private val CrewRowGap = 12.dp
+private val CrewRowPadX = 12.dp
+private val CrewRowPadY = 8.dp
+private val CrewRowLines = 2.dp
+private val MeterTrack = 4.dp
+private val MeterGap = 6.dp
+private val MeterRoomyGap = 10.dp
+private val StatusDot = 6.dp
+private val StatusGap = 6.dp
+private val StatusMascot = 20.dp
+private val TagPadX = 5.dp
+private val TagPadY = 1.dp
+private val SectionLabelGap = 8.dp
+
+/** Who is speaking (13, medium), with their mascot, and when (mono: "15:37 · 4m 12s"). */
 @Composable
 fun AgentByline(agent: Crew, name: String, modifier: Modifier = Modifier, meta: String? = null, working: Boolean = false) {
-    Row(modifier, horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Mascot(agent, 20.dp, working = working)
-        Text(name, style = MaterialTheme.typography.titleSmall, color = Ds.text)
-        if (meta != null) Text(meta, style = Ds.label, color = Ds.text2)
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(BylineGap), verticalAlignment = Alignment.CenterVertically) {
+        Mascot(agent, BylineMascot, working = working)
+        BasicText(name, style = Ds.title.copy(color = Ds.text))
+        if (meta != null) BasicText(meta, style = Ds.label.copy(color = Ds.text3))
     }
 }
 
-/** A person: their initials on the secondary container (32dp). */
+/** A person: their picture, or their initials in mono, on a 28 tile with a border-strong edge. */
 @Composable
-fun DsAvatar(name: String, modifier: Modifier = Modifier, size: Dp = 32.dp) {
-    NomiAvatar(name, modifier.semantics { contentDescription = name }, size = size)
+fun DsAvatar(name: String, modifier: Modifier = Modifier, size: Dp = AvatarSize, src: String? = null) {
+    if (src != null) {
+        NomiAvatar(name, modifier.semantics { contentDescription = name }.clip(DsShapes.sm).border(Hairline, Ds.borderStrong, DsShapes.sm), avatarUrl = src, size = size)
+        return
+    }
+    Box(
+        modifier
+            .semantics { contentDescription = name }
+            .size(size)
+            .clip(DsShapes.sm)
+            .background(Ds.surface2)
+            .border(Hairline, Ds.borderStrong, DsShapes.sm),
+        contentAlignment = Alignment.Center,
+    ) { BasicText(computeInitials(name), style = Ds.label.copy(color = Ds.text2), modifier = Modifier.semantics { hideFromAccessibility() }) }
 }
 
-/** A crew member in a list, with what they do and their state. */
+/**
+ * A crew member in a list, with what they do (on one line, cut short) and their state. Pressable when [onClick] is
+ * given, darkening on hover.
+ */
 @Composable
 fun CrewRow(agent: Crew, name: String, role: String, modifier: Modifier = Modifier, state: String? = null, onClick: (() -> Unit)? = null) {
+    val interaction = remember { MutableInteractionSource() }
+    val hovered by interaction.collectIsHoveredAsState()
     Row(
         modifier
             .fillMaxWidth()
-            .heightIn(min = 56.dp)
-            .clip(MaterialTheme.shapes.large)
-            .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier)
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
+            .clip(DsShapes.sm)
+            .background(if (onClick != null && hovered) Ds.surface2 else Color.Transparent)
+            .then(if (onClick != null) Modifier.clickable(interaction, indication = null, role = Role.Button, onClick = onClick) else Modifier)
+            .padding(horizontal = CrewRowPadX, vertical = CrewRowPadY),
+        horizontalArrangement = Arrangement.spacedBy(CrewRowGap),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Mascot(agent, 32.dp)
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(name, style = Ds.body, color = Ds.text)
-            Text(role, style = Ds.ui, color = Ds.text2)
+        Mascot(agent, CrewRowMascot)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(CrewRowLines)) {
+            BasicText(name, style = Ds.title.copy(color = Ds.text))
+            BasicText(role, style = Ds.caption.copy(color = Ds.text3), maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        if (state != null) Text(state, style = Ds.label, color = Ds.text2)
+        if (state != null) BasicText(state, style = Ds.label.copy(color = Ds.text3))
     }
 }
 
 /**
- * How much of something is used, as a bar and in words ("21.8K / 1M tokens this month"): never more than full.
- * The fill grows to its value. [roomy] spaces it out, as in the drawer's usage card.
+ * How much of something is used, as a thin text-2 bar and in words ("21.8K / 1M tokens this month"): the real figure,
+ * never more than full. [roomy] spaces it 10 apart, as in the sidebar's usage card.
  */
 @Composable
 fun Meter(label: String, value: Float, modifier: Modifier = Modifier, caption: String? = null, roomy: Boolean = false) {
     val clamped = value.coerceIn(0f, 1f)
-    val percent = (clamped * PERCENT).toInt()
-    val fill by animateFloatAsState(clamped, DsMotion.spatial(), label = "meter-fill")
+    val percent = (clamped * PERCENT).roundToInt()
     Column(
-        modifier.fillMaxWidth().semantics { progressBarRangeInfo = ProgressBarRangeInfo(clamped, 0f..1f) },
-        verticalArrangement = Arrangement.spacedBy(if (roomy) 10.dp else 6.dp),
+        modifier.fillMaxWidth().semantics(mergeDescendants = true) { progressBarRangeInfo = ProgressBarRangeInfo(clamped, 0f..1f) },
+        verticalArrangement = Arrangement.spacedBy(if (roomy) MeterRoomyGap else MeterGap),
     ) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(label, style = MaterialTheme.typography.titleSmall, color = Ds.text)
-            Text("$percent%", style = Ds.label, color = Ds.text2)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = if (roomy) Alignment.CenterVertically else Alignment.Top) {
+            BasicText(label, style = Ds.title.copy(color = Ds.text))
+            BasicText("$percent%", style = Ds.label.copy(color = Ds.text3))
         }
-        Box(Modifier.fillMaxWidth().height(4.dp).clip(DsShapes.full).background(MaterialTheme.colorScheme.secondaryContainer)) {
-            Box(Modifier.fillMaxWidth(fill).fillMaxHeight().clip(DsShapes.full).background(Ds.accent))
+        Box(Modifier.fillMaxWidth().height(MeterTrack).clip(DsShapes.full).background(Ds.surface2)) {
+            Box(Modifier.fillMaxWidth(clamped).fillMaxHeight().clip(DsShapes.full).background(Ds.text2))
         }
-        if (caption != null) Text(caption, style = Ds.label, color = Ds.text2)
+        if (caption != null) BasicText(caption, style = Ds.label.copy(color = Ds.text3))
     }
 }
 
-/** A section's name in the mono meta face, and how many are in it. */
+/** The only uppercase style: a section's name in mono capitals, in text-3, and how many are in it. */
 @Composable
 fun SectionLabel(label: String, modifier: Modifier = Modifier, count: String? = null) {
-    Row(modifier, horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, style = Ds.labelCaps, color = Ds.text2)
-        if (count != null) Text(count, style = Ds.label, color = Ds.text2)
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(SectionLabelGap), verticalAlignment = Alignment.CenterVertically) {
+        BasicText(label.uppercase(), style = Ds.labelCaps.copy(color = Ds.text3))
+        if (count != null) BasicText(count, style = Ds.label.copy(color = Ds.text3))
     }
 }
 
 enum class StatusKind { Live, Ready, Idle, Failed, Attention, Working }
 
 /**
- * A dot plus a word, so colour never carries meaning alone. Who is working shows their shape (moving) instead of a
- * dot. [small] sets the word smaller.
+ * A 6 dot plus a word, so colour never carries meaning alone. Who is working shows their mascot instead of a dot.
+ * States, not decoration: no pulsing. [small] sets the word at 11 where the pen does (a build's "Live").
  */
 @Composable
 fun DsStatus(kind: StatusKind, label: String, modifier: Modifier = Modifier, agent: Crew? = null, small: Boolean = false) {
-    val color = when (kind) {
-        StatusKind.Failed -> Ds.danger
-        StatusKind.Attention -> Ds.warning
-        StatusKind.Idle, StatusKind.Ready -> Ds.text2
-        else -> Ds.text
+    val (dot, ink) = when (kind) {
+        StatusKind.Live -> Ds.accent to Ds.text
+        StatusKind.Ready -> Ds.accent to Ds.text2
+        StatusKind.Idle -> Ds.text3 to Ds.text3
+        StatusKind.Failed -> Ds.danger to Ds.danger
+        StatusKind.Attention -> Ds.warning to Ds.warning
+        StatusKind.Working -> Ds.text to Ds.text
     }
-    val dot = if (kind == StatusKind.Live || kind == StatusKind.Ready) Ds.accent else color
-    val quiet = small || kind == StatusKind.Ready || kind == StatusKind.Idle
-    Row(modifier, horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+    val style = when {
+        kind == StatusKind.Ready || kind == StatusKind.Idle -> Ds.label
+        small -> Ds.ui.copy(fontSize = Ds.label.fontSize, lineHeight = Ds.label.lineHeight)
+        else -> Ds.caption
+    }
+    Row(modifier.semantics(mergeDescendants = true) {}, horizontalArrangement = Arrangement.spacedBy(StatusGap), verticalAlignment = Alignment.CenterVertically) {
         if (kind == StatusKind.Working && agent != null) {
-            Mascot(agent, 20.dp, working = true)
+            Mascot(agent, StatusMascot, working = true)
         } else {
-            Box(Modifier.size(8.dp).clip(CircleShape).background(dot))
+            Box(Modifier.size(StatusDot).clip(CircleShape).background(dot))
         }
-        Text(label, style = if (quiet) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelLarge, color = color)
+        BasicText(label, style = style.copy(color = ink))
     }
 }
 
 enum class TagKind { Go, NoGo, Neutral }
 
-/** A go / no-go / standby verdict, in the meta face, upper case. */
+/** A go / no-go / standby verdict in small mono capitals, 18 tall: written in sentence case, shown in capitals. */
 @Composable
 fun DsTag(kind: TagKind, label: String, modifier: Modifier = Modifier) {
-    val (bg, fg) = when (kind) {
-        TagKind.Go -> MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.onPrimaryContainer
-        TagKind.NoGo -> MaterialTheme.colorScheme.errorContainer to MaterialTheme.colorScheme.onErrorContainer
-        TagKind.Neutral -> MaterialTheme.colorScheme.surfaceContainerHigh to MaterialTheme.colorScheme.onSurfaceVariant
+    val (fill, edge, ink) = when (kind) {
+        TagKind.Go -> Triple(Ds.accentBg, Ds.accentBg, Ds.accent)
+        TagKind.NoGo -> Triple(Ds.dangerBg, Ds.dangerBorder, Ds.danger)
+        TagKind.Neutral -> Triple(Ds.surface2, Ds.borderStrong, Ds.text2)
     }
-    Box(modifier.height(24.dp).clip(DsShapes.sm).background(bg).padding(horizontal = 8.dp), contentAlignment = Alignment.Center) {
-        Text(label.uppercase(), style = Ds.labelCaps.copy(fontWeight = FontWeight.Medium), color = fg)
-    }
+    Box(
+        modifier
+            .semantics(mergeDescendants = true) {}
+            .clip(DsShapes.xs)
+            .background(fill)
+            .border(Hairline, edge, DsShapes.xs)
+            .padding(horizontal = TagPadX + Hairline, vertical = TagPadY + Hairline),
+        contentAlignment = Alignment.Center,
+    ) { BasicText(label.uppercase(), style = Ds.labelCaps.copy(color = ink)) }
 }
 
 /** A vertical hairline between groups in a row of tools. */
