@@ -134,4 +134,31 @@ describe('initViewport browser', () => {
 		cleanup();
 		scrollToSpy.mockRestore();
 	});
+
+	it('does not reset window scroll on document/landing pages without an app shell', () => {
+		const scrollToSpy = vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+
+		const landing = document.createElement('div');
+		landing.setAttribute('data-landing', '');
+		document.body.appendChild(landing);
+
+		Object.defineProperty(window, 'scrollY', {
+			value: 350,
+			configurable: true,
+			writable: true
+		});
+
+		const cleanup = initViewport();
+
+		// initViewport sets --viewport-height on <html>, which must not trigger app-layout scroll lock
+		expect(document.documentElement.style.getPropertyValue('--viewport-height')).not.toBe('');
+		expect(scrollToSpy).not.toHaveBeenCalled();
+
+		window.dispatchEvent(new Event('scroll'));
+		expect(scrollToSpy).not.toHaveBeenCalled();
+
+		document.body.removeChild(landing);
+		cleanup();
+		scrollToSpy.mockRestore();
+	});
 });
