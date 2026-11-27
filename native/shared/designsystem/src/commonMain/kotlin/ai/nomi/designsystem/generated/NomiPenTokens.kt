@@ -160,16 +160,35 @@ object NomiPenSpace {
     const val xl5 = 48
 }
 
-/** The web's radii in dp. */
+/** The web's radii in dp (Float: the pen draws some at half a point). */
 object NomiPenRadius {
-    const val hair = 1
-    const val cell = 2
-    const val xs2 = 3
-    const val xs = 4
-    const val sm = 6
-    const val tile = 7
-    const val inner = 8
-    const val md = 10
+    const val sm = 6f
+    const val md = 10f
+    const val xs2 = 3f
+    const val xs = 4f
+    const val inner = 8f
+    const val tile = 7f
+    const val hair = 1f
+    const val cell = 2f
+    const val agenda = 6.5f
+    const val workspace = 9f
+    const val lg = 12f
+    const val xl = 14f
+    const val xl2 = 16f
+    const val xl3 = 18f
+    const val sheet = 22f
+    const val device = 44f
+}
+
+/** A shadow: offset and blur in dp, cast in the pen colour [color] names (`shadow` or `focus`). */
+data class PenShadow(val x: Float, val y: Float, val blur: Float, val color: String)
+
+object NomiPenShadow {
+    val float = PenShadow(0f, 8f, 24f, "shadow")
+    val floatLg = PenShadow(0f, 12f, 32f, "shadow")
+    val fab = PenShadow(0f, 6f, 16f, "shadow")
+    val lift = PenShadow(0f, 6f, 18f, "shadow")
+    val focus = PenShadow(0f, 0f, 8f, "focus")
 }
 
 /** A type role: size and line height in sp, tracking in px (sp on native). */
@@ -177,18 +196,21 @@ data class PenTypeRole(val size: Float, val lineHeight: Float, val trackingPx: F
 
 object NomiPenType {
     val display = PenTypeRole(28f, 36f, -0.4f)
-    val heading = PenTypeRole(20f, 26f, 0f)
     val body = PenTypeRole(15f, 19f, 0f)
     val ui = PenTypeRole(13f, 17f, 0f)
     val caption = PenTypeRole(12f, 16f, 0f)
     val label = PenTypeRole(11f, 14f, 0f)
     val micro = PenTypeRole(10f, 13f, 0f)
     val nano = PenTypeRole(9f, 12f, 0f)
+    val heading = PenTypeRole(20f, 26f, 0f)
     val phoneTitle = PenTypeRole(17f, 22f, 0f)
     val phone = PenTypeRole(16f, 21f, 0f)
     val phoneSm = PenTypeRole(14f, 18f, 0f)
     val phoneLarge = PenTypeRole(32f, 42f, 0f)
     val phoneDisplay = PenTypeRole(22f, 29f, 0f)
+    val phoneAction = PenTypeRole(18f, 23f, 0f)
+    val phoneHeading = PenTypeRole(18f, 23f, 0f)
+    val hero = PenTypeRole(40f, 44f, 0f)
 }
 
 /** The web's tracking-* utilities in px (sp on native), applied only where a component names one. */

@@ -62,3 +62,21 @@ test('the emitted Kotlin carries the header and resolved values only', () => {
   assert.match(kt, /const val phoneLarge = -0\.6f/);
   assert.doesNotMatch(kt, /var\(/);
 });
+
+test('every type role and radius app.css declares is read, not a fixed list', () => {
+  const scale = parseThemeScale(appCss, parsePenTokens(tokensJson));
+  assert.deepEqual(scale.type.phoneAction, { size: 18, lineHeight: 23, tracking: 0 });
+  assert.equal(scale.radius.sheet, 22);
+  assert.equal(scale.radius.lg, 12);
+  assert.equal(scale.radius.agenda, 6.5);
+});
+
+test('shadows keep their offset, blur and which pen colour they cast', () => {
+  const scale = parseThemeScale(appCss, parsePenTokens(tokensJson));
+  assert.deepEqual(scale.shadow.float, { x: 0, y: 8, blur: 24, color: 'shadow' });
+  assert.deepEqual(scale.shadow.focus, { x: 0, y: 0, blur: 8, color: 'focus' });
+  const tokens = parsePenTokens(tokensJson);
+  const kt = emitPenKotlin(tokens, scale);
+  assert.match(kt, /val float = PenShadow\(0f, 8f, 24f, "shadow"\)/);
+  assert.match(kt, /const val agenda = 6\.5f/);
+});

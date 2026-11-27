@@ -35,10 +35,10 @@ const SPACE_PREFIX = 'nm-space-';
 const CREW_BG = '-bg';
 const CREW_INK = '-ink';
 
-/** The web's type roles, by their --text-* name. */
-const TYPE_ROLES = ['display', 'heading', 'body', 'ui', 'caption', 'label', 'micro', 'nano', 'phone-title', 'phone', 'phone-sm', 'phone-large', 'phone-display'];
-/** The web's radii, by their --radius-* name. */
-const RADII = ['hair', 'cell', '2xs', 'xs', 'sm', 'tile', 'inner', 'md'];
+const TEXT_PROP = /^--text-([\w-]+?)$/;
+const RADIUS_PROP = /^--radius-([\w-]+)$/;
+const SHADOW_PROP = /^--shadow-([\w-]+)$/;
+const SHADOW_VALUE = /^(-?[\d.]+)(?:px)? (-?[\d.]+)(?:px)? ([\d.]+)px var\(--nm-([\w-]+)\)$/;
 
 /** tokens.json → colours as {light, dark} ARGB, numbers and strings, each by token name. */
 export function parsePenTokens(jsonText) {
@@ -90,34 +90,44 @@ function pixels(value, numbers, what) {
   return Number(px[1]);
 }
 
-/** app.css @theme → type roles (size, line height, tracking in px) and radii in px. */
+/** app.css @theme → every type role (size, line height, tracking in px), radius and shadow it declares. */
 export function parseThemeScale(cssText, { numbers }) {
   const decls = declarations(themeBlock(cssText));
   const type = {};
-  for (const role of TYPE_ROLES) {
-    const size = decls[`--text-${role}`];
-    const lineHeight = decls[`--text-${role}--line-height`];
-    if (!size || !lineHeight) throw new Error(`app.css has no --text-${role} size and line height`);
-    // Only the role's own letter-spacing: a --tracking-* is a separate utility a component opts into.
-    const tracking = decls[`--text-${role}--letter-spacing`];
-    type[kotlinName(role)] = {
-      size: pixels(size, numbers, `--text-${role}`),
-      lineHeight: pixels(lineHeight, numbers, `--text-${role}--line-height`),
-      tracking: tracking ? pixels(tracking, numbers, `tracking of ${role}`) : NO_TRACKING,
-    };
-  }
   const radius = {};
-  for (const name of RADII) {
-    const value = decls[`--radius-${name}`];
-    if (!value) throw new Error(`app.css has no --radius-${name}`);
-    radius[kotlinName(name)] = pixels(value, numbers, `--radius-${name}`);
-  }
+  const shadow = {};
   const tracking = {};
   for (const [prop, value] of Object.entries(decls)) {
-    const name = /^--tracking-([\w-]+)$/.exec(prop);
-    if (name) tracking[kotlinName(name[1])] = pixels(value, numbers, prop);
+    if (value === 'initial') continue;
+    const role = TEXT_PROP.exec(prop)?.[1];
+    if (role && !role.includes('--')) {
+      const lineHeight = decls[`--text-${role}--line-height`];
+      if (!lineHeight) throw new Error(`app.css has no --text-${role}--line-height`);
+      // Only the role's own letter-spacing: a --tracking-* is a separate utility a component opts into.
+      const spacing = decls[`--text-${role}--letter-spacing`];
+      type[kotlinName(role)] = {
+        size: pixels(value, numbers, prop),
+        lineHeight: pixels(lineHeight, numbers, `--text-${role}--line-height`),
+        tracking: spacing ? pixels(spacing, numbers, `--text-${role}--letter-spacing`) : NO_TRACKING,
+      };
+      continue;
+    }
+    const corner = RADIUS_PROP.exec(prop)?.[1];
+    if (corner) {
+      radius[kotlinName(corner)] = pixels(value, numbers, prop);
+      continue;
+    }
+    const cast = SHADOW_PROP.exec(prop)?.[1];
+    if (cast) {
+      const m = SHADOW_VALUE.exec(value);
+      if (!m) throw new Error(`${prop}: ${value} is not "x y blur var(--nm-colour)"`);
+      shadow[kotlinName(cast)] = { x: Number(m[1]), y: Number(m[2]), blur: Number(m[3]), color: m[4] };
+      continue;
+    }
+    const name = /^--tracking-([\w-]+)$/.exec(prop)?.[1];
+    if (name) tracking[kotlinName(name)] = pixels(value, numbers, prop);
   }
-  return { type, radius, tracking };
+  return { type, radius, shadow, tracking };
 }
 
 /** kebab-case → camelCase, a leading count moved to the end: 2xs → xs2, text-3 → text3. */
@@ -136,7 +146,7 @@ function float(n) {
 }
 
 /** The tokens and scale → the Kotlin source of NomiPenTokens.kt. */
-export function emitPenKotlin({ colors, numbers, strings }, { type, radius, tracking }) {
+export function emitPenKotlin({ colors, numbers, strings }, { type, radius, shadow, tracking }) {
   const pen = Object.keys(colors).filter((n) => n.startsWith(PEN_PREFIX));
   const crewNames = Object.keys(colors)
     .filter((n) => n.startsWith(CREW_PREFIX) && !n.endsWith(CREW_BG) && !n.endsWith(CREW_INK))
@@ -153,7 +163,8 @@ export function emitPenKotlin({ colors, numbers, strings }, { type, radius, trac
   const space = Object.keys(numbers)
     .filter((n) => n.startsWith(SPACE_PREFIX))
     .map((n) => `${INDENT}const val ${kotlinName(n.slice(SPACE_PREFIX.length))} = ${numbers[n]}`);
-  const radii = Object.entries(radius).map(([n, v]) => `${INDENT}const val ${n} = ${v}`);
+  const radii = Object.entries(radius).map(([n, v]) => `${INDENT}const val ${n} = ${float(v)}`);
+  const shadows = Object.entries(shadow).map(([n, v]) => `${INDENT}val ${n} = PenShadow(${float(v.x)}, ${float(v.y)}, ${float(v.blur)}, "${v.color}")`);
   const trackings = Object.entries(tracking).map(([n, v]) => `${INDENT}const val ${n} = ${float(v)}`);
   const roles = Object.entries(type).map(([n, r]) => `${INDENT}val ${n} = PenTypeRole(${float(r.size)}, ${float(r.lineHeight)}, ${float(r.tracking)})`);
 
@@ -189,9 +200,16 @@ export function emitPenKotlin({ colors, numbers, strings }, { type, radius, trac
     space.join('\n'),
     '}',
     '',
-    '/** The web\'s radii in dp. */',
+    '/** The web\'s radii in dp (Float: the pen draws some at half a point). */',
     'object NomiPenRadius {',
     radii.join('\n'),
+    '}',
+    '',
+    '/** A shadow: offset and blur in dp, cast in the pen colour [color] names (`shadow` or `focus`). */',
+    'data class PenShadow(val x: Float, val y: Float, val blur: Float, val color: String)',
+    '',
+    'object NomiPenShadow {',
+    shadows.join('\n'),
     '}',
     '',
     '/** A type role: size and line height in sp, tracking in px (sp on native). */',

@@ -165,6 +165,7 @@ object Ds {
     val phoneTitle: TextStyle @Composable @ReadOnlyComposable get() = penTextStyle(NomiPenType.phoneTitle, NomiTheme.families.sans, FontWeight.SemiBold)
     val phoneLarge: TextStyle @Composable @ReadOnlyComposable get() =
         penTextStyle(NomiPenType.phoneLarge, NomiTheme.families.sans, FontWeight.SemiBold).copy(letterSpacing = NomiPenTracking.phoneLarge.sp)
+    val phoneAction: TextStyle @Composable @ReadOnlyComposable get() = penTextStyle(NomiPenType.phoneAction, NomiTheme.families.sans)
     val phoneDisplay: TextStyle @Composable @ReadOnlyComposable get() = penTextStyle(NomiPenType.phoneDisplay, NomiTheme.families.sans, FontWeight.SemiBold)
 }
 
@@ -194,6 +195,10 @@ object DsShapes {
     val tile = RoundedCornerShape(NomiPenRadius.tile.dp)
     val inner = RoundedCornerShape(NomiPenRadius.inner.dp)
     val md = RoundedCornerShape(NomiPenRadius.md.dp)
+    val lg = RoundedCornerShape(NomiPenRadius.lg.dp)
+    val xl = RoundedCornerShape(NomiPenRadius.xl.dp)
+    val xl2 = RoundedCornerShape(NomiPenRadius.xl2.dp)
+    val sheet = RoundedCornerShape(topStart = NomiPenRadius.sheet.dp, topEnd = NomiPenRadius.sheet.dp)
     val full = RoundedCornerShape(percent = 50)
 }
 

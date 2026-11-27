@@ -22,6 +22,13 @@ import ai.nomi.designsystem.ds.DsIconButtonVariant
 import ai.nomi.designsystem.ds.DsGithubMark
 import ai.nomi.designsystem.ds.DsLink
 import ai.nomi.designsystem.ds.DsPhonePill
+import ai.nomi.designsystem.ds.DsShapes
+import ai.nomi.designsystem.ds.SheetTile
+import ai.nomi.designsystem.ds.DsSheetTiles
+import ai.nomi.designsystem.ds.DsSheetOption
+import ai.nomi.designsystem.ds.SheetAction
+import ai.nomi.designsystem.ds.DsActionSheet
+import ai.nomi.designsystem.ds.DsBottomSheet
 import ai.nomi.designsystem.ds.DsPhoneSearch
 import ai.nomi.designsystem.ds.DsSelect
 import ai.nomi.designsystem.ds.DsComposer
@@ -249,6 +256,7 @@ import ai.nomi.designsystem.ds.mobile.WorkspaceSwitch
 import ai.nomi.designsystem.ds.mobile.WorkspaceView
 import ai.nomi.designsystem.icon.Lucide
 import androidx.compose.foundation.background
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -461,6 +469,23 @@ private fun SectionsBuilder.primitives(toasts: DsToasts) {
         DsToast(ToastKind.Success, "Deployed", detail = "warung-kopi-menu is live", actionLabel = "View", onAction = {}, onDismiss = {})
         DsToast(ToastKind.Error, "Couldn't deploy", detail = "Vercel returned 402 · payment required")
         TooltipBubble("New chat", shortcut = "⌘K")
+        var sheet by remember { mutableStateOf(false) }
+        var actionSheet by remember { mutableStateOf(false) }
+        Wrap {
+            DsPhonePill("Open sheet", { sheet = true })
+            DsPhonePill("Delete chat…", { actionSheet = true }, variant = DsPhonePillVariant.Ghost)
+        }
+        DsBottomSheet(sheet, { sheet = false }, "Share warung-kopi-menu", subtitle = "Anyone with the link can view") {
+            DsSheetTiles(listOf(SheetTile(Lucide.Copy, "Copy link") {}, SheetTile(Lucide.Share, "Share") {}))
+            DsSheetOption("Bahasa Indonesia", {}, chosen = true)
+            DsSheetOption("English", {}, detail = "Used for the crew's replies")
+        }
+        DsActionSheet(actionSheet, { actionSheet = false }, "Delete this chat?", listOf(SheetAction("Delete chat", danger = true) {}), "Cancel", body = "Its replies go too.")
+        Column(Modifier.clip(DsShapes.md).background(Ds.surface)) {
+            DsSheetTiles(listOf(SheetTile(Lucide.Copy, "Copy link") {}, SheetTile(Lucide.Pin, "Pinned", pressed = true) {}), Modifier.padding(top = 10.dp))
+            DsSheetOption("Bahasa Indonesia", {}, chosen = true)
+            DsSheetOption("English", {}, detail = "Used for the crew's replies")
+        }
     }
     section("App chrome") {
         var recents by remember { mutableStateOf(true) }

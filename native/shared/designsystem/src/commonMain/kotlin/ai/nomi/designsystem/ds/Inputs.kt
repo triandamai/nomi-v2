@@ -311,7 +311,7 @@ fun DsSearch(
     }
 }
 
-/** A phone list's search: 38 tall on surface-2 with no stroke, 16 text so nothing zooms, mint when focused. */
+/** A phone list's search: 38 tall on surface-2 with no stroke and 12 corners, 16 text so nothing zooms, mint when focused. */
 @Composable
 fun DsPhoneSearch(value: String, onValueChange: (String) -> Unit, placeholder: String, modifier: Modifier = Modifier, label: String? = null) {
     val interaction = remember { MutableInteractionSource() }
@@ -320,10 +320,10 @@ fun DsPhoneSearch(value: String, onValueChange: (String) -> Unit, placeholder: S
         modifier
             .fillMaxWidth()
             .height(PhoneSearchHeight)
-            .dsFocusRing(focused, DsShapes.md, Ds.focus, TextFieldRing)
-            .clip(DsShapes.md)
+            .dsFocusRing(focused, DsShapes.lg, Ds.focus, TextFieldRing)
+            .clip(DsShapes.lg)
             .background(Ds.surface2)
-            .border(Hairline, if (focused) Ds.accent else Color.Transparent, DsShapes.md)
+            .border(Hairline, if (focused) Ds.accent else Color.Transparent, DsShapes.lg)
             .semantics { contentDescription = label ?: placeholder }
             .padding(horizontal = PhoneSearchPadding),
         horizontalArrangement = Arrangement.spacedBy(FieldGap),
