@@ -3,7 +3,7 @@ pub mod mqtt;
 pub mod presence;
 
 pub use gateway::{ClientFrame, ServerFrame, Topic};
-pub use mqtt::{user_topic, MqttError, MqttPublisher};
+pub use mqtt::{broker_options, user_topic, MqttError, MqttPublisher, MAX_PACKET_BYTES};
 pub use presence::{device_client_id, offline_will, parse_presence_topic, presence_topic, valid_tab_id, PresenceState, PresenceUpdate, PRESENCE_FILTER};
 
 use serde::{Deserialize, Serialize};

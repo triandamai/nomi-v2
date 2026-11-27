@@ -17,9 +17,20 @@ pub struct MqttPublisher {
     client: AsyncClient,
 }
 
+/// The largest packet a Nomi client sends or accepts: EMQX's own default `max_packet_size`.
+/// rumqttc's default is 10 KB, which a long tool result or a big view goes past.
+pub const MAX_PACKET_BYTES: usize = 1024 * 1024;
+
+/// Options for a connection to the broker, allowing packets up to `MAX_PACKET_BYTES` both ways.
+pub fn broker_options(client_id: impl Into<String>, broker_host: impl Into<String>, broker_port: u16) -> MqttOptions {
+    let mut options = MqttOptions::new(client_id, broker_host, broker_port);
+    options.set_max_packet_size(MAX_PACKET_BYTES, MAX_PACKET_BYTES);
+    options
+}
+
 impl MqttPublisher {
     pub fn connect(broker_host: &str, broker_port: u16, client_id: &str) -> Self {
-        let mut options = MqttOptions::new(client_id, broker_host, broker_port);
+        let mut options = broker_options(client_id, broker_host, broker_port);
         options.set_keep_alive(Duration::from_secs(30));
         let (client, mut eventloop) = AsyncClient::new(options, 64);
 
