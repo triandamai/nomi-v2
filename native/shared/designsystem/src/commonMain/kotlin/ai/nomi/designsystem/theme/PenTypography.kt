@@ -2,8 +2,8 @@ package ai.nomi.designsystem.theme
 
 import ai.nomi.designsystem.generated.PenTypeRole
 import ai.nomi.designsystem.resources.Res
-import ai.nomi.designsystem.resources.instrument_sans_variable
-import ai.nomi.designsystem.resources.jetbrains_mono_variable
+import ai.nomi.designsystem.resources.geist_mono_variable
+import ai.nomi.designsystem.resources.geist_variable
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.text.TextStyle
@@ -16,14 +16,11 @@ import androidx.compose.ui.unit.sp
 @Immutable
 data class PenFamilies(val sans: FontFamily, val mono: FontFamily)
 
-/**
- * The pen families. Geist and Geist Mono replace these once their files are bundled (plan task 2); until then the sans
- * and mono already bundled stand in, so the sizes, line heights and tracking are the pen's while the faces are not yet.
- */
+/** The pen families: Geist and Geist Mono (SIL OFL 1.1, licenses/Geist-OFL.txt), as variable fonts. */
 @Composable
 fun penFontFamilies(): PenFamilies = PenFamilies(
-    sans = variableFamily(Res.font.instrument_sans_variable, PEN_WEIGHTS),
-    mono = variableFamily(Res.font.jetbrains_mono_variable, PEN_WEIGHTS),
+    sans = variableFamily(Res.font.geist_variable, PEN_WEIGHTS),
+    mono = variableFamily(Res.font.geist_mono_variable, PEN_WEIGHTS),
 )
 
 /** The weights the pen draws: regular, medium (`font-medium`) and semibold (titles). */
