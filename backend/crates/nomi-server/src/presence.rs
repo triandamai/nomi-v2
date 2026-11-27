@@ -29,7 +29,7 @@ pub fn announce(user_id: Uuid, envelope: &UserEnvelope) {
 /// away (a new connection doesn't keep the old one's subscription).
 pub async fn run(pool: PgPool, broker_host: String, broker_port: u16) {
     loop {
-        let mut options = MqttOptions::new(format!("nomi-presence-{}", Uuid::new_v4()), broker_host.clone(), broker_port);
+        let mut options = nomi_realtime::broker_options(format!("nomi-presence-{}", Uuid::new_v4()), broker_host.clone(), broker_port);
         options.set_keep_alive(MQTT_KEEP_ALIVE);
         let (client, mut eventloop) = AsyncClient::new(options, MQTT_CHANNEL_CAPACITY);
         if client.subscribe(PRESENCE_FILTER, QoS::AtLeastOnce).await.is_ok() {
@@ -165,7 +165,7 @@ impl RelayIdentity {
 
     /// Broker options for this socket: its client id and, for a presence connection, its last will.
     pub fn options(&self, broker_host: String, broker_port: u16) -> MqttOptions {
-        let mut options = MqttOptions::new(self.client_id.clone(), broker_host, broker_port);
+        let mut options = nomi_realtime::broker_options(self.client_id.clone(), broker_host, broker_port);
         options.set_keep_alive(MQTT_KEEP_ALIVE);
         if let Some(speaker) = &self.presence {
             options.set_last_will(nomi_realtime::offline_will(speaker.user_id, &speaker.client_id, speaker.device_id, speaker.connection));

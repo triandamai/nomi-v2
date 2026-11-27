@@ -1460,7 +1460,7 @@
       }
     },
     "create_handoff": {
-      "description": "Write the handoff for the version the person approved, so Koda can build it without guessing: the design system, sitemap, user flows, every page and component (by their data-design-id), interactions, responsive rules, accessibility, assets and the decisions made. The brief, the feedback's outcome and the approved preview's version and address are added for you. It only works once the person has approved a version.",
+      "description": "Write the handoff for the version the person approved, so Koda can build it without guessing: the design system, sitemap, user flows, every page and component (by their data-design-id), interactions, responsive rules, accessibility, assets and the decisions made. The brief, the feedback's outcome and the approved preview's version and address are added for you. It only works once the person has approved a version. The whole handoff goes in one response, so keep it brief: one short line per entry, pages by their file path in the preview (index.html), components only for the parts that repeat, and nothing the preview already shows plainly.",
       "input_schema": {
         "properties": {
           "accessibility": {

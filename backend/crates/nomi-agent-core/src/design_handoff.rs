@@ -119,14 +119,85 @@ fn filled(part: &str, count: usize) -> Result<(), String> {
     Ok(())
 }
 
+/// The lists of entries in a handoff, where each one is found, and the fields an entry needs.
+const ENTRY_LISTS: [(&str, &str, &[&str]); 9] = [
+    ("/design_system/colors", "design_system.colors", &["name", "value"]),
+    ("/design_system/typography", "design_system.typography", &["role", "font"]),
+    ("/sitemap", "sitemap", &["path", "title", "purpose"]),
+    ("/user_flows", "user_flows", &["name", "steps"]),
+    ("/pages", "pages", &["path", "purpose", "sections"]),
+    ("/components", "components", &["id", "name", "description"]),
+    ("/interactions", "interactions", &["target", "trigger", "result"]),
+    ("/assets", "assets", &["name", "kind", "source"]),
+    ("/decisions", "decisions", &["decision", "reason"]),
+];
+
+/// "a, b and c".
+fn spoken_list(items: &[&str]) -> String {
+    match items.split_last() {
+        Some((last, rest)) if !rest.is_empty() => format!("{} and {last}", rest.join(", ")),
+        _ => items.join(""),
+    }
+}
+
+/// An entry written as text (or a number, a list) where an object belongs, said in a way that
+/// shows how to write it, instead of serde's "expected struct Asset".
+fn misshapen_entry(input: &Value) -> Option<String> {
+    ENTRY_LISTS.iter().find_map(|(pointer, name, fields)| {
+        let entries = input.pointer(pointer)?.as_array()?;
+        let (index, entry) = entries.iter().enumerate().find(|(_, entry)| !entry.is_object())?;
+        let what = match entry {
+            Value::String(_) => "text",
+            Value::Array(_) => "a list",
+            Value::Number(_) => "a number",
+            _ => "not an object",
+        };
+        let example = fields.iter().map(|f| format!("\"{f}\": …")).collect::<Vec<_>>().join(", ");
+        Some(format!("{name}[{index}] is {what}, but each entry needs {}: {{{example}}}", spoken_list(fields)))
+    })
+}
+
+/// The approved page `path` names: the file itself, or the address it is served at ("/",
+/// "/menu", "menu.html" for "menu/index.html").
+fn approved_page(path: &str, approved: &Manifest) -> Option<String> {
+    let has = |candidate: &str| approved.pages.iter().any(|p| p.path == candidate);
+    if has(path) {
+        return Some(path.to_string());
+    }
+    let bare = path.trim().trim_start_matches('/');
+    let candidates = if bare.is_empty() || bare.ends_with('/') {
+        vec![format!("{bare}index.html")]
+    } else {
+        let stem = bare.strip_suffix(".html").unwrap_or(bare);
+        vec![bare.to_string(), format!("{stem}.html"), format!("{stem}/index.html")]
+    };
+    candidates.into_iter().find(|candidate| has(candidate))
+}
+
 impl Spec {
     /// Reads a handoff and checks it against `approved`, the approved version's manifest: every
     /// page of the version is described, and nothing is described that the version doesn't have.
+    /// A page may be named by its address ("/menu"); it is kept as the file behind it.
     pub fn parse(input: &Value, approved: &Manifest) -> Result<Self, String> {
         if input.to_string().len() > MAX_PACKAGE_BYTES {
             return Err(format!("the handoff is larger than {MAX_PACKAGE_BYTES} bytes: say it more briefly"));
         }
-        let spec: Spec = serde_json::from_value(input.clone()).map_err(|e| format!("the handoff isn't complete: {e}"))?;
+        if let Some(error) = misshapen_entry(input) {
+            return Err(error);
+        }
+        let mut spec: Spec = serde_json::from_value(input.clone()).map_err(|e| format!("the handoff isn't complete: {e}"))?;
+        let approved_pages = approved.pages.iter().map(|p| p.path.as_str()).collect::<Vec<_>>().join(", ");
+        for page in &mut spec.pages {
+            match approved_page(&page.path, approved) {
+                Some(path) => page.path = path,
+                None => return Err(format!("pages describes {}, which the approved version doesn't have; its pages are {approved_pages}", page.path)),
+            }
+        }
+        for entry in &mut spec.sitemap {
+            if let Some(path) = approved_page(&entry.path, approved) {
+                entry.path = path;
+            }
+        }
         for (part, count) in [
             ("design_system.colors", spec.design_system.colors.len()),
             ("design_system.typography", spec.design_system.typography.len()),
@@ -141,9 +212,6 @@ impl Spec {
             filled(part, count)?;
         }
         for page in &spec.pages {
-            if !approved.pages.iter().any(|p| p.path == page.path) {
-                return Err(format!("pages describes {}, which the approved version doesn't have", page.path));
-            }
             for id in &page.sections {
                 if !approved.elements.iter().any(|e| &e.id == id && e.pages.contains(&page.path)) {
                     return Err(format!("{} has no element \"{id}\" in the approved version", page.path));
@@ -151,7 +219,7 @@ impl Spec {
             }
         }
         if let Some(missing) = approved.pages.iter().find(|p| !spec.pages.iter().any(|page| page.path == p.path)) {
-            return Err(format!("pages doesn't describe {}, a page of the approved version", missing.path));
+            return Err(format!("pages doesn't describe {}, a page of the approved version; its pages are {approved_pages}", missing.path));
         }
         if let Some(stray) = spec.components.iter().find(|c| !approved.elements.iter().any(|e| e.id == c.id)) {
             return Err(format!("components names \"{}\", which isn't a data-design-id of the approved version", stray.id));
@@ -438,10 +506,10 @@ pub(crate) mod tests {
     fn a_handoff_describes_the_approved_version_and_nothing_else() {
         let mut missing = spec();
         missing["pages"].as_array_mut().unwrap().pop();
-        assert_eq!(Spec::parse(&missing, &manifest()).unwrap_err(), "pages doesn't describe menu/index.html, a page of the approved version");
+        assert_eq!(Spec::parse(&missing, &manifest()).unwrap_err(), "pages doesn't describe menu/index.html, a page of the approved version; its pages are index.html, menu/index.html");
         let mut stray = spec();
         stray["pages"][0]["path"] = json!("about.html");
-        assert_eq!(Spec::parse(&stray, &manifest()).unwrap_err(), "pages describes about.html, which the approved version doesn't have");
+        assert_eq!(Spec::parse(&stray, &manifest()).unwrap_err(), "pages describes about.html, which the approved version doesn't have; its pages are index.html, menu/index.html");
         let mut elsewhere = spec();
         elsewhere["pages"][0]["sections"] = json!(["menu-list"]);
         assert_eq!(Spec::parse(&elsewhere, &manifest()).unwrap_err(), "index.html has no element \"menu-list\" in the approved version");
@@ -451,6 +519,39 @@ pub(crate) mod tests {
         let mut huge = spec();
         huge["responsive"] = json!(["x".repeat(MAX_PACKAGE_BYTES)]);
         assert_eq!(Spec::parse(&huge, &manifest()).unwrap_err(), format!("the handoff is larger than {MAX_PACKAGE_BYTES} bytes: say it more briefly"));
+    }
+
+    #[test]
+    fn a_page_named_by_its_address_is_the_file_behind_it() {
+        let mut addressed = spec();
+        addressed["pages"][0]["path"] = json!("/");
+        addressed["pages"][1]["path"] = json!("/menu");
+        addressed["sitemap"][1]["path"] = json!("/menu/");
+        let spec = Spec::parse(&addressed, &manifest()).unwrap();
+        assert_eq!(spec.pages[0].path, "index.html");
+        assert_eq!(spec.pages[1].path, "menu/index.html");
+        assert_eq!(spec.sitemap[1].path, "menu/index.html");
+    }
+
+    #[test]
+    fn a_wrong_page_is_told_which_pages_there_are() {
+        let mut stray = spec();
+        stray["pages"][0]["path"] = json!("about.html");
+        let error = Spec::parse(&stray, &manifest()).unwrap_err();
+        assert!(error.contains("index.html, menu/index.html"), "{error}");
+    }
+
+    #[test]
+    fn an_entry_in_the_wrong_shape_is_named_with_the_shape_it_needs() {
+        let mut worded = spec();
+        worded["assets"] = json!(["Plus Jakarta Sans and Nunito typography via Google Fonts"]);
+        assert_eq!(
+            Spec::parse(&worded, &manifest()).unwrap_err(),
+            "assets[0] is text, but each entry needs name, kind and source: {\"name\": …, \"kind\": …, \"source\": …}"
+        );
+        let mut colour = spec();
+        colour["design_system"]["colors"] = json!(["#F6EFE4"]);
+        assert!(Spec::parse(&colour, &manifest()).unwrap_err().starts_with("design_system.colors[0] is text, but each entry needs name and value"));
     }
 
     #[test]

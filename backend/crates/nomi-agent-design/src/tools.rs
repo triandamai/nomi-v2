@@ -692,7 +692,10 @@ impl Tool for CreateHandoff {
             description: "Write the handoff for the version the person approved, so Koda can build it without guessing: the design \
                           system, sitemap, user flows, every page and component (by their data-design-id), interactions, responsive \
                           rules, accessibility, assets and the decisions made. The brief, the feedback's outcome and the approved \
-                          preview's version and address are added for you. It only works once the person has approved a version."
+                          preview's version and address are added for you. It only works once the person has approved a version. \
+                          The whole handoff goes in one response, so keep it brief: one short line per entry, pages by their file \
+                          path in the preview (index.html), components only for the parts that repeat, and nothing the preview \
+                          already shows plainly."
                 .to_string(),
             input_schema: design_handoff::handoff_input_schema(),
         }
@@ -962,6 +965,15 @@ pub(crate) mod tests {
         assert_eq!(tool.name, CREATE_HANDOFF);
         assert_eq!(tool.input_schema, nomi_agent_core::design_handoff::handoff_input_schema());
         assert!(tool.description.contains("approved"));
+    }
+
+    #[test]
+    fn a_handoff_is_asked_for_briefly_and_a_cut_off_one_is_written_shorter() {
+        use nomi_agent_core::SubAgent;
+        let tool = CreateHandoff.definition();
+        assert!(tool.description.contains("one response") && tool.description.contains("one short line"), "{}", tool.description);
+        let hint = crate::DesignAgent::new().cut_off_hint();
+        assert!(hint.contains("save_preview") && hint.contains(CREATE_HANDOFF), "{hint}");
     }
 
     #[test]
