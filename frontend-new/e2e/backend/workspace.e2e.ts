@@ -286,7 +286,7 @@ test('a published site’s visits and forms reach Nomi through this app, from th
 	expect((await report({ k: 'f', r: '', h: 'warungkopi.id' })).status()).toBe(204);
 	// A move between the site's own pages isn't an arrival.
 	expect((await report({ k: 'v', r: 'https://warungkopi.id/menu', h: 'warungkopi.id' })).status()).toBe(204);
-	await expect.poll(() => siteHits(id)).toEqual([
+	await expect.poll(async () => (await siteHits(id)).sort((a, b) => b.kind.localeCompare(a.kind))).toEqual([
 		{ kind: 'visit', referrer_host: 'www.instagram.com' },
 		{ kind: 'form', referrer_host: null },
 	]);

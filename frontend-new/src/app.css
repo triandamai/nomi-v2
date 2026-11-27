@@ -270,6 +270,13 @@
 		overflow-x: clip;
 	}
 
+	/* When an app shell is present, the window/document never scrolls; all scrolling is internal */
+	html:has([data-app-shell], [data-phone-workspace], [data-workspace-shell]),
+	body:has([data-app-shell], [data-phone-workspace], [data-workspace-shell]) {
+		height: 100%;
+		overflow: hidden;
+	}
+
 	/* A [data-theme] subtree takes its own text colour, like the page does. */
 	:root,
 	[data-theme] {

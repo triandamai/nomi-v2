@@ -50,6 +50,18 @@
 		aria-label={placeholder}
 		rows="1"
 		class={[roomy && 'min-h-16', 'max-h-40 w-full resize-none bg-transparent field-sizing-content text-phone leading-cozy text-text outline-none placeholder:text-text-3']}
+		onclick={() => {
+			if (typeof window !== 'undefined' && (window.scrollY !== 0 || window.scrollX !== 0)) {
+				window.scrollTo(0, 0);
+			}
+		}}
+		onfocus={() => {
+			if (typeof window !== 'undefined') {
+				requestAnimationFrame(() => window.scrollTo(0, 0));
+				setTimeout(() => window.scrollTo(0, 0), 50);
+				setTimeout(() => window.scrollTo(0, 0), 250);
+			}
+		}}
 		onkeydown={(event) => {
 			if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
 				event.preventDefault();

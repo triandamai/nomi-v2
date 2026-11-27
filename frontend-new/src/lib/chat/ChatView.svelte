@@ -22,6 +22,7 @@
 	import { toasts } from '$lib/ds/overlays/toasts.svelte';
 	import MessageUser from '$lib/ds/conversation/MessageUser.svelte';
 	import TeammateMessage from '$lib/ds/build/TeammateMessage.svelte';
+	import TeammateBubble from '$lib/ds/mobile/TeammateBubble.svelte';
 	import { initials, peerFor } from '$lib/projects/peers';
 	import LiveStep from '$lib/ds/conversation/LiveStep.svelte';
 	import Reasoning from '$lib/ds/chat/Reasoning.svelte';
@@ -1385,13 +1386,24 @@
 					<!-- A teammate's message in a shared project chat (Invite & build together TnwQT, step 6): hers, in her colour, with whom she asked. -->
 					{@const author = entry.message.author_name}
 					{@const next = entries.slice(index + 1).find((one) => one.type !== 'day' && one.type !== 'new')}
+					{@const parts = splitAttachments(entry.message.content)}
+					{@const who = { name: author, initials: initials(author), peer: peerFor(author) }}
+					{@const timeStr = clock(entry.message.created_at, time.timeZone)}
+					{@const to = next && next.type !== 'user' ? (next.message.agent_display_name ?? undefined) : undefined}
 					<div data-message-id={entry.message.id}>
-						<TeammateMessage
-							who={{ name: author, initials: initials(author), peer: peerFor(author) }}
-							time={clock(entry.message.created_at, time.timeZone)}
-							to={next && next.type !== 'user' ? (next.message.agent_display_name ?? undefined) : undefined}
-							text={entry.message.content}
-						/>
+						{#if phone}
+							<TeammateBubble {who} time={timeStr} {to} text={parts.text || undefined}>
+								{#if parts.files.length}
+									<SentFiles align="start" phone files={sentItems(parts.files, timeStr)} />
+								{/if}
+							</TeammateBubble>
+						{:else}
+							<TeammateMessage {who} time={timeStr} {to} text={parts.text || undefined}>
+								{#if parts.files.length}
+									<SentFiles align="start" files={sentItems(parts.files, timeStr)} />
+								{/if}
+							</TeammateMessage>
+						{/if}
 					</div>
 				{:else if entry.type === 'user'}
 					<div class="flex flex-col gap-1.5" data-message-id={entry.message.id}>{@render userMessage(entry.message, entry.latest)}</div>
