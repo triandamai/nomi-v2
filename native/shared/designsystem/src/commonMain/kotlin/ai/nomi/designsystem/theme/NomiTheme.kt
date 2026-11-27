@@ -1,8 +1,8 @@
 package ai.nomi.designsystem.theme
 
-import ai.nomi.designsystem.generated.GradientSpec
-import ai.nomi.designsystem.generated.NomiGradients
 import ai.nomi.designsystem.generated.NomiPalettes
+import ai.nomi.designsystem.generated.NomiPenColors
+import ai.nomi.designsystem.generated.PenColors
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.LocalContentColor
@@ -17,6 +17,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 
 /** Nomi colours that have no Material 3 role: page ground, dark stage, and the accent "action" gradient. */
@@ -37,6 +38,14 @@ private val LocalMetaStyle = staticCompositionLocalOf<TextStyle> {
     error("NomiTheme { } is missing from the composition")
 }
 
+private val LocalPenColors = staticCompositionLocalOf<PenColors> {
+    error("NomiTheme { } is missing from the composition")
+}
+private val LocalPenDark = staticCompositionLocalOf { false }
+private val LocalPenFamilies = staticCompositionLocalOf<PenFamilies> {
+    error("NomiTheme { } is missing from the composition")
+}
+
 private val LocalReducedMotion = staticCompositionLocalOf { false }
 
 private val LocalBubbleShapes = staticCompositionLocalOf<NomiBubbleShapes> {
@@ -44,6 +53,14 @@ private val LocalBubbleShapes = staticCompositionLocalOf<NomiBubbleShapes> {
 }
 
 object NomiTheme {
+    /** The pen colours for the current scheme (frontend-new's tokens). */
+    val pen: PenColors @Composable @ReadOnlyComposable get() = LocalPenColors.current
+
+    /** True in the dark scheme. */
+    val dark: Boolean @Composable @ReadOnlyComposable get() = LocalPenDark.current
+
+    /** The pen's sans and mono families. */
+    val families: PenFamilies @Composable @ReadOnlyComposable get() = LocalPenFamilies.current
     val bubbleShapes: NomiBubbleShapes @Composable @ReadOnlyComposable get() = LocalBubbleShapes.current
     val gradients: NomiGradientSet @Composable @ReadOnlyComposable get() = LocalGradients.current
     val extendedColors: NomiExtendedColors @Composable @ReadOnlyComposable get() = LocalExtendedColors.current
@@ -53,6 +70,12 @@ object NomiTheme {
     val reducedMotion: Boolean @Composable @ReadOnlyComposable get() = LocalReducedMotion.current
 }
 
+/**
+ * Nomi's theme: frontend-new's pen colours, type and radii, light or dark. It still provides a Material theme built from
+ * the pen colours, so screens not yet on the design system's components read in the same greys and green.
+ *
+ * [accent] is kept for callers from the Material look; the pen has one accent, so it no longer changes the colours.
+ */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun NomiTheme(
@@ -61,41 +84,39 @@ fun NomiTheme(
     reducedMotion: Boolean = false,
     content: @Composable () -> Unit,
 ) {
-    val palette = NomiPalettes.all[accent] ?: NomiPalettes.all.getValue(NomiPalettes.DEFAULT_ACCENT)
-    val roles = if (dark) palette.dark else palette.light
+    val pen = if (dark) NomiPenColors.dark else NomiPenColors.light
     val families = nomiFontFamilies()
+    val penFamilies = penFontFamilies()
     val typography = nomiTypography(families)
     val bubbles = remember { nomiBubbleShapes() }
-    // --nomi-gradient-action shares the tone gradients' angle and stop positions; only its colours follow the accent.
-    val actionStops = remember { NomiGradients.glow.stops.map { it.first } }
-    val extended = remember(roles) {
+    val extended = remember(pen) {
         NomiExtendedColors(
-            ground = Color(roles.ground),
-            stage = Color(roles.stage),
-            onStage = Color(roles.onStage),
-            actionBrush = GradientSpec(
-                angleDeg = NomiGradients.glow.angleDeg,
-                stops = actionStops.zip(listOf(roles.action1, roles.action2, roles.action3)) { offset, argb -> offset to argb },
-                onColor = roles.onAction,
-            ).toFittedBrush(),
-            onAction = Color(roles.onAction),
+            ground = Color(pen.bg),
+            stage = Color(pen.text),
+            onStage = Color(pen.bg),
+            actionBrush = SolidColor(Color(pen.accent)),
+            onAction = Color(pen.accentInk),
         )
     }
+    val colorScheme = remember(pen, dark) { pen.toColorScheme(dark) }
     val metaStyle = nomiMetaStyle(typography, families)
     CompositionLocalProvider(
+        LocalPenColors provides pen,
+        LocalPenDark provides dark,
+        LocalPenFamilies provides penFamilies,
         LocalExtendedColors provides extended,
         LocalMetaStyle provides metaStyle,
         LocalBubbleShapes provides bubbles,
         LocalReducedMotion provides reducedMotion,
     ) {
         MaterialExpressiveTheme(
-            colorScheme = roles.toColorScheme(),
+            colorScheme = colorScheme,
             motionScheme = if (reducedMotion) MotionScheme.standard() else MotionScheme.expressive(),
             typography = typography,
             shapes = nomiShapes(),
         ) {
-            // Text and icons outside a Surface (pages on the ground, the sidebar) read in on-surface, in both themes.
-            CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface, content = content)
+            // Text and icons outside a Surface (pages on the ground, the sidebar) read in the pen's text colour.
+            CompositionLocalProvider(LocalContentColor provides Color(pen.text), content = content)
         }
     }
 }
