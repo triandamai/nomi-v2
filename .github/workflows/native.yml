@@ -285,3 +285,7 @@ jobs:
       # Fails when material3.css or shapes.ts changed without regenerating NomiTokens.kt.
       - name: Generated tokens are up to date
         run: node native/scripts/gen-tokens.mjs --check
+
+      # Fails when frontend-new's tokens.json or app.css @theme changed without regenerating NomiPenTokens.kt.
+      - name: Generated pen tokens are up to date
+        run: node native/scripts/gen-pen-tokens.mjs --check
