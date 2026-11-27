@@ -36,7 +36,7 @@ private val allRoles: List<TypeRole> = with(NomiTypescale) {
 
 /** One Font entry per distinct weight, each pinning the variable font's wght axis to exactly that value. */
 @Composable
-private fun variableFamily(resource: FontResource, weights: Set<Int>): FontFamily = FontFamily(
+internal fun variableFamily(resource: FontResource, weights: Set<Int>): FontFamily = FontFamily(
     weights.sorted().map { w ->
         resourceFont(resource, weight = FontWeight(w), variationSettings = FontVariation.Settings(FontVariation.weight(w)))
     },

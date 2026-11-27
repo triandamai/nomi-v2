@@ -2,7 +2,6 @@ package ai.nomi.feature.settings
 
 import ai.nomi.data.AppearanceRepository
 import ai.nomi.data.CompanionPreferences
-import ai.nomi.data.DEFAULT_ACCENT_COLOR
 import ai.nomi.data.SessionGate
 import ai.nomi.data.THEME_SYSTEM
 import ai.nomi.network.HomeApi
@@ -28,7 +27,6 @@ class SettingsViewModel(
     val profile: StateFlow<ProfileDto?> = mutableProfile.asStateFlow()
 
     val theme: StateFlow<String> = appearance?.theme ?: MutableStateFlow(THEME_SYSTEM).asStateFlow()
-    val accentColor: StateFlow<String> = appearance?.accentColor ?: MutableStateFlow(DEFAULT_ACCENT_COLOR).asStateFlow()
     val homeLayout: StateFlow<String> = appearance?.homeLayout ?: MutableStateFlow("stage").asStateFlow()
     val drawerPins: StateFlow<List<String>> = appearance?.drawerPins ?: MutableStateFlow(listOf("money", "reminders", "memory", "notifications")).asStateFlow()
     val drawerRecents: StateFlow<Boolean> = appearance?.drawerRecents ?: MutableStateFlow(true).asStateFlow()
@@ -52,10 +50,6 @@ class SettingsViewModel(
 
     fun selectTheme(theme: String) {
         appearance?.selectTheme(theme)
-    }
-
-    fun selectAccentColor(accentColor: String) {
-        appearance?.selectAccentColor(accentColor)
     }
 
     fun selectHomeLayout(layout: String) {

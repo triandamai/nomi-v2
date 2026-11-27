@@ -19,7 +19,22 @@ import ai.nomi.designsystem.ds.DsChip
 import ai.nomi.designsystem.ds.DsDialog
 import ai.nomi.designsystem.ds.DsIconButton
 import ai.nomi.designsystem.ds.DsIconButtonVariant
+import ai.nomi.designsystem.ds.DsGithubMark
 import ai.nomi.designsystem.ds.DsLink
+import ai.nomi.designsystem.ds.DsPhonePill
+import ai.nomi.designsystem.ds.DsShapes
+import ai.nomi.designsystem.ds.SheetTile
+import ai.nomi.designsystem.ds.DsSheetTiles
+import ai.nomi.designsystem.ds.DsSheetOption
+import ai.nomi.designsystem.ds.SheetAction
+import ai.nomi.designsystem.ds.DsActionSheet
+import ai.nomi.designsystem.ds.DsBottomSheet
+import ai.nomi.designsystem.ds.DsPhoneSearch
+import ai.nomi.designsystem.ds.DsSelect
+import ai.nomi.designsystem.ds.DsComposer
+import ai.nomi.designsystem.ds.ComposerAgent
+import ai.nomi.designsystem.ds.SelectOption
+import ai.nomi.designsystem.ds.DsPhonePillVariant
 import ai.nomi.designsystem.ds.DsMenu
 import ai.nomi.designsystem.ds.DsSearch
 import ai.nomi.designsystem.ds.DsSegmented
@@ -241,6 +256,7 @@ import ai.nomi.designsystem.ds.mobile.WorkspaceSwitch
 import ai.nomi.designsystem.ds.mobile.WorkspaceView
 import ai.nomi.designsystem.icon.Lucide
 import androidx.compose.foundation.background
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -340,7 +356,7 @@ private fun Wrap(content: @Composable () -> Unit) {
 }
 
 private fun SectionsBuilder.primitives(toasts: DsToasts) {
-    section("Actions", 5) {
+    section("Actions", 7) {
         Wrap {
             DsButton("Deploy", {})
             DsButton("Publish", {}, variant = DsButtonVariant.Inverse, iconStart = Lucide.Send)
@@ -357,6 +373,12 @@ private fun SectionsBuilder.primitives(toasts: DsToasts) {
             DsIconButton(Lucide.Send, "Send", {}, variant = DsIconButtonVariant.Send)
             Kbd("⌘K")
             DsLink("Upgrade to Pro", {})
+            DsGithubMark(16.dp, Ds.text2)
+        }
+        Wrap {
+            DsPhonePill("New chat", {}, variant = DsPhonePillVariant.Inverse, icon = Lucide.Plus)
+            DsPhonePill("Open workspace", {}, icon = Lucide.ArrowRight)
+            DsPhonePill("Not now", {}, variant = DsPhonePillVariant.Ghost)
         }
         KeyHint(listOf(KeyHintItem("↵", "send"), KeyHintItem("⇧↵", "new line"), KeyHintItem("@", "address crew")))
     }
@@ -395,9 +417,13 @@ private fun SectionsBuilder.primitives(toasts: DsToasts) {
         var tab by remember { mutableStateOf("chat") }
         var checked by remember { mutableStateOf(true) }
         var toggled by remember { mutableStateOf(false) }
+        var language by remember { mutableStateOf("id") }
+        var phoneSearch by remember { mutableStateOf("") }
         DsTextField("Project name", name, { name = it }, helper = "Used in the address: $name.nomi.app", mono = true)
         DsTextField("Email", "ana@", {}, error = "Add the part after @, like ana@example.com")
         DsSearch(search, { search = it }, "Search chats", shortcut = "⌘K")
+        DsPhoneSearch(phoneSearch, { phoneSearch = it }, "Search")
+        DsSelect("Language", listOf(SelectOption("id", "Bahasa Indonesia"), SelectOption("en", "English")), language, { language = it })
         DsSegmented("View", listOf(SegmentOption("all", "All", "12"), SegmentOption("live", "Live", "3"), SegmentOption("drafts", "Drafts")), view, { view = it })
         DsTabs("Workspace", listOf(TabItem("chat", "Chat"), TabItem("preview", "Preview"), TabItem("code", "Code")), tab, { tab = it }) {
             Text("The $it tab", style = Ds.ui, color = Ds.text2, modifier = Modifier.padding(vertical = 12.dp))
@@ -413,6 +439,7 @@ private fun SectionsBuilder.primitives(toasts: DsToasts) {
             DsChip(ChipKind.Option, "in 7 days", icon = Lucide.Hourglass, onClick = {})
             DsChip(ChipKind.Provision, "postgres", icon = Lucide.Database)
         }
+        DsComposer("Ask the crew to build, fix or deploy…", ComposerAgent(Crew.Nomi, "Nomi"), "deepseek-flash")
     }
     section("Overlays") {
         var dialog by remember { mutableStateOf(false) }
@@ -442,6 +469,23 @@ private fun SectionsBuilder.primitives(toasts: DsToasts) {
         DsToast(ToastKind.Success, "Deployed", detail = "warung-kopi-menu is live", actionLabel = "View", onAction = {}, onDismiss = {})
         DsToast(ToastKind.Error, "Couldn't deploy", detail = "Vercel returned 402 · payment required")
         TooltipBubble("New chat", shortcut = "⌘K")
+        var sheet by remember { mutableStateOf(false) }
+        var actionSheet by remember { mutableStateOf(false) }
+        Wrap {
+            DsPhonePill("Open sheet", { sheet = true })
+            DsPhonePill("Delete chat…", { actionSheet = true }, variant = DsPhonePillVariant.Ghost)
+        }
+        DsBottomSheet(sheet, { sheet = false }, "Share warung-kopi-menu", subtitle = "Anyone with the link can view") {
+            DsSheetTiles(listOf(SheetTile(Lucide.Copy, "Copy link") {}, SheetTile(Lucide.Share, "Share") {}))
+            DsSheetOption("Bahasa Indonesia", {}, chosen = true)
+            DsSheetOption("English", {}, detail = "Used for the crew's replies")
+        }
+        DsActionSheet(actionSheet, { actionSheet = false }, "Delete this chat?", listOf(SheetAction("Delete chat", danger = true) {}), "Cancel", body = "Its replies go too.")
+        Column(Modifier.clip(DsShapes.md).background(Ds.surface)) {
+            DsSheetTiles(listOf(SheetTile(Lucide.Copy, "Copy link") {}, SheetTile(Lucide.Pin, "Pinned", pressed = true) {}), Modifier.padding(top = 10.dp))
+            DsSheetOption("Bahasa Indonesia", {}, chosen = true)
+            DsSheetOption("English", {}, detail = "Used for the crew's replies")
+        }
     }
     section("App chrome") {
         var recents by remember { mutableStateOf(true) }

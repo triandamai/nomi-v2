@@ -10,7 +10,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollTo
 import org.junit.Rule
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -19,24 +18,17 @@ class SettingsPickerTest {
     @get:Rule val rule = createComposeRule()
 
     @Test
-    fun appearancePickerRendersModesAndSelectsTheme() {
+    fun appearancePickerOffersOnlyTheMode() {
         var selectedMode by androidx.compose.runtime.mutableStateOf("system")
-        var selectedAccent by androidx.compose.runtime.mutableStateOf("canopy")
 
         rule.setContent {
             NomiTheme {
                 Box(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                    AppearancePicker(
-                        mode = selectedMode,
-                        accentColor = selectedAccent,
-                        onSelectMode = { selectedMode = it },
-                        onSelectAccentColor = { selectedAccent = it },
-                    )
+                    AppearancePicker(mode = selectedMode, onSelectMode = { selectedMode = it })
                 }
             }
         }
 
-        // Modes
         rule.onNodeWithText("Light").assertExists()
         rule.onNodeWithText("Dark").assertExists()
         rule.onNodeWithText("System").assertExists()
@@ -44,21 +36,10 @@ class SettingsPickerTest {
         rule.onNodeWithText("Dark").performClick()
         assertEquals("dark", selectedMode)
 
-        // Themes
-        rule.onNodeWithText("Canopy").assertExists()
-        rule.onNodeWithText("Coral Reef").assertExists()
-
-        rule.onNodeWithText("Coral Reef").performClick()
-        assertEquals("coral-reef", selectedAccent)
-
-        // Expand all
-        rule.onNodeWithText("All themes").performScrollTo().performClick()
-        rule.onNodeWithText("Lautan").assertExists()
-        rule.onNodeWithText("Matcha").assertExists()
-        rule.onNodeWithText("Graphite").assertExists()
-
-        rule.onNodeWithText("Graphite").performScrollTo().performClick()
-        assertEquals("graphite", selectedAccent)
+        // The pen has one accent, so there is no colour theme to pick.
+        rule.onNodeWithText("COLOR THEME").assertDoesNotExist()
+        rule.onNodeWithText("Canopy").assertDoesNotExist()
+        rule.onNodeWithText("All themes").assertDoesNotExist()
     }
 
     @Test

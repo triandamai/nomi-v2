@@ -1,6 +1,10 @@
 package ai.nomi.designsystem.ds
 
-import ai.nomi.designsystem.generated.NomiCorners
+import ai.nomi.designsystem.generated.CrewColors
+import ai.nomi.designsystem.generated.NomiCrewColors
+import ai.nomi.designsystem.generated.NomiPenRadius
+import ai.nomi.designsystem.generated.NomiPenTracking
+import ai.nomi.designsystem.generated.NomiPenType
 import ai.nomi.designsystem.generated.NomiMotionTokens
 import ai.nomi.designsystem.icon.Lucide
 import ai.nomi.designsystem.icon.NomiGlyph
@@ -8,6 +12,7 @@ import ai.nomi.designsystem.icon.NomiIcon
 import ai.nomi.designsystem.shape.AgentShape
 import ai.nomi.designsystem.shape.agentIdentity
 import ai.nomi.designsystem.theme.NomiTheme
+import ai.nomi.designsystem.theme.penTextStyle
 import ai.nomi.designsystem.theme.toTween
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
@@ -71,6 +76,8 @@ private const val TEXT3_ALPHA = 0.72f
 private const val DIFF_ALPHA = 0.14f
 private const val DANGER_BORDER_ALPHA = 0.4f
 private const val SHADE_ALPHA = 0.08f
+private const val BEZEL_ARGB = 0xFF1B1B1E
+private const val DEFAULT_CREW = "nomi"
 private const val DARK_LUMINANCE = 0.5f
 private const val LABEL_TRACKING_EM = 0.06f
 private const val MICRO_SP = 10
@@ -84,59 +91,114 @@ private const val DISABLED_ALPHA = 0.38f
 val Hairline = 1.dp
 
 /**
- * frontend-new's design-system names (ds-twins.css) on this theme's M3 roles, so the components read like their web
- * twins: `surface` is the lowest container, `text3` the variant at 72%, `warning` the tertiary role.
+ * frontend-new's design-system names on the pen tokens: `Ds.surface2` is the web's `bg-surface-2`, `Ds.ui` its
+ * `text-ui`, so a component reads like its Svelte twin.
  */
 object Ds {
-    val bg: Color @Composable @ReadOnlyComposable get() = NomiTheme.extendedColors.ground
-    val surface: Color @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.surfaceContainerLowest
-    val surface2: Color @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.surfaceContainerHigh
-    val border: Color @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.outlineVariant
-    val borderStrong: Color @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.outline
-    val text: Color @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.onSurface
-    val text2: Color @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.onSurfaceVariant
-    val text3: Color @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = TEXT3_ALPHA)
-    val accent: Color @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.primary
-    val accentInk: Color @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.onPrimary
-    val accentBg: Color @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.primaryContainer
-    val danger: Color @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.error
-    val dangerBg: Color @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.errorContainer
-    val dangerBorder: Color @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.error.copy(alpha = DANGER_BORDER_ALPHA)
-    val warning: Color @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.tertiary
-    val warningBg: Color @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.tertiaryContainer
-    val diffAdd: Color @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.primary.copy(alpha = DIFF_ALPHA)
-    val diffDel: Color @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.error.copy(alpha = DIFF_ALPHA)
-    val shade: Color @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.scrim.copy(alpha = SHADE_ALPHA)
-    val peer1: Color @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.tertiary
-    val peer1Bg: Color @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.tertiaryContainer
-    val peer2: Color @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.secondary
-    val peer2Bg: Color @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.secondaryContainer
-    val codeKeyword: Color @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.tertiary
-    val codeString: Color @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.primary
-    val codeFn: Color @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.secondary
-    val codeNumber: Color @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.error
-    /** A phone's hardware, dark in both themes. */
-    val bezel = Color(0xFF1B1B1E)
+    val bg: Color @Composable @ReadOnlyComposable get() = Color(NomiTheme.pen.bg)
+    val bgClear: Color @Composable @ReadOnlyComposable get() = Color(NomiTheme.pen.bgClear)
+    val surface: Color @Composable @ReadOnlyComposable get() = Color(NomiTheme.pen.surface)
+    val surface2: Color @Composable @ReadOnlyComposable get() = Color(NomiTheme.pen.surface2)
+    val border: Color @Composable @ReadOnlyComposable get() = Color(NomiTheme.pen.border)
+    val borderStrong: Color @Composable @ReadOnlyComposable get() = Color(NomiTheme.pen.borderStrong)
+    val text: Color @Composable @ReadOnlyComposable get() = Color(NomiTheme.pen.text)
+    val text2: Color @Composable @ReadOnlyComposable get() = Color(NomiTheme.pen.text2)
+    val text3: Color @Composable @ReadOnlyComposable get() = Color(NomiTheme.pen.text3)
+    val accent: Color @Composable @ReadOnlyComposable get() = Color(NomiTheme.pen.accent)
+    val accentInk: Color @Composable @ReadOnlyComposable get() = Color(NomiTheme.pen.accentInk)
+    val accentBg: Color @Composable @ReadOnlyComposable get() = Color(NomiTheme.pen.accentBg)
+    val danger: Color @Composable @ReadOnlyComposable get() = Color(NomiTheme.pen.danger)
+    val dangerBg: Color @Composable @ReadOnlyComposable get() = Color(NomiTheme.pen.dangerBg)
+    val dangerBorder: Color @Composable @ReadOnlyComposable get() = Color(NomiTheme.pen.dangerBorder)
+    val warning: Color @Composable @ReadOnlyComposable get() = Color(NomiTheme.pen.warning)
+    val warningBg: Color @Composable @ReadOnlyComposable get() = Color(NomiTheme.pen.warningBg)
+    val focus: Color @Composable @ReadOnlyComposable get() = Color(NomiTheme.pen.focus)
+    val overlay: Color @Composable @ReadOnlyComposable get() = Color(NomiTheme.pen.overlay)
+    val shadow: Color @Composable @ReadOnlyComposable get() = Color(NomiTheme.pen.shadow)
+    val heat1: Color @Composable @ReadOnlyComposable get() = Color(NomiTheme.pen.heat1)
+    val heat2: Color @Composable @ReadOnlyComposable get() = Color(NomiTheme.pen.heat2)
+    val heat3: Color @Composable @ReadOnlyComposable get() = Color(NomiTheme.pen.heat3)
+    val heat4: Color @Composable @ReadOnlyComposable get() = Color(NomiTheme.pen.heat4)
+    val diffAdd: Color @Composable @ReadOnlyComposable get() = Color(NomiTheme.pen.diffAdd)
+    val diffDel: Color @Composable @ReadOnlyComposable get() = Color(NomiTheme.pen.diffDel)
+    val peer1: Color @Composable @ReadOnlyComposable get() = Color(NomiTheme.pen.peer1)
+    val peer1Bg: Color @Composable @ReadOnlyComposable get() = Color(NomiTheme.pen.peer1Bg)
+    val peer2: Color @Composable @ReadOnlyComposable get() = Color(NomiTheme.pen.peer2)
+    val peer2Bg: Color @Composable @ReadOnlyComposable get() = Color(NomiTheme.pen.peer2Bg)
+    val codeKeyword: Color @Composable @ReadOnlyComposable get() = Color(NomiTheme.pen.codeKeyword)
+    val codeString: Color @Composable @ReadOnlyComposable get() = Color(NomiTheme.pen.codeString)
+    val codeFn: Color @Composable @ReadOnlyComposable get() = Color(NomiTheme.pen.codeFn)
+    val codeNumber: Color @Composable @ReadOnlyComposable get() = Color(NomiTheme.pen.codeNumber)
+    val codeType: Color @Composable @ReadOnlyComposable get() = Color(NomiTheme.pen.codeType)
+    val kbBg: Color @Composable @ReadOnlyComposable get() = Color(NomiTheme.pen.kbBg)
+    val kbKey: Color @Composable @ReadOnlyComposable get() = Color(NomiTheme.pen.kbKey)
+    val kbKeyAlt: Color @Composable @ReadOnlyComposable get() = Color(NomiTheme.pen.kbKeyAlt)
 
-    val dark: Boolean @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.surface.luminance() < DARK_LUMINANCE
+    /** A wash of black on a coloured bar, the same in both themes (app.css `--color-shade`). */
+    val shade = Color.Black.copy(alpha = SHADE_ALPHA)
 
-    // The type: `text-body`, `text-ui`, `text-caption`, mono `text-label`, `text-micro`.
-    val body: TextStyle @Composable @ReadOnlyComposable get() = MaterialTheme.typography.bodyLarge
-    val ui: TextStyle @Composable @ReadOnlyComposable get() = MaterialTheme.typography.bodyMedium
-    val caption: TextStyle @Composable @ReadOnlyComposable get() = MaterialTheme.typography.bodySmall
-    val heading: TextStyle @Composable @ReadOnlyComposable get() = MaterialTheme.typography.titleLarge
-    val title: TextStyle @Composable @ReadOnlyComposable get() = MaterialTheme.typography.titleSmall
-    val label: TextStyle @Composable @ReadOnlyComposable get() = NomiTheme.metaStyle
-    val labelCaps: TextStyle @Composable @ReadOnlyComposable get() = NomiTheme.metaStyle.copy(letterSpacing = LABEL_TRACKING_EM.em)
-    val mono: TextStyle @Composable @ReadOnlyComposable get() = MaterialTheme.typography.bodySmall.copy(fontFamily = NomiTheme.metaStyle.fontFamily)
-    val micro: TextStyle @Composable @ReadOnlyComposable get() = NomiTheme.metaStyle.copy(fontSize = MICRO_SP.sp, lineHeight = MICRO_LINE_SP.sp)
+    /** A phone's hardware, dark in both themes (app.css `--color-bezel`). */
+    val bezel = Color(BEZEL_ARGB)
+
+    val dark: Boolean @Composable @ReadOnlyComposable get() = NomiTheme.dark
+
+    // The type, by the web's text-* names. Sans unless the web draws it in mono.
+    val display: TextStyle @Composable @ReadOnlyComposable get() = penTextStyle(NomiPenType.display, NomiTheme.families.sans, FontWeight.SemiBold)
+    val heading: TextStyle @Composable @ReadOnlyComposable get() = penTextStyle(NomiPenType.heading, NomiTheme.families.sans, FontWeight.SemiBold)
+    val body: TextStyle @Composable @ReadOnlyComposable get() = penTextStyle(NomiPenType.body, NomiTheme.families.sans)
+    val ui: TextStyle @Composable @ReadOnlyComposable get() = penTextStyle(NomiPenType.ui, NomiTheme.families.sans)
+    val caption: TextStyle @Composable @ReadOnlyComposable get() = penTextStyle(NomiPenType.caption, NomiTheme.families.sans)
+
+    /** `font-medium text-ui`: a row's or card's title. */
+    val title: TextStyle @Composable @ReadOnlyComposable get() = penTextStyle(NomiPenType.ui, NomiTheme.families.sans, FontWeight.Medium)
+    val label: TextStyle @Composable @ReadOnlyComposable get() = penTextStyle(NomiPenType.label, NomiTheme.families.mono)
+
+    /** `text-label tracking-label uppercase`: a section's label. */
+    val labelCaps: TextStyle @Composable @ReadOnlyComposable get() = label.copy(letterSpacing = NomiPenTracking.label.sp)
+    val mono: TextStyle @Composable @ReadOnlyComposable get() = penTextStyle(NomiPenType.caption, NomiTheme.families.mono)
+    val micro: TextStyle @Composable @ReadOnlyComposable get() = penTextStyle(NomiPenType.micro, NomiTheme.families.mono)
+    val nano: TextStyle @Composable @ReadOnlyComposable get() = penTextStyle(NomiPenType.nano, NomiTheme.families.mono)
+
+    // Phones: 16 body so a field never zooms, 17 sheet titles, 14 second lines, the tab's large title.
+    val phone: TextStyle @Composable @ReadOnlyComposable get() = penTextStyle(NomiPenType.phone, NomiTheme.families.sans)
+    val phoneSm: TextStyle @Composable @ReadOnlyComposable get() = penTextStyle(NomiPenType.phoneSm, NomiTheme.families.sans)
+    val phoneTitle: TextStyle @Composable @ReadOnlyComposable get() = penTextStyle(NomiPenType.phoneTitle, NomiTheme.families.sans, FontWeight.SemiBold)
+    val phoneLarge: TextStyle @Composable @ReadOnlyComposable get() =
+        penTextStyle(NomiPenType.phoneLarge, NomiTheme.families.sans, FontWeight.SemiBold).copy(letterSpacing = NomiPenTracking.phoneLarge.sp)
+    val phoneAction: TextStyle @Composable @ReadOnlyComposable get() = penTextStyle(NomiPenType.phoneAction, NomiTheme.families.sans)
+    val phoneDisplay: TextStyle @Composable @ReadOnlyComposable get() = penTextStyle(NomiPenType.phoneDisplay, NomiTheme.families.sans, FontWeight.SemiBold)
 }
 
-/** The web's radii: `rounded-xs` 4, `rounded-sm` 8, `rounded-md` 16 (M3 large). */
+/** A crew member's own colour (its mascot), by agent name; unknown agents read as Nomi. */
+@Composable
+@ReadOnlyComposable
+fun crewColor(agent: String): Color = Color(crewColors(agent).base)
+
+/** A crew member's tinted ground in this scheme. */
+@Composable
+@ReadOnlyComposable
+fun crewBg(agent: String): Color = crewColors(agent).let { Color(if (Ds.dark) it.bgDark else it.bgLight) }
+
+/** A crew member's ink on its tinted ground in this scheme. */
+@Composable
+@ReadOnlyComposable
+fun crewInk(agent: String): Color = crewColors(agent).let { Color(if (Ds.dark) it.inkDark else it.inkLight) }
+
+private fun crewColors(agent: String): CrewColors =
+    NomiCrewColors.all[agent.lowercase()] ?: NomiCrewColors.all.getValue(DEFAULT_CREW)
+
+/** The web's radii: `rounded-xs` 4, `rounded-sm` 6, `rounded-md` 10, and the in-between ones the pen draws. */
 object DsShapes {
-    val xs = RoundedCornerShape(NomiCorners.extraSmall.dp)
-    val sm = RoundedCornerShape(NomiCorners.small.dp)
-    val md = RoundedCornerShape(NomiCorners.large.dp)
+    val xs2 = RoundedCornerShape(NomiPenRadius.xs2.dp)
+    val xs = RoundedCornerShape(NomiPenRadius.xs.dp)
+    val sm = RoundedCornerShape(NomiPenRadius.sm.dp)
+    val tile = RoundedCornerShape(NomiPenRadius.tile.dp)
+    val inner = RoundedCornerShape(NomiPenRadius.inner.dp)
+    val md = RoundedCornerShape(NomiPenRadius.md.dp)
+    val lg = RoundedCornerShape(NomiPenRadius.lg.dp)
+    val xl = RoundedCornerShape(NomiPenRadius.xl.dp)
+    val xl2 = RoundedCornerShape(NomiPenRadius.xl2.dp)
+    val sheet = RoundedCornerShape(topStart = NomiPenRadius.sheet.dp, topEnd = NomiPenRadius.sheet.dp)
     val full = RoundedCornerShape(percent = 50)
 }
 

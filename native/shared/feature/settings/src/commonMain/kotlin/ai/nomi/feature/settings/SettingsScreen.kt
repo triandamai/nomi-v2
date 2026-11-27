@@ -1,6 +1,5 @@
 package ai.nomi.feature.settings
 
-import ai.nomi.data.DEFAULT_ACCENT_COLOR
 import ai.nomi.data.THEME_DARK
 import ai.nomi.data.THEME_LIGHT
 import ai.nomi.data.THEME_SYSTEM
@@ -63,21 +62,6 @@ private val ThemeModeOptions = listOf(
     NomiGroupOption(THEME_SYSTEM, "System"),
 )
 
-private val AccentThemeOptions = listOf(
-    "canopy" to "Canopy",
-    "coral-reef" to "Coral Reef",
-    "borneo-dusk" to "Borneo Dusk",
-    "phantom" to "Phantom",
-    "senja-jakarta" to "Senja Jakarta",
-    "lautan" to "Lautan",
-    "matcha" to "Matcha",
-    "saffron" to "Saffron",
-    "lagoon" to "Lagoon",
-    "orchid" to "Orchid",
-    "ruby" to "Ruby",
-    "graphite" to "Graphite",
-)
-
 @Composable
 fun SettingsScreen(
     viewModel: SettingsViewModel,
@@ -87,7 +71,6 @@ fun SettingsScreen(
 ) {
     val profile by viewModel.profile.collectAsStateWithLifecycle()
     val theme by viewModel.theme.collectAsStateWithLifecycle()
-    val accentColor by viewModel.accentColor.collectAsStateWithLifecycle()
     val homeLayout by viewModel.homeLayout.collectAsStateWithLifecycle()
     val drawerPins by viewModel.drawerPins.collectAsStateWithLifecycle()
     val drawerRecents by viewModel.drawerRecents.collectAsStateWithLifecycle()
@@ -100,9 +83,7 @@ fun SettingsScreen(
         onSignOut = viewModel::signOut,
         modifier = modifier,
         theme = theme,
-        accentColor = accentColor,
         onSelectTheme = viewModel::selectTheme,
-        onSelectAccentColor = viewModel::selectAccentColor,
         homeLayout = homeLayout,
         onSelectHomeLayout = viewModel::selectHomeLayout,
         drawerPins = drawerPins,
@@ -132,9 +113,7 @@ fun SettingsContent(
     onSignOut: () -> Unit,
     modifier: Modifier = Modifier,
     theme: String = THEME_SYSTEM,
-    accentColor: String = DEFAULT_ACCENT_COLOR,
     onSelectTheme: (String) -> Unit = {},
-    onSelectAccentColor: (String) -> Unit = {},
     homeLayout: String = "stage",
     onSelectHomeLayout: (String) -> Unit = {},
     drawerPins: List<String> = emptyList(),
@@ -181,9 +160,7 @@ fun SettingsContent(
             NomiSectionHeader("Appearance")
             AppearancePicker(
                 mode = theme,
-                accentColor = accentColor,
                 onSelectMode = onSelectTheme,
-                onSelectAccentColor = onSelectAccentColor,
             )
 
             NomiSectionHeader("Home layout")
