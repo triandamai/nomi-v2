@@ -1,6 +1,9 @@
 package ai.nomi.designsystem.theme
 
 import ai.nomi.designsystem.generated.PenTypeRole
+import ai.nomi.designsystem.resources.Res
+import ai.nomi.designsystem.resources.instrument_sans_variable
+import ai.nomi.designsystem.resources.jetbrains_mono_variable
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.text.TextStyle
@@ -18,10 +21,13 @@ data class PenFamilies(val sans: FontFamily, val mono: FontFamily)
  * and mono already bundled stand in, so the sizes, line heights and tracking are the pen's while the faces are not yet.
  */
 @Composable
-fun penFontFamilies(): PenFamilies {
-    val families = nomiFontFamilies()
-    return PenFamilies(sans = families.getValue("plain"), mono = families.getValue("mono"))
-}
+fun penFontFamilies(): PenFamilies = PenFamilies(
+    sans = variableFamily(Res.font.instrument_sans_variable, PEN_WEIGHTS),
+    mono = variableFamily(Res.font.jetbrains_mono_variable, PEN_WEIGHTS),
+)
+
+/** The weights the pen draws: regular, medium (`font-medium`) and semibold (titles). */
+private val PEN_WEIGHTS = setOf(FontWeight.Normal.weight, FontWeight.Medium.weight, FontWeight.SemiBold.weight)
 
 /** A pen type role as a [TextStyle]: size and line height in sp, tracking px as sp, the line box centred like the web's. */
 fun penTextStyle(role: PenTypeRole, family: FontFamily, weight: FontWeight = FontWeight.Normal): TextStyle = TextStyle(

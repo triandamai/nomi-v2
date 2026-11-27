@@ -81,6 +81,8 @@ class PenThemeTest {
             "onSurfaceVariant on surface" to contrast(scheme.onSurfaceVariant, scheme.surface),
             "onError on error" to contrast(scheme.onError, scheme.error),
         ).forEach { (pair, ratio) -> assertTrue(ratio >= WCAG_AA, "$theme $pair is $ratio:1") }
+        val inverse = contrast(scheme.inversePrimary, scheme.inverseSurface)
+        assertTrue(inverse >= WCAG_AA_UI, "$theme inversePrimary on inverseSurface is $inverse:1")
         val primary = contrast(scheme.onPrimary, scheme.primary)
         assertTrue(primary >= WCAG_AA_UI, "$theme onPrimary on primary is $primary:1")
     }
@@ -89,5 +91,16 @@ class PenThemeTest {
     fun `screens still on Material read clearly on the colours built from the pen`() {
         assertReadable(NomiPenColors.light.toColorScheme(dark = false), "light")
         assertReadable(NomiPenColors.dark.toColorScheme(dark = true), "dark")
+    }
+
+    @Test
+    fun `the pen families carry regular, medium and semibold, so a mono label is 400 as on the web`() {
+        var mono: androidx.compose.ui.text.font.FontFamily? = null
+        var sans: androidx.compose.ui.text.font.FontFamily? = null
+        rule.setContent { NomiTheme { mono = NomiTheme.families.mono; sans = NomiTheme.families.sans } }
+        rule.waitForIdle()
+        val weights = { f: androidx.compose.ui.text.font.FontFamily? -> (f as androidx.compose.ui.text.font.FontListFontFamily).fonts.map { it.weight.weight }.toSet() }
+        assertEquals(setOf(400, 500, 600), weights(mono))
+        assertEquals(setOf(400, 500, 600), weights(sans))
     }
 }

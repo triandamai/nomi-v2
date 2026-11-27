@@ -62,6 +62,8 @@ private val KeyHintGapX = 16.dp
 private val KeyHintGapY = 4.dp
 private val LinkGap = 4.dp
 private val LinkIcon = 14.dp
+private val LinkRing = 2.dp
+private val LinkRingOffset = 2.dp
 private val PillHeight = 40.dp
 private val PillPadding = 16.dp
 private val PillIcon = 16.dp
@@ -147,7 +149,7 @@ fun DsButton(
             .onFocusChanged { focused = it.isFocused }
             .clickable(interaction, indication = null, enabled = active, role = Role.Button, onClick = onClick)
             .padding(horizontal = ButtonPadding),
-        horizontalArrangement = Arrangement.spacedBy(ButtonGap),
+        horizontalArrangement = Arrangement.spacedBy(ButtonGap, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (leading != null) DsIcon(leading, ButtonIcon, look.glyph, if (loading) Modifier.dsSpin() else Modifier)
@@ -228,13 +230,18 @@ fun KeyHint(hints: List<KeyHintItem>, modifier: Modifier = Modifier) {
 fun DsLink(label: String, onClick: () -> Unit, modifier: Modifier = Modifier, inline: Boolean = false, quiet: Boolean = false) {
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
+    var focused by remember { mutableStateOf(false) }
     val color = when {
         inline || quiet -> if (hovered) Ds.text else Ds.text2
         else -> Ds.text
     }
     val weight = if (inline || quiet) FontWeight.Normal else FontWeight.Medium
     Row(
-        modifier.clip(DsShapes.xs).clickable(interaction, indication = null, role = Role.Button, onClick = onClick),
+        modifier
+            .dsFocusRing(focused, DsShapes.xs, Ds.focus, LinkRing, LinkRingOffset)
+            .clip(DsShapes.xs)
+            .onFocusChanged { focused = it.isFocused }
+            .clickable(interaction, indication = null, role = Role.Button, onClick = onClick),
         horizontalArrangement = Arrangement.spacedBy(LinkGap),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -273,7 +280,7 @@ fun DsPhonePill(
             .then(if (variant == DsPhonePillVariant.Secondary) Modifier.border(Hairline, Ds.borderStrong, DsShapes.full) else Modifier)
             .clickable(enabled = !loading, role = Role.Button, onClick = onClick)
             .padding(horizontal = PillPadding),
-        horizontalArrangement = Arrangement.spacedBy(ButtonGap),
+        horizontalArrangement = Arrangement.spacedBy(ButtonGap, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (icon != null && iconFirst) DsIcon(icon, PillIcon, content)

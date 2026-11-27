@@ -1,5 +1,6 @@
 package ai.nomi.designsystem.theme
 
+import ai.nomi.designsystem.generated.NomiPenColors
 import ai.nomi.designsystem.generated.PenColors
 import androidx.compose.material3.ColorScheme
 import androidx.compose.ui.graphics.Color
@@ -14,7 +15,8 @@ fun PenColors.toColorScheme(dark: Boolean): ColorScheme = ColorScheme(
     onPrimary = Color(accentInk),
     primaryContainer = Color(accentBg).compositeOn(surface),
     onPrimaryContainer = Color(text),
-    inversePrimary = Color(accent),
+    // The accent drawn on the inverse surface (a snackbar's action) is the other scheme's, so it reads.
+    inversePrimary = Color(if (dark) NomiPenColors.light.accent else NomiPenColors.dark.accent),
     secondary = Color(text2),
     onSecondary = Color(bg),
     secondaryContainer = Color(surface2),

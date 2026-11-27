@@ -125,8 +125,9 @@ class InputsTest {
             var text by remember { mutableStateOf("") }
             DsSearch(text, { text = it }, "Search chats", shortcut = "⌘K")
         }
-        val box = rule.onNodeWithContentDescription("Search chats")
+        val box = rule.onNode(androidx.compose.ui.test.hasTestTag(DS_SEARCH_TAG))
         box.assertHeightIsEqualTo(30.dp)
+        rule.onNode(hasSetTextAction() and androidx.compose.ui.test.hasContentDescription("Search chats")).assertExists()
         assertColor(c(light.border), box.pixelAtMiddle(rule, 0.5.dp), "resting edge")
         rule.onNode(hasSetTextAction()).requestFocus()
         rule.waitForIdle()
@@ -139,8 +140,9 @@ class InputsTest {
             var text by remember { mutableStateOf("") }
             DsPhoneSearch(text, { text = it }, "Search")
         }
-        val box = rule.onNodeWithContentDescription("Search")
+        val box = rule.onNode(androidx.compose.ui.test.hasTestTag(DS_SEARCH_TAG))
         box.assertHeightIsEqualTo(38.dp)
+        rule.onNode(hasSetTextAction() and androidx.compose.ui.test.hasContentDescription("Search")).assertExists()
         assertColor(c(light.surface2), box.pixelAt(rule, 4.dp, 19.dp), "fill")
         rule.onNode(hasSetTextAction()).performTextInput("warung")
         assertEquals(16.sp, rule.onNode(hasSetTextAction()).textStyle().fontSize)
@@ -239,5 +241,23 @@ class InputsTest {
         assertEquals(1, sent.size)
         assertEquals("Find Whoosh trains for Sat 1 Nov", sent.single().trim())
         rule.onNodeWithContentDescription("Send").assertIsNotEnabled()
+    }
+
+    @Test
+    fun `a focused checkbox and toggle show the focus ring`() {
+        show {
+            androidx.compose.foundation.layout.Row(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(24.dp)) {
+                CheckMark(false, {})
+                DsToggle("Auto-deploy", false, {})
+            }
+        }
+        val check = rule.onNode(hasRole(Role.Checkbox))
+        check.requestFocus()
+        rule.waitForIdle()
+        assertColor(c(light.focus).compositeOver(ground), check.pixelLeftOf(rule, 3.dp), "check ring")
+        val toggle = rule.onNodeWithContentDescription("Auto-deploy")
+        toggle.requestFocus()
+        rule.waitForIdle()
+        assertColor(c(light.focus).compositeOver(ground), toggle.pixelLeftOf(rule, 3.dp), "toggle ring")
     }
 }

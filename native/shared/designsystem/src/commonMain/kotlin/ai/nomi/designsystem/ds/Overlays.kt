@@ -50,6 +50,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.dropShadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
@@ -134,6 +135,7 @@ private val OptionPadY = 8.dp
 private val OptionGap = 14.dp
 private val OptionGlyph = 20.dp
 private val OptionCheck = 18.dp
+private val OptionRing = 2.dp
 private val TilesPadX = 16.dp
 private val TilesBottom = 10.dp
 private val TilesGap = 8.dp
@@ -707,9 +709,12 @@ fun DsSheetOption(
     chosen: Boolean = false,
     lead: (@Composable () -> Unit)? = null,
 ) {
+    var focused by remember { mutableStateOf(false) }
     Row(
         modifier
             .fillMaxWidth()
+            .dsFocusRing(focused, DsShapes.xs, Ds.focus, OptionRing, -OptionRing)
+            .onFocusChanged { focused = it.isFocused }
             .then(if (detail != null) Modifier.heightIn(min = OptionDetailHeight) else Modifier.height(OptionHeight))
             .selectable(chosen, role = Role.Button, onClick = onClick)
             .padding(horizontal = OptionPadX, vertical = if (detail != null) OptionPadY else 0.dp),

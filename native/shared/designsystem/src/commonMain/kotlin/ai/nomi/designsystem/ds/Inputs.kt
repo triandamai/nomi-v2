@@ -42,6 +42,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -123,9 +124,13 @@ private const val FIELD_DISABLED_OPACITY = 0.5f
 /** Finds a text field's box in tests: its label belongs to the field itself. */
 const val DS_FIELD_TAG = "ds-text-field"
 
+/** Finds a search box in tests: the field inside it carries the name. */
+const val DS_SEARCH_TAG = "ds-search"
+
 /** The 16 box of Design System / Nomi → Check, for rows that bring their own label: text colour when checked. */
 @Composable
 fun CheckMark(checked: Boolean, onCheckedChange: ((Boolean) -> Unit)?, modifier: Modifier = Modifier, enabled: Boolean = true) {
+    var focused by remember { mutableStateOf(false) }
     val toggle = if (onCheckedChange != null) {
         Modifier.toggleable(checked, null, indication = null, enabled = enabled, role = Role.Checkbox, onValueChange = onCheckedChange)
     } else {
@@ -133,6 +138,8 @@ fun CheckMark(checked: Boolean, onCheckedChange: ((Boolean) -> Unit)?, modifier:
     }
     Box(
         modifier
+            .dsFocusRing(focused, DsShapes.xs, Ds.focus, ChipFocusRing, ChipFocusRing)
+            .onFocusChanged { focused = it.isFocused }
             .then(toggle)
             .size(CheckSize)
             .clip(DsShapes.xs)
@@ -145,8 +152,11 @@ fun CheckMark(checked: Boolean, onCheckedChange: ((Boolean) -> Unit)?, modifier:
 /** A real checkbox with its 13 label: the whole row toggles it. */
 @Composable
 fun DsCheckbox(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
+    var focused by remember { mutableStateOf(false) }
     Row(
         modifier
+            .dsFocusRing(focused, DsShapes.xs, Ds.focus, ChipFocusRing, ChipFocusRing)
+            .onFocusChanged { focused = it.isFocused }
             .alpha(if (enabled) 1f else DISABLED_OPACITY)
             .heightIn(min = targetHeight(CheckSize))
             .toggleable(checked, null, indication = null, enabled = enabled, role = Role.Checkbox, onValueChange = onCheckedChange),
@@ -169,8 +179,11 @@ fun RadioMark(selected: Boolean, modifier: Modifier = Modifier) {
 /** Design System / Nomi → Toggle: a 32 by 18 switch, mint with the knob right when on. Named by [label]. */
 @Composable
 fun DsToggle(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
+    var focused by remember { mutableStateOf(false) }
     Box(
         modifier
+            .dsFocusRing(focused, DsShapes.full, Ds.focus, ChipFocusRing, ChipFocusRing)
+            .onFocusChanged { focused = it.isFocused }
             .alpha(if (enabled) 1f else DISABLED_OPACITY)
             .size(ToggleWidth, ToggleHeight)
             .clip(DsShapes.full)
@@ -297,13 +310,13 @@ fun DsSearch(
             .dsFocusRing(focused, DsShapes.sm, Ds.focus, TextFieldRing)
             .clip(DsShapes.sm)
             .border(Hairline, if (focused) Ds.accent else Ds.border, DsShapes.sm)
-            .semantics { contentDescription = label ?: placeholder }
+            .testTag(DS_SEARCH_TAG)
             .padding(horizontal = if (plain) SearchPlainPadding else SearchPadding),
         horizontalArrangement = Arrangement.spacedBy(FieldGap),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         DsIcon(Lucide.Search, SearchGlyph, Ds.text3)
-        DsBareField(value, onValueChange, placeholder, Ds.ui, Modifier.weight(1f), interaction = interaction)
+        DsBareField(value, onValueChange, placeholder, Ds.ui, Modifier.weight(1f).semantics { contentDescription = label ?: placeholder }, interaction = interaction)
         when {
             shortcut != null && plain -> BasicText(shortcut, style = Ds.label.copy(color = Ds.text3))
             shortcut != null -> Kbd(shortcut)
@@ -324,13 +337,13 @@ fun DsPhoneSearch(value: String, onValueChange: (String) -> Unit, placeholder: S
             .clip(DsShapes.lg)
             .background(Ds.surface2)
             .border(Hairline, if (focused) Ds.accent else Color.Transparent, DsShapes.lg)
-            .semantics { contentDescription = label ?: placeholder }
+            .testTag(DS_SEARCH_TAG)
             .padding(horizontal = PhoneSearchPadding),
         horizontalArrangement = Arrangement.spacedBy(FieldGap),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         DsIcon(Lucide.Search, PhoneSearchGlyph, Ds.text3)
-        DsBareField(value, onValueChange, placeholder, Ds.phone, Modifier.weight(1f), interaction = interaction)
+        DsBareField(value, onValueChange, placeholder, Ds.phone, Modifier.weight(1f).semantics { contentDescription = label ?: placeholder }, interaction = interaction)
     }
 }
 

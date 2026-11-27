@@ -6,6 +6,7 @@ import ai.nomi.designsystem.theme.NomiTheme
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -178,5 +179,24 @@ class ActionsTest {
         val key = rule.onNodeWithText("⌘K")
         key.assertHeightIsEqualTo(20.dp)
         assertColor(c(light.borderStrong), key.pixelAtMiddle(rule, 0.5.dp), "keycap edge")
+    }
+
+    @Test
+    fun `a full-width button centres its label`() {
+        show { DsButton("Start building", {}, Modifier.width(300.dp)) }
+        val label = rule.onNodeWithText("Start building", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val box = button().fetchSemanticsNode().boundsInRoot
+        val left = label.left - box.left
+        val right = box.right - label.right
+        kotlin.test.assertTrue(kotlin.math.abs(left - right) <= 1f, "label sits $left from the start and $right from the end")
+    }
+
+    @Test
+    fun `a focused link shows the focus ring`() {
+        show { DsLink("Upgrade to Pro", {}) }
+        val link = rule.onNodeWithText("Upgrade to Pro")
+        link.requestFocus()
+        rule.waitForIdle()
+        assertColor(c(light.focus).compositeOver(ground), link.pixelLeftOf(rule, 3.dp), "ring")
     }
 }
