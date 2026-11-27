@@ -19,7 +19,10 @@ import ai.nomi.designsystem.ds.DsChip
 import ai.nomi.designsystem.ds.DsDialog
 import ai.nomi.designsystem.ds.DsIconButton
 import ai.nomi.designsystem.ds.DsIconButtonVariant
+import ai.nomi.designsystem.ds.DsGithubMark
 import ai.nomi.designsystem.ds.DsLink
+import ai.nomi.designsystem.ds.DsPhonePill
+import ai.nomi.designsystem.ds.DsPhonePillVariant
 import ai.nomi.designsystem.ds.DsMenu
 import ai.nomi.designsystem.ds.DsSearch
 import ai.nomi.designsystem.ds.DsSegmented
@@ -340,7 +343,7 @@ private fun Wrap(content: @Composable () -> Unit) {
 }
 
 private fun SectionsBuilder.primitives(toasts: DsToasts) {
-    section("Actions", 5) {
+    section("Actions", 7) {
         Wrap {
             DsButton("Deploy", {})
             DsButton("Publish", {}, variant = DsButtonVariant.Inverse, iconStart = Lucide.Send)
@@ -357,6 +360,12 @@ private fun SectionsBuilder.primitives(toasts: DsToasts) {
             DsIconButton(Lucide.Send, "Send", {}, variant = DsIconButtonVariant.Send)
             Kbd("⌘K")
             DsLink("Upgrade to Pro", {})
+            DsGithubMark(16.dp, Ds.text2)
+        }
+        Wrap {
+            DsPhonePill("New chat", {}, variant = DsPhonePillVariant.Inverse, icon = Lucide.Plus)
+            DsPhonePill("Open workspace", {}, icon = Lucide.ArrowRight)
+            DsPhonePill("Not now", {}, variant = DsPhonePillVariant.Ghost)
         }
         KeyHint(listOf(KeyHintItem("↵", "send"), KeyHintItem("⇧↵", "new line"), KeyHintItem("@", "address crew")))
     }

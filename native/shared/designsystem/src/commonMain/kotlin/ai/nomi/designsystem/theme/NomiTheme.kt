@@ -42,6 +42,7 @@ private val LocalPenColors = staticCompositionLocalOf<PenColors> {
     error("NomiTheme { } is missing from the composition")
 }
 private val LocalPenDark = staticCompositionLocalOf { false }
+private val LocalCoarsePointer = staticCompositionLocalOf { false }
 private val LocalPenFamilies = staticCompositionLocalOf<PenFamilies> {
     error("NomiTheme { } is missing from the composition")
 }
@@ -58,6 +59,9 @@ object NomiTheme {
 
     /** True in the dark scheme. */
     val dark: Boolean @Composable @ReadOnlyComposable get() = LocalPenDark.current
+
+    /** True where people point with a finger: targets grow to 44 (the web's `pointer-coarse`). */
+    val coarsePointer: Boolean @Composable @ReadOnlyComposable get() = LocalCoarsePointer.current
 
     /** The pen's sans and mono families. */
     val families: PenFamilies @Composable @ReadOnlyComposable get() = LocalPenFamilies.current
@@ -82,6 +86,7 @@ fun NomiTheme(
     accent: String = NomiPalettes.DEFAULT_ACCENT,
     dark: Boolean = isSystemInDarkTheme(),
     reducedMotion: Boolean = false,
+    coarsePointer: Boolean = platformCoarsePointer,
     content: @Composable () -> Unit,
 ) {
     val pen = if (dark) NomiPenColors.dark else NomiPenColors.light
@@ -103,6 +108,7 @@ fun NomiTheme(
     CompositionLocalProvider(
         LocalPenColors provides pen,
         LocalPenDark provides dark,
+        LocalCoarsePointer provides coarsePointer,
         LocalPenFamilies provides penFamilies,
         LocalExtendedColors provides extended,
         LocalMetaStyle provides metaStyle,

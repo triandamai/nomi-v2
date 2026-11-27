@@ -48,80 +48,6 @@ import androidx.compose.ui.unit.dp
 private const val PERCENT = 100
 
 /** Web Button variants: primary is the hero (action gradient, one per view). */
-enum class DsButtonVariant { Primary, Inverse, Secondary, Ghost, GhostDanger, Danger }
-
-/**
- * frontend-new's Button on the M3 button: primary → the action gradient, inverse → filled, secondary → outlined,
- * ghost → text, and the danger pair in the error role. [loading] turns the leading icon into a spinner and keeps
- * the real progress in [label] ("Deploying · 00:14").
- */
-@Composable
-fun DsButton(
-    label: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    variant: DsButtonVariant = DsButtonVariant.Primary,
-    iconStart: NomiGlyph? = null,
-    iconEnd: NomiGlyph? = null,
-    loading: Boolean = false,
-    enabled: Boolean = true,
-) {
-    val danger = variant == DsButtonVariant.Danger || variant == DsButtonVariant.GhostDanger
-    val nomiVariant = when (variant) {
-        DsButtonVariant.Primary -> NomiButtonVariant.Gradient
-        DsButtonVariant.Inverse -> NomiButtonVariant.Filled
-        DsButtonVariant.Secondary, DsButtonVariant.Danger -> NomiButtonVariant.Outlined
-        DsButtonVariant.Ghost, DsButtonVariant.GhostDanger -> NomiButtonVariant.Text
-    }
-    val colors = if (danger) {
-        if (variant == DsButtonVariant.Danger) ButtonDefaults.outlinedButtonColors(contentColor = Ds.danger) else ButtonDefaults.textButtonColors(contentColor = Ds.danger)
-    } else {
-        null
-    }
-    NomiButton(
-        onClick = onClick,
-        modifier = modifier,
-        variant = nomiVariant,
-        enabled = enabled && !loading,
-        colors = colors,
-    ) {
-        val tint = androidx.compose.material3.LocalContentColor.current
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (loading) DsSpinner(16.dp, tint) else if (iconStart != null) DsIcon(iconStart, 16.dp, tint)
-            Text(label)
-            if (iconEnd != null && !loading) DsIcon(iconEnd, 16.dp, tint)
-        }
-    }
-}
-
-enum class DsIconButtonVariant { Outline, Ghost, Send }
-
-/** frontend-new's IconButton: outline → outlined, ghost → standard, send → filled. Never unnamed: [label] is said. */
-@Composable
-fun DsIconButton(
-    icon: NomiGlyph,
-    label: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    variant: DsIconButtonVariant = DsIconButtonVariant.Outline,
-    small: Boolean = false,
-    enabled: Boolean = true,
-) {
-    val glyphSize = if (small) 18.dp else 20.dp
-    val described = modifier.nomiFocusRing(CircleShape).semantics { contentDescription = label }
-    when (variant) {
-        DsIconButtonVariant.Outline -> OutlinedIconButton(onClick, described, enabled) {
-            DsIcon(icon, glyphSize, androidx.compose.material3.LocalContentColor.current)
-        }
-        DsIconButtonVariant.Ghost -> IconButton(onClick, described, enabled) {
-            DsIcon(icon, glyphSize, androidx.compose.material3.LocalContentColor.current)
-        }
-        DsIconButtonVariant.Send -> FilledIconButton(onClick, described, enabled, colors = IconButtonDefaults.filledIconButtonColors()) {
-            DsIcon(icon, glyphSize, androidx.compose.material3.LocalContentColor.current)
-        }
-    }
-}
-
 /** A small bare icon you can press (a card header's copy, a row's remove): 14dp glyph, 44dp target. */
 @Composable
 fun DsBareIcon(icon: NomiGlyph, label: String, onClick: () -> Unit, modifier: Modifier = Modifier, size: Dp = 14.dp, tint: Color = Ds.text3, enabled: Boolean = true) {
@@ -134,43 +60,6 @@ fun DsBareIcon(icon: NomiGlyph, label: String, onClick: () -> Unit, modifier: Mo
             .dsDisabled(!enabled),
         contentAlignment = Alignment.Center,
     ) { DsIcon(icon, size, tint) }
-}
-
-/** A keyboard key or chord, e.g. ⌘K. */
-@Composable
-fun Kbd(keys: String, modifier: Modifier = Modifier) {
-    Box(
-        modifier.height(20.dp).clip(DsShapes.xs).background(MaterialTheme.colorScheme.surfaceContainerHigh).padding(horizontal = 6.dp),
-        contentAlignment = Alignment.Center,
-    ) { Text(keys, style = Ds.label, color = Ds.text2) }
-}
-
-data class KeyHintItem(val keys: String, val action: String)
-
-/** What the keys do here, in a quiet mono line: "↵ send   ⇧↵ new line". */
-@Composable
-fun KeyHint(hints: List<KeyHintItem>, modifier: Modifier = Modifier) {
-    FlowRow(modifier, horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        hints.forEach { Text("${it.keys} ${it.action}", style = Ds.label, color = Ds.text2) }
-    }
-}
-
-/**
- * A link on its own line ("Upgrade to Pro ↗", standalone) or inside a sentence (inline, underlined). [quiet] is a
- * card footer's secondary link.
- */
-@Composable
-fun DsLink(label: String, onClick: () -> Unit, modifier: Modifier = Modifier, inline: Boolean = false, quiet: Boolean = false) {
-    val color = if (quiet) Ds.text2 else Ds.accent
-    Row(
-        modifier.clip(DsShapes.xs).clickable(role = Role.Button, onClick = onClick).heightIn(min = 24.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        val base = if (inline) Ds.ui.copy(textDecoration = TextDecoration.Underline) else MaterialTheme.typography.labelLarge
-        Text(label, style = if (quiet) base.copy(fontWeight = FontWeight.Normal) else base, color = color)
-        if (!inline) DsIcon(Lucide.ArrowUpRight, 16.dp, color)
-    }
 }
 
 /** Who is speaking, and when (mono: "15:37 · 4m 12s"). */
