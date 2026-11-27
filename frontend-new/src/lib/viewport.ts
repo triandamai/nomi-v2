@@ -16,8 +16,7 @@ export function initViewport(): () => void {
 
 	function isAppLayout(): boolean {
 		return Boolean(
-			document.querySelector('[data-app-shell], [data-phone-workspace], [data-workspace-shell]') ||
-			document.activeElement?.closest('[data-app-shell], [data-phone-workspace], [data-workspace-shell], [style*="--viewport-height"]')
+			document.querySelector('[data-app-shell], [data-phone-workspace], [data-workspace-shell]')
 		);
 	}
 
