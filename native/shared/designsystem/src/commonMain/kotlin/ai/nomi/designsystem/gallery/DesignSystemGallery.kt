@@ -22,6 +22,11 @@ import ai.nomi.designsystem.ds.DsIconButtonVariant
 import ai.nomi.designsystem.ds.DsGithubMark
 import ai.nomi.designsystem.ds.DsLink
 import ai.nomi.designsystem.ds.DsPhonePill
+import ai.nomi.designsystem.ds.DsPhoneSearch
+import ai.nomi.designsystem.ds.DsSelect
+import ai.nomi.designsystem.ds.DsComposer
+import ai.nomi.designsystem.ds.ComposerAgent
+import ai.nomi.designsystem.ds.SelectOption
 import ai.nomi.designsystem.ds.DsPhonePillVariant
 import ai.nomi.designsystem.ds.DsMenu
 import ai.nomi.designsystem.ds.DsSearch
@@ -404,9 +409,13 @@ private fun SectionsBuilder.primitives(toasts: DsToasts) {
         var tab by remember { mutableStateOf("chat") }
         var checked by remember { mutableStateOf(true) }
         var toggled by remember { mutableStateOf(false) }
+        var language by remember { mutableStateOf("id") }
+        var phoneSearch by remember { mutableStateOf("") }
         DsTextField("Project name", name, { name = it }, helper = "Used in the address: $name.nomi.app", mono = true)
         DsTextField("Email", "ana@", {}, error = "Add the part after @, like ana@example.com")
         DsSearch(search, { search = it }, "Search chats", shortcut = "⌘K")
+        DsPhoneSearch(phoneSearch, { phoneSearch = it }, "Search")
+        DsSelect("Language", listOf(SelectOption("id", "Bahasa Indonesia"), SelectOption("en", "English")), language, { language = it })
         DsSegmented("View", listOf(SegmentOption("all", "All", "12"), SegmentOption("live", "Live", "3"), SegmentOption("drafts", "Drafts")), view, { view = it })
         DsTabs("Workspace", listOf(TabItem("chat", "Chat"), TabItem("preview", "Preview"), TabItem("code", "Code")), tab, { tab = it }) {
             Text("The $it tab", style = Ds.ui, color = Ds.text2, modifier = Modifier.padding(vertical = 12.dp))
@@ -422,6 +431,7 @@ private fun SectionsBuilder.primitives(toasts: DsToasts) {
             DsChip(ChipKind.Option, "in 7 days", icon = Lucide.Hourglass, onClick = {})
             DsChip(ChipKind.Provision, "postgres", icon = Lucide.Database)
         }
+        DsComposer("Ask the crew to build, fix or deploy…", ComposerAgent(Crew.Nomi, "Nomi"), "deepseek-flash")
     }
     section("Overlays") {
         var dialog by remember { mutableStateOf(false) }
